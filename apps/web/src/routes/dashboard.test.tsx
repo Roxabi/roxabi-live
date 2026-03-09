@@ -42,6 +42,7 @@ import { requireAuth } from '@/lib/routeGuards'
 
 describe('DashboardPage', () => {
   beforeEach(() => {
+    // reset mocks between tests so each test sets its own session state
     vi.clearAllMocks()
     mockSignOut.mockResolvedValue({})
     vi.mocked(useSession).mockReturnValue({

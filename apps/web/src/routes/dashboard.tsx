@@ -45,6 +45,7 @@ function DashboardPage() {
                 try {
                   await signOut()
                 } finally {
+                  // always redirect even if signOut request fails
                   navigate({ to: '/login' })
                 }
               }}
