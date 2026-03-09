@@ -1,0 +1,11 @@
+{
+  "extends": "@repo/config/tsconfig.base",
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"],
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "incremental": false,
+    "composite": false
+  }
+}

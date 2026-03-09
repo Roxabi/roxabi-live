@@ -1,9 +1,75 @@
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
 dist/
+build/
+.next/
+.nitro/
+out/
+.output/
+
+# TanStack Start / Fumadocs generated
+apps/web/src/routeTree.gen.ts
+apps/web/.source/
+apps/docs/.source/
+apps/web/src/paraglide/
+apps/web/.content-collections/
+
+# Turbo
+.turbo/
+
+# Environment
 .env
 .env.local
 .env.*.local
-.DS_Store
-*.log
+
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+apps/web/e2e/.auth/
+
+# Cache
+.cache/
+*.tsbuildinfo
+
+# Reports (generated artifacts)
+reports/
+
+# Claude Code hooks state
+.claude/security_warnings/
+
+# dev-core stack config (project-local, not committed — commit .claude/stack.yml.example)
+.claude/stack.yml
+
+# Retro session intelligence database
+.claude/skills/retro/data/
+.claude/skills/retro/retro.config.yaml
+
+# Misc
+*.pem
+.vercel
+.dashboard.pid
+.playwright-mcp/
