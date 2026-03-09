@@ -11,6 +11,7 @@ Remote: `upstream` -> https://github.com/Roxabi/roxabi_boilerplate.git
    - `apps/api/src/`
    - `package.json`
    - `biome.json`
+   - `turbo.jsonc`
 4. `bun install` -- always regenerate bun.lock after merge
 5. `git add bun.lock && git commit`
 

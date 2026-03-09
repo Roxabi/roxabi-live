@@ -37,8 +37,7 @@
     "db:generate": "bash scripts/db.sh generate",
     "db:migrate": "bash scripts/db.sh migrate",
     "db:reset": "bash scripts/db.sh reset",
-    "db:seed": "bash scripts/db.sh seed",
-    "dashboard": "bun ~/projects/roxabi-plugins/plugins/dev-core/skills/issues/dashboard.ts"
+    "db:seed": "bash scripts/db.sh seed"
   },
   "devDependencies": {
     "@types/node": "^24.11.0",
