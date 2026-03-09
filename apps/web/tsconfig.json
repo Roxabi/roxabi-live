@@ -1,0 +1,21 @@
+{
+  "extends": "@repo/config/tsconfig.base",
+  "include": ["**/*.ts", "**/*.tsx", "src/paraglide/**/*.js"],
+  "exclude": ["node_modules", "dist", ".output", "vitest.config.ts"],
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+    "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "checkJs": false,
+    "verbatimModuleSyntax": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}

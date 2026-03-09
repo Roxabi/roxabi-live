@@ -1,0 +1,61 @@
+# Node modules
+node_modules
+**/node_modules
+
+# Build outputs (rebuilt inside Docker)
+dist
+**/dist
+.output
+**/.output
+.next
+**/.next
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Environment files (secrets — never bake into image)
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Documentation & non-runtime files
+docs
+*.md
+*.mdx
+LICENSE
+
+# Tests (not needed in production image)
+**/*.test.ts
+**/*.spec.ts
+**/e2e
+**/__tests__
+vitest.config.ts
+**/vitest.config.ts
+
+# CI/CD & tooling configs
+.github
+.claude
+.turbo
+**/.turbo
+.husky
+biome.jsonc
+
+# Docker (avoid recursive copy)
+Dockerfile
+docker-compose*.yml
+deploy
