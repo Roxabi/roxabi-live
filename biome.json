@@ -155,7 +155,9 @@
       "!**/test-results",
       "!**/reports/licenses.json",
       "!**/.vercel",
-      "!**/e2e/.auth"
+      "!**/e2e/.auth",
+      "!**/next-env.d.ts",
+      "!**/mdx-components.tsx"
     ]
   }
 }
