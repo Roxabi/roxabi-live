@@ -11,6 +11,7 @@ on:
           - both
           - web
           - api
+          - docs
           - cleanup
 
 permissions:
@@ -103,6 +104,65 @@ jobs:
           echo "### Web Preview" >> "$GITHUB_STEP_SUMMARY"
           echo "${{ steps.deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
 
+  deploy-docs:
+    name: Deploy Docs Preview
+    runs-on: ubuntu-latest
+    needs: [vercel-env-check]
+    if: |
+      !cancelled() && !failure() &&
+      (inputs.target == 'docs' || inputs.target == 'both')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy
+        id: deploy
+        run: |
+          for attempt in 1 2 3; do
+            if URL=$(vercel deploy --token "$VERCEL_TOKEN"); then break; fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Deploy attempt $attempt/3 failed, retrying in 10s..."
+              sleep 10
+            else
+              echo "::error::All 3 deploy attempts failed"
+              exit 1
+            fi
+          done
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_DOCS }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "### Docs Preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+
   deploy-api:
     name: Deploy API Preview
     runs-on: ubuntu-latest
@@ -126,8 +186,6 @@ jobs:
           project_id: ${{ secrets.NEON_PROJECT_ID }}
           api_key: ${{ secrets.NEON_API_KEY }}
           branch_name: preview/${{ github.ref_name }}
-          # neondb_owner is the Neon-managed admin role (has stored password).
-          # Required for direct psql DDL (DROP/CREATE SCHEMA) in the reset step.
           role: neondb_owner
 
       - name: Checkout
@@ -162,22 +220,13 @@ jobs:
           DATABASE_URL: ${{ steps.create-branch.outputs.db_url }}
         run: |
           set -euo pipefail
-          # Neon branches fork from production, so the schema already exists
-          # but the Drizzle migration journal is empty.  Drop and recreate the
-          # public schema so that db:migrate in the Vercel build can bootstrap
-          # from the baseline migration.
           psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
           echo "Schema reset for clean migration"
 
       - name: Deploy API preview
         id: deploy
-        # DATABASE_URL is passed via step env (not inline shell interpolation).
-        # Rate limiting uses in-memory storage in previews (no Upstash) — resets on cold start.
         run: |
           for attempt in 1 2 3; do
-            # --build-env overrides the Neon Marketplace integration's production
-            # DATABASE_URL during the Vercel build step (db:migrate).
-            # --env sets the same value for runtime (serverless functions).
             if URL=$(vercel deploy --token "$VERCEL_TOKEN" \
               --build-env "DATABASE_URL=$DATABASE_URL" \
               --env "DATABASE_URL=$DATABASE_URL" \
@@ -207,7 +256,7 @@ jobs:
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$PREVIEW_URL" || echo "000")
           echo "HTTP status: $HTTP_STATUS"
           if [ "$HTTP_STATUS" = "401" ]; then
-            echo "::warning::Preview URL returned 401 — Vercel Deployment Protection (SSO) is enabled. Preview requires Vercel team authentication to access."
+            echo "::warning::Preview URL returned 401 — Vercel Deployment Protection (SSO) is enabled."
           elif [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "302" ]; then
             echo "Preview URL is accessible"
           else
