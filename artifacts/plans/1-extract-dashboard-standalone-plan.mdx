@@ -1,0 +1,654 @@
+---
+title: "Plan: Extract dashboard from roxabi-plugins into standalone app"
+issue: 1
+spec: artifacts/specs/1-extract-dashboard-standalone-spec.mdx
+complexity: 6/10
+tier: F-full
+generated: 2026-03-09
+---
+
+## Summary
+
+Copy `roxabi_boilerplate` into this repo, add an `upstream` git remote for future updates, configure GitHub OAuth via Better Auth env vars, replace the boilerplate dashboard route with a placeholder skeleton UI, and verify CI passes.
+
+## Architecture
+
+```mermaid
+flowchart TD
+  subgraph V1["V1: Seed boilerplate"]
+    BP["../roxabi_boilerplate/"] -->|"cp -r"| REPO["roxabi-dashboard/"]
+    REPO --> BI["bun install"]
+    BI --> DEV["bun run dev"]
+  end
+
+  subgraph V2["V2: Upstream remote"]
+    UR["git remote add upstream\nhttps://github.com/Roxabi/roxabi_boilerplate.git"]
+    GF["git fetch upstream"]
+    UR --> GF
+  end
+
+  subgraph V3["V3: GitHub OAuth"]
+    ENV[".env\nGITHUB_CLIENT_ID\nGITHUB_CLIENT_SECRET\nDATABASE_URL / APP_URL\nBETTER_AUTH_SECRET/URL\nCORS_ORIGIN / API_URL"]
+    DB["docker compose up -d\n+ db:migrate"]
+    OA["GitHub OAuth App\n(manual: github.com/settings/developers)"]
+    ENV --> DB --> OAUTH["OAuth flow verified"]
+    OA --> ENV
+  end
+
+  subgraph V4["V4: Dashboard route"]
+    DASH["apps/web/src/routes/dashboard.tsx\nSkeleton UI — header + 3 placeholder cards\nno API calls"]
+  end
+
+  subgraph V5["V5: CI green"]
+    LINT["bun run lint"]
+    TC["bun run typecheck"]
+    BUILD["bun run build"]
+    LINT --> TC --> BUILD
+  end
+
+  V1 --> V2
+  V1 --> V4
+  V2 --> V3
+  V3 --> V5
+  V4 --> V5
+```
+
+```mermaid
+flowchart LR
+  subgraph devops["devops agent"]
+    PKG["package.json\n(merge scripts)"]
+    ENVE[".env.example\n(add S1–S9)"]
+    LH["lefthook.yml\n(merge hooks)"]
+    GITIGNORE[".gitignore\n(verify .env present)"]
+    REMOTE["git remote setup"]
+    DOCKER["docker-compose.yml\n(from boilerplate)"]
+  end
+
+  subgraph frontend["frontend-dev agent"]
+    DASHROUTE["apps/web/src/routes/dashboard.tsx"]
+  end
+
+  subgraph backend["backend-dev agent"]
+    AUTH["apps/api/src/auth/auth.instance.ts\n(verify GitHub config)"]
+    AUTHMOD["apps/api/src/auth/auth.module.ts"]
+  end
+
+  subgraph tester["tester agent"]
+    SC["17 success criteria\nverification steps"]
+  end
+
+  PKG --> DASHROUTE
+  AUTH --> SC
+  DASHROUTE --> SC
+  REMOTE --> SC
+```
+
+## Bootstrap Context
+
+From [analysis](../analyses/1-extract-dashboard-standalone-analysis.mdx):
+
+- Shape A: upstream remote tracking selected. Copy `../roxabi_boilerplate/.` into this repo, then `git remote add upstream`.
+- `BETTER_AUTH_URL` = `http://localhost:3000` (frontend URL — Nitro proxies `/api/**` to the API). NOT port 4000.
+- GitHub OAuth already supported in boilerplate via `buildSocialProviders()` in `auth.instance.ts` — just needs `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET` env vars.
+- Boilerplate User schema: `id, name, email, image, role, locale, createdAt` — no `githubId`/`githubLogin`.
+- `bun.lock` must be regenerated after any upstream merge (`bun install` after `git merge upstream/main`).
+- Modules kept as-is (no stripping): i18n/Paraglide, email/magic-link, consent, org management, admin panel.
+
+## Reference Patterns
+
+- Auth guard: `apps/web/src/lib/routeGuards.ts` — `requireAuth` reads `ctx.context.session`, throws `redirect({ to: '/login' })`
+- Auth client: `apps/web/src/lib/authClient.ts` — `authClient.signIn.social({ provider: 'github' })`
+- GitHub OAuth handler: `apps/web/src/routes/-login-handlers.ts` — `handleOAuth('github')`
+- Better Auth config: `apps/api/src/auth/auth.instance.ts` — `buildSocialProviders()` reads `config.githubClientId` + `config.githubClientSecret`
+
+## Agents
+
+| Agent | Task count | Files |
+|-------|-----------|-------|
+| devops | 10 | package.json, .env, .env.example, lefthook.yml, .gitignore, docker-compose files, git remote |
+| frontend-dev | 4 | apps/web/src/routes/dashboard.tsx |
+| backend-dev | 2 | apps/api/src/auth/ (verify only) |
+| tester | 3 | verification steps |
+
+## Consistency Report
+
+| Check | Result |
+|-------|--------|
+| Spec criteria covered | 17/17 |
+| Uncovered criteria | none |
+| Untraced tasks | none |
+| Exemptions | V2 (git remote setup) has no file path — git operation only |
+
+---
+
+## Micro-Tasks
+
+### V1 — Seed boilerplate
+
+**[RED-GATE V1]** `bun install` must complete with no errors before proceeding to V2.
+
+---
+
+**Task 1.1** `[devops]` `[P: N]`
+- **Description:** Copy all boilerplate files into this repo, preserving existing repo-specific files
+- **File path:** (shell operation, no single file)
+- **Code snippet:**
+  ```bash
+  # Preserve these files from this repo:
+  # CLAUDE.md, README.md, vision.md, roadmap.md,
+  # artifacts/, docs/, .env, lefthook.yml, package.json, bun.lock
+
+  # Copy everything from boilerplate, skipping preserved files
+  rsync -av --exclude='.git' --exclude='node_modules' \
+    --exclude='.env' --exclude='CLAUDE.md' \
+    --exclude='README.md' --exclude='vision.md' \
+    --exclude='roadmap.md' --exclude='artifacts/' \
+    --exclude='bun.lock' \
+    ../roxabi_boilerplate/ .
+  ```
+- **Verify command:** `ls apps/ packages/ turbo.jsonc biome.json`
+- **Expected output:** `apps  packages  turbo.jsonc  biome.json` all present
+- **Time estimate:** 3 min
+- **Spec trace:** SC-1 (bun install)
+- **Slice:** V1
+- **Phase:** RED
+- **Difficulty:** 2
+
+---
+
+**Task 1.2** `[devops]` `[P: N]`
+- **Description:** Merge boilerplate `package.json` scripts and devDependencies into this repo's `package.json`, keeping the existing stub scripts and adding `name`, `workspaces`, and all boilerplate scripts
+- **File path:** `package.json`
+- **Code snippet:**
+  ```json
+  {
+    "name": "roxabi-dashboard",
+    "version": "0.1.0",
+    "private": true,
+    "workspaces": ["apps/*", "packages/*"],
+    "scripts": {
+      "prepare": "bash scripts/prepare.sh",
+      "dev": "set -a; [ -f .env ] && . .env; set +a; bash scripts/predev.sh && turbo dev",
+      "build": "turbo build",
+      "lint": "biome check --diagnostic-level=warn .",
+      "lint:fix": "biome check --write .",
+      "typecheck": "turbo typecheck",
+      "test": "turbo test",
+      "db:up": "docker compose up -d",
+      "db:migrate": "bash scripts/db.sh migrate",
+      "db:generate": "bash scripts/db.sh generate",
+      "db:reset": "bash scripts/db.sh reset"
+    }
+  }
+  ```
+- **Verify command:** `bun run lint --help 2>/dev/null && echo ok`
+- **Expected output:** biome command found
+- **Time estimate:** 5 min
+- **Spec trace:** SC-14 (lint), SC-15 (typecheck), SC-16 (build)
+- **Slice:** V1
+- **Phase:** RED
+- **Difficulty:** 3
+
+---
+
+**Task 1.3** `[devops]` `[P: N]`
+- **Description:** Merge boilerplate `lefthook.yml` hooks — keep existing lint/typecheck/trufflehog hooks, add boilerplate's format and license-check hooks if present
+- **File path:** `lefthook.yml`
+- **Code snippet:**
+  ```yaml
+  pre-commit:
+    commands:
+      lint:
+        run: bun run lint
+      typecheck:
+        run: bun run typecheck
+      trufflehog:
+        run: trufflehog git file://. --only-verified --fail
+  pre-push:
+    commands:
+      license:
+        run: bun tools/licenseChecker.ts
+  ```
+- **Verify command:** `cat lefthook.yml`
+- **Expected output:** pre-commit section with lint, typecheck, trufflehog
+- **Time estimate:** 3 min
+- **Spec trace:** SC-14 (lint passes via hooks)
+- **Slice:** V1
+- **Phase:** RED
+- **Difficulty:** 2
+
+---
+
+**Task 1.4** `[devops]` `[P: N]`
+- **Description:** Run `bun install` from repo root — regenerates bun.lock from merged package.json and workspace packages
+- **File path:** `bun.lock`
+- **Code snippet:**
+  ```bash
+  bun install
+  ```
+- **Verify command:** `ls node_modules apps/web/node_modules apps/api/node_modules 2>/dev/null && echo ok`
+- **Expected output:** all node_modules present
+- **Time estimate:** 3 min
+- **Spec trace:** SC-1
+- **Slice:** V1
+- **Phase:** GREEN
+- **Difficulty:** 1
+
+---
+
+### V2 — Add upstream remote
+
+**[RED-GATE V2]** `git fetch upstream` must return boilerplate commits before proceeding.
+
+---
+
+**Task 2.1** `[devops]` `[P: N]`
+- **Description:** Add `roxabi_boilerplate` as the `upstream` git remote
+- **File path:** (git operation)
+- **Code snippet:**
+  ```bash
+  git remote add upstream https://github.com/Roxabi/roxabi_boilerplate.git
+  git fetch upstream
+  ```
+- **Verify command:** `git remote get-url upstream`
+- **Expected output:** `https://github.com/Roxabi/roxabi_boilerplate.git`
+- **Time estimate:** 2 min
+- **Spec trace:** SC-3, SC-4
+- **Slice:** V2
+- **Phase:** GREEN
+- **Difficulty:** 1
+
+---
+
+**Task 2.2** `[devops]` `[P: N]`
+- **Description:** Document upstream merge policy in `.claude/upstream-merge.md` — `bun install` after every merge, known conflict zones, strip-list reminder
+- **File path:** `.claude/upstream-merge.md`
+- **Code snippet:**
+  ```markdown
+  # Upstream Merge Policy
+
+  Remote: `upstream` → https://github.com/Roxabi/roxabi_boilerplate.git
+
+  ## How to pull boilerplate updates
+
+  1. `git fetch upstream`
+  2. `git merge upstream/main` (or `git cherry-pick <sha>` for selective)
+  3. Resolve conflicts — highest-risk files:
+     - `apps/web/src/routes/`
+     - `apps/api/src/`
+     - `package.json`
+     - `biome.json`
+  4. `bun install` — always regenerate bun.lock after merge
+  5. `git add bun.lock && git commit`
+
+  ## Deferred strip list (create issues before next upstream merge)
+  - i18n/Paraglide
+  - Email / magic-link auth
+  - Consent banner / GDPR
+  - Organization management
+  - Admin panel
+  ```
+- **Verify command:** `cat .claude/upstream-merge.md | head -5`
+- **Expected output:** "# Upstream Merge Policy"
+- **Time estimate:** 3 min
+- **Spec trace:** analysis shape A, bun.lock policy
+- **Slice:** V2
+- **Phase:** GREEN
+- **Difficulty:** 1
+
+---
+
+### V3 — Configure GitHub OAuth
+
+**[RED-GATE V3]** GitHub OAuth sign-in must redirect to `/dashboard` with a session before proceeding.
+
+---
+
+**Task 3.1** `[devops]` `[P: N]` ⚠️ Manual step
+- **Description:** Create a GitHub OAuth App for local development at `https://github.com/organizations/Roxabi/settings/applications` (or personal account settings). Set callback URL to `http://localhost:3000/api/auth/callback/github`.
+- **File path:** (external — GitHub settings)
+- **Code snippet:**
+  ```
+  Application name: Roxabi Dashboard (local)
+  Homepage URL:     http://localhost:3000
+  Callback URL:     http://localhost:3000/api/auth/callback/github
+  ```
+- **Verify command:** (manual — copy Client ID and Client Secret)
+- **Expected output:** GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET values ready
+- **Time estimate:** 5 min
+- **Spec trace:** S1, S2
+- **Slice:** V3
+- **Phase:** RED
+- **Difficulty:** 1
+
+---
+
+**Task 3.2** `[devops]` `[P: N]`
+- **Description:** Create `.env` from `.env.example`, filling in all S1–S9 values for local development
+- **File path:** `.env`
+- **Code snippet:**
+  ```bash
+  # Copy from .env.example then fill in:
+  GITHUB_CLIENT_ID=<from task 3.1>
+  GITHUB_CLIENT_SECRET=<from task 3.1>
+  DATABASE_URL=postgresql://roxabi:roxabi@localhost:5432/roxabi
+  DATABASE_APP_URL=postgresql://roxabi_app:roxabi_app@localhost:5432/roxabi
+  BETTER_AUTH_SECRET=$(openssl rand -hex 16)
+  BETTER_AUTH_URL=http://localhost:3000
+  APP_URL=http://localhost:3000
+  API_URL=http://localhost:4000
+  CORS_ORIGIN=http://localhost:3000
+  ```
+- **Verify command:** `grep BETTER_AUTH_URL .env`
+- **Expected output:** `BETTER_AUTH_URL=http://localhost:3000`
+- **Time estimate:** 3 min
+- **Spec trace:** S1–S9 (SC-17)
+- **Slice:** V3
+- **Phase:** RED
+- **Difficulty:** 2
+
+---
+
+**Task 3.3** `[devops]` `[P: N]`
+- **Description:** Update `.env.example` to include all S1–S9 variables with empty placeholder values, preserving existing dev-core vars
+- **File path:** `.env.example`
+- **Code snippet:**
+  ```bash
+  # --- GitHub OAuth ---
+  GITHUB_CLIENT_ID=
+  GITHUB_CLIENT_SECRET=
+
+  # --- Database ---
+  DATABASE_URL=postgresql://roxabi:roxabi@localhost:5432/roxabi
+  DATABASE_APP_URL=postgresql://roxabi_app:roxabi_app@localhost:5432/roxabi
+
+  # --- Better Auth ---
+  BETTER_AUTH_SECRET=           # openssl rand -hex 16
+  BETTER_AUTH_URL=http://localhost:3000   # Must point to web app (Nitro proxies /api/**)
+  APP_URL=http://localhost:3000
+  API_URL=http://localhost:4000
+  CORS_ORIGIN=http://localhost:3000
+
+  # --- dev-core (unchanged) ---
+  GITHUB_REPO=Roxabi/roxabi-dashboard
+  GH_PROJECT_ID=...
+  # (rest of dev-core vars)
+  ```
+- **Verify command:** `grep -c '=' .env.example`
+- **Expected output:** ≥ 18 (S1–S9 + dev-core vars)
+- **Time estimate:** 3 min
+- **Spec trace:** SC-17
+- **Slice:** V3
+- **Phase:** GREEN
+- **Difficulty:** 2
+
+---
+
+**Task 3.4** `[devops]` `[P: N]`
+- **Description:** Start PostgreSQL via `docker compose up -d` and run database migrations
+- **File path:** (shell operation)
+- **Code snippet:**
+  ```bash
+  docker compose up -d
+  bun run db:migrate
+  ```
+- **Verify command:** `bun run db:migrate 2>&1 | tail -3`
+- **Expected output:** migrations completed without error
+- **Time estimate:** 5 min
+- **Spec trace:** SC-8 (User row created after login requires DB)
+- **Slice:** V3
+- **Phase:** GREEN
+- **Difficulty:** 2
+
+---
+
+**Task 3.5** `[backend-dev]` `[P: Y]` (parallel with 3.4)
+- **Description:** Verify that `auth.instance.ts` correctly reads `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` from environment — confirm `buildSocialProviders()` is wired. No code change expected if boilerplate is copied as-is.
+- **File path:** `apps/api/src/auth/auth.instance.ts`
+- **Code snippet:**
+  ```typescript
+  // Verify this block exists and reads env vars:
+  if (config.githubClientId && config.githubClientSecret) {
+    socialProviders.github = {
+      clientId: config.githubClientId,
+      clientSecret: config.githubClientSecret,
+    }
+  }
+  ```
+- **Verify command:** `grep -n 'githubClientId\|githubClientSecret' apps/api/src/auth/auth.instance.ts`
+- **Expected output:** lines showing github client config
+- **Time estimate:** 3 min
+- **Spec trace:** N1 (OAuth callback)
+- **Slice:** V3
+- **Phase:** GREEN
+- **Difficulty:** 1
+
+---
+
+**Task 3.6** `[tester]` `[P: N]`
+- **Description:** Manually verify the GitHub OAuth flow end-to-end: visit `/`, click "Sign in with GitHub", complete OAuth, verify redirect to `/dashboard` and `User` row in DB
+- **File path:** (manual test)
+- **Code snippet:**
+  ```bash
+  # Start dev server
+  bun run dev
+  # Then in browser: http://localhost:3000
+  # Click "Sign in with GitHub"
+  # Complete GitHub OAuth
+  # Verify redirect to /dashboard
+
+  # Verify User row:
+  docker exec -it $(docker ps -qf name=postgres) psql -U roxabi -d roxabi \
+    -c "SELECT id, name, email FROM users LIMIT 5;"
+  ```
+- **Verify command:** `curl -s http://localhost:4000/api/auth/session -H "Cookie: ..." | jq .user.email`
+- **Expected output:** authenticated user email
+- **Time estimate:** 5 min
+- **Spec trace:** SC-5, SC-6, SC-7, SC-8, SC-9
+- **Slice:** V3
+- **Phase:** GREEN
+- **Difficulty:** 2
+
+---
+
+### V4 — Placeholder dashboard route
+
+**[RED-GATE V4]** Dashboard must render with no `/api` calls on page load.
+
+---
+
+**Task 4.1** `[frontend-dev]` `[P: Y]` (parallel from V1)
+- **Description:** Replace boilerplate dashboard content with a Roxabi-specific placeholder skeleton — header with app name + user avatar, 3 placeholder cards (Issues, PRs, Deployments). Keep `requireAuth` guard and `beforeLoad` intact.
+- **File path:** `apps/web/src/routes/dashboard.tsx`
+- **Code snippet:**
+  ```tsx
+  import { Card, CardContent, CardHeader, CardTitle } from '@repo/ui'
+  import { createFileRoute } from '@tanstack/react-router'
+  import { GitPullRequestIcon, Layers3Icon, RocketIcon } from 'lucide-react'
+  import { useSession } from '@/lib/authClient'
+  import { requireAuth } from '@/lib/routeGuards'
+
+  export const Route = createFileRoute('/dashboard')({
+    beforeLoad: requireAuth,
+    component: DashboardPage,
+    head: () => ({ meta: [{ title: 'Dashboard | Roxabi' }] }),
+  })
+
+  const PLACEHOLDER_CARDS = [
+    { icon: Layers3Icon,        title: 'Issues',        desc: 'Cross-project issue board coming soon.' },
+    { icon: GitPullRequestIcon, title: 'Pull Requests',  desc: 'Open PR status coming soon.' },
+    { icon: RocketIcon,         title: 'Deployments',   desc: 'Vercel deployment status coming soon.' },
+  ]
+
+  function DashboardPage() {
+    const { data: session } = useSession()
+    const user = session?.user
+
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="border-b px-6 py-4 flex items-center justify-between">
+          <h1 className="text-xl font-semibold">Roxabi Dashboard</h1>
+          {user && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              {user.image && <img src={user.image} alt="" className="h-7 w-7 rounded-full" />}
+              <span>{user.name}</span>
+            </div>
+          )}
+        </header>
+        <main className="p-6 grid gap-4 sm:grid-cols-3">
+          {PLACEHOLDER_CARDS.map(({ icon: Icon, title, desc }) => (
+            <Card key={title}>
+              <CardHeader className="flex flex-row items-center gap-2 pb-2">
+                <Icon className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-sm font-medium">{title}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">{desc}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </main>
+      </div>
+    )
+  }
+  ```
+- **Verify command:** `grep -n 'fetch\|axios\|useQuery\|api/' apps/web/src/routes/dashboard.tsx`
+- **Expected output:** no matches (no API calls)
+- **Time estimate:** 8 min
+- **Spec trace:** U3, U4, U5, SC-10, SC-11, SC-12
+- **Slice:** V4
+- **Phase:** RED→GREEN
+- **Difficulty:** 3
+
+---
+
+**Task 4.2** `[frontend-dev]` `[P: N]`
+- **Description:** Add a sign-out button to the dashboard header using the boilerplate's `signOut` from `authClient`
+- **File path:** `apps/web/src/routes/dashboard.tsx`
+- **Code snippet:**
+  ```tsx
+  import { signOut } from '@/lib/authClient'
+  import { useNavigate } from '@tanstack/react-router'
+
+  // In header, after user display:
+  <button
+    onClick={() => signOut().then(() => navigate({ to: '/login' }))}
+    className="text-xs text-muted-foreground hover:text-foreground"
+  >
+    Sign out
+  </button>
+  ```
+- **Verify command:** `grep -n 'signOut' apps/web/src/routes/dashboard.tsx`
+- **Expected output:** signOut imported and called
+- **Time estimate:** 3 min
+- **Spec trace:** N3, SC-13
+- **Slice:** V4
+- **Phase:** GREEN
+- **Difficulty:** 2
+
+---
+
+**Task 4.3** `[tester]` `[P: N]`
+- **Description:** Verify dashboard renders placeholder cards and no API calls are made on page load (use browser devtools Network tab or `bun run test:e2e` if Playwright is configured)
+- **File path:** (manual verification)
+- **Code snippet:**
+  ```bash
+  # Open browser devtools → Network tab → filter by XHR/Fetch
+  # Navigate to http://localhost:3000/dashboard
+  # Verify: no requests to /api (except /api/auth/session from root loader)
+  # Verify: 3 placeholder cards visible
+  ```
+- **Verify command:** `grep -rn 'dashboard' apps/web/src/routes/dashboard.tsx | grep -c 'Card'`
+- **Expected output:** ≥ 3
+- **Time estimate:** 3 min
+- **Spec trace:** SC-11, SC-12
+- **Slice:** V4
+- **Phase:** GREEN
+- **Difficulty:** 1
+
+---
+
+### V5 — CI green
+
+**[RED-GATE V5]** All three quality gates must pass: lint, typecheck, build.
+
+---
+
+**Task 5.1** `[devops]` `[P: N]`
+- **Description:** Run `bun run lint` and fix any Biome errors introduced by the dashboard.tsx modifications or package.json merge
+- **File path:** (multi-file — fix whatever lint reports)
+- **Code snippet:**
+  ```bash
+  bun run lint
+  bun run lint:fix   # auto-fix safe issues
+  ```
+- **Verify command:** `bun run lint 2>&1 | tail -5`
+- **Expected output:** exit 0, no errors
+- **Time estimate:** 5 min
+- **Spec trace:** SC-14
+- **Slice:** V5
+- **Phase:** REFACTOR
+- **Difficulty:** 2
+
+---
+
+**Task 5.2** `[devops]` `[P: N]`
+- **Description:** Run `bun run typecheck` and fix any TypeScript errors
+- **File path:** (multi-file — fix whatever tsc reports)
+- **Code snippet:**
+  ```bash
+  bun run typecheck
+  ```
+- **Verify command:** `bun run typecheck 2>&1 | tail -5`
+- **Expected output:** exit 0, no errors
+- **Time estimate:** 5 min
+- **Spec trace:** SC-15
+- **Slice:** V5
+- **Phase:** REFACTOR
+- **Difficulty:** 2
+
+---
+
+**Task 5.3** `[devops]` `[P: N]`
+- **Description:** Run `bun run build` and fix any build errors
+- **File path:** (multi-file — fix whatever build reports)
+- **Code snippet:**
+  ```bash
+  bun run build
+  ```
+- **Verify command:** `bun run build 2>&1 | tail -5`
+- **Expected output:** exit 0, all packages built
+- **Time estimate:** 5 min
+- **Spec trace:** SC-16
+- **Slice:** V5
+- **Phase:** REFACTOR
+- **Difficulty:** 2
+
+---
+
+**Task 5.4** `[tester]` `[P: N]`
+- **Description:** Final pass — verify all 17 success criteria from the spec are met
+- **File path:** `artifacts/specs/1-extract-dashboard-standalone-spec.mdx`
+- **Code snippet:**
+  ```bash
+  # Run through each criterion:
+  bun install                            # SC-1
+  bun run dev                            # SC-2 (both apps start)
+  git remote get-url upstream            # SC-3
+  git fetch upstream                     # SC-4
+  curl http://localhost:3000             # SC-5 (login page)
+  # SC-6, SC-7, SC-8, SC-9 — manual OAuth flow
+  # SC-10 — unauthenticated redirect
+  # SC-11, SC-12, SC-13 — dashboard UI
+  bun run lint                           # SC-14
+  bun run typecheck                      # SC-15
+  bun run build                          # SC-16
+  grep -c '=' .env.example              # SC-17
+  ```
+- **Verify command:** (see above)
+- **Expected output:** all criteria pass
+- **Time estimate:** 8 min
+- **Spec trace:** SC-1 through SC-17
+- **Slice:** V5
+- **Phase:** GREEN
+- **Difficulty:** 2
