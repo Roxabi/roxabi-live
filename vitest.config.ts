@@ -64,6 +64,8 @@ export default defineConfig({
         '**/server.ts',
         // Generated i18n runtime (paraglide)
         '**/paraglide/**',
+        // apps/docs is a Next.js/Fumadocs app with no unit tests
+        'apps/docs/**',
       ],
       // See artifacts/specs/17-testing-gold-standard.mdx for rationale.
       thresholds: {
