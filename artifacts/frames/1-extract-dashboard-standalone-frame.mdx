@@ -1,0 +1,45 @@
+---
+title: Extract dashboard from roxabi-plugins into standalone app
+issue: 1
+status: approved
+tier: F-full
+date: 2026-03-09
+---
+
+## Problem
+
+The Roxabi dashboard currently lives inside `roxabi-plugins` as a bundled skill. It is tied to the plugin lifecycle, not independently versioned, and has accumulated enough structural issues that a clean rewrite is preferable to an extraction. The goal is to establish this repo (`roxabi-dashboard`) as the canonical, standalone home for the dashboard — built from `roxabi_boilerplate` (TanStack Start + NestJS + Fastify + PostgreSQL + Better Auth + Tailwind v4).
+
+The existing dashboard is a TypeScript/Bun terminal app invoked via the `roxabi` shim at `~/.local/bin/roxabi`. It is not a web app, has no multi-user support, and requires per-machine PAT configuration. The new dashboard will be a hosted web app — accessible from any device, authenticated via GitHub OAuth, with persistent workspace config in PostgreSQL.
+
+## Who
+
+- **Primary:** Roxabi team members who need a live view of cross-project issue status, roadmap items, and Vercel deployments without switching between GitHub, Vercel, and terminal windows.
+- **Secondary:** The `roxabi` shim — will eventually be updated to point users to the new web URL rather than launching a local process.
+
+## Constraints
+
+- **Foundation:** Fork `../roxabi_boilerplate` (TanStack Start + NestJS + Fastify + PostgreSQL + Better Auth + Tailwind v4) as the monorepo base. No custom stack decisions at this stage.
+- **Clean break:** The existing terminal dashboard code from `roxabi-plugins` is NOT ported. This is a full rewrite.
+- **workspace.json compatibility:** The new app reads the same `~/.roxabi-vault/workspace.json` schema for cross-project aggregation (or its equivalent API endpoint), preserving multi-project support.
+- **Internal only (v1):** Not a public SaaS. GitHub OAuth scoped to Roxabi org members.
+- **No CI/deploy infra in this issue:** Vercel deployment and branch protection are out of scope here — this issue covers scaffolding the app, not shipping it to production.
+
+## Out of Scope
+
+- Porting any existing terminal dashboard UI or logic from `roxabi-plugins`
+- New dashboard features beyond what `roxabi_boilerplate` provides out of the box
+- Vercel deployment configuration
+- Multi-user role management (auth exists, roles deferred)
+- The GitHub OAuth implementation details (Better Auth handles this)
+- Issue creation, PR management — read-only views only (v1)
+
+## Complexity
+
+**Tier: F-full** — Multi-domain setup (frontend scaffold, backend scaffold, database, auth integration, monorepo config), new architecture, no existing codebase to build on top of.
+
+Signals observed:
+- Forking a boilerplate touches all layers: apps/web, apps/api, packages/ui, packages/types, CI
+- Auth integration (Better Auth + GitHub OAuth) is a new pattern for this repo
+- Full monorepo setup (Bun + TurboRepo) requires coordinated configuration
+- Multiple unknowns: exact boilerplate state, what needs to be customized vs kept as-is

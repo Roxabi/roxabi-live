@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "lint": "echo 'No app code yet — skipping lint'",
+    "typecheck": "echo 'No app code yet — skipping typecheck'"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "lefthook": "^2.1.3"
+  }
+}
