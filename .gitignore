@@ -59,6 +59,7 @@ reports/
 
 # Claude Code hooks state
 .claude/security_warnings/
+.claude/settings.json
 
 # dev-core stack config (project-local, not committed — commit .claude/stack.yml.example)
 .claude/stack.yml
