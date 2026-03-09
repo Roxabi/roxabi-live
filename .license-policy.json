@@ -21,6 +21,8 @@
     "@dicebear/bottts@9.3.1": "MIT",
     "@dicebear/bottts@9.3.2": "MIT",
     "@dicebear/avataaars@9.3.1": "MIT",
-    "@dicebear/avataaars@9.3.2": "MIT"
+    "@dicebear/avataaars@9.3.2": "MIT",
+    "@dicebear/bottts@9.4.0": "MIT",
+    "@dicebear/avataaars@9.4.0": "MIT"
   }
 }
