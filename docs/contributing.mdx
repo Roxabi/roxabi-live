@@ -1,11 +1,332 @@
-# Contributing
+---
+title: Contributing
+description: Workflow conventions, branching strategy, and contribution guidelines
+---
 
-How to contribute to this project.
+## Branching Strategy
 
-## Getting Started
+We use a **staging-based flow** — feature branches merge into `staging` for integration, then `staging` is promoted to `main` for production deployment.
 
-TODO: Document setup steps.
+### Branches
 
-## Development Workflow
+| Branch | Purpose | Auto-deploys? |
+|--------|---------|---------------|
+| `main` | Production — always deployable | Yes (Vercel) |
+| `staging` | Integration — default PR target | No (use Deploy Preview action) |
 
-TODO: Document branch strategy, PR process, commit conventions.
+- All feature/fix PRs target `staging`
+- Only `hotfix/*` branches may target `main` directly
+- Protected with required reviews and status checks
+
+### Branch Naming
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| Feature | `feat/<issue-id>-<slug>` | `feat/42-user-auth` |
+| Bug fix | `fix/<issue-id>-<slug>` | `fix/15-login-timeout` |
+| Hotfix | `hotfix/<issue-id>-<slug>` | `hotfix/99-security-patch` |
+| Docs | `docs/<slug>` | `docs/api-reference` |
+
+### Workflow
+
+**Normal flow:**
+
+```
+1. Pick a GitHub Issue
+2. Create feature branch from staging
+3. Implement changes (with tests)
+4. Open Pull Request targeting staging
+5. Pass all quality gates
+6. Get review approval
+7. Merge to staging
+8. (Optional) Trigger Deploy Preview from Actions tab
+9. When ready, promote staging → main for production deploy
+```
+
+**Hotfix flow:**
+
+```
+1. Create hotfix/* branch from main
+2. Implement minimal fix
+3. Open Pull Request targeting main
+4. Pass all quality gates + review
+5. Merge to main → auto-deploys to production
+6. Cherry-pick or merge fix back into staging
+```
+
+---
+
+## Commit Conventions
+
+We follow [Conventional Commits](https://www.conventionalcommits.org/) for clear, automated changelogs.
+
+### Format
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+### Types
+
+| Type | Description | Version Bump |
+|------|-------------|--------------|
+| `feat` | New feature | MINOR |
+| `fix` | Bug fix | PATCH |
+| `docs` | Documentation only | None |
+| `style` | Formatting, no code change | None |
+| `refactor` | Code change, no new feature or fix | None |
+| `test` | Adding or updating tests | None |
+| `chore` | Maintenance tasks | None |
+| `ci` | CI/CD changes | None |
+| `perf` | Performance improvement | PATCH |
+| `build` | Changes to build system or external dependencies | None |
+| `revert` | Reverts a previous commit | None |
+
+### Scope
+
+Use the package name for monorepo changes:
+
+- `feat(web):` - Frontend changes
+- `fix(api):` - Backend changes
+- `docs(ui):` - UI package documentation
+- `chore(config):` - Config package maintenance
+
+### Breaking Changes
+
+Add `!` after the type or include `BREAKING CHANGE:` in the footer:
+
+```
+feat(api)!: redesign authentication endpoints
+
+BREAKING CHANGE: /auth/login now requires email instead of username
+```
+
+### Examples
+
+```
+feat(web): add user authentication flow
+fix(api): resolve database connection timeout
+docs: update README with installation steps
+test(ui): add Button component tests
+chore: update dependencies
+ci: add coverage reporting to pipeline
+```
+
+---
+
+## Pull Requests
+
+### Before Opening a PR
+
+- [ ] Branch is up-to-date with `staging` (or `main` for hotfixes)
+- [ ] All tests pass locally (`bun run test`)
+- [ ] Linting passes (`bun lint`)
+- [ ] Types check (`bun typecheck`)
+- [ ] Commit messages follow conventions
+
+### PR Title
+
+Use Conventional Commits format for the PR title (used for squash merge):
+
+```
+feat(web): add user dashboard
+fix(api): resolve timeout on large queries
+```
+
+### PR Description
+
+Include:
+- Summary of changes
+- Link to related issue
+- Testing performed
+- Screenshots (for UI changes)
+
+---
+
+## Quality Gates
+
+All PRs must pass before merge:
+
+| Gate | Command | Description |
+|------|---------|-------------|
+| Lint | `bun lint` | Biome linting |
+| Types | `bun typecheck` | TypeScript strict mode |
+| Tests | `bun run test` | All tests pass |
+| Coverage | - | Minimum threshold met |
+| Review | - | At least 1 approval |
+
+### After Merge
+
+**Merge to `staging`:**
+- CI runs on the push to staging
+- No automatic deployment — use the **Deploy Preview** GitHub Action to create on-demand preview URLs
+
+**Merge to `main`:**
+- Vercel auto-deploys both web and API to production
+- If something breaks, roll back via the Vercel dashboard (Deployments &gt; Promote previous). See the [Deployment Guide](./guides/deployment) for details.
+
+---
+
+## Branch Protection
+
+**`main` branch:**
+
+- Required pull request reviews (1 minimum)
+- Required status checks (CI must pass)
+- Dismiss stale approvals on new commits
+- Require conversation resolution
+- No direct pushes
+- Only `hotfix/*` and `staging` merges allowed
+
+**`staging` branch:**
+
+- Required status checks (CI must pass)
+- No direct pushes
+
+---
+
+## Labels
+
+### Priority
+
+| Label | Description |
+|-------|-------------|
+| `P0` | Urgent — blocking or critical, do immediately |
+| `P1` | High — important for current milestone |
+| `P2` | Medium — should be done soon |
+| `P3` | Low — nice to have, backlog |
+
+### Size
+
+| Label | Description |
+|-------|-------------|
+| `XS` | Trivial change (&lt;1 hour) |
+| `S` | Small task, &lt;4 hours |
+| `M` | Medium change (1-2 days) |
+| `L` | Large change (3-5 days) |
+| `XL` | Epic (needs breakdown) |
+
+### Type
+
+| Label | Description |
+|-------|-------------|
+| `feature` | New functionality |
+| `bug` | Something broken |
+| `docs` | Documentation |
+| `dx` | Developer experience |
+| `ai` | AI/Agent related |
+| `workflow` | Process improvement |
+| `setup` | Infrastructure setup |
+
+---
+
+## Issue Templates
+
+When creating issues, use the provided templates:
+
+- **Bug Report**: For reporting bugs with reproduction steps
+- **Feature Request**: For proposing new features
+
+---
+
+## Documentation (MDX)
+
+Documentation uses Fumadocs with MDX format. All docs live in the `docs/` folder.
+
+### Creating Documentation Files
+
+Files must be `.mdx` with frontmatter:
+
+```mdx
+---
+title: Page Title
+description: Brief description for SEO and previews
+---
+
+Content here...
+```
+
+### Folder Structure
+
+```
+docs/
+├── index.mdx           # Home page
+├── getting-started.mdx # Main docs
+├── meta.json           # Navigation order
+├── architecture/       # Architecture documentation
+│   ├── meta.json
+│   ├── index.mdx
+│   └── *.mdx
+├── processes/          # Development processes
+│   ├── meta.json
+│   ├── index.mdx
+│   └── *.mdx
+└── standards/          # Coding standards & best practices
+    ├── meta.json
+    └── *.mdx
+```
+
+### Adding New Pages
+
+1. Create `.mdx` file with frontmatter
+2. Add filename (without extension) to `meta.json` in the `pages` array
+3. Add an entry to the section's `index.mdx` page (with link and one-line description)
+4. Run `bun docs` to preview
+
+> **Glossary review:** When updating architecture documentation (`docs/architecture/`), review the [ubiquitous language glossary](./architecture/ubiquitous-language) for any terms that need adding or updating.
+
+### Removing or Deprecating Pages
+
+1. Add a `> **Deprecated**` callout at the top of the file
+2. Remove the filename from `meta.json` (hides from sidebar)
+3. Remove the entry from the section's `index.mdx`
+4. Keep the file on disk for historical reference
+
+### Special Characters in MDX
+
+Escape `<` as `&lt;` in **prose text** to avoid JSX parsing errors (e.g., `&lt;50KB` instead of `<50KB`). Inside fenced code blocks (` ``` `), always use raw `<` — escaping is not needed and renders as literal `&lt;` text.
+
+### Heading Hierarchy
+
+Do **not** use `# Title` as the first content line. Fumadocs renders the frontmatter `title` as the page H1 automatically. Adding `# Title` creates a duplicate H1 (bad for accessibility and SEO). Start your content with `##` headings or prose text.
+
+### Internal Links
+
+Use **relative paths** for all internal documentation links:
+- Same directory: `./getting-started`
+- Parent directory: `../guides/authentication`
+- Never use absolute paths like `/docs/guides/authentication`
+
+---
+
+## Developer Tools
+
+### Re-recording the Demo GIF
+
+The README demo GIF is generated from a Playwright recording script. To re-record:
+
+**Prerequisites:**
+- `bun dev` running at `http://localhost:3000` (or `APP_URL`)
+- Database seeded with representative data (multiple orgs, different roles)
+- `ffmpeg` installed (`brew install ffmpeg` / `apt install ffmpeg`)
+- Playwright installed (`bun add -D @playwright/test && bunx playwright install chromium`)
+
+**Steps:**
+
+```bash
+bun run scripts/recordDemo.ts
+```
+
+The script records a `.webm` video, converts it to GIF via `ffmpeg`, and saves to `docs/assets/demo.gif`. Keep the recording under 5MB -- if too large, reduce the flow to fewer steps or lower the resolution.
+
+---
+
+## Getting Help
+
+- Check existing issues before creating new ones
+- Use discussions for questions
+- Tag maintainers for urgent issues

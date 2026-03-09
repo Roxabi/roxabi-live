@@ -1,13 +1,36 @@
-pre-commit:
+commit-msg:
   commands:
-    lint:
-      run: bun run lint
-    typecheck:
-      run: bun run typecheck
-    trufflehog:
-      run: trufflehog git file://. --only-verified --fail
+    commitlint:
+      run: bunx commitlint --edit {1}
+
+pre-commit:
+  parallel: true
+  output:
+    - meta
+    - summary
+    - failure
+  commands:
+    biome:
+      glob: "*.{js,ts,jsx,tsx,json,jsonc}"
+      run: bash .lefthook/run-quiet.sh 'bunx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}'
+      stage_fixed: true
 
 pre-push:
+  parallel: true
+  output:
+    - meta
+    - summary
+    - failure
   commands:
+    lint:
+      run: bash .lefthook/run-quiet.sh 'CI=true bun run lint'
+    typecheck:
+      run: bash .lefthook/run-quiet.sh 'CI=true bun run typecheck'
+    test:
+      run: bash .lefthook/run-quiet.sh 'CI=true bun run test:coverage'
+    i18n:
+      run: bash .lefthook/run-quiet.sh 'bun run i18n:check'
     license:
-      run: test -f tools/licenseChecker.ts && bun tools/licenseChecker.ts || echo 'No app code yet — skipping license check'
+      run: bash .lefthook/run-quiet.sh 'bun run license:check'
+    docs:
+      run: bash .lefthook/run-quiet.sh 'bun run docs:check'

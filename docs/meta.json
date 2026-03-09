@@ -1,0 +1,18 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "getting-started",
+    "product",
+    "configuration",
+    "hooks",
+    "contributing",
+    "---",
+    "architecture",
+    "standards",
+    "processes",
+    "guides",
+    "---",
+    "changelog"
+  ]
+}

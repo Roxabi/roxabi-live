@@ -1,21 +1,788 @@
-# Testing Standards
+---
+title: Testing
+description: Testing philosophy, TDD workflow, per-layer patterns, and coverage guidelines
+---
 
-Testing conventions and requirements for this project.
+## Testing Philosophy — The Testing Trophy
 
-## Test Structure
+Adopt the Testing Trophy model instead of the traditional test pyramid. Integration tests form the largest layer because they catch the most bugs per line of test code.
 
-TODO: Document test file organization and naming.
+```
+        /  E2E  \         ← Small: critical user flows only
+       / Integr. \        ← LARGEST: real modules working together
+      /   Unit    \       ← Focused: pure functions, utilities
+     / Static Anal.\      ← Foundation: TypeScript strict + Biome
+```
 
-## Coverage Requirements
+**Static Analysis (foundation):** TypeScript strict mode and Biome catch type errors, formatting issues, and code smells at zero runtime cost. Every file passes through this layer automatically.
 
-TODO: Document minimum coverage thresholds.
+**Unit Tests:** Test pure functions, utilities, and type guards in isolation. Keep these fast and deterministic with no external dependencies.
 
-## Test Patterns
+**Integration Tests (largest layer):** Use NestJS `Test.createTestingModule()` for backend tests that wire multiple providers together. Use Testing Library with real hooks and context for frontend components. This layer delivers the highest confidence-to-effort ratio.
 
-TODO: Document common test patterns (fixtures, mocks, etc.).
+**E2E Tests:** Reserve Playwright for critical user journeys — signup, login, core workflows. These are slow and brittle, so keep the count small and the scope broad.
 
-## AI Quick Reference
+## Testing Layer Guidance
 
-<!-- Compressed imperative rules for dev-core agents. Keep under 10 lines. -->
+Use this table to decide which layer to write a test at. Write at the lowest layer that gives you sufficient confidence.
 
-TODO: Add concise, imperative rules that agents can quickly consume (e.g., "NEVER import X from Y", "ALWAYS use Z pattern for error handling").
+| Scenario | Layer | Tool |
+|---|---|---|
+| Pure function, validator, type guard | Unit | Vitest |
+| Service with mocked dependencies | Unit | Vitest + `vi.fn()` |
+| Multiple NestJS providers wired together | Integration | Vitest + `Test.createTestingModule()` |
+| React component with real hooks and context | Integration | Vitest + Testing Library |
+| `queryOptions()` factory + component consuming it | Integration | Vitest + Testing Library + `QueryClientProvider` |
+| Auth flow, onboarding, checkout end-to-end | E2E | Playwright |
+
+**Unit — isolated logic:** Write unit tests for services, utilities, validators, and pure functions. Instantiate the class directly and pass `vi.fn()` stubs through the constructor. No module-level mocking, no NestJS DI.
+
+**Integration — module wiring:** Write integration tests when multiple things must cooperate. On the backend, use `Test.createTestingModule()` so the real dependency injection graph is exercised. On the frontend, render real components inside the providers they need (`QueryClientProvider`, `RouterProvider`, session context) and assert against visible output.
+
+**E2E — critical user flows:** Reserve Playwright for journeys that span the entire stack — signup, login, role-based access, checkout. Keep the count small. A broken E2E suite blocks everyone; a narrow E2E suite catches real regressions.
+
+This section complements the Testing Trophy above. The Trophy describes *how much* of each layer to write; this table describes *when* to write each one.
+
+## Red-Green-Refactor Cycle
+
+Follow this cycle for every unit of work:
+
+1. **Red:** Write a failing test that describes the expected behavior. Run it. Confirm it fails for the right reason.
+2. **Green:** Write the minimum code to make the test pass. No more.
+3. **Refactor:** Clean up the implementation and the test while the suite stays green. This step is not optional — take it every time.
+
+### Walkthrough: `UserService.findById`
+
+```typescript
+// 1. RED — Write the test first
+import { describe, it, expect } from 'vitest'
+
+describe('UserService', () => {
+  it('should return user when found by id', async () => {
+    // Arrange
+    const service = new UserService(mockUserRepository)
+    await mockUserRepository.insert({ id: '1', name: 'Ada' })
+
+    // Act
+    const user = await service.findById('1')
+
+    // Assert
+    expect(user).toEqual({ id: '1', name: 'Ada' })
+  })
+
+  it('should throw NotFoundException when user does not exist', async () => {
+    const service = new UserService(mockUserRepository)
+
+    await expect(service.findById('nonexistent'))
+      .rejects.toThrow('User not found')
+  })
+})
+
+// 2. GREEN — Minimum implementation
+// 3. REFACTOR — Extract shared setup, improve naming
+```
+
+**Note:** "Test-after" is acceptable during prototyping and exploration. Tests must exist before the PR merges.
+
+## Test Structure (AAA Pattern)
+
+Use the Arrange-Act-Assert pattern with explicit section comments. This example comes from `apps/api/src/common/filters/allExceptions.filter.test.ts`:
+
+```typescript
+import { describe, it, expect } from 'vitest'
+
+it('should handle HttpException with string response', () => {
+  // Arrange
+  const { host, statusFn, getSentBody } = createMockHost()
+  const exception = new HttpException('Not found', HttpStatus.NOT_FOUND)
+
+  // Act
+  filter.catch(exception, host as never)
+
+  // Assert
+  expect(statusFn).toHaveBeenCalledWith(404)
+  expect(getSentBody().message).toBe('Not found')
+})
+```
+
+**Rules:**
+- Test one behavior per test case (unit). Coherent multi-step scenarios are acceptable for integration and E2E tests.
+- Use descriptive names: `should X when Y`.
+- Extract shared setup into factory/helper functions. Reserve `beforeEach` for teardown and mock resets only.
+- Do not test private methods directly. If a private method is complex enough to need its own tests, extract it into a separate module.
+
+## Test Organization
+
+**Naming:** Use `.test.ts` for unit and integration tests. Use `.spec.ts` for E2E tests (Playwright).
+
+**Location:** Colocate test files next to source files. Place shared test helpers and fixtures in a `__tests__/` directory.
+
+**Configuration:** Each package has its own Vitest config extending `@repo/vitest-config`:
+
+```typescript
+// apps/api/vitest.config.ts
+import { defineConfig } from 'vitest/config'
+import { nodeConfig } from '@repo/vitest-config/node'
+
+export default defineConfig({
+  test: {
+    ...nodeConfig,
+    name: 'api',
+    root: import.meta.dirname,
+    setupFiles: ['./src/test/setup.ts'],
+  },
+})
+```
+
+**Environments:** Use `node` for backend packages (`apps/api`). Use `jsdom` for frontend packages (`apps/web`, `packages/ui`).
+
+**Imports:** Import test utilities explicitly from `vitest`. Do not rely on `globals: true`:
+
+```typescript
+import { describe, it, expect, vi } from 'vitest'
+```
+
+**ESM import extensions:** When the project uses Node ESM (e.g., `"type": "module"` in `package.json` or `moduleResolution: "bundler"` with `verbatimModuleSyntax`), all relative imports in test files must include the `.js` extension:
+
+```typescript
+// Correct — ESM-compatible
+import { UserService } from './userService.js'
+import { createMockDb } from './__mocks__/db.js'
+
+// Wrong — omitting the extension breaks Node ESM resolution
+import { UserService } from './userService'
+```
+
+This applies to both source and test imports. The project's Vitest config resolves `.js` to `.ts` at test time, so the extension is always `.js` even when the source file is `.ts`.
+
+## Coverage Guidelines
+
+**Threshold:** 80% minimum coverage floor (76% for branches). Thresholds auto-ratchet upward via `autoUpdate: true` in the root `vitest.config.ts` — current minimums are higher than the initial floor.
+
+**Provider:** Use V8 with `text`, `json`, and `html` reporters.
+
+**Per-directory targets:**
+- Business logic (services, domain): 90%+
+- Glue code (controllers, modules): 80%
+- Config files, generated code, and type declarations: exclude from coverage
+
+## Backend Testing Patterns
+
+### Filter / Interceptor / Middleware Testing
+
+From `apps/api/src/common/filters/allExceptions.filter.test.ts`:
+
+- Instantiate the class directly — do not use NestJS test modules for unit tests.
+- Build factory helpers like `createMockHost()` and `createMockContext()` to construct mock objects.
+- Test the happy path and every error path.
+- Verify the response structure matches the API contract (status code, message, correlationId, path, timestamp).
+
+### Provider / Factory Testing
+
+From `apps/api/src/database/drizzle.provider.test.ts`:
+
+- Mock `ConfigService` with a `createMockConfig()` helper:
+
+```typescript
+function createMockConfig(values: Record<string, string | undefined>) {
+  return {
+    get: vi.fn((key: string, defaultValue?: string) => values[key] ?? defaultValue),
+  }
+}
+```
+
+- Call `useFactory` functions directly with the mock config.
+- Verify null handling for optional dependencies and error throwing in production mode.
+
+### Controller Testing (Unit)
+
+Controllers are unit-tested by instantiating them directly — no NestJS DI, no `Test.createTestingModule()`.
+
+**Pattern:**
+
+```typescript
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { Reflector } from '@nestjs/core'
+import { UsersController } from './users.controller.js'
+import type { UsersService } from './users.service.js'
+
+// Module-level mock — stable reference across tests
+const mockUsersService = {
+  findAll: vi.fn(),
+  findById: vi.fn(),
+} as unknown as UsersService
+
+describe('UsersController', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('should return users from the service', async () => {
+    mockUsersService.findAll = vi.fn().mockResolvedValue([{ id: '1' }])
+    const controller = new UsersController(mockUsersService)
+
+    const result = await controller.findAll()
+
+    expect(result).toHaveLength(1)
+  })
+})
+```
+
+**Rules:**
+- Mock services as module-level `const` with the shape typed `as unknown as ServiceType`.
+- Instantiate the controller directly: `new Controller(mockService1, mockService2, ...)`.
+- Use `beforeEach(() => { vi.restoreAllMocks() })` — no shared setup, only mock resets.
+- Do not initialize state in `beforeEach`; create fresh instances inside each `it` block.
+
+**Decorator verification** — verify guard metadata without mounting a NestJS app:
+
+```typescript
+import { Reflector } from '@nestjs/core'
+import { describe, it, expect } from 'vitest'
+import { AdminController } from './admin.controller.js'
+
+describe('AdminController — decorator metadata', () => {
+  it('should require superadmin role', () => {
+    const reflector = new Reflector()
+    const roles = reflector.get<string[]>('ROLES', AdminController)
+    expect(roles).toContain('superadmin')
+  })
+
+  it('should skip org check on public endpoints', () => {
+    const reflector = new Reflector()
+    const skipOrg = reflector.get<boolean>('SKIP_ORG', AdminController)
+    expect(skipOrg).toBe(true)
+  })
+})
+```
+
+Metadata key mapping: `@Roles(...)` → `'ROLES'` | `@SkipOrg()` → `'SKIP_ORG'`
+
+### Service Testing — Drizzle ORM Mock
+
+Mock the entire Drizzle query chain using a factory helper. Override the terminal function per test to control the result.
+
+```typescript
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { UsersService } from './users.service.js'
+
+function createMockDb() {
+  const terminal = vi.fn()
+
+  return {
+    // Chainable methods return `this` so the full chain resolves
+    select: vi.fn().mockReturnThis(),
+    from: vi.fn().mockReturnThis(),
+    where: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockImplementation(() => terminal()),
+    update: vi.fn().mockReturnThis(),
+    set: vi.fn().mockReturnThis(),
+    returning: vi.fn().mockImplementation(() => terminal()),
+    insert: vi.fn().mockReturnThis(),
+    values: vi.fn().mockImplementation(() => terminal()),
+    delete: vi.fn().mockReturnThis(),
+    _terminal: terminal,
+  }
+}
+
+describe('UsersService', () => {
+  let mockDb: ReturnType<typeof createMockDb>
+  let service: UsersService
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    mockDb = createMockDb()
+    service = new UsersService(mockDb as never)
+  })
+
+  it('should return a user by id', async () => {
+    mockDb._terminal.mockResolvedValueOnce([{ id: '1', name: 'Ada' }])
+
+    const user = await service.findById('1')
+
+    expect(user).toEqual({ id: '1', name: 'Ada' })
+    expect(mockDb.select).toHaveBeenCalled()
+    expect(mockDb.where).toHaveBeenCalled()
+  })
+
+  it('should handle multi-call sequences', async () => {
+    // First call returns empty, second returns data
+    mockDb._terminal
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: '2' }])
+
+    await service.findById('missing')
+    const user = await service.findById('2')
+
+    expect(user).toEqual({ id: '2' })
+  })
+})
+```
+
+**Chains by operation:**
+- Select: `select().from().where().limit()` — terminal is the `limit()` call
+- Update: `update().set().where().returning()` — terminal is `returning()`
+- Insert: `insert().values()` — terminal is `values()`
+- Delete: `delete().where()` — terminal is `where()`
+
+Use `vi.fn().mockResolvedValueOnce([])` for multi-call sequences within a single test.
+
+### When to Use `Test.createTestingModule()` (Integration)
+
+Use the NestJS testing module when:
+- Multiple providers must work together through real dependency injection.
+- You need to test module initialization and lifecycle hooks.
+- You are verifying that DI wiring is correct across module boundaries.
+
+## Frontend Testing Patterns
+
+### Setup
+
+From `apps/web/src/test/setup.ts`:
+
+```typescript
+import '@testing-library/jest-dom/vitest'
+import { cleanup } from '@testing-library/react'
+import { afterEach } from 'vitest'
+
+afterEach(() => {
+  cleanup()
+})
+```
+
+Import `@testing-library/jest-dom/vitest` for DOM matchers (`toBeInTheDocument`, `toHaveTextContent`). Call `cleanup()` after each test to unmount rendered components.
+
+### Component Testing
+
+From `packages/ui`:
+
+- Use `render()` and `screen` queries from Testing Library.
+- Prefer role-based selectors in this order:
+  1. `getByRole('button', { name: 'Submit' })`
+  2. `getByLabelText('Email')`
+  3. `getByText('Welcome')`
+  4. `getByTestId('submit-btn')` — last resort only
+- Use `fireEvent` for simple interactions. Use `userEvent` for realistic user behavior (typing, tabbing).
+- Assert on visible text, ARIA roles, and attributes. Do not assert on DOM structure or CSS classes.
+
+### Utility Testing
+
+- Test comprehensive edge cases: null, empty string, invalid input, and boundary values.
+- Group tests by function under `describe` blocks.
+- Test type guards with both valid and invalid inputs to verify the return type narrows correctly.
+
+### TanStack Query Testing
+
+See `frontend-patterns.mdx` section 1.7 for the `queryOptions()` factory pattern. This section covers how to test those factories and the components that consume them.
+
+#### QueryClientProvider wrapper
+
+Create a shared test utility so every test that touches a query gets a fresh `QueryClient` with retries disabled:
+
+```typescript
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render } from '@testing-library/react'
+import type { ReactNode } from 'react'
+
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+      },
+    },
+  })
+}
+
+export function renderWithQuery(ui: ReactNode) {
+  const queryClient = createTestQueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  )
+  return { ...render(ui, { wrapper }), queryClient }
+}
+```
+
+#### Testing queryOptions() factories
+
+`queryOptions()` factories are pure functions — test them directly without rendering anything:
+
+```typescript
+import { describe, expect, it } from 'vitest'
+import { apiKeysQueryOptions } from './apiKeys.queries'
+
+describe('apiKeysQueryOptions', () => {
+  it('should produce a stable query key', () => {
+    const options = apiKeysQueryOptions()
+    expect(options.queryKey).toEqual(['api-keys'])
+  })
+
+  it('should set staleTime to 30 seconds', () => {
+    const options = apiKeysQueryOptions()
+    expect(options.staleTime).toBe(30_000)
+  })
+})
+```
+
+#### Testing components that use queries
+
+Wrap the component in `renderWithQuery`. Seed the cache directly via `queryClient.setQueryData()` to avoid real network calls:
+
+```typescript
+import { screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { ApiKeysList } from './ApiKeysList'
+import { renderWithQuery } from '@/test/renderWithQuery'
+import { createMockSession } from '@/test/__mocks__/mockSession'
+
+describe('ApiKeysList', () => {
+  it('should display keys from the cache', async () => {
+    // Arrange
+    const { queryClient } = renderWithQuery(<ApiKeysList />)
+    queryClient.setQueryData(['api-keys'], {
+      data: [{ id: 'key-1', name: 'Production Key' }],
+    })
+
+    // Assert
+    expect(await screen.findByText('Production Key')).toBeInTheDocument()
+  })
+
+  it('should show empty state when no keys exist', async () => {
+    // Arrange
+    const { queryClient } = renderWithQuery(<ApiKeysList />)
+    queryClient.setQueryData(['api-keys'], { data: [] })
+
+    // Assert
+    expect(await screen.findByText(/no api keys/i)).toBeInTheDocument()
+  })
+})
+```
+
+Use `createMockSession` from `apps/web/src/test/__mocks__/mockSession.ts` when a component requires an authenticated user in context.
+
+#### Testing mutations and cache invalidation
+
+Assert that the mutation calls the correct endpoint and that `invalidateQueries` is triggered afterward:
+
+```typescript
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
+import { RevokeApiKeyButton } from './RevokeApiKeyButton'
+import { renderWithQuery } from '@/test/renderWithQuery'
+
+vi.mock('@/lib/apiKeys', () => ({
+  revokeApiKey: vi.fn().mockResolvedValue({ id: 'key-1', revokedAt: '2026-01-01T00:00:00.000Z' }),
+}))
+
+describe('RevokeApiKeyButton', () => {
+  it('should invalidate the api-keys cache after a successful revoke', async () => {
+    // Arrange
+    const { queryClient } = renderWithQuery(<RevokeApiKeyButton keyId="key-1" />)
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    // Act
+    await userEvent.click(screen.getByRole('button', { name: /revoke/i }))
+
+    // Assert
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['api-keys'] })
+    })
+  })
+})
+```
+
+#### Rules
+
+- Always disable retries (`retry: false`) in the test `QueryClient` — otherwise failed queries silently retry and slow tests down.
+- Set `gcTime: 0` so stale cache entries from one test do not leak into the next.
+- Seed the cache with `queryClient.setQueryData()` rather than letting queries fire real fetch calls.
+- When testing loading and error states, use `queryClient.setQueryData()` with `undefined` to simulate loading, or `queryClient.setQueryDefaults()` to force an error state.
+- Use `findBy*` (async) queries when asserting on content that appears after a query resolves.
+
+## E2E Testing Patterns
+
+### Configuration
+
+Shared Playwright configuration lives in `@repo/playwright-config` with 4 browser projects: Chromium, Firefox, WebKit, and Mobile Chrome (Pixel 5). PRs run Chromium-only for speed; staging and main pushes run the full matrix.
+
+From `playwright.config.ts`:
+
+```typescript
+import { defineConfig } from '@playwright/test'
+import { basePlaywrightConfig } from '@repo/playwright-config/base'
+
+// For fast local runs, use: bun run test:e2e --project=chromium
+export default defineConfig({
+  ...basePlaywrightConfig,
+})
+```
+
+Reuse the existing dev server locally. Start a fresh server in CI.
+
+### Test Structure
+
+```typescript
+test.describe('Feature Name', () => {
+  test('should perform user action', async ({ page }) => {
+    await page.goto('/path')
+    await page.getByRole('button', { name: 'Submit' }).click()
+    await expect(page).toHaveTitle(/Expected/)
+  })
+})
+```
+
+**Selector priority:** `getByRole` &rarr; `getByLabel` &rarr; `getByText` &rarr; `getByTestId` (last resort).
+
+**Patterns:**
+- Use the Page Object Model to encapsulate page interactions.
+- Use fixtures for authentication state and shared setup.
+- Do not place assertions inside page objects — page objects return data, tests assert on it.
+
+## Mocking Strategies
+
+### Factory Helper Pattern (Preferred)
+
+From `apps/api/src/common/filters/allExceptions.filter.test.ts`:
+
+```typescript
+import { vi } from 'vitest'
+
+function createMockHost(headers: Record<string, string> = {}) {
+  const sendFn = vi.fn()
+  const statusFn = vi.fn().mockReturnValue({ send: sendFn })
+
+  const request = {
+    url: '/test',
+    method: 'GET',
+    headers: { 'x-correlation-id': 'test-id', ...headers },
+  }
+  const response = { status: statusFn }
+
+  const host = {
+    switchToHttp: () => ({
+      getRequest: () => request,
+      getResponse: () => response,
+    }),
+  }
+
+  const getSentBody = () => {
+    const call = sendFn.mock.calls[0]
+    expect(call).toBeDefined()
+    return call?.[0] as Record<string, unknown>
+  }
+
+  return { host, statusFn, getSentBody } as const
+}
+```
+
+### Rules
+
+- Build factory functions that accept `Partial<T>` overrides for flexibility.
+- Keep mocks close to the tests that use them.
+- **Backend:** Prefer dependency injection over module-level mocking. Pass `vi.fn()` stubs through DI. Avoid `vi.mock()`.
+- **Environment variables:** Use `vi.stubEnv()` as shown in `apps/api/src/test/setup.ts`.
+- **Network calls (frontend):** Prefer MSW over `vi.spyOn(globalThis, 'fetch')` for any test that exercises a full fetch path. Reserve `vi.spyOn(fetch)` for low-level unit tests of HTTP client utilities where you must inspect headers or the raw `RequestInit` object. See [MSW Adoption](#msw-adoption) below.
+
+### Frontend Mocking Rules
+
+**Default: Render real components.** Do not mock `@repo/ui` or other internal packages. Rendering real components produces integration-style tests with higher confidence.
+
+**Accepted uses of `vi.mock()`:**
+
+- **Codegen modules** (`@/paraglide/messages`): Auto-generated i18n modules have no injection point. Mock to return predictable strings.
+- **TanStack Router file-based routes**: Route components are loaded via file conventions. Module-level mocking is required to isolate route-level tests from child route components.
+- **Third-party libraries** with side effects or browser APIs not available in jsdom (e.g., `next/navigation`, `IntersectionObserver`).
+
+**Prefer `vi.fn()` and `vi.spyOn()`** for everything else. Use factory helpers to construct mock objects.
+
+## MSW Adoption
+
+MSW is the recommended replacement for `vi.spyOn(fetch)`. Install with `bun add -d msw` before using these patterns. MSW is **not** currently installed in this project.
+
+### Why MSW over vi.spyOn(fetch)
+
+`vi.spyOn(globalThis, 'fetch')` works at the JavaScript function level. It intercepts the call before the network stack runs, which means request headers, serialization, and URL construction are never verified unless you inspect `mock.calls` manually.
+
+MSW intercepts at the service-worker (browser) or `node:http` adapter level — after your code builds the full request. This gives you:
+
+- **Network-level interception:** The real `fetch` runs. URL construction, headers, and `credentials` are verified automatically.
+- **Request validation:** Assert on the incoming `Request` object inside the handler.
+- **Shared handlers:** Define handlers once in a `src/test/msw/handlers.ts` file and reuse them across tests. Narrow overrides per test with `server.use()`.
+- **Readable error simulation:** Return `HttpResponse.error()` or a non-2xx status without constructing a `Response` object by hand.
+
+**When to keep vi.spyOn(fetch):** Low-level unit tests of HTTP client utilities (e.g., `apiClient.test.ts`) that must inspect the raw `RequestInit` — headers, `credentials`, correlation IDs — should keep `vi.spyOn`. MSW does not expose `RequestInit`; it exposes a `Request` object.
+
+> **Note:** MSW is not yet installed in this project. Run `bun add -d msw` before using the patterns below.
+
+### Setup
+
+```typescript
+// src/test/msw/server.ts
+import { setupServer } from 'msw/node'
+import { handlers } from './handlers'
+
+export const server = setupServer(...handlers)
+```
+
+```typescript
+// src/test/setup.ts  (extend the existing file)
+import '@testing-library/jest-dom/vitest'
+import { cleanup } from '@testing-library/react'
+import { afterAll, afterEach, beforeAll } from 'vitest'
+import { server } from './msw/server'
+
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+
+afterEach(() => {
+  cleanup()
+  server.resetHandlers()
+})
+
+afterAll(() => server.close())
+```
+
+Use `onUnhandledRequest: 'error'` so any unmatched request fails the test immediately rather than silently hanging.
+
+### Before / After comparison
+
+**Before — vi.spyOn(fetch):**
+
+```typescript
+it('should return the list of API keys on success', async () => {
+  // Arrange
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response(JSON.stringify({ data: [makeApiKey()] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  )
+
+  // Act
+  const result = await listApiKeys()
+
+  // Assert
+  expect(result.data).toHaveLength(1)
+  fetchSpy.mockRestore()
+})
+```
+
+**After — MSW:**
+
+```typescript
+import { http, HttpResponse } from 'msw'
+import { server } from '@/test/msw/server'
+
+it('should return the list of API keys on success', async () => {
+  // Arrange — narrow override for this test
+  server.use(
+    http.get('/api/api-keys', () =>
+      HttpResponse.json({ data: [makeApiKey()] })
+    )
+  )
+
+  // Act
+  const result = await listApiKeys()
+
+  // Assert
+  expect(result.data).toHaveLength(1)
+  // handler is automatically reset in afterEach
+})
+```
+
+The MSW version requires no spy setup, no manual `mockRestore()`, and validates the URL automatically.
+
+### Handler Patterns
+
+Define baseline handlers that match the happy path for every endpoint. Override per test when you need errors or delays.
+
+```typescript
+// src/test/msw/handlers.ts
+import { http, HttpResponse } from 'msw'
+
+export const handlers = [
+  // GET — return list
+  http.get('/api/api-keys', () =>
+    HttpResponse.json({ data: [] })
+  ),
+
+  // POST — create resource
+  http.post('/api/api-keys', async ({ request }) => {
+    const body = await request.json() as { name: string }
+    return HttpResponse.json(
+      { id: 'key-new', name: body.name },
+      { status: 201 }
+    )
+  }),
+
+  // PATCH — partial update
+  http.patch('/api/api-keys/:id', async ({ params, request }) => {
+    const body = await request.json() as Record<string, unknown>
+    return HttpResponse.json({ id: params.id, ...body })
+  }),
+]
+```
+
+**Error simulation:**
+
+```typescript
+server.use(
+  http.get('/api/api-keys', () =>
+    HttpResponse.json({ message: 'Unauthorized' }, { status: 401 })
+  )
+)
+```
+
+**Network error (no response):**
+
+```typescript
+server.use(
+  http.get('/api/api-keys', () => HttpResponse.error())
+)
+```
+
+**Network delay:**
+
+```typescript
+import { delay } from 'msw'
+
+server.use(
+  http.get('/api/api-keys', async () => {
+    await delay(500) // milliseconds
+    return HttpResponse.json({ data: [] })
+  })
+)
+```
+
+## Test Data Management
+
+- **Inline data:** Use directly in the test for simple, self-contained cases.
+- **Factory functions:** Build helper functions that produce complex entities with sensible defaults and optional overrides.
+- **Fixtures:** Store static JSON data in `__tests__/fixtures/` for large or shared datasets.
+- **Database:** *(Planned)* Use Testcontainers for integration tests that require a real PostgreSQL instance. Not yet configured in this project.
+- **Cleanup:** Each test owns its data. Do not rely on shared mutable state between tests.
+
+## AI-Assisted TDD Workflow
+
+1. **Describe** the feature or function you need to build.
+2. **Ask Claude to write the test first.** Be explicit: "Write the test FIRST. Do not create implementation code."
+3. **Review the test** — does it capture the right behavior? This is the most critical step.
+4. **Ask Claude to implement** the code that makes the test pass.
+5. **Run `bun run test`** and verify the result.
+6. **Refactor together** — improve both test and implementation.
+7. **Validate** — a human reviews both the test and the implementation before merge.
+
+**Tips:**
+- Provide existing test files as context so Claude follows the project's patterns.
+- Ask for edge cases after the happy path is covered.
+- Watch for circular validation — where the test and implementation are derived from the same flawed logic.
+
+## Advanced Testing
+
+These techniques apply to specific scenarios. Introduce them incrementally, not all at once.
+
+- **Property-based testing (fast-check):** Use for utility functions, validators, and type guards where you want to verify invariants across random inputs.
+- **Mutation testing (Stryker):** Apply to critical business logic to verify that tests actually catch regressions. Use incremental mode in CI to keep build times manageable.
+- **Contract testing (Pact):** Use consumer-driven contracts when the frontend and backend are developed by different teams or deployed independently.
+- **Snapshot testing:** Do not use for UI components — snapshots are brittle and provide low signal. Inline snapshots are acceptable for small data structures like serialized error responses.

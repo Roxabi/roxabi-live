@@ -1,0 +1,140 @@
+---
+title: Testing Infrastructure
+description: Specification for Vitest + Playwright testing setup with balanced approach (Option C)
+status: implemented
+---
+
+> **Deprecated**: This document is outdated and kept for historical reference only. Please refer to the main documentation sections for current information.
+
+## Overview
+
+This specification defines the testing infrastructure for the Roxabi Boilerplate monorepo, implementing a "Balanced" approach (Option C) with Vitest for unit/integration tests and Playwright for E2E tests.
+
+## Goals
+
+- Enable TDD (Test-Driven Development) workflow
+- Provide fast feedback loop with Vitest
+- Ensure E2E coverage with Playwright
+- Integrate with TurboRepo caching
+- Maintain 70% minimum code coverage
+
+## Architecture
+
+### Test Types
+
+| Type | Tool | Location | Purpose |
+|------|------|----------|---------|
+| Unit | Vitest | `*.test.ts(x)` | Component/function isolation |
+| Integration | Vitest | `*.test.ts(x)` | Module interaction |
+| E2E | Playwright | `e2e/*.spec.ts` | User journey validation |
+
+### Directory Structure
+
+```
+roxabi-boilerplate/
+├── packages/config/vitest.ts  # Shared Vitest presets (@repo/config/vitest)
+├── vitest.config.ts           # Root config with projects
+├── playwright.config.ts       # Playwright config (Chrome only)
+├── apps/
+│   ├── web/
+│   │   ├── vitest.config.ts   # jsdom environment
+│   │   ├── src/test/setup.ts  # React setup
+│   │   └── e2e/               # E2E tests
+│   │       └── *.spec.ts
+│   └── api/
+│       ├── vitest.config.ts   # node environment
+│       └── src/test/setup.ts  # Node setup
+└── packages/
+    └── ui/
+        ├── vitest.config.ts   # jsdom environment
+        └── src/components/
+            └── *.test.tsx     # Component tests
+```
+
+## Configuration
+
+### Vitest Shared Presets
+
+Three presets for different environments:
+
+```typescript
+// @repo/config/vitest
+export const baseConfig = {
+  // Common settings for all packages
+}
+
+export const reactConfig = {
+  // jsdom + React Testing Library
+}
+
+export const nodeConfig = {
+  // Node.js environment
+}
+```
+
+### Coverage Requirements
+
+| Metric | Threshold |
+|--------|-----------|
+| Lines | 70% |
+| Functions | 70% |
+| Branches | 70% |
+| Statements | 70% |
+
+### TurboRepo Integration
+
+```json
+{
+  "test": {
+    "inputs": ["src/**/*.ts", "src/**/*.tsx", "vitest.config.ts"],
+    "outputs": ["coverage/**"],
+    "env": ["CI", "VITEST"]
+  }
+}
+```
+
+## Scripts
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `bun test` | `turbo test` | Run all tests via TurboRepo |
+| `bun test:unit` | `vitest run` | Run Vitest directly |
+| `bun test:watch` | `vitest` | Watch mode for development |
+| `bun test:coverage` | `vitest run --coverage` | Generate coverage report |
+| `bun test:e2e` | `playwright test` | Run E2E tests |
+
+## E2E Configuration
+
+### Browser Support
+
+- **Chrome only** for initial setup (Option C)
+- Firefox/Safari support planned for Issue #17 (Option B upgrade)
+
+### Base URL
+
+Development server at `http://localhost:3000`
+
+## Implementation Checklist
+
+- [x] Install dependencies
+- [x] Create `@repo/config/vitest` module
+- [x] Create root `vitest.config.ts`
+- [x] Create package-level configs
+- [x] Create setup files
+- [x] Create example tests
+- [x] Configure TurboRepo
+- [x] Create Playwright config
+- [x] Create E2E example
+
+## Future Enhancements (Issue #17)
+
+- Add Firefox and Safari browsers
+- Visual regression testing
+- API contract testing
+- Performance testing integration
+
+## References
+
+- [Vitest Documentation](https://vitest.dev/)
+- [Playwright Documentation](https://playwright.dev/)
+- [Testing Library](https://testing-library.com/)

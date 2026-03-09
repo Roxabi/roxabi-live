@@ -1,0 +1,16 @@
+{
+  "title": "Guides",
+  "pages": [
+    "dev-environment",
+    "i18n",
+    "agent-teams",
+    "deployment",
+    "authentication",
+    "security",
+    "rbac",
+    "navigation-guards",
+    "multi-tenant",
+    "new-feature-pattern",
+    "troubleshooting"
+  ]
+}
