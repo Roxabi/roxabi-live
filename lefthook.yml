@@ -1,0 +1,13 @@
+pre-commit:
+  commands:
+    lint:
+      run: bun run lint
+    typecheck:
+      run: bun run typecheck
+    trufflehog:
+      run: trufflehog git file://. --only-verified --fail
+
+pre-push:
+  commands:
+    license:
+      run: test -f tools/licenseChecker.ts && bun tools/licenseChecker.ts || echo 'No app code yet — skipping license check'
