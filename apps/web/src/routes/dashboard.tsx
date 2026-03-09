@@ -30,12 +30,24 @@ function DashboardPage() {
         {user && (
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              {user.image && <img src={user.image} alt="" className="h-7 w-7 rounded-full" />}
+              {user.image && (
+                <img
+                  src={user.image}
+                  alt={`${user.name}'s avatar`}
+                  className="h-7 w-7 rounded-full"
+                />
+              )}
               <span>{user.name}</span>
             </div>
             <button
               type="button"
-              onClick={() => signOut().then(() => navigate({ to: '/login' }))}
+              onClick={async () => {
+                try {
+                  await signOut()
+                } finally {
+                  navigate({ to: '/login' })
+                }
+              }}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
               Sign out

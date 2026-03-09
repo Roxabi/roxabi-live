@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const captured = vi.hoisted(() => ({
@@ -97,7 +98,7 @@ describe('DashboardPage', () => {
     render(<DashboardPage />)
 
     // Assert
-    const avatar = document.querySelector('img')
+    const avatar = screen.getByRole('img', { name: /ada lovelace's avatar/i })
     expect(avatar).toHaveAttribute('src', 'https://example.com/avatar.png')
   })
 
@@ -123,18 +124,16 @@ describe('DashboardPage', () => {
 
   it('should call signOut and navigate to /login when sign-out button is clicked', async () => {
     // Arrange
+    const user = userEvent.setup()
     const DashboardPage = captured.Component
     render(<DashboardPage />)
 
     // Act
     const signOutButton = screen.getByText('Sign out')
-    fireEvent.click(signOutButton)
+    await user.click(signOutButton)
 
     // Assert
     expect(mockSignOut).toHaveBeenCalled()
-    // navigate is called after signOut resolves
-    await vi.waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith({ to: '/login' })
-    })
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/login' })
   })
 })
