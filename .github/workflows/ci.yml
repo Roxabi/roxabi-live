@@ -29,7 +29,7 @@ jobs:
       e2e: ${{ steps.filter.outputs.e2e }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check changed paths
         uses: dorny/paths-filter@v3
@@ -45,6 +45,7 @@ jobs:
               - 'biome.json'
               - 'tsconfig*.json'
               - 'lefthook.yml'
+              - '.gitleaks.toml'
               - '.github/workflows/**'
             e2e:
               - 'apps/web/src/**'
@@ -65,17 +66,14 @@ jobs:
       (github.event_name != 'pull_request' || needs.detect-changes.outputs.code == 'true')
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: TruffleHog
-        uses: trufflesecurity/trufflehog@v3.93.7
-        with:
-          path: ./
-          base: ${{ github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || '' }}
-          head: ${{ github.event.pull_request.head.sha || github.sha }}
-          extra_args: --only-verified
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   lint:
     name: Lint
@@ -87,7 +85,7 @@ jobs:
       (github.event_name != 'pull_request' || needs.detect-changes.outputs.code == 'true')
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -127,7 +125,7 @@ jobs:
       (github.event_name != 'pull_request' || needs.detect-changes.outputs.code == 'true')
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -135,7 +133,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -206,7 +204,7 @@ jobs:
           --health-retries=5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -214,7 +212,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -273,7 +271,7 @@ jobs:
       (github.event_name != 'pull_request' || needs.detect-changes.outputs.code == 'true')
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -281,7 +279,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -391,7 +389,7 @@ jobs:
       RATE_LIMIT_ENABLED: "false"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -399,7 +397,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -461,6 +459,22 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  docs-links:
+    name: Docs Link Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Check internal documentation links
+        run: bun run tools/docsLinkAudit.ts
+
   # Intentionally runs on every push to main/staging regardless of changed paths.
   # Full browser coverage is required on protected branches before release.
   e2e-matrix:
@@ -507,7 +521,7 @@ jobs:
         shard: [1/4, 2/4, 3/4, 4/4]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -515,7 +529,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -587,7 +601,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -595,7 +609,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -623,10 +637,10 @@ jobs:
     name: Vercel Env Check
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -634,14 +648,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Check production env vars
-        if: github.ref == 'refs/heads/main'
         run: bun run scripts/checkVercelEnv.ts production
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
-      - name: Check preview env vars
-        if: github.ref == 'refs/heads/staging'
-        run: bun run scripts/checkVercelEnv.ts preview
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
@@ -649,7 +656,7 @@ jobs:
     name: CI Success
     runs-on: ubuntu-latest
     if: always()
-    needs: [secrets, lint, typecheck, test, build, e2e, e2e-matrix, merge-reports]
+    needs: [secrets, lint, typecheck, test, build, e2e, e2e-matrix, merge-reports, docs-links]
     steps:
       - name: Check job outcomes
         env:
@@ -661,6 +668,7 @@ jobs:
           E2E_RESULT: ${{ needs.e2e.result }}
           E2E_MATRIX_RESULT: ${{ needs.e2e-matrix.result }}
           MERGE_REPORTS_RESULT: ${{ needs.merge-reports.result }}
+          DOCS_LINKS_RESULT: ${{ needs.docs-links.result }}
         run: |
           results=( \
             "$SECRETS_RESULT" \
@@ -671,6 +679,7 @@ jobs:
             "$E2E_RESULT" \
             "$E2E_MATRIX_RESULT" \
             "$MERGE_REPORTS_RESULT" \
+            "$DOCS_LINKS_RESULT" \
           )
           for result in "${results[@]}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then

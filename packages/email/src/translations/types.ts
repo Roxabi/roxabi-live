@@ -11,5 +11,4 @@ export type Translations = {
   verification: EmailTemplateStrings
   reset: EmailTemplateStrings
   magicLink: EmailTemplateStrings
-  existingAccount: EmailTemplateStrings
 }

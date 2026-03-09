@@ -1,6 +1,6 @@
 {
   "extends": "@repo/config/tsconfig.base",
-  "include": ["**/*.ts", "**/*.tsx", "src/paraglide/**/*.js"],
+  "include": ["**/*.ts", "**/*.tsx", "src/paraglide/**/*.js", ".source/**/*.ts"],
   "exclude": ["node_modules", "dist", ".output", "vitest.config.ts"],
   "compilerOptions": {
     "jsx": "react-jsx",
@@ -15,7 +15,8 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "fumadocs-mdx:collections/*": [".source/*"]
     }
   }
 }

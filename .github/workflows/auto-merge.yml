@@ -29,12 +29,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Enable auto-merge (squash)
         run: gh pr merge "$PR_NUMBER" --auto --squash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PAT }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
   update-behind-prs:
@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Update all reviewed PRs targeting this branch
         run: |

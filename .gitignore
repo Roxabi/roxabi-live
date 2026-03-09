@@ -14,7 +14,6 @@ out/
 # TanStack Start / Fumadocs generated
 apps/web/src/routeTree.gen.ts
 apps/web/.source/
-apps/docs/.source/
 apps/web/src/paraglide/
 apps/web/.content-collections/
 
@@ -60,6 +59,7 @@ reports/
 
 # Claude Code hooks state
 .claude/security_warnings/
+.claude/settings.json
 
 # dev-core stack config (project-local, not committed — commit .claude/stack.yml.example)
 .claude/stack.yml
