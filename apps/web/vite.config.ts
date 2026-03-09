@@ -12,6 +12,8 @@ import viteTsConfigPaths from 'vite-tsconfig-paths'
 import { z } from 'zod'
 
 const apiTarget = process.env.API_URL ?? `http://localhost:${process.env.API_PORT ?? 4000}`
+const apiBypassSecret =
+  process.env.VERCEL_ENV !== 'production' ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET : undefined
 
 // Enumerate all /docs/** prerender routes directly from the MDX source files.
 // TanStack Start renders client-side, so Nitro's link crawler finds nothing —
@@ -87,7 +89,18 @@ async function getPlugins() {
           routes: getDocRoutes(),
         },
         routeRules: {
-          '/api/**': { proxy: `${apiTarget}/api/**` },
+          '/api/**': {
+            proxy: {
+              to: `${apiTarget}/api/**`,
+              // In preview environments the API is protected by Vercel Deployment Protection
+              // (SSO). The Nitro proxy runs server-side, so it can bypass protection using
+              // the automation bypass secret injected at deploy time by the preview workflow.
+              // No-op in local dev (secret is undefined) and in production (no SSO on API).
+              ...(apiBypassSecret && {
+                headers: { 'x-vercel-protection-bypass': apiBypassSecret },
+              }),
+            },
+          },
           '/docs/**': { prerender: true },
         },
       },
