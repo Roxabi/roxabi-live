@@ -87,6 +87,9 @@ async function getPlugins() {
           routes: getDocRoutes(),
         },
         routeRules: {
+          // /api/** is handled by server/routes/api/[...path].ts — a runtime Nitro route
+          // that reads VERCEL_AUTOMATION_BYPASS_SECRET from process.env per request, so
+          // the secret is never serialised into the .output/ bundle artifact.
           '/api/**': { proxy: `${apiTarget}/api/**` },
           '/docs/**': { prerender: true },
         },
