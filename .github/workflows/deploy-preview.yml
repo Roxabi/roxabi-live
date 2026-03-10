@@ -92,12 +92,9 @@ jobs:
             echo "Injecting API preview URL: $API_URL_OVERRIDE"
             EXTRA_ARGS+=("--env" "API_URL=$API_URL_OVERRIDE")
           fi
-          # Inject the API bypass secret as a BUILD-TIME env var so the Nitro proxy
-          # config (vite.config.ts) bakes x-vercel-protection-bypass into the proxy
-          # handler. --env is runtime-only and would be too late for vite resolution.
-          if [ -n "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
-            EXTRA_ARGS+=("--build-env" "VERCEL_AUTOMATION_BYPASS_SECRET=$VERCEL_AUTOMATION_BYPASS_SECRET")
-          fi
+          # VERCEL_AUTOMATION_BYPASS_SECRET is stored as a Vercel preview env var
+          # (not injected here). The Nitro server route reads it at runtime so it
+          # is never serialised into the build artifact or visible in build logs.
           for attempt in 1 2 3; do
             if URL=$(vercel deploy --token "$VERCEL_TOKEN" "${EXTRA_ARGS[@]}"); then break; fi
             if [ "$attempt" -lt 3 ]; then
@@ -113,7 +110,6 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_WEB }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           # Passed via env to avoid inline ${{ }} shell injection
           API_URL_OVERRIDE: ${{ needs.deploy-api.outputs.url }}
 
@@ -254,7 +250,9 @@ jobs:
         # This avoids the chicken-and-egg problem: API deploys before web, so the web
         # deployment URL isn't known yet, but the branch alias is predictable.
         run: |
-          BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\{2,\}/-/g' | sed 's/^-//;s/-$//' | cut -c1-40 | sed 's/-$//')
+          # Strip \n/\r first to prevent newline injection into --env args.
+          # Slug limit: 63 (DNS label max) - 21 ("roxabi-dashboard-git-") - 7 ("-roxabi") = 35.
+          BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | tr -d '\n\r' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\{2,\}/-/g' | sed 's/^-//;s/-$//' | cut -c1-35 | sed 's/-$//')
           WEB_PREVIEW_URL="https://${VERCEL_WEB_PROJECT_NAME}-git-${BRANCH_SLUG}-${VERCEL_TEAM_SLUG}.vercel.app"
           echo "Web preview alias: $WEB_PREVIEW_URL"
           # Generate once — reusing across retries keeps session signing keys consistent.
@@ -301,6 +299,9 @@ jobs:
                 | curl -s -o /dev/null -w "%{http_code}" --max-time 30 --header @- "$PREVIEW_URL"
             else
               curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$PREVIEW_URL"
+            # || echo "000" guards the entire if/else subshell (both curl paths),
+            # not just the last taken branch. Keep it here — moving it inside
+            # the if/else would silently break the fallback on the other branch.
             fi || echo "000"
           )
           echo "HTTP status: $HTTP_STATUS"

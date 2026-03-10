@@ -12,10 +12,6 @@ import viteTsConfigPaths from 'vite-tsconfig-paths'
 import { z } from 'zod'
 
 const apiTarget = process.env.API_URL ?? `http://localhost:${process.env.API_PORT ?? 4000}`
-// Guard: only active in Vercel preview (=== 'preview'), never in local dev (VERCEL_ENV undefined)
-// or production. Prevents the secret from being injected into non-preview environments.
-const apiBypassSecret =
-  process.env.VERCEL_ENV === 'preview' ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET : undefined
 
 // Enumerate all /docs/** prerender routes directly from the MDX source files.
 // TanStack Start renders client-side, so Nitro's link crawler finds nothing —
@@ -91,18 +87,10 @@ async function getPlugins() {
           routes: getDocRoutes(),
         },
         routeRules: {
-          '/api/**': {
-            proxy: {
-              to: `${apiTarget}/api/**`,
-              // In preview environments the API is protected by Vercel Deployment Protection
-              // (SSO). The Nitro proxy runs server-side, so it can bypass protection using
-              // the automation bypass secret injected at deploy time by the preview workflow.
-              // No-op in local dev (secret is undefined) and in production (no SSO on API).
-              ...(apiBypassSecret && {
-                headers: { 'x-vercel-protection-bypass': apiBypassSecret },
-              }),
-            },
-          },
+          // /api/** is handled by server/routes/api/[...path].ts — a runtime Nitro route
+          // that reads VERCEL_AUTOMATION_BYPASS_SECRET from process.env per request, so
+          // the secret is never serialised into the .output/ bundle artifact.
+          '/api/**': { proxy: `${apiTarget}/api/**` },
           '/docs/**': { prerender: true },
         },
       },
