@@ -87,7 +87,6 @@ jobs:
       - name: Deploy
         id: deploy
         run: |
-          API_URL_OVERRIDE="${{ needs.deploy-api.outputs.url }}"
           EXTRA_ARGS=()
           if [ -n "$API_URL_OVERRIDE" ]; then
             echo "Injecting API preview URL: $API_URL_OVERRIDE"
@@ -115,6 +114,8 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_WEB }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          # Passed via env to avoid inline ${{ }} shell injection
+          API_URL_OVERRIDE: ${{ needs.deploy-api.outputs.url }}
 
       - name: Summary
         run: |
@@ -256,6 +257,8 @@ jobs:
           BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\{2,\}/-/g' | sed 's/^-//;s/-$//' | cut -c1-40 | sed 's/-$//')
           WEB_PREVIEW_URL="https://${VERCEL_WEB_PROJECT_NAME}-git-${BRANCH_SLUG}-${VERCEL_TEAM_SLUG}.vercel.app"
           echo "Web preview alias: $WEB_PREVIEW_URL"
+          # Generate once — reusing across retries keeps session signing keys consistent.
+          BETTER_AUTH_SECRET_VAL=$(openssl rand -base64 32)
           for attempt in 1 2 3; do
             # --build-env overrides the Neon Marketplace integration's production
             # DATABASE_URL during the Vercel build step (db:migrate).
@@ -263,7 +266,7 @@ jobs:
             if URL=$(vercel deploy --token "$VERCEL_TOKEN" \
               --build-env "DATABASE_URL=$DATABASE_URL" \
               --env "DATABASE_URL=$DATABASE_URL" \
-              --env "BETTER_AUTH_SECRET=$(openssl rand -base64 32)" \
+              --env "BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET_VAL" \
               --env "SWAGGER_ENABLED=true" \
               --env "RATE_LIMIT_ENABLED=false" \
               --env "APP_URL=${WEB_PREVIEW_URL}" \

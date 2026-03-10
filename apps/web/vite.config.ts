@@ -12,8 +12,10 @@ import viteTsConfigPaths from 'vite-tsconfig-paths'
 import { z } from 'zod'
 
 const apiTarget = process.env.API_URL ?? `http://localhost:${process.env.API_PORT ?? 4000}`
+// Guard: only active in Vercel preview (=== 'preview'), never in local dev (VERCEL_ENV undefined)
+// or production. Prevents the secret from being injected into non-preview environments.
 const apiBypassSecret =
-  process.env.VERCEL_ENV !== 'production' ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET : undefined
+  process.env.VERCEL_ENV === 'preview' ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET : undefined
 
 // Enumerate all /docs/** prerender routes directly from the MDX source files.
 // TanStack Start renders client-side, so Nitro's link crawler finds nothing —
