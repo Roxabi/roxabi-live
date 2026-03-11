@@ -1,5 +1,31 @@
 # Contributing
 
+## Dev environment setup
+
+**Prerequisites:**
+- [Bun](https://bun.sh) ≥ 1.1 — `curl -fsSL https://bun.sh/install | bash`
+- [Docker](https://docs.docker.com/get-docker/) — for local PostgreSQL
+- [GitHub CLI](https://cli.github.com) — `gh auth login` with your GitHub account
+
+```bash
+# 1. Clone and install
+git clone https://github.com/Roxabi/roxabi-dashboard.git
+cd roxabi-dashboard
+bun install           # also installs Lefthook git hooks
+
+# 2. Configure environment
+cp .env.example .env  # fill in DB_URL, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
+
+# 3. Start the database and run migrations
+docker compose up -d
+cd apps/api && bun run db:migrate
+
+# 4. Start the dev servers
+bun dev               # starts web + api concurrently via TurboRepo
+```
+
+Open `http://localhost:3000` — sign in with GitHub OAuth.
+
 ## Workflow
 
 All development uses **worktrees**. `main` is production, `staging` is the integration branch.
@@ -64,6 +90,22 @@ Lefthook hooks: pre-commit (Biome), commit-msg (Commitlint), pre-push (lint + ty
 - Unit tests: Vitest — run with `bun run test` (never `bun test`, that uses the Bun runner)
 - E2E tests: Playwright — run with `bun run test:e2e`
 - Coverage: `bun run test:coverage`
+
+## Code review expectations
+
+Reviews use [Conventional Comments](https://conventionalcomments.org/). Labels signal intent:
+
+| Label | Meaning |
+|-------|---------|
+| `suggestion:` | Optional improvement — author decides |
+| `nitpick:` | Minor style point — low priority |
+| `question:` | Seeking understanding, not blocking |
+| `issue:` | Must be resolved before merge |
+| `praise:` | Positive signal — no action needed |
+
+**Reviewer checklist:** correctness, security boundaries, test coverage, Conventional Commits format on the PR title.
+
+**Author expectations:** respond to every `issue:` before requesting re-review. Non-blocking comments can be resolved after merge if noted.
 
 ## Project structure
 

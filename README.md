@@ -1,13 +1,52 @@
-# Roxabi Boilerplate
+# Roxabi Dashboard
 
+![CI](https://img.shields.io/github/actions/workflow/status/Roxabi/roxabi-dashboard/ci.yml?branch=main&label=CI)
+![License](https://img.shields.io/badge/license-MIT-green)
 ![Bun](https://img.shields.io/badge/Bun-runtime-FBF0DF?logo=bun&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![TurboRepo](https://img.shields.io/badge/TurboRepo-monorepo-0ea5e9)
-![Biome](https://img.shields.io/badge/Biome-linter-60a5fa)
 
-SaaS boilerplate with AI team integration.
+**Real-time GitHub project management dashboard for the Roxabi team.**
 
 <!-- TODO: Add demo GIF once seed data is ready — see scripts/record-demo.ts -->
+
+## Why
+
+Managing GitHub issues, PRs, and CI status across multiple repos requires switching between GitHub tabs constantly. There's no unified view, no team-wide workspace config, and no way to triage from a phone.
+
+Roxabi Dashboard fixes this — a single deployed web app showing live issues, PRs, CI status, and Vercel deployments across all Roxabi repos, with GitHub OAuth so any team member can use it without PAT setup.
+
+## How it works
+
+The web frontend connects to a NestJS API that proxies GitHub's API and streams live updates over SSE. Workspace config (filters, column widths, saved views) is persisted in PostgreSQL per user.
+
+```mermaid
+flowchart LR
+  Browser -->|HTTP/SSE| API[NestJS API]
+  API -->|REST| GitHub[GitHub API]
+  API -->|REST| Vercel[Vercel API]
+  API -->|read/write| DB[(PostgreSQL)]
+  GitHub -->|OAuth| Auth[Better Auth]
+  Auth --> DB
+```
+
+## Features
+
+### Issues & PRs
+
+| Feature | Description |
+|---------|-------------|
+| Live issue board | Real-time status, size, and priority across all repos |
+| Field edits | Update status/size/priority directly from the UI |
+| CI status | Per-PR CI run results inline |
+| Vercel deployments | Preview URL and deploy status per PR |
+
+### Auth & Workspace
+
+| Feature | Description |
+|---------|-------------|
+| GitHub OAuth | Sign in with GitHub — no PAT setup required |
+| Multi-user | Each team member gets their own workspace config |
+| Persistent filters | Saved views stored in PostgreSQL, not a local file |
 
 ## Stack
 
