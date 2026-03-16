@@ -437,13 +437,13 @@ jobs:
         run: bunx playwright install-deps chromium
 
       - name: Download web build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: web-build-output
           path: apps/web/.output
 
       - name: Download API build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: api-build-output
           path: apps/api/dist
@@ -569,13 +569,13 @@ jobs:
         run: bunx playwright install-deps chromium firefox webkit
 
       - name: Download web build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: web-build-output
           path: apps/web/.output
 
       - name: Download API build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: api-build-output
           path: apps/api/dist
@@ -617,7 +617,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Download blob reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: blob-report-*
           merge-multiple: true
