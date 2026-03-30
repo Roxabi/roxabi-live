@@ -126,7 +126,7 @@ Better Auth uses **cookie-based sessions**:
 
 ### Same-origin cookies
 
-The frontend (port 3000) and API (port 4000) run on different ports in development. To keep cookies on the same origin (avoiding `SameSite=None`), the frontend uses a **Nitro dev proxy**:
+The frontend (port 3000) and API (port 4000) run on different ports in development. To keep cookies on the same origin (avoiding `SameSite=None`), the frontend uses a **Nitro server route** (`server/routes/api/[...path].ts`):
 
 ```
 /api/* → http://localhost:4000
@@ -154,13 +154,14 @@ The default implementation is `ResendEmailProvider`, which uses the Resend SDK. 
 { provide: EMAIL_PROVIDER, useClass: ResendEmailProvider }
 ```
 
-Better Auth invokes the email provider for three flows:
+Better Auth invokes the email provider for these flows:
 
 | Flow | Trigger | Template |
 |------|---------|----------|
 | **Email verification** | User signs up | "Click here to verify your email" |
 | **Password reset** | User requests reset | "Click here to reset your password" |
 | **Magic link** | User requests magic link | "Click here to sign in" |
+| **Existing account** | Sign-up with already-registered email | Notifies the existing user instead of creating a duplicate account |
 
 To swap email providers, create a new class implementing `EmailProvider` and register it in the module.
 

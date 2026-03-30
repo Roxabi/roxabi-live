@@ -1,39 +1,15 @@
-import { readdirSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import tailwindcss from '@tailwindcss/vite'
 import { devtools } from '@tanstack/devtools-vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
-import mdx from 'fumadocs-mdx/vite'
 import { nitro } from 'nitro/vite'
 import { defineConfig, loadEnv, type Plugin, type PluginOption, type ResolvedConfig } from 'vite'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 import { z } from 'zod'
 
 const apiTarget = process.env.API_URL ?? `http://localhost:${process.env.API_PORT ?? 4000}`
-
-// Enumerate all /docs/** prerender routes directly from the MDX source files.
-// TanStack Start renders client-side, so Nitro's link crawler finds nothing —
-// we must provide the list explicitly. The docs/ symlink (→ ../../docs) is the
-// same directory fumadocs-mdx reads, so this list is always in sync.
-const docsDir = fileURLToPath(new URL('./docs', import.meta.url))
-function getDocRoutes(): string[] {
-  try {
-    return (readdirSync(docsDir, { recursive: true }) as string[])
-      .filter((f) => f.endsWith('.mdx'))
-      .map((f) => {
-        const slug = f
-          .replace(/\.mdx$/, '')
-          .replace(/[/\\]index$/, '') // foo/index → foo
-          .replace(/^index$/, '') // root index → '' → /docs
-          .replace(/\\/g, '/') // normalise Windows separators
-        return `/docs${slug ? `/${slug}` : ''}`
-      })
-  } catch {
-    return ['/docs']
-  }
-}
 
 // Duplicated from env.shared.ts — Vite config runs outside the app bundle
 // and cannot import app source. Keep in sync manually; check-env-sync.ts
@@ -45,7 +21,10 @@ function validateEnvPlugin(): Plugin {
       if (config.command === 'build') {
         const envVars = loadEnv(config.mode, config.envDir ?? process.cwd(), 'VITE_')
         const schema = z.object({
+          VITE_APP_NAME: z.string().optional(),
           VITE_GITHUB_REPO_URL: z.string().url().optional(),
+          VITE_TALKS_URL: z.string().url().optional(),
+          VITE_DOCS_URL: z.string().url().optional(),
         })
         const result = schema.safeParse(envVars)
         if (!result.success) {
@@ -61,7 +40,6 @@ function validateEnvPlugin(): Plugin {
 async function getPlugins() {
   return [
     validateEnvPlugin(),
-    mdx(await import('./source.config')),
     devtools(),
     paraglideVitePlugin({
       project: './project.inlang',
@@ -80,18 +58,11 @@ async function getPlugins() {
         // The routeRules proxy below uses h3's proxyRequest(), which explicitly
         // appends each Set-Cookie header separately and works correctly. It is active
         // in both dev and production, giving full dev/prod parity.
-        // Prerender all /docs/** pages at build time.
-        // Doc content is static — no need for runtime SSR per request.
-        // Routes are enumerated explicitly (crawler can't follow React-rendered links).
-        prerender: {
-          routes: getDocRoutes(),
-        },
         routeRules: {
           // /api/** is handled by server/routes/api/[...path].ts — a runtime Nitro route
           // that reads VERCEL_AUTOMATION_BYPASS_SECRET from process.env per request, so
           // the secret is never serialised into the .output/ bundle artifact.
           '/api/**': { proxy: `${apiTarget}/api/**` },
-          '/docs/**': { prerender: true },
         },
       },
     }),
@@ -110,12 +81,20 @@ async function getPlugins() {
   ] as PluginOption[]
 }
 
-const config = defineConfig(async () => ({
-  envDir: '../..',
-  build: { chunkSizeWarningLimit: 1000 },
-  server: { port: Number(process.env.APP_PORT) || 3000 },
-  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
-  plugins: await getPlugins(),
-}))
+const config = defineConfig(async ({ mode }) => {
+  // Derive VITE_APP_NAME from APP_NAME if not explicitly set in .env.
+  // Runs before Vite calls configResolved — validateEnvPlugin sees the derived value.
+  const envDir = '../..'
+  const env = loadEnv(mode, envDir, '')
+  process.env.VITE_APP_NAME ??= env.APP_NAME ?? 'App'
+
+  return {
+    envDir: '../..',
+    build: { chunkSizeWarningLimit: 1000 },
+    server: { port: Number(process.env.APP_PORT) || 3000 },
+    resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+    plugins: await getPlugins(),
+  }
+})
 
 export default config

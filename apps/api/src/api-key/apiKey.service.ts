@@ -1,17 +1,14 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common'
-import { and, eq, isNull } from 'drizzle-orm'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ClsService } from 'nestjs-cls'
 import { AuditService } from '../audit/audit.service.js'
 import type { AuthenticatedSession } from '../auth/types.js'
-import { DRIZZLE, type DrizzleDB } from '../database/drizzle.provider.js'
-import { apiKeys } from '../database/schema/apiKey.schema.js'
-import { users } from '../database/schema/auth.schema.js'
-import { ApiKeyExpiredException } from './exceptions/apiKeyExpired.exception.js'
+import { API_KEY_REPO, type ApiKeyRepository } from './apiKey.repository.js'
 import { ApiKeyExpiryInPastException } from './exceptions/apiKeyExpiryInPast.exception.js'
+import { ApiKeyInsertFailedException } from './exceptions/apiKeyInsertFailed.exception.js'
 import { ApiKeyInvalidException } from './exceptions/apiKeyInvalid.exception.js'
+import { ApiKeyNoActiveOrgException } from './exceptions/apiKeyNoActiveOrg.exception.js'
 import { ApiKeyNotFoundException } from './exceptions/apiKeyNotFound.exception.js'
-import { ApiKeyRevokedException } from './exceptions/apiKeyRevoked.exception.js'
 import { ApiKeyScopesExceededException } from './exceptions/apiKeyScopesExceeded.exception.js'
 
 const KEY_PREFIX = 'sk_live_'
@@ -38,7 +35,7 @@ export class ApiKeyService {
   private readonly logger = new Logger(ApiKeyService.name)
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    @Inject(API_KEY_REPO) private readonly repo: ApiKeyRepository,
     private readonly auditService: AuditService,
     private readonly cls: ClsService
   ) {}
@@ -54,29 +51,20 @@ export class ApiKeyService {
     const { fullKey, lastFour, salt, hash } = this.generateKeyMaterial()
     const id = crypto.randomUUID()
 
-    const [inserted] = await this.db
-      .insert(apiKeys)
-      .values({
-        id,
-        tenantId: orgId,
-        userId: session.user.id,
-        name: dto.name,
-        keyPrefix: KEY_PREFIX,
-        keyHash: hash,
-        keySalt: salt,
-        lastFour,
-        scopes: dto.scopes,
-        expiresAt,
-      })
-      .returning({
-        id: apiKeys.id,
-        name: apiKeys.name,
-        keyPrefix: apiKeys.keyPrefix,
-        lastFour: apiKeys.lastFour,
-        scopes: apiKeys.scopes,
-        expiresAt: apiKeys.expiresAt,
-        createdAt: apiKeys.createdAt,
-      })
+    const inserted = await this.repo.insert({
+      id,
+      tenantId: orgId,
+      userId: session.user.id,
+      name: dto.name,
+      keyPrefix: KEY_PREFIX,
+      keyHash: hash,
+      keySalt: salt,
+      lastFour,
+      scopes: dto.scopes,
+      expiresAt,
+    })
+
+    if (!inserted) throw new ApiKeyInsertFailedException()
 
     this.logAudit(session.user.id, orgId, 'api_key.created', id, {
       after: { name: dto.name, scopes: dto.scopes, expiresAt: expiresAt?.toISOString() ?? null },
@@ -87,7 +75,7 @@ export class ApiKeyService {
 
   private requireOrgId(session: AuthenticatedSession): string {
     const orgId = session.session.activeOrganizationId
-    if (!orgId) throw new BadRequestException('Active organization required')
+    if (!orgId) throw new ApiKeyNoActiveOrgException()
     return orgId
   }
 
@@ -137,24 +125,7 @@ export class ApiKeyService {
 
   async list(session: AuthenticatedSession) {
     const orgId = this.requireOrgId(session)
-
-    const rows = await this.db
-      .select({
-        id: apiKeys.id,
-        name: apiKeys.name,
-        keyPrefix: apiKeys.keyPrefix,
-        lastFour: apiKeys.lastFour,
-        scopes: apiKeys.scopes,
-        rateLimitTier: apiKeys.rateLimitTier,
-        expiresAt: apiKeys.expiresAt,
-        lastUsedAt: apiKeys.lastUsedAt,
-        revokedAt: apiKeys.revokedAt,
-        createdAt: apiKeys.createdAt,
-      })
-      .from(apiKeys)
-      .where(eq(apiKeys.tenantId, orgId))
-      .orderBy(apiKeys.createdAt)
-
+    const rows = await this.repo.list(orgId)
     return { data: rows }
   }
 
@@ -163,14 +134,7 @@ export class ApiKeyService {
     const userId = session.user.id
 
     // Fetch the key and validate it belongs to this org
-    const [existing] = await this.db
-      .select({
-        id: apiKeys.id,
-        revokedAt: apiKeys.revokedAt,
-      })
-      .from(apiKeys)
-      .where(and(eq(apiKeys.id, id), eq(apiKeys.tenantId, orgId)))
-      .limit(1)
+    const existing = await this.repo.findForRevoke(id, orgId)
 
     if (!existing) {
       throw new ApiKeyNotFoundException(id)
@@ -183,7 +147,7 @@ export class ApiKeyService {
 
     const now = new Date()
 
-    await this.db.update(apiKeys).set({ revokedAt: now }).where(eq(apiKeys.id, id))
+    await this.repo.markRevoked(id, now)
 
     this.logAudit(userId, orgId, 'api_key.revoked', id)
 
@@ -197,24 +161,30 @@ export class ApiKeyService {
     scopes: string[]
     role: string
   }> {
+    const TOKEN_REGEX = /^sk_live_[a-zA-Z0-9]{32}$/
+    if (!TOKEN_REGEX.test(token)) {
+      throw new ApiKeyInvalidException()
+    }
+
     const lastFour = token.slice(-4)
 
-    const candidates = await this.db
-      .select({
-        id: apiKeys.id,
-        userId: apiKeys.userId,
-        tenantId: apiKeys.tenantId,
-        scopes: apiKeys.scopes,
-        keyHash: apiKeys.keyHash,
-        keySalt: apiKeys.keySalt,
-        revokedAt: apiKeys.revokedAt,
-        expiresAt: apiKeys.expiresAt,
-        role: users.role,
-      })
-      .from(apiKeys)
-      .innerJoin(users, eq(apiKeys.userId, users.id))
-      .where(eq(apiKeys.lastFour, lastFour))
-      .limit(10)
+    // TODO: lastFour should have a database index for performance:
+    // CREATE INDEX idx_api_keys_last_four ON api_keys(last_four)
+    const candidates = await this.repo.findCandidatesByLastFour(lastFour)
+
+    if (candidates.length === 10) {
+      this.logger.warn(
+        `[validateBearerToken] lastFour bucket hit limit(10) — possible collision storm`,
+        { lastFour }
+      )
+    }
+
+    if (candidates.length === 0) {
+      // Constant-time dummy to prevent timing oracle on lastFour enumeration
+      const dummy = Buffer.from(hmacHash(token, randomBytes(16).toString('hex')), 'hex')
+      timingSafeEqual(dummy, dummy)
+      throw new ApiKeyInvalidException()
+    }
 
     const match = (candidates ?? []).find((c) => {
       const computed = Buffer.from(hmacHash(token, c.keySalt), 'hex')
@@ -222,14 +192,8 @@ export class ApiKeyService {
       return computed.length === stored.length && timingSafeEqual(computed, stored)
     })
 
-    if (!match) {
+    if (!match || match.revokedAt || (match.expiresAt && match.expiresAt < new Date())) {
       throw new ApiKeyInvalidException()
-    }
-    if (match.revokedAt) {
-      throw new ApiKeyRevokedException()
-    }
-    if (match.expiresAt && match.expiresAt < new Date()) {
-      throw new ApiKeyExpiredException()
     }
 
     return {
@@ -242,34 +206,20 @@ export class ApiKeyService {
   }
 
   touchLastUsedAt(id: string): void {
-    this.db
-      .update(apiKeys)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(apiKeys.id, id))
-      .catch((err) => {
-        this.logger.error(`[touchLastUsedAt] Failed to update lastUsedAt for key ${id}`, err)
-      })
+    this.repo.touchLastUsedAt(id, new Date()).catch((err) => {
+      this.logger.error(`[touchLastUsedAt] Failed to update lastUsedAt for key ${id}`, err)
+    })
   }
 
   async revokeAllForUser(userId: string) {
     const now = new Date()
-
-    await this.db
-      .update(apiKeys)
-      .set({ revokedAt: now })
-      .where(and(eq(apiKeys.userId, userId), isNull(apiKeys.revokedAt)))
-
+    await this.repo.revokeAllForUser(userId, now)
     this.logger.log(`Revoked all API keys for user ${userId}`)
   }
 
   async revokeAllForOrg(organizationId: string) {
     const now = new Date()
-
-    await this.db
-      .update(apiKeys)
-      .set({ revokedAt: now })
-      .where(and(eq(apiKeys.tenantId, organizationId), isNull(apiKeys.revokedAt)))
-
+    await this.repo.revokeAllForOrg(organizationId, now)
     this.logger.log(`Revoked all API keys for organization ${organizationId}`)
   }
 }

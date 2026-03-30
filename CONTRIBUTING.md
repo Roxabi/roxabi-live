@@ -2,29 +2,18 @@
 
 ## Dev environment setup
 
-**Prerequisites:**
-- [Bun](https://bun.sh) ≥ 1.1 — `curl -fsSL https://bun.sh/install | bash`
-- [Docker](https://docs.docker.com/get-docker/) — for local PostgreSQL
-- [GitHub CLI](https://cli.github.com) — `gh auth login` with your GitHub account
+**Prerequisites:** Node ≥ 24, Bun 1.3.9+, Docker
 
 ```bash
-# 1. Clone and install
 git clone https://github.com/Roxabi/roxabi-dashboard.git
 cd roxabi-dashboard
-bun install           # also installs Lefthook git hooks
-
-# 2. Configure environment
-cp .env.example .env  # fill in DB_URL, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
-
-# 3. Start the database and run migrations
-docker compose up -d
-cd apps/api && bun run db:migrate
-
-# 4. Start the dev servers
-bun dev               # starts web + api concurrently via TurboRepo
+cp .env.example .env
+bun install          # installs deps + registers Lefthook hooks
+bun run db:up        # start Postgres 16 via Docker
+bun run db:migrate   # apply migrations
+bun run db:seed      # seed development data
+bun run dev          # web :3000 · api :4000 · email :3001
 ```
-
-Open `http://localhost:3000` — sign in with GitHub OAuth.
 
 ## Workflow
 
@@ -110,3 +99,9 @@ Reviews use [Conventional Comments](https://conventionalcomments.org/). Labels s
 ## Project structure
 
 See [README.md](README.md) for the full project tree. TurboRepo orchestrates builds; each app/package has its own `package.json`.
+
+## Code review
+
+Reviews use [Conventional Comments](https://conventionalcomments.org/). A PR is blocked only for security vulnerabilities, correctness bugs, or direct violations of project standards — style suggestions are non-blocking.
+
+All CI checks (lint, typecheck, tests, i18n, license) must pass before merge. At least one approval is required. For substantial changes, see [docs/standards/code-review.mdx](docs/standards/code-review.mdx).
