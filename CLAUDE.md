@@ -1,4 +1,5 @@
 @.claude/stack.yml
+@.claude/dev-core.md
 
 # Roxabi Dashboard
 
@@ -10,7 +11,7 @@ Hosted, multi-user web dashboard for the Roxabi team. Replaces the local `dev-co
 
 - **Project:** Roxabi Dashboard
 - **Before work:** Use `/dev #N` as the single entry point — it determines tier (S / F-lite / F-full) and drives the full lifecycle
-- **Decisions:** summarize context → numbered options + recommendation → wait for reply (see [Decision Protocol](#decision-protocol))
+- **Decisions:** → see global patterns (@.claude/dev-core.md)
 - **Never** commit without asking, push without request, or use `--force`/`--hard`/`--amend`
 - **Always** use appropriate skill even without slash command
 
@@ -61,32 +62,6 @@ packages/  ui(@repo/ui) types(@repo/types) config(@repo/config) email vitest-con
 ### 1. Dev Process
 
 **Entry point: `/dev #N`** — single command that scans artifacts, shows progress, and delegates to the right phase skill. Full spec → [dev-process.mdx](docs/processes/dev-process.mdx).
-
-| Tier | Criteria | Phases |
-|------|----------|--------|
-| **S** | ≤3 files, no arch, no risk | triage → implement → pr → validate → review → fix* → promote* → cleanup* |
-| **F-lite** | Clear scope, single domain | Frame → spec → plan → implement → verify → ship |
-| **F-full** | New arch, unclear reqs, >2 domains | Frame → analyze → spec → plan → implement → verify → ship |
-
-`*` = conditional (runs only if applicable — e.g., fix runs only if review produces findings)
-
-Phases: **Frame** (problem) → **Shape** (spec) → **Build** (code) → **Verify** (review) → **Ship** (release).
-
-### 2. Decision Protocol
-
-For all decisions, choices (≥2 options), approach proposals:
-
-1. **Summarize** — why / root cause / current behavior / target / path to reach it
-2. **Propose** — numbered options, one marked as recommended
-3. **Explain** — why the recommended option is recommended
-
-Then wait for reply.
-
-### Git
-
-Format: `<type>(<scope>): <desc>` + `Co-Authored-By: Claude <model> <noreply@anthropic.com>`
-Types: feat|fix|refactor|docs|style|test|chore|ci|perf
-Never push without request. Never force/hard/amend. Hook fail → fix + NEW commit.
 
 ## What This Is
 
