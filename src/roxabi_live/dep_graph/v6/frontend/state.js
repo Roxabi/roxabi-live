@@ -214,6 +214,17 @@ export function filteredNodes() {
   });
 }
 
+// For graph view: filter by all except search (search uses highlight)
+export function filteredNodesForGraph() {
+  return applyFilters(state.nodes, {
+    repo:      state.repo,
+    milestone: state.milestone,
+    priority:  state.priority,
+    status:    state.status,
+    search:    '',  // exclude search from filtering
+  });
+}
+
 // ─── Build edge lookup (legacy helper, kept for pivot.js) ─────────────────
 export function buildEdgeLookup(edges) {
   const blocks = {};

@@ -104,13 +104,17 @@ function renderMilestoneHeaders(container, milestoneInfo, usePercentage) {
       ? `${(ms.height || 5).toFixed(2)}%`
       : `${ms.height || 40}px`;
 
-    const code = document.createElement('div');
-    code.className = 'gg-msrow-code';
-    code.textContent = ms.code;
-    row.appendChild(code);
+    // Hide code for "no milestone" rows
+    const isNoMs = ms.code === '-' || ms.code === '(None)';
+    if (!isNoMs) {
+      const code = document.createElement('div');
+      code.className = 'gg-msrow-code';
+      code.textContent = ms.code;
+      row.appendChild(code);
+    }
 
-    // Show name, or "No milestone" for the "-" entry
-    const displayName = ms.name || (ms.code === '-' ? 'No milestone' : null);
+    // Show name, or "No milestone" for rows without milestone
+    const displayName = ms.name || (isNoMs ? 'No milestone' : null);
     if (displayName) {
       const name = document.createElement('div');
       name.className = 'gg-msrow-name';

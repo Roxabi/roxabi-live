@@ -81,18 +81,11 @@ function wireTargets(targets, byKey, edges) {
 }
 
 // ── Wire search input for pinned highlight ─────────────────────────────────────
-function wireSearch(input, byKey, edges) {
-  if (!input) return;
+let searchWired = false;
 
-  // Build number → keys map
-  const byNum = new Map();
-  for (const k of byKey.keys()) {
-    const m = /#(\d+)$/.exec(k);
-    if (!m) continue;
-    const num = m[1];
-    if (!byNum.has(num)) byNum.set(num, []);
-    byNum.get(num).push(k);
-  }
+function wireSearch(input) {
+  if (!input || searchWired) return;
+  searchWired = true;
 
   function applySearch() {
     const raw = input.value.trim().replace(/^#/, '');
@@ -101,6 +94,22 @@ function wireSearch(input, byKey, edges) {
       clearHighlight();
       return;
     }
+    // Rebuild byNum from current view panel DOM on each search (handles filtered nodes)
+    const byNum = new Map();
+    const currentByKey = new Map();
+    const panel = panelEl || document.querySelector('.view-active');
+    if (!panel) return;
+    panel.querySelectorAll('[data-iss]').forEach(el => {
+      const k = el.dataset.iss;
+      if (!k) return;
+      if (!currentByKey.has(k)) currentByKey.set(k, []);
+      currentByKey.get(k).push(el);
+      const m = /#(\d+)$/.exec(k);
+      if (!m) return;
+      const num = m[1];
+      if (!byNum.has(num)) byNum.set(num, []);
+      byNum.get(num).push(k);
+    });
     const keys = byNum.get(raw);
     if (!keys || keys.length === 0) {
       pinnedKey = null;
@@ -109,7 +118,9 @@ function wireSearch(input, byKey, edges) {
     }
     pinnedKey = keys[0];
     clearHighlight();
-    highlightKey(pinnedKey, byKey, edges);
+    // Get current edge elements from graph if visible
+    const edges = Array.from(panel.querySelectorAll('.gg-edge[data-src]'));
+    highlightKey(pinnedKey, currentByKey, edges);
   }
 
   input.addEventListener('input', applySearch);
@@ -149,10 +160,10 @@ export function initHover(panel, viewName) {
 
   wireTargets(targets, byKey, edges);
 
-  // Wire search if this is the first view initialized
+  // Wire search once (guarded by searchWired flag)
   const searchInput = document.getElementById('search-input');
   if (searchInput) {
-    wireSearch(searchInput, byKey, edges);
+    wireSearch(searchInput);
   }
 }
 

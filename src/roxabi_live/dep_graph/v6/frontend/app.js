@@ -2,7 +2,7 @@
 import { state, setState, parseMilestone, annotateNodes } from './state.js';
 import { renderTable } from './pivot.js';
 import { renderList }  from './list.js';
-import { initGraph }   from './graph.js';
+import { initGraph, clearSearchHighlight }   from './graph.js';
 import { MultiSelect } from './multi_select.js';
 import { clearPinned } from './hover.js';
 
@@ -110,7 +110,19 @@ searchClear.addEventListener('click', () => {
   searchInput.value = '';
   setState({ search: '' });
   searchInput.focus();
+  clearSearchHighlight();
   render();
+});
+
+// ESC key clears search + graph highlight
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    searchInput.value = '';
+    setState({ search: '' });
+    clearSearchHighlight();
+    render();
+  }
 });
 
 // ─── Pivot + List segs ────────────────────────────────────────────────────
