@@ -188,7 +188,127 @@ main { padding-bottom: 24px; }
 }
 .dep-label { color: var(--text-muted); }
 
-/* ─── List view ──────────────────────────────────────────────── */
+/* ─── Multi-select pill dropdown ─────────────────────────────── */
+.ms-wrap { position: relative; }
+
+.ms-trigger {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 3px;
+  min-width: 90px; max-width: 240px;
+  padding: 4px 8px; cursor: pointer;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  text-align: left; transition: border-color 0.12s;
+}
+.ms-trigger:hover { border-color: var(--border-hi); }
+.ms-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ms-trigger[aria-expanded="true"] { border-color: var(--accent); }
+
+.ms-placeholder { color: var(--text-dim); }
+
+.ms-pill {
+  display: inline-block; padding: 1px 5px; border-radius: 3px;
+  background: var(--accent-dim); color: var(--accent);
+  border: 1px solid rgba(232,93,4,0.3);
+  font-size: 10px; font-weight: 600; white-space: nowrap;
+}
+
+.ms-panel {
+  position: fixed; z-index: 500;
+  min-width: 160px; max-height: 260px; overflow-y: auto;
+  background: var(--bg-panel); border: 1px solid var(--border-hi);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  padding: 6px 0;
+}
+
+.ms-list { list-style: none; }
+.ms-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 12px; cursor: pointer;
+  font-family: 'Inter', sans-serif; font-size: 12px;
+  color: var(--text-muted); transition: background 0.08s;
+}
+.ms-item:hover { background: var(--bg-card); color: var(--text); }
+.ms-item input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+
+.ms-clear {
+  display: block; width: 100%; margin-top: 4px; padding: 4px 12px;
+  border: 0; border-top: 1px solid var(--border);
+  background: none; color: var(--text-dim); font-size: 11px;
+  font-family: 'JetBrains Mono', monospace; cursor: pointer; text-align: left;
+}
+.ms-clear:hover { color: var(--accent); }
+
+.list-controls { display: inline-flex; gap: 8px; align-items: center; }
+
+/* ─── List flat-table view ───────────────────────────────────── */
+.list-table {
+  width: 100%; border-collapse: collapse;
+  font-family: 'Inter', sans-serif; font-size: 12px;
+}
+.list-table th {
+  background: var(--bg-panel); color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em; text-align: left;
+  padding: 6px 8px; border-bottom: 1px solid var(--border);
+  white-space: nowrap; position: sticky; top: 0; z-index: 10;
+}
+.list-table th.sortable { cursor: pointer; user-select: none; }
+.list-table th.sortable:hover { color: var(--text); }
+.list-table th.sort-asc::after  { content: ' ▲'; font-size: 9px; }
+.list-table th.sort-desc::after { content: ' ▼'; font-size: 9px; }
+
+.list-table td {
+  padding: 5px 8px; border-bottom: 1px solid var(--border);
+  vertical-align: middle; color: var(--text);
+}
+.list-table tr.issue-row:hover td { background: var(--bg-panel); }
+.list-table tr.issue-row.state-closed td { opacity: 0.5; }
+
+.issue-link {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  font-weight: 700; color: var(--accent); text-decoration: none; white-space: nowrap;
+}
+.issue-link:hover { text-decoration: underline; }
+
+.col-dot { width: 24px; text-align: center; }
+.state-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  cursor: default;
+}
+.dot-open   { background: var(--status-open);   box-shadow: 0 0 4px var(--status-open); }
+.dot-closed { background: var(--status-closed); }
+.dot-blocked { background: #f97316; box-shadow: 0 0 4px rgba(249,115,22,0.6); }
+
+.col-title { max-width: 48ch; }
+.list-title {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 48ch;
+}
+
+.text-dim { color: var(--text-dim); }
+
+.col-count { text-align: center; white-space: nowrap; }
+.edge-count {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  color: var(--text-muted); cursor: default;
+  border-bottom: 1px dashed var(--border-hi);
+}
+
+/* Group header rows */
+.group-hdr td {
+  background: var(--bg-panel); font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; font-weight: 700; color: var(--accent);
+  padding: 5px 10px; cursor: pointer; user-select: none;
+}
+.group-hdr:hover td { background: var(--bg-card); }
+.group-caret { margin-right: 6px; font-size: 10px; }
+.group-count {
+  margin-left: 8px; font-size: 10px; font-weight: 400;
+  color: var(--text-muted); font-family: 'JetBrains Mono', monospace;
+}
+
+/* ─── Legacy list-items (kept for compat) ────────────────────── */
 .list-items { display: flex; flex-direction: column; gap: 5px; max-width: 960px; }
 .list-items .issue-card .card-title { white-space: normal; }
 

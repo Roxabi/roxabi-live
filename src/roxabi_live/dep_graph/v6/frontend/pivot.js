@@ -1,4 +1,4 @@
-// pivot.js — table (pivot matrix) and list renderers
+// pivot.js — pivot-matrix (Table view) renderer
 import { state, filteredNodes, dimValue, parseMilestone,
          prioritySortKey, buildEdgeLookup } from './state.js';
 
@@ -10,7 +10,6 @@ function buildCard(node, edgeLookup, opts = {}) {
   if (node.url) a.target = '_blank';
   a.rel = 'noopener noreferrer';
 
-  // head row
   const head = document.createElement('div');
   head.className = 'card-head';
 
@@ -29,7 +28,6 @@ function buildCard(node, edgeLookup, opts = {}) {
   head.append(dot, num, title);
   a.appendChild(head);
 
-  // badges
   const badges = document.createElement('div');
   badges.className = 'card-badges';
   if (opts.showRepo) {
@@ -61,7 +59,6 @@ function buildCard(node, edgeLookup, opts = {}) {
   }
   if (badges.children.length) a.appendChild(badges);
 
-  // dep info
   if (edgeLookup) {
     const blockedBy = edgeLookup.blocks[node.key] || [];
     const parentOf  = edgeLookup.parent[node.key]  || [];
@@ -99,7 +96,7 @@ function sortRowValues(values, dim) {
     });
   }
   if (dim === 'priority') {
-    const order = { P0:0, P1:1, P2:2, P3:3, None:4 };
+    const order = { P0: 0, P1: 1, P2: 2, P3: 3, None: 4 };
     return values.sort((a, b) => (order[a] ?? 99) - (order[b] ?? 99));
   }
   return values.sort((a, b) => {
@@ -133,13 +130,11 @@ export function renderTable(container) {
   const nodes = filteredNodes();
   const edgeLookup = buildEdgeLookup(state.edges);
 
-  // collect distinct dim values
   const rowVals = [...new Set(nodes.map(n => dimValue(n, pivotRow)))];
   const colVals = [...new Set(nodes.map(n => dimValue(n, pivotCol)))];
   sortRowValues(rowVals, pivotRow);
   sortRowValues(colVals, pivotCol);
 
-  // build matrix
   const matrix = {};
   for (const n of nodes) {
     const r = dimValue(n, pivotRow);
@@ -157,11 +152,10 @@ export function renderTable(container) {
   const table = document.createElement('table');
   table.className = 'pivot-table';
 
-  // thead
   const thead = document.createElement('thead');
-  const hrow = document.createElement('tr');
+  const hrow  = document.createElement('tr');
   const cornerTh = document.createElement('th');
-  cornerTh.className = 'row-header-th';
+  cornerTh.className   = 'row-header-th';
   cornerTh.textContent = `${pivotRow} \\ ${pivotCol}`;
   hrow.appendChild(cornerTh);
   for (const cv of colVals) {
@@ -172,17 +166,13 @@ export function renderTable(container) {
   thead.appendChild(hrow);
   table.appendChild(thead);
 
-  // tbody
   const tbody = document.createElement('tbody');
   for (const rv of rowVals) {
-    const tr = document.createElement('tr');
+    const tr    = document.createElement('tr');
     const rowTh = document.createElement('th');
     rowTh.className = 'row-header-th';
-    if (pivotRow === 'milestone') {
-      rowTh.appendChild(msHeaderHTML(rv));
-    } else {
-      rowTh.textContent = rv;
-    }
+    if (pivotRow === 'milestone') rowTh.appendChild(msHeaderHTML(rv));
+    else rowTh.textContent = rv;
     tr.appendChild(rowTh);
 
     for (const cv of colVals) {
@@ -191,14 +181,16 @@ export function renderTable(container) {
       if (!cellNodes.length) { td.className = 'empty-cell'; tr.appendChild(td); continue; }
 
       const cnt = document.createElement('div');
-      cnt.className = 'cell-count';
+      cnt.className   = 'cell-count';
       cnt.textContent = `${cellNodes.length}`;
       td.appendChild(cnt);
 
       const issues = document.createElement('div');
       issues.className = 'cell-issues';
       for (const n of cellNodes) {
-        issues.appendChild(buildCard(n, edgeLookup, { showRepo: pivotRow !== 'repo' && pivotCol !== 'repo' }));
+        issues.appendChild(buildCard(n, edgeLookup, {
+          showRepo: pivotRow !== 'repo' && pivotCol !== 'repo',
+        }));
       }
       td.appendChild(issues);
       tr.appendChild(td);
@@ -207,31 +199,4 @@ export function renderTable(container) {
   }
   table.appendChild(tbody);
   container.appendChild(table);
-}
-
-// ─── List renderer ────────────────────────────────────────────────────────
-export function renderList(container) {
-  const nodes = filteredNodes();
-  const edgeLookup = buildEdgeLookup(state.edges);
-
-  // sort: milestone_sort_key → priority → number
-  const sorted = [...nodes].sort((a, b) => {
-    const sa = parseMilestone(a).sortKey - parseMilestone(b).sortKey;
-    if (sa !== 0) return sa;
-    const pa = prioritySortKey(a.priority) - prioritySortKey(b.priority);
-    if (pa !== 0) return pa;
-    return a.number - b.number;
-  });
-
-  container.innerHTML = '';
-  if (!sorted.length) {
-    container.textContent = 'No issues match the current filter.';
-    return;
-  }
-  const list = document.createElement('div');
-  list.className = 'list-items';
-  for (const n of sorted) {
-    list.appendChild(buildCard(n, edgeLookup, { showRepo: true, showMs: true }));
-  }
-  container.appendChild(list);
 }

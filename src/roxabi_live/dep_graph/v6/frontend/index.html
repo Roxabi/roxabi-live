@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="graph.css">
 </head>
 <body>
 <div class="sticky-head">
@@ -18,17 +19,50 @@
     <div class="mode-toggle" role="group" aria-label="View">
       <button id="btn-table" class="active" aria-pressed="true">Table</button>
       <button id="btn-list" aria-pressed="false">List</button>
+      <button id="btn-graph" aria-pressed="false">Graph</button>
     </div>
   </header>
-  <div class="toolbar">
-    <label for="repo-filter" class="toolbar-label">Repo</label>
-    <select id="repo-filter" aria-label="Filter by repo"></select>
 
+  <div class="toolbar">
+    <!-- Multi-select: Repo -->
+    <div class="ms-wrap">
+      <button id="ms-repo-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by repo">
+        <span class="ms-placeholder">All repos</span>
+      </button>
+      <div id="ms-repo-panel" class="ms-panel" hidden></div>
+    </div>
+
+    <!-- Multi-select: Milestone -->
+    <div class="ms-wrap">
+      <button id="ms-milestone-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by milestone">
+        <span class="ms-placeholder">All milestones</span>
+      </button>
+      <div id="ms-milestone-panel" class="ms-panel" hidden></div>
+    </div>
+
+    <!-- Multi-select: Priority -->
+    <div class="ms-wrap">
+      <button id="ms-priority-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by priority">
+        <span class="ms-placeholder">All priorities</span>
+      </button>
+      <div id="ms-priority-panel" class="ms-panel" hidden></div>
+    </div>
+
+    <!-- Multi-select: Status -->
+    <div class="ms-wrap">
+      <button id="ms-status-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by status">
+        <span class="ms-placeholder">All statuses</span>
+      </button>
+      <div id="ms-status-panel" class="ms-panel" hidden></div>
+    </div>
+
+    <!-- Search -->
     <div class="search-wrap">
       <input type="search" id="search-input" placeholder="Search issues…" autocomplete="off" aria-label="Search issues">
       <button id="search-clear" class="clear-btn" aria-label="Clear search" hidden>×</button>
     </div>
 
+    <!-- Table-only: Pivot controls -->
     <span class="pivot-controls" id="pivot-controls">
       <label for="pivot-row" class="toolbar-label">Row</label>
       <select id="pivot-row" aria-label="Pivot row dimension">
@@ -49,12 +83,27 @@
         <option value="none">none</option>
       </select>
     </span>
+
+    <!-- List-only: Group-by -->
+    <span class="list-controls" id="list-controls" style="display:none">
+      <label for="list-group" class="toolbar-label">Group by</label>
+      <select id="list-group" aria-label="Group list by dimension">
+        <option value="milestone">milestone</option>
+        <option value="priority">priority</option>
+        <option value="repo">repo</option>
+        <option value="lane">lane</option>
+        <option value="size">size</option>
+        <option value="status">status</option>
+        <option value="none">none</option>
+      </select>
+    </span>
   </div>
 </div>
 
 <main>
   <div id="view-table" class="view view-active" role="region" aria-label="Table view"></div>
   <div id="view-list"  class="view"             role="region" aria-label="List view"></div>
+  <section id="graph-panel" class="view"        role="region" aria-label="Graph view" hidden></section>
   <div id="error-msg" class="error-msg" hidden></div>
 </main>
 
@@ -65,5 +114,6 @@
 <script type="module" src="state.js"></script>
 <script type="module" src="pivot.js"></script>
 <script type="module" src="app.js"></script>
+<script type="module" src="graph.js"></script>
 </body>
 </html>

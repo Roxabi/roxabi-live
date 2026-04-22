@@ -1,0 +1,306 @@
+/* graph.css — v5.1 graph-view styles, scoped to #graph-panel
+ * Source: lyra-v2-dependency-graph-v5.1.html <style> block
+ * Only rules touching .view-graph / .gg-* / graph chrome.
+ * Toolbar, grid-view, list-view, footer rules omitted.
+ */
+
+/* ── Lane custom properties (used by gg- tone attributes) ──────── */
+#graph-panel {
+  --status-ready:   #22c55e;
+  --status-blocked: #f97316;
+  --status-done:    #475569;
+  --teal:           #06b6d4;
+  --red:            #ef4444;
+
+  --lane-a1: #22c55e;
+  --lane-a2: #6366f1;
+  --lane-a3: #8b5cf6;
+  --lane-b:  #3b82f6;
+  --lane-c1: #a855f7;
+  --lane-c2: #d946ef;
+  --lane-c3: #ec4899;
+  --lane-d:  #06b6d4;
+  --lane-e:  #eab308;
+  --lane-f:  #10b981;
+  --lane-g:  #f97316;
+  --lane-h:  #f59e0b;
+  --lane-i:  #14b8a6;
+}
+
+/* ── Panel chrome ───────────────────────────────────────────────── */
+#graph-panel {
+  padding-top: 20px;
+}
+
+#graph-panel .graph-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#graph-reload-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+#graph-reload-btn:hover { border-color: var(--border-hi); color: var(--text); }
+#graph-reload-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Graph wrap (outermost container from v5) ───────────────────── */
+#graph-panel .graph-wrap {
+  position: relative;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#graph-panel .graph-stage {
+  position: absolute;
+  left: 160px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+}
+
+/* ── Milestone row-headers (left gutter) ────────────────────────── */
+#graph-panel .gg-msrow {
+  position: absolute;
+  left: 12px;
+  width: 136px;
+  padding: 12px 12px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 4;
+}
+#graph-panel .gg-msrow-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+#graph-panel .gg-msrow-name {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.32;
+}
+#graph-panel .gg-msrow-sep {
+  position: absolute;
+  left: 160px;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--border-hi) 20%,
+    var(--border-hi) 80%,
+    transparent
+  );
+  z-index: 1;
+}
+
+/* ── Node dot ────────────────────────────────────────────────────── */
+#graph-panel .gg-node {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--bg-panel), 0 0 8px currentColor;
+  z-index: 3;
+  transition: transform 0.12s ease, box-shadow 0.14s ease, opacity 0.18s ease;
+  text-decoration: none;
+}
+#graph-panel .gg-node:hover {
+  transform: translate(-50%, -50%) scale(1.25);
+  z-index: 11;
+}
+#graph-panel .gg-node.blocked {
+  background: transparent;
+  border: 2px dashed currentColor;
+}
+#graph-panel .gg-node.done {
+  background: var(--status-done);
+  opacity: 0.55;
+  box-shadow: 0 0 0 2px var(--bg-panel);
+}
+
+/* Tone mapping */
+#graph-panel .gg-node[data-tone="a1"]     { color: var(--lane-a1); }
+#graph-panel .gg-node[data-tone="a2"]     { color: var(--lane-a2); }
+#graph-panel .gg-node[data-tone="a3"]     { color: var(--lane-a3); }
+#graph-panel .gg-node[data-tone="b"]      { color: var(--lane-b); }
+#graph-panel .gg-node[data-tone="c1"]     { color: var(--lane-c1); }
+#graph-panel .gg-node[data-tone="c2"]     { color: var(--lane-c2); }
+#graph-panel .gg-node[data-tone="c3"]     { color: var(--lane-c3); }
+#graph-panel .gg-node[data-tone="d"]      { color: var(--lane-d); }
+#graph-panel .gg-node[data-tone="e"]      { color: var(--lane-e); }
+#graph-panel .gg-node[data-tone="f"]      { color: var(--lane-f); }
+#graph-panel .gg-node[data-tone="g"]      { color: var(--lane-g); }
+#graph-panel .gg-node[data-tone="h"]      { color: var(--lane-h); }
+#graph-panel .gg-node[data-tone="i"]      { color: var(--lane-i); }
+#graph-panel .gg-node[data-tone="accent"] { color: var(--accent); }
+
+/* ── Inline pill label ───────────────────────────────────────────── */
+#graph-panel .gg-ilabel {
+  position: absolute;
+  transform: translate(-50%, 14px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  min-width: 46px;
+  max-width: 104px;
+  border-radius: 99px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-hi);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  z-index: 2;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.14s ease,
+    max-width 0.18s ease,
+    opacity 0.18s ease;
+}
+#graph-panel .gg-ilabel:hover {
+  transform: translate(-50%, 14px) scale(1.04);
+  max-width: 280px;
+  border-color: currentColor;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45), 0 0 0 1px currentColor;
+  z-index: 12;
+}
+#graph-panel .gg-ilabel .gg-ldot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
+#graph-panel .gg-ilabel-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 10px;
+  color: currentColor;
+  flex-shrink: 0;
+}
+#graph-panel .gg-ilabel-title {
+  color: var(--text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#graph-panel .gg-ilabel:hover .gg-ilabel-title {
+  white-space: normal;
+  overflow: visible;
+}
+#graph-panel .gg-ilabel.done { opacity: 0.45; }
+#graph-panel .gg-ilabel.done .gg-ilabel-title {
+  text-decoration: line-through;
+  text-decoration-color: var(--status-done);
+  color: var(--text-muted);
+}
+#graph-panel .gg-ilabel.blocked { border-style: dashed; }
+
+/* Tone mapping */
+#graph-panel .gg-ilabel[data-tone="a1"]     { color: var(--lane-a1); }
+#graph-panel .gg-ilabel[data-tone="a2"]     { color: var(--lane-a2); }
+#graph-panel .gg-ilabel[data-tone="a3"]     { color: var(--lane-a3); }
+#graph-panel .gg-ilabel[data-tone="b"]      { color: var(--lane-b); }
+#graph-panel .gg-ilabel[data-tone="c1"]     { color: var(--lane-c1); }
+#graph-panel .gg-ilabel[data-tone="c2"]     { color: var(--lane-c2); }
+#graph-panel .gg-ilabel[data-tone="c3"]     { color: var(--lane-c3); }
+#graph-panel .gg-ilabel[data-tone="d"]      { color: var(--lane-d); }
+#graph-panel .gg-ilabel[data-tone="e"]      { color: var(--lane-e); }
+#graph-panel .gg-ilabel[data-tone="f"]      { color: var(--lane-f); }
+#graph-panel .gg-ilabel[data-tone="g"]      { color: var(--lane-g); }
+#graph-panel .gg-ilabel[data-tone="h"]      { color: var(--lane-h); }
+#graph-panel .gg-ilabel[data-tone="i"]      { color: var(--lane-i); }
+#graph-panel .gg-ilabel[data-tone="accent"] { color: var(--accent); }
+
+/* ── SVG edges ───────────────────────────────────────────────────── */
+#graph-panel .graph-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+#graph-panel .gg-edge {
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 1.2;
+  opacity: 0.45;
+  transition: opacity 0.18s, stroke-width 0.18s, stroke 0.18s;
+}
+#graph-panel .gg-edge.blocked { stroke-dasharray: 4 3; }
+#graph-panel .gg-edge[data-tone="a1"]     { stroke: var(--lane-a1); }
+#graph-panel .gg-edge[data-tone="a2"]     { stroke: var(--lane-a2); }
+#graph-panel .gg-edge[data-tone="a3"]     { stroke: var(--lane-a3); }
+#graph-panel .gg-edge[data-tone="b"]      { stroke: var(--lane-b); }
+#graph-panel .gg-edge[data-tone="c1"]     { stroke: var(--lane-c1); }
+#graph-panel .gg-edge[data-tone="c2"]     { stroke: var(--lane-c2); }
+#graph-panel .gg-edge[data-tone="c3"]     { stroke: var(--lane-c3); }
+#graph-panel .gg-edge[data-tone="d"]      { stroke: var(--lane-d); }
+#graph-panel .gg-edge[data-tone="e"]      { stroke: var(--lane-e); }
+#graph-panel .gg-edge[data-tone="f"]      { stroke: var(--lane-f); }
+#graph-panel .gg-edge[data-tone="g"]      { stroke: var(--lane-g); }
+#graph-panel .gg-edge[data-tone="h"]      { stroke: var(--lane-h); }
+#graph-panel .gg-edge[data-tone="i"]      { stroke: var(--lane-i); }
+#graph-panel .gg-edge[data-tone="accent"] { stroke: var(--accent); }
+
+/* ── Hover-chain highlight ───────────────────────────────────────── */
+#graph-panel.hl-active .gg-node,
+#graph-panel.hl-active .gg-ilabel { opacity: 0.15; }
+#graph-panel.hl-active .gg-edge   { opacity: 0.08; }
+
+#graph-panel.hl-active .gg-node.hl-self,
+#graph-panel.hl-active .gg-ilabel.hl-self {
+  opacity: 1;
+  z-index: 15;
+  box-shadow: 0 0 0 2px var(--accent), 0 0 14px rgba(232,93,4,0.55);
+}
+#graph-panel.hl-active .gg-node.hl-upstream,
+#graph-panel.hl-active .gg-ilabel.hl-upstream {
+  opacity: 1;
+  box-shadow: 0 0 0 1px var(--red), 0 0 6px rgba(248,113,113,0.35);
+}
+#graph-panel.hl-active .gg-node.hl-downstream,
+#graph-panel.hl-active .gg-ilabel.hl-downstream {
+  opacity: 1;
+  box-shadow: 0 0 0 1px var(--teal), 0 0 6px rgba(6,182,212,0.35);
+}
+#graph-panel.hl-active .gg-edge.hl-edge {
+  opacity: 0.95;
+  stroke-width: 2.2;
+}
+
+/* ── Dim overlay for filter integration (stretch goal) ──────────── */
+#graph-panel .gg-node.dim  { opacity: 0.12; }
+#graph-panel .gg-ilabel.dim { opacity: 0.12; }
+#graph-panel .gg-edge.dim  { opacity: 0.06; }
