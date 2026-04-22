@@ -93,7 +93,7 @@ function renderNodes(container, nodes, positions, usePercentage) {
 // ── Render milestone row headers (v5 layout only) ─────────────────────────────
 function renderMilestoneHeaders(container, milestoneInfo, usePercentage) {
   for (const ms of milestoneInfo) {
-    if (!ms.code || ms.code === '(None)') continue;
+    if (!ms.code) continue;
 
     const row = document.createElement('div');
     row.className = 'gg-msrow';
@@ -109,10 +109,12 @@ function renderMilestoneHeaders(container, milestoneInfo, usePercentage) {
     code.textContent = ms.code;
     row.appendChild(code);
 
-    if (ms.name) {
+    // Show name, or "No milestone" for the "-" entry
+    const displayName = ms.name || (ms.code === '-' ? 'No milestone' : null);
+    if (displayName) {
       const name = document.createElement('div');
       name.className = 'gg-msrow-name';
-      name.textContent = ms.name;
+      name.textContent = displayName;
       row.appendChild(name);
     }
 

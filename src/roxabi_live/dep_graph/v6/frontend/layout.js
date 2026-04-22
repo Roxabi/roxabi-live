@@ -111,7 +111,7 @@ export function layoutV5(nodes, edges) {
 
   const msMap = new Map();
   for (const n of nodes) {
-    const code = n.milestone_code ?? '(None)';
+    const code = n.milestone_code ?? '-';
     const sortKey = n.milestone_sort_key ?? 9999;
     if (!msMap.has(code)) msMap.set(code, sortKey);
   }
@@ -130,7 +130,7 @@ export function layoutV5(nodes, edges) {
 
   const byMsDepth = new Map();
   for (const n of nodes) {
-    const ms = n.milestone_code ?? '(None)';
+    const ms = n.milestone_code ?? '-';
     const depth = n._depth ?? 0;
     if (!byMsDepth.has(ms)) byMsDepth.set(ms, new Map());
     if (!byMsDepth.get(ms).has(depth)) byMsDepth.get(ms).set(depth, []);

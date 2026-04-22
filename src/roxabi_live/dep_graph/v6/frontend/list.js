@@ -17,6 +17,20 @@ function shortKey(k) {
   return m ? `#${m[1]}` : k;
 }
 
+// ─── Group title helper ───────────────────────────────────────────────────
+function groupTitle(dim, gVal, nodes) {
+  if (dim === 'parent' && gVal && gVal !== '—') {
+    // Find parent node to get its title
+    const parent = nodes.find(n => n.key === gVal);
+    if (parent) {
+      const title = parent.title || '';
+      return title.length > 50 ? title.slice(0, 47) + '…' : title;
+    }
+  }
+  // For other dims, no extra title
+  return null;
+}
+
 // ─── Sort state ───────────────────────────────────────────────────────────
 let sortCol = null;    // column id or null (default)
 let sortDir = 'asc';  // 'asc' | 'desc'
@@ -162,7 +176,7 @@ function buildRow(n, edges) {
   // Edge counts helper
   function makeCountCell(edgeList) {
     const td   = document.createElement('td');
-    td.className = 'col-count';
+    td.className = 'col-count col-center';  // center edge counts
     if (!edgeList.length) { return td; }  // blank for empty
     const sp = document.createElement('span');
     sp.className = 'edge-count';
@@ -287,7 +301,11 @@ export function renderList(container) {
         caret.className = 'group-caret';
         caret.textContent = isCollapsed ? '▸' : '▾';
         caret.setAttribute('aria-hidden', 'true');
-        hdrTd.append(caret, ` ${gVal}  `, Object.assign(document.createElement('span'), {
+        const gTitle = groupTitle(group, gVal, nodes);
+        const titleSpan = gTitle ? Object.assign(document.createElement('span'), {
+          className: 'group-title', textContent: gTitle,
+        }) : null;
+        hdrTd.append(caret, ` ${gVal} `, titleSpan || '', '  ', Object.assign(document.createElement('span'), {
           className: 'group-count', textContent: `${groupNodes.length}`,
         }));
         hdr.appendChild(hdrTd);
@@ -342,7 +360,11 @@ export function renderList(container) {
       caret.className = 'group-caret';
       caret.textContent = isCollapsed ? '▸' : '▾';
       caret.setAttribute('aria-hidden', 'true');
-      hdrTd.append(caret, ` ${gVal}  `, Object.assign(document.createElement('span'), {
+      const gTitle = groupTitle(dim, gVal, nodeList);
+      const titleSpan = gTitle ? Object.assign(document.createElement('span'), {
+        className: 'group-title', textContent: gTitle,
+      }) : null;
+      hdrTd.append(caret, ` ${gVal} `, titleSpan || '', '  ', Object.assign(document.createElement('span'), {
         className: 'group-count', textContent: `${groupNodes.length}`,
       }));
       hdr.appendChild(hdrTd);
