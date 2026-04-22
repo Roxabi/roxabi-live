@@ -11,6 +11,8 @@ from typing import TypedDict
 
 import aiosqlite
 
+from .parse import derive_lane_size, derive_priority, parse_milestone
+
 
 class Node(TypedDict):
     key: str
@@ -20,37 +22,25 @@ class Node(TypedDict):
     state: str
     url: str | None
     milestone: str | None
+    milestone_code: str | None
+    milestone_name: str | None
+    milestone_sort_key: int
     labels: list[str]
-    size: str | None
     priority: str | None
+    lane: str | None
+    size: str | None
     is_stub: bool
 
 
 class Edge(TypedDict):
     src: str
     dst: str
+    kind: str
 
 
 class GraphPayload(TypedDict):
     nodes: list[Node]
     edges: list[Edge]
-
-
-_SIZE_LABELS = {"XS", "S", "M", "L", "XL"}
-
-
-def _derive_size(labels: list[str]) -> str | None:
-    for label in labels:
-        if label in _SIZE_LABELS:
-            return label
-    return None
-
-
-def _derive_priority(labels: list[str]) -> str | None:
-    for label in labels:
-        if label.startswith("P") and len(label) >= 2 and label[1].isdigit():
-            return label
-    return None
 
 
 async def build_graph_json(db_path: Path) -> GraphPayload:
@@ -70,6 +60,10 @@ async def build_graph_json(db_path: Path) -> GraphPayload:
         ) as cur:
             async for row in cur:
                 issue_labels = labels_by_issue.get(row["key"], [])
+                milestone_code, milestone_name, milestone_sort_key = parse_milestone(
+                    row["milestone"]
+                )
+                lane, size = derive_lane_size(issue_labels)
                 nodes.append(
                     Node(
                         key=row["key"],
@@ -79,16 +73,22 @@ async def build_graph_json(db_path: Path) -> GraphPayload:
                         state=row["state"],
                         url=row["url"],
                         milestone=row["milestone"],
+                        milestone_code=milestone_code,
+                        milestone_name=milestone_name,
+                        milestone_sort_key=milestone_sort_key,
                         labels=issue_labels,
-                        size=_derive_size(issue_labels),
-                        priority=_derive_priority(issue_labels),
+                        priority=derive_priority(issue_labels),
+                        lane=lane,
+                        size=size,
                         is_stub=bool(row["is_stub"]),
                     )
                 )
 
         edges: list[Edge] = []
-        async with db.execute("SELECT src_key, dst_key FROM edges") as cur:
+        async with db.execute("SELECT src_key, dst_key, kind FROM edges") as cur:
             async for row in cur:
-                edges.append(Edge(src=row["src_key"], dst=row["dst_key"]))
+                edges.append(
+                    Edge(src=row["src_key"], dst=row["dst_key"], kind=row["kind"])
+                )
 
     return GraphPayload(nodes=nodes, edges=edges)

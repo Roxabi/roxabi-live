@@ -106,6 +106,7 @@ def upsert_edges(
     issue_key: str,
     blocked_by: list[str],
     blocking: list[str],
+    kind: str = "parent",
 ) -> None:
     """Wipe all edges touching issue_key (as src OR dst), then rewrite rows.
 
@@ -120,13 +121,13 @@ def upsert_edges(
         "DELETE FROM edges WHERE src_key = ? OR dst_key = ?",
         (issue_key, issue_key),
     )
-    rows: list[tuple[str, str]] = []
+    rows: list[tuple[str, str, str]] = []
     for blocker in blocked_by:
-        rows.append((blocker, issue_key))
+        rows.append((blocker, issue_key, kind))
     for blockee in blocking:
-        rows.append((issue_key, blockee))
+        rows.append((issue_key, blockee, kind))
     conn.executemany(
-        "INSERT OR IGNORE INTO edges (src_key, dst_key) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)",
         rows,
     )
 
@@ -192,7 +193,7 @@ def run_repo_sync(
                 canonical_key(t["number"], t["repository"]["nameWithOwner"])
                 for t in node["trackedInIssues"]["nodes"]
             ]
-            upsert_edges(conn, key, blocked_by, blocking)
+            upsert_edges(conn, key, blocked_by, blocking, kind="parent")
 
         conn.commit()
         pages += 1

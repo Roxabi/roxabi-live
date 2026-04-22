@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dep-Graph v6 · Roxabi Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="sticky-head">
+  <header class="page-header">
+    <div>
+      <h1>Dep-Graph <span class="accent">v6</span> · Roxabi Live</h1>
+      <div class="subtitle" id="subtitle">Loading…</div>
+    </div>
+    <div class="mode-toggle" role="group" aria-label="View">
+      <button id="btn-table" class="active" aria-pressed="true">Table</button>
+      <button id="btn-list" aria-pressed="false">List</button>
+    </div>
+  </header>
+  <div class="toolbar">
+    <label for="repo-filter" class="toolbar-label">Repo</label>
+    <select id="repo-filter" aria-label="Filter by repo"></select>
+
+    <div class="search-wrap">
+      <input type="search" id="search-input" placeholder="Search issues…" autocomplete="off" aria-label="Search issues">
+      <button id="search-clear" class="clear-btn" aria-label="Clear search" hidden>×</button>
+    </div>
+
+    <span class="pivot-controls" id="pivot-controls">
+      <label for="pivot-row" class="toolbar-label">Row</label>
+      <select id="pivot-row" aria-label="Pivot row dimension">
+        <option value="milestone">milestone</option>
+        <option value="priority">priority</option>
+        <option value="repo">repo</option>
+        <option value="lane">lane</option>
+        <option value="size">size</option>
+        <option value="none">none</option>
+      </select>
+      <label for="pivot-col" class="toolbar-label">Col</label>
+      <select id="pivot-col" aria-label="Pivot column dimension">
+        <option value="milestone">milestone</option>
+        <option value="priority">priority</option>
+        <option value="repo">repo</option>
+        <option value="lane">lane</option>
+        <option value="size">size</option>
+        <option value="none">none</option>
+      </select>
+    </span>
+  </div>
+</div>
+
+<main>
+  <div id="view-table" class="view view-active" role="region" aria-label="Table view"></div>
+  <div id="view-list"  class="view"             role="region" aria-label="List view"></div>
+  <div id="error-msg" class="error-msg" hidden></div>
+</main>
+
+<footer class="page-footer">
+  <span>v6 · <a href="/dep-graph/">v5.1 reference</a></span>
+</footer>
+
+<script type="module" src="state.js"></script>
+<script type="module" src="pivot.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

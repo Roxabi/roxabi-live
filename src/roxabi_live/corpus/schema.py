@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS issues (
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS labels (
 CREATE TABLE IF NOT EXISTS edges (
     src_key     TEXT NOT NULL,
     dst_key     TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'parent',
     PRIMARY KEY (src_key, dst_key)
 );
 
@@ -47,11 +48,22 @@ CREATE INDEX IF NOT EXISTS ix_labels_name ON labels(name);
 """
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply incremental migrations to existing DBs."""
+    try:
+        conn.execute("ALTER TABLE edges ADD COLUMN kind TEXT NOT NULL DEFAULT 'parent'")
+        conn.commit()
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
+
+
 def bootstrap(db_path: pathlib.Path) -> None:
     """Idempotent schema initialisation."""
     conn = connect(db_path)
     try:
         conn.executescript(SCHEMA_SQL)
+        _migrate(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.execute("PRAGMA journal_mode = WAL")
         conn.commit()
