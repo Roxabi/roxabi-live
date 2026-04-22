@@ -1,0 +1,12 @@
+{
+  "release-type": "python",
+  "target-branch": "main",
+  "separate-pull-requests": true,
+  "packages": {
+    ".": {
+      "component": "roxabi-dashboard",
+      "package-name": "roxabi-dashboard",
+      "tag-separator": "/"
+    }
+  }
+}
