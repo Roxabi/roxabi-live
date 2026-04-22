@@ -31,8 +31,10 @@ query($owner: String!, $name: String!, $cursor: String, $since: DateTime) {
         closedAt
         milestone { title }
         labels(first: 30) { nodes { name } }
-        trackedIssues(first: 50) { nodes { number repository { nameWithOwner } } }
-        trackedInIssues(first: 50) { nodes { number repository { nameWithOwner } } }
+        subIssues(first: 50) { nodes { number repository { nameWithOwner } } }
+        parent { number repository { nameWithOwner } }
+        blockedBy(first: 50) { nodes { number repository { nameWithOwner } } }
+        blocking(first: 50) { nodes { number repository { nameWithOwner } } }
       }
     }
   }

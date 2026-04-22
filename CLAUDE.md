@@ -59,6 +59,35 @@ tests/
 
 Module name: `roxabi_live` (underscore). CLI: `roxabi-live` (hyphen).
 
+## Corpus sync — edge algorithm
+
+GitHub issue relationships map to `corpus.db` edges table with specific `kind` values:
+
+| Relationship | GraphQL field | Edge direction | `kind` |
+|--------------|---------------|----------------|--------|
+| Parent → child | `subIssues` | `src=parent, dst=child` | `parent` |
+| Child → parent | `parent` | `src=parent, dst=child` | `parent` |
+| Blocks | `blockedBy`/`blocking` | `src=blocker, dst=blocked` | `blocks` |
+
+**Edge semantics:**
+- `parent`: `src` is the parent issue, `dst` is a sub-issue. Parent must complete before children can proceed.
+- `blocks`: `src` blocks `dst`. If `src` is open, `dst` is "blocked"; if `src` is closed, `dst` is "ready".
+
+**Sync flow** (`src/roxabi_live/corpus/sync.py`):
+1. Fetch issues via GraphQL with `subIssues`, `parent`, `blockedBy`, `blocking` fields
+2. For each issue:
+   - `upsert_edges(conn, key, parents, children, kind="parent")` — parents point to this issue, this issue points to children
+   - `upsert_edges(conn, key, blocked_by, blocking, kind="blocks")` — blockers point to this issue, this issue points to blockees
+3. `upsert_edges` deletes only edges of the same `kind` for the issue, allowing multiple edge types per issue
+
+**Frontend status computation** (`src/roxabi_live/dep_graph/v6/frontend/state.js`):
+```js
+// Any edge where this node is dst → src blocks it
+if (node.state === 'closed') return 'done';
+const openBlocker = blockers.some(e => nodesByKey.get(e.src)?.state === 'open');
+return openBlocker ? 'blocked' : 'ready';
+```
+
 ## Conventions
 
 - EN for docs/code/commits

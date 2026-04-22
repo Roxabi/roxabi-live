@@ -108,7 +108,7 @@ def upsert_edges(
     blocking: list[str],
     kind: str = "parent",
 ) -> None:
-    """Wipe all edges touching issue_key (as src OR dst), then rewrite rows.
+    """Wipe all edges touching issue_key (as src OR dst) of the same kind, then rewrite rows.
 
     Canonical direction:
     - Every blocker b in blocked_by → row (src=b, dst=issue_key).
@@ -118,8 +118,8 @@ def upsert_edges(
     All inputs are assumed already canonical — caller must use canonical_key first.
     """
     conn.execute(
-        "DELETE FROM edges WHERE src_key = ? OR dst_key = ?",
-        (issue_key, issue_key),
+        "DELETE FROM edges WHERE (src_key = ? OR dst_key = ?) AND kind = ?",
+        (issue_key, issue_key, kind),
     )
     rows: list[tuple[str, str, str]] = []
     for blocker in blocked_by:
@@ -185,15 +185,32 @@ def run_repo_sync(
             labels = [n["name"] for n in node["labels"]["nodes"]]
             upsert_labels(conn, key, labels)
 
-            blocking = [
+            # Parent/child relationships (subIssues/parent)
+            # Edge direction: src=parent, dst=child
+            children = [
                 canonical_key(t["number"], t["repository"]["nameWithOwner"])
-                for t in node["trackedIssues"]["nodes"]
+                for t in node.get("subIssues", {}).get("nodes", [])
             ]
-            blocked_by = [
+            parent_node = node.get("parent")
+            parents = [canonical_key(parent_node["number"], parent_node["repository"]["nameWithOwner"])] if parent_node else []
+
+            # Dependency relationships (blockedBy/blocking)
+            # Edge direction: src=blocker, dst=blocked
+            deps_blocked_by = [
                 canonical_key(t["number"], t["repository"]["nameWithOwner"])
-                for t in node["trackedInIssues"]["nodes"]
+                for t in node.get("blockedBy", {}).get("nodes", [])
             ]
-            upsert_edges(conn, key, blocked_by, blocking, kind="parent")
+            deps_blocking = [
+                canonical_key(t["number"], t["repository"]["nameWithOwner"])
+                for t in node.get("blocking", {}).get("nodes", [])
+            ]
+
+            # Upsert parent edges: parents -> this issue, this issue -> children
+            upsert_edges(conn, key, parents, children, kind="parent")
+
+            # Upsert blocks edges: blockers -> this issue, this issue -> blockees
+            if deps_blocked_by or deps_blocking:
+                upsert_edges(conn, key, deps_blocked_by, deps_blocking, kind="blocks")
 
         conn.commit()
         pages += 1
