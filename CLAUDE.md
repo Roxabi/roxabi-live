@@ -43,7 +43,7 @@ Let:
 | Version | Status | Entry |
 |---|---|---|
 | v1 | frozen (legacy CLI) | `dep-graph` script |
-| v5 | frozen (static HTML build) | `dep-graph-v5` script |
+| v5 | frozen (static HTML build) | `dep-graph-v5` script · `GET /dep-graph/` (auto-rebuild when corpus.db newer) |
 | v6 | **primary** — API-first | `GET /api/graph` · `dep-graph-v6` CLI (debug) |
 
 ## Package layout

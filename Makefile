@@ -50,7 +50,7 @@ live:
 	case "$$_cmd" in \
 		sync)   uv run roxabi-corpus sync $(wordlist 2,$(words $(SVC_CMD)),$(SVC_CMD)) ;; \
 		status) $(HUB_SVC) live status || true ;; \
-		"")     $(HUB_SVC) live start ;; \
+		"")     uv run roxabi-corpus sync && $(HUB_SVC) live start ;; \
 		*)      $(HUB_SVC) live $(SVC_CMD) ;; \
 	esac
 
