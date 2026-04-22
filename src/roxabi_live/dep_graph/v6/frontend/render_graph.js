@@ -16,7 +16,7 @@ function getTone(node) {
   return LANE_TONES[lane] || 'accent';
 }
 
-// ── Render nodes as .gg-ilabel elements ──────────────────────────────────────
+// ── Render nodes as .gg-node dots + .gg-ilabel labels (v4.8 style) ───────────
 function renderNodes(container, nodes, positions, usePercentage) {
   const byKey = new Map();
   for (const n of nodes) byKey.set(n.key, n);
@@ -40,6 +40,21 @@ function renderNodes(container, nodes, positions, usePercentage) {
       ? `left:${pos.x.toFixed(2)}%; top:${pos.y.toFixed(2)}%;`
       : `left:${pos.x}px; top:${pos.y}px;`;
 
+    // ── Dot (.gg-node) ──────────────────────────────────────────────────────
+    const dot = document.createElement('a');
+    dot.className = 'gg-node' + (isDone ? ' done' : '') + (isBlocked ? ' blocked' : '');
+    dot.dataset.tone = tone;
+    dot.dataset.iss = key;
+    dot.dataset.blockedby = blockers;
+    dot.dataset.blocking = unblocks;
+    dot.href = node.url || '#';
+    dot.target = '_blank';
+    dot.rel = 'noopener';
+    dot.style.cssText = style;
+    dot.title = `#${node.number} — ${node.title || ''}`;
+    container.appendChild(dot);
+
+    // ── Label (.gg-ilabel) ──────────────────────────────────────────────────
     const label = document.createElement('a');
     label.className = 'gg-ilabel' + (isDone ? ' done' : '') + (isBlocked ? ' blocked' : '');
     label.dataset.tone = tone;
@@ -52,11 +67,11 @@ function renderNodes(container, nodes, positions, usePercentage) {
     label.style.cssText = style;
     label.title = `#${node.number} — ${node.title || ''}`;
 
-    // Dot indicator
-    const dot = document.createElement('span');
-    dot.className = 'gg-ldot';
-    dot.setAttribute('aria-hidden', 'true');
-    label.appendChild(dot);
+    // Dot indicator inside label
+    const ldot = document.createElement('span');
+    ldot.className = 'gg-ldot';
+    ldot.setAttribute('aria-hidden', 'true');
+    label.appendChild(ldot);
 
     // Issue number
     const num = document.createElement('span');
@@ -158,11 +173,16 @@ export function renderGraph(container, nodes, edges, layoutResult) {
   wrap.setAttribute('role', 'img');
   wrap.setAttribute('aria-label', 'Dependency graph');
 
-  // Create node container
+  // Render milestone headers OUTSIDE stage (they need left:12px from wrap edge)
+  if (milestoneInfo && milestoneInfo.length > 0) {
+    renderMilestoneHeaders(wrap, milestoneInfo, usePercentage);
+  }
+
+  // Create stage container (holds both SVG and nodes, same coordinate system)
   const stage = document.createElement('div');
   stage.className = 'graph-stage';
 
-  // Create SVG layer for edges
+  // Create SVG layer for edges (inside stage so coords match nodes)
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('graph-svg');
 
@@ -183,13 +203,11 @@ export function renderGraph(container, nodes, edges, layoutResult) {
   // Render nodes
   renderNodes(stage, nodes, positions, usePercentage);
 
-  wrap.appendChild(svg);
-  wrap.appendChild(stage);
+  // SVG and nodes share the same stage (same coordinate space)
+  stage.appendChild(svg);
+  // Nodes already appended to stage in renderNodes
 
-  // Render milestone headers OUTSIDE stage (they need left:12px from wrap edge)
-  if (milestoneInfo && milestoneInfo.length > 0) {
-    renderMilestoneHeaders(wrap, milestoneInfo, usePercentage);
-  }
+  wrap.appendChild(stage);
   container.appendChild(wrap);
 
   return wrap;
@@ -201,5 +219,6 @@ export function getEdgeElements(container) {
 }
 
 export function getLabelElements(container) {
-  return Array.from(container.querySelectorAll('.gg-ilabel[data-iss]'));
+  // Include both .gg-node dots and .gg-ilabel labels for hover-chain
+  return Array.from(container.querySelectorAll('.gg-node[data-iss], .gg-ilabel[data-iss]'));
 }
