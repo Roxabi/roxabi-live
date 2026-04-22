@@ -1,5 +1,5 @@
 [project]
-name = "roxabi-dashboard"
+name = "roxabi-live"
 version = "0.1.0"
 description = "Roxabi operations cockpit — live view of issues corpus, agents, CI/CD"
 requires-python = ">=3.12,<3.13"
@@ -8,17 +8,23 @@ dependencies = [
     "uvicorn[standard]>=0.34.0",
     "aiosqlite>=0.21.0",
     "python-dotenv>=1.2.2",
+    "jsonschema>=4.0",
+    "jinja2>=3.0",
 ]
 
 [project.scripts]
-roxabi-dashboard = "roxabi_dashboard.__main__:main"
+roxabi-live = "roxabi_live.__main__:main"
+roxabi-corpus = "roxabi_live.corpus.cli:main"
+dep-graph = "roxabi_live.dep_graph.v1.cli:main"
+dep-graph-v5 = "roxabi_live.dep_graph.v5.build:main"
+dep-graph-v6 = "roxabi_live.dep_graph.v6.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/roxabi_dashboard"]
+packages = ["src/roxabi_live"]
 
 [tool.uv]
 # No override-dependencies needed for this lean stack.
@@ -26,11 +32,14 @@ packages = ["src/roxabi_dashboard"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--import-mode=importlib"
+addopts = "--import-mode=importlib -m 'not integration'"
+markers = [
+    "integration: tests requiring local fixture files (not run in CI by default)",
+]
 
 [tool.coverage.run]
 branch = true
-source = ["roxabi_dashboard"]
+source = ["roxabi_live"]
 
 [tool.coverage.report]
 show_missing = true
@@ -54,6 +63,13 @@ exclude = [".claude/worktrees"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "C901", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.per-file-ignores]
+# Legacy v1/v5 migrated code — frozen; lint relaxations instead of refactor.
+"src/roxabi_live/dep_graph/v1/**" = ["E501", "C901", "PLR0913", "PLR0915"]
+"src/roxabi_live/dep_graph/v5/**" = ["E501", "C901", "PLR0913", "PLR0915"]
+"tests/dep_graph/v1/**" = ["E501"]
+"tests/dep_graph/v5/**" = ["E501"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

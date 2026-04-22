@@ -1,3 +1,4 @@
 # Folder size exemptions (<=12 files per folder)
 # Each entry must have a tracking issue.
 # Format: <path>  # <count> files — <issue> <description>
+src/roxabi_live/dep_graph/v1  # 13 files — legacy v1 package, frozen for v6 migration

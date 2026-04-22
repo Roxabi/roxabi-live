@@ -1,6 +1,6 @@
 # Analysis: Corpus Live Access — Architecture Options
 
-**Issue:** #43 (roxabi-dashboard)
+**Issue:** #43 (roxabi-live)
 **Supersedes:** Roxabi/lyra#866
 **Date:** 2026-04-22
 **Status:** Decision reached
@@ -33,7 +33,7 @@
                      │ localhost
                      ▼
       ┌───────────────────────────────────────────────┐
-      │  FastAPI (this repo — roxabi-dashboard)        │
+      │  FastAPI (this repo — roxabi-live)        │
       │  - POST /webhook/github  (HMAC-validated)      │
       │  - GET  /api/issues                            │
       │  - GET  /api/issues/:key                       │
@@ -86,7 +86,7 @@
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| FastAPI app | this repo (`roxabi-dashboard`) | Owns API + webhook handler + frontend |
+| FastAPI app | this repo (`roxabi-live`) | Owns API + webhook handler + frontend |
 | `cloudflared` daemon | `deploy/supervisor/conf.d/cloudflared.conf` (this repo) | Separate process; not embedded in app |
 | corpus.db | `~/.roxabi/corpus.db` | Owned by lyra; read + upserted by this repo's webhook handler |
 | Reconciler | `scripts/corpus/` (lyra — upstream) | Unchanged; lyra adds startup trigger + hourly schedule |
@@ -173,7 +173,7 @@ Revisit when a write-capable user endpoint lands (e.g. status updates, manual is
 
 ## Frontend Strategy
 
-`roxabi-dashboard` (this repo) is a clean rewrite. First view: promote `lyra-v2-dependency-graph-v5.1` (existing artifact) as the first tab, swap static data for API calls, add repo dropdown. No new viz work in MVP.
+`roxabi-live` (this repo) is a clean rewrite. First view: promote `lyra-v2-dependency-graph-v5.1` (existing artifact) as the first tab, swap static data for API calls, add repo dropdown. No new viz work in MVP.
 
 Single GitHub org (Roxabi) → repo selector is a simple dropdown populated from `GET /api/repos`. No multi-org aggregation layer.
 

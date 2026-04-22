@@ -4,8 +4,8 @@
   "separate-pull-requests": true,
   "packages": {
     ".": {
-      "component": "roxabi-dashboard",
-      "package-name": "roxabi-dashboard",
+      "component": "roxabi-live",
+      "package-name": "roxabi-live",
       "tag-separator": "/"
     }
   }

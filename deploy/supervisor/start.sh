@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start roxabi-dashboard supervisord.
+# Start roxabi-live supervisord.
 # Usage: start.sh          — start supervisord only (programs stay stopped)
 #        start.sh --all    — start supervisord + all programs
 set -e
@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 SUPERVISOR_DIR="$SCRIPT_DIR"
 
-mkdir -p "$HOME/.local/state/roxabi-dashboard/logs"
+mkdir -p "$HOME/.local/state/roxabi-live/logs"
 
 if [ -f "$SUPERVISOR_DIR/supervisord.pid" ]; then
     PID=$(cat "$SUPERVISOR_DIR/supervisord.pid")

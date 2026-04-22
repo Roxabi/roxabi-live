@@ -8,7 +8,7 @@ Let:
 
 ## Project
 
-**Roxabi Dashboard** — operations cockpit (FastAPI + aiosqlite + cloudflared)
+**Roxabi Live** — operations cockpit (FastAPI + aiosqlite + cloudflared)
 - Exposes `~/.roxabi/corpus.db` via live HTTP API (`GET /api/*`)
 - Receives GitHub org webhooks for near-real-time updates
 - Frontend: static HTML/JS (dep-graph tab first, see spec #866)
@@ -26,18 +26,30 @@ Let:
 
 | File | Role |
 |---|---|
-| `src/roxabi_dashboard/app.py` | FastAPI application factory |
-| `src/roxabi_dashboard/__main__.py` | uvicorn entry point |
+| `src/roxabi_live/app.py` | FastAPI application factory |
+| `src/roxabi_live/__main__.py` | uvicorn entry point |
+| `src/roxabi_live/corpus/` | Issue sync GraphQL → `~/.roxabi/corpus.db` (migrated from lyra) |
+| `src/roxabi_live/dep_graph/v1/` | Legacy CLI renderer (frozen) |
+| `src/roxabi_live/dep_graph/v5/` | Matrix + graph HTML renderer (frozen) |
+| `src/roxabi_live/dep_graph/v6/` | API-first renderer → `GET /api/graph` |
 | `deploy/supervisor/supervisord.conf` | supervisord config |
 | `deploy/supervisor/conf.d/` | per-program supervisor units |
 | `frontend/` | Static HTML/JS/CSS (dep-graph tab + future tabs) |
 | `artifacts/` | Frames, specs, plans (dev-core) |
 | `.env.example` | Env var reference (CORPUS_DB_PATH, GITHUB_WEBHOOK_SECRET, …) |
 
+## Dep-graph versions
+
+| Version | Status | Entry |
+|---|---|---|
+| v1 | frozen (legacy CLI) | `dep-graph` script |
+| v5 | frozen (static HTML build) | `dep-graph-v5` script |
+| v6 | **primary** — API-first | `GET /api/graph` · `dep-graph-v6` CLI (debug) |
+
 ## Package layout
 
 ```
-src/roxabi_dashboard/
+src/roxabi_live/
   __init__.py
   __main__.py     # uvicorn entry
   app.py          # FastAPI() + /health
@@ -45,7 +57,7 @@ tests/
   test_health.py
 ```
 
-Module name: `roxabi_dashboard` (underscore). CLI: `roxabi-dashboard` (hyphen).
+Module name: `roxabi_live` (underscore). CLI: `roxabi-live` (hyphen).
 
 ## Conventions
 
@@ -61,13 +73,13 @@ File/rename → update P immediately
 |---|---|
 | `CLAUDE.md` | project root |
 
-Rules: add/delete/move → update P | new `src/roxabi_dashboard/` subdir → nearest P (¬nested)
+Rules: add/delete/move → update P | new `src/roxabi_live/` subdir → nearest P (¬nested)
 
 ## Supervisor pattern
 
 `deploy/supervisor/conf.d/` — one `.conf` file per program.
 `autostart=false` on M₂ (dev); `autorestart=true` on M₁ (prod).
-Log dir: `~/.local/state/roxabi-dashboard/logs/`
+Log dir: `~/.local/state/roxabi-live/logs/`
 
 Programs added per spec slice:
 - Slice 3: `dashboard.conf` (FastAPI + uvicorn)

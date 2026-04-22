@@ -3,7 +3,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from roxabi_dashboard.app import app
+from roxabi_live.app import app
 
 
 @pytest.mark.asyncio

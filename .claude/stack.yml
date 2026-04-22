@@ -6,7 +6,7 @@ package_manager: uv
 
 backend:
   framework: fastapi
-  path: src/roxabi_dashboard
+  path: src/roxabi_live
 
 build:
   formatter: ruff
@@ -29,7 +29,7 @@ docs:
   format: md
 
 commands:
-  dev: uv run roxabi-dashboard
+  dev: uv run roxabi-live
   test: uv run pytest
   lint: uv run ruff check .
   format: uv run ruff format .

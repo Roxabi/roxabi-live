@@ -2,7 +2,11 @@
 
 from fastapi import FastAPI
 
-app = FastAPI(title="Roxabi Dashboard", version="0.1.0")
+from roxabi_live.dep_graph.v6.routes import router as dep_graph_v6_router
+
+app = FastAPI(title="Roxabi Live", version="0.1.0")
+
+app.include_router(dep_graph_v6_router)
 
 
 @app.get("/health")

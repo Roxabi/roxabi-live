@@ -1,39 +1,71 @@
 SHELL := /bin/bash -o pipefail
 
-SUPERVISOR_DIR := deploy/supervisor
+SUPERVISOR_HUB ?= $(HOME)/projects
+HUB_SERVICES   := live
+-include $(SUPERVISOR_HUB)/hub.mk
 
-.PHONY: install lint typecheck test format dashboard start stop status logs
+# Fallback SVC_CMD parsing when hub.mk is not present (e.g. prod).
+ifndef SVC_CMD
+ifneq (,$(filter $(HUB_SERVICES),$(firstword $(MAKECMDGOALS))))
+  SVC_CMD := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  ifneq (,$(SVC_CMD))
+    $(eval $(SVC_CMD):;@:)
+  endif
+endif
+endif
 
-# ── Dev ───────────────────────────────────────────────────────────────────────
+.PHONY: install lint typecheck test format live sync register
 
-install:           ## Install all dependencies
+# ── Dev ──────────────────────────────────────────────────────────────────────
+
+install:             ## install all dependencies
 	uv sync --group dev
 
-lint:              ## Run ruff linter
+lint:                ## run ruff linter
 	uv run ruff check .
 
-typecheck:         ## Run pyright type checker
+typecheck:           ## run pyright type checker
 	uv run pyright
 
-test:              ## Run pytest
+test:                ## run pytest
 	uv run pytest
 
-format:            ## Auto-format with ruff
+format:              ## auto-format with ruff
 	uv run ruff format . && uv run ruff check --fix .
 
-# ── Supervisor ────────────────────────────────────────────────────────────────
+# ── Service control (supervisor-managed FastAPI + corpus sync) ───────────────
+# Actions:
+#   (empty)  alias of `start`
+#   start    start the FastAPI server via supervisor
+#   stop     stop the server
+#   status   supervisor status for program:live
+#   reload   restart the server
+#   logs     tail live.log
+#   errlogs  tail live_error.log
+#   sync     run corpus sync against GitHub (one-shot; --repo OWNER/NAME to scope)
 
-start:             ## Start supervisord (programs stay stopped)
-	bash $(SUPERVISOR_DIR)/start.sh
+live:
+	$(ensure_hub)
+	@_cmd="$(firstword $(SVC_CMD))"; \
+	case "$$_cmd" in \
+		sync)   uv run roxabi-corpus sync $(wordlist 2,$(words $(SVC_CMD)),$(SVC_CMD)) ;; \
+		status) $(HUB_SVC) live status || true ;; \
+		"")     $(HUB_SVC) live start ;; \
+		*)      $(HUB_SVC) live $(SVC_CMD) ;; \
+	esac
 
-start-all:         ## Start supervisord + all programs
-	bash $(SUPERVISOR_DIR)/start.sh --all
+# Top-level `sync` target — needed so `make live sync` works from the hub
+# root (hub dispatcher routes non-supervisor actions as standalone targets).
+sync:                ## sync corpus with GitHub (alias for `make live sync`)
+	uv run roxabi-corpus sync $(ARGS)
 
-stop:              ## Stop all programs (supervisord stays running)
-	bash $(SUPERVISOR_DIR)/supervisorctl.sh stop all || true
+# ── Registration ─────────────────────────────────────────────────────────────
 
-status:            ## Show supervisor program status
-	bash $(SUPERVISOR_DIR)/supervisorctl.sh status || true
-
-logs:              ## Tail supervisord log
-	tail -f "$$HOME/.local/state/roxabi-dashboard/logs/supervisord.log"
+register:            ## register roxabi-live with the supervisor hub
+	@echo "Registering roxabi-live with supervisor hub at $(SUPERVISOR_HUB)..."
+	@$(HUB_GEN_MK) roxabi-live "$(abspath .)" live
+	$(call hub-link-conf,live,deploy/supervisor/conf.d/live.conf)
+	@mkdir -p "$(HOME)/.local/state/roxabi-live/logs"
+	$(hub_reread)
+	@echo ""
+	@echo "Done. Use: make live | make live sync | make live status | make live stop"

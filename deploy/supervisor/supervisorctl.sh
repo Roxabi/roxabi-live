@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run supervisorctl against the roxabi-dashboard supervisor socket
+# Run supervisorctl against the roxabi-live supervisor socket
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 SUPERVISOR_DIR="$SCRIPT_DIR"
 
