@@ -15,19 +15,36 @@ const btnList       = $('btn-list');
 const btnGraph      = $('btn-graph');
 const searchInput   = $('search-input');
 const searchClear   = $('search-clear');
-const pivotRow      = $('pivot-row');
-const pivotCol      = $('pivot-col');
 const pivotControls = $('pivot-controls');
 const listControls  = $('list-controls');
-const listGroup     = $('list-group');
 const subtitle      = $('subtitle');
 const errorMsg      = $('error-msg');
 
+const PIVOT_DIMS = ['milestone', 'priority', 'repo', 'lane', 'size', 'none'];
+const LIST_DIMS  = ['milestone', 'priority', 'repo', 'lane', 'size', 'status', 'none'];
+
+// ─── Seg group builder ────────────────────────────────────────────────────
+function buildSegs(container, values, current, onPick) {
+  container.innerHTML = '';
+  for (const v of values) {
+    const b = document.createElement('button');
+    b.type      = 'button';
+    b.className = 'seg' + (v === current ? ' on' : '');
+    b.dataset.v = v;
+    b.textContent = v;
+    b.addEventListener('click', () => {
+      container.querySelectorAll('.seg').forEach(s => s.classList.toggle('on', s.dataset.v === v));
+      onPick(v);
+    });
+    container.appendChild(b);
+  }
+}
+
 // ─── Multi-select instances ───────────────────────────────────────────────
-const msRepo      = new MultiSelect($('ms-repo-btn'),      $('ms-repo-panel'),      { placeholder: 'All repos'      });
-const msMilestone = new MultiSelect($('ms-milestone-btn'), $('ms-milestone-panel'), { placeholder: 'All milestones' });
-const msPriority  = new MultiSelect($('ms-priority-btn'),  $('ms-priority-panel'),  { placeholder: 'All priorities' });
-const msStatus    = new MultiSelect($('ms-status-btn'),    $('ms-status-panel'),    { placeholder: 'All statuses'   });
+const msRepo      = new MultiSelect($('ms-repo-btn'),      $('ms-repo-panel'),      { placeholder: 'All repos',      clearBtn: $('ms-repo-clear') });
+const msMilestone = new MultiSelect($('ms-milestone-btn'), $('ms-milestone-panel'), { placeholder: 'All milestones', clearBtn: $('ms-milestone-clear') });
+const msPriority  = new MultiSelect($('ms-priority-btn'),  $('ms-priority-panel'),  { placeholder: 'All priorities', clearBtn: $('ms-priority-clear') });
+const msStatus    = new MultiSelect($('ms-status-btn'),    $('ms-status-panel'),    { placeholder: 'All statuses',   clearBtn: $('ms-status-clear') });
 
 // ─── Render ───────────────────────────────────────────────────────────────
 function render() {
@@ -35,7 +52,6 @@ function render() {
   const isList  = state.view === 'list';
   const isGraph = state.view === 'graph';
 
-  // Panel visibility
   viewTable.classList.toggle('view-active', isTable);
   viewList.classList.toggle('view-active', isList);
   if (isGraph) {
@@ -46,17 +62,12 @@ function render() {
     graphPanel.classList.remove('view-active');
   }
 
-  // Button states
-  btnTable.classList.toggle('active', isTable);
-  btnTable.setAttribute('aria-pressed', String(isTable));
-  btnList.classList.toggle('active', isList);
-  btnList.setAttribute('aria-pressed', String(isList));
-  if (btnGraph) {
-    btnGraph.classList.toggle('active', isGraph);
-    btnGraph.setAttribute('aria-pressed', String(isGraph));
+  for (const [btn, match] of [[btnTable, 'table'], [btnList, 'list'], [btnGraph, 'graph']]) {
+    if (!btn) continue;
+    btn.classList.toggle('on', state.view === match);
+    btn.setAttribute('aria-pressed', String(state.view === match));
   }
 
-  // Context-sensitive toolbar
   pivotControls.style.display = isTable ? '' : 'none';
   if (listControls) listControls.style.display = isList ? '' : 'none';
 
@@ -77,9 +88,7 @@ function updateSubtitle() {
 // ─── View toggle ──────────────────────────────────────────────────────────
 btnTable.addEventListener('click', () => { setState({ view: 'table' }); render(); });
 btnList.addEventListener('click',  () => { setState({ view: 'list'  }); render(); });
-if (btnGraph) {
-  btnGraph.addEventListener('click', () => { setState({ view: 'graph' }); render(); });
-}
+if (btnGraph) btnGraph.addEventListener('click', () => { setState({ view: 'graph' }); render(); });
 
 // ─── Search ───────────────────────────────────────────────────────────────
 searchInput.addEventListener('input', () => {
@@ -93,13 +102,11 @@ searchClear.addEventListener('click', () => {
   render();
 });
 
-// ─── Pivot controls ───────────────────────────────────────────────────────
-pivotRow.addEventListener('change', () => { setState({ pivotRow: pivotRow.value }); render(); });
-pivotCol.addEventListener('change', () => { setState({ pivotCol: pivotCol.value }); render(); });
-
-// ─── List group-by ────────────────────────────────────────────────────────
-if (listGroup) {
-  listGroup.addEventListener('change', () => { setState({ listGroup: listGroup.value }); render(); });
+// ─── Pivot + List segs ────────────────────────────────────────────────────
+function buildPivotSegs() {
+  buildSegs($('pivot-row-segs'), PIVOT_DIMS, state.pivotRow, v => { setState({ pivotRow: v }); render(); });
+  buildSegs($('pivot-col-segs'), PIVOT_DIMS, state.pivotCol, v => { setState({ pivotCol: v }); render(); });
+  buildSegs($('list-group-segs'), LIST_DIMS, state.listGroup, v => { setState({ listGroup: v }); render(); });
 }
 
 // ─── Multi-select onChange ────────────────────────────────────────────────
@@ -112,11 +119,9 @@ msStatus.onChange    = vals => { setState({ status:    vals }); render(); };
 function populateFilters(repos) {
   const nodes = state.nodes;
 
-  // Repo
   const repoItems = repos.map(r => ({ value: r, label: r.split('/')[1] || r }));
   msRepo.setItems(repoItems, state.repo);
 
-  // Milestone — distinct codes sorted by sort_key; synthetic (None)
   const msMap = new Map();
   for (const n of nodes) {
     const ms  = parseMilestone(n);
@@ -128,29 +133,23 @@ function populateFilters(repos) {
     .map(([v]) => ({ value: v, label: v }));
   msMilestone.setItems(msItems, state.milestone);
 
-  // Priority — always all 5
   msPriority.setItems(
     ['P0', 'P1', 'P2', 'P3', '(None)'].map(v => ({ value: v, label: v })),
     state.priority
   );
 
-  // Status — always 3
   msStatus.setItems(
     ['ready', 'blocked', 'done'].map(v => ({ value: v, label: v })),
     state.status
   );
 }
 
-// ─── Restore static controls ──────────────────────────────────────────────
 function restoreControls() {
   searchInput.value  = state.search;
   searchClear.hidden = !state.search;
-  pivotRow.value     = state.pivotRow;
-  pivotCol.value     = state.pivotCol;
-  if (listGroup) listGroup.value = state.listGroup;
+  buildPivotSegs();
 }
 
-// ─── Data loading ─────────────────────────────────────────────────────────
 async function loadGraphData() {
   const resp = await fetch('/api/graph');
   if (!resp.ok) throw new Error(`/api/graph ${resp.status}`);
@@ -167,7 +166,6 @@ async function loadRepos() {
   }
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────
 async function init() {
   restoreControls();
   try {

@@ -18,6 +18,17 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Global scrollbars match dark theme */
+html { scrollbar-width: thin; scrollbar-color: var(--border-hi) var(--bg); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb {
+  background: var(--border-hi); border-radius: 5px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+::-webkit-scrollbar-corner { background: var(--bg); }
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -52,23 +63,31 @@ h1 .accent { color: var(--accent); }
 }
 
 /* ─── Mode toggle ────────────────────────────────────────────── */
-.mode-toggle {
-  display: inline-flex; gap: 0; padding: 3px;
-  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px;
+/* ─── Segmented control (forge-style) ─────────────────────────── */
+.segs {
+  display: inline-flex; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+  vertical-align: middle;
 }
-.mode-toggle button {
+.seg {
+  background: none; border: 0; border-right: 1px solid var(--border);
+  color: var(--text-dim); cursor: pointer;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
-  padding: 6px 14px; border: 0; border-radius: 6px;
-  background: transparent; color: var(--text-muted); cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.02em;
+  padding: 5px 10px; white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
 }
-.mode-toggle button:hover { color: var(--text); }
-.mode-toggle button.active {
-  background: var(--accent); color: #fff;
-  box-shadow: 0 0 0 1px var(--accent), 0 0 10px var(--accent-glow);
+.seg:last-child { border-right: 0; }
+.seg:hover { background: var(--bg-panel); color: var(--text); }
+.seg.on {
+  background: var(--accent-dim); color: var(--accent); font-weight: 600;
 }
-.mode-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.seg .ico {
+  display: inline-block; margin-right: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.view-segs .seg { padding: 6px 12px; font-size: 11px; }
 
 /* ─── Toolbar ────────────────────────────────────────────────── */
 .toolbar {
@@ -215,11 +234,30 @@ main { padding-bottom: 24px; }
 
 .ms-panel {
   position: fixed; z-index: 500;
-  min-width: 160px; max-height: 260px; overflow-y: auto;
+  min-width: 180px; max-height: 320px; overflow-y: auto;
   background: var(--bg-panel); border: 1px solid var(--border-hi);
   border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   padding: 6px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hi) transparent;
 }
+.ms-panel::-webkit-scrollbar { width: 8px; height: 8px; }
+.ms-panel::-webkit-scrollbar-track { background: transparent; }
+.ms-panel::-webkit-scrollbar-thumb {
+  background: var(--border-hi); border-radius: 4px;
+  border: 2px solid var(--bg-panel);
+}
+.ms-panel::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* Inline × next to trigger — clears that filter without opening panel */
+.ms-wrap { position: relative; display: inline-flex; align-items: center; gap: 2px; }
+.ms-clear-inline {
+  background: none; border: 0; color: var(--text-dim); cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 2px 5px; border-radius: 4px;
+  transition: color 0.1s, background 0.1s;
+}
+.ms-clear-inline:hover { color: var(--accent); background: var(--bg-panel); }
+.ms-clear-inline:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .ms-list { list-style: none; }
 .ms-item {
