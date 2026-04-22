@@ -1,5 +1,6 @@
 // list.js — flat-table list renderer with group-by and sort
 import { state, filteredNodes, parseMilestone, prioritySortKey, dimValue } from './state.js';
+import { initHover } from './hover.js';
 
 const PRIORITY_COLOR = { P0: 'p0', P1: 'p1', P2: 'p2', P3: 'p3' };
 const STATUS_DOT     = { open: 'dot-open', closed: 'dot-closed' };
@@ -88,6 +89,13 @@ function groupSortKey(dim, val, nodes) {
 function buildRow(n, edges) {
   const tr  = document.createElement('tr');
   tr.className = `issue-row state-${n.state}`;
+  tr.dataset.iss = n.key;
+
+  // Hover-chain attrs
+  const blockers = edges.filter(e => e.kind === 'blocks' && e.dst === n.key).map(e => e.src);
+  const blocking = edges.filter(e => (e.kind === 'blocks' || !e.kind) && e.src === n.key).map(e => e.dst);
+  if (blockers.length) tr.dataset.blockedby = blockers.join(',');
+  if (blocking.length) tr.dataset.blocking = blocking.join(',');
 
   const repoShort = n.repo ? n.repo.split('/')[1] : n.repo;
 
@@ -297,4 +305,7 @@ export function renderList(container) {
 
   rebuild();
   container.appendChild(table);
+
+  // Wire hover-chain highlighting
+  initHover(container, 'list');
 }

@@ -1,17 +1,18 @@
-// graph.js — v5.1 graph view embed for v6
-// Fetches /dep-graph/ HTML, extracts .graph-wrap, injects into #graph-panel.
-// Hover-chain highlight is wired locally within the panel.
+// graph.js — v6 graph view with v5 layout
+// Uses layout.js for positioning and render_graph.js for DOM rendering
+
+import { state, filteredNodes } from './state.js';
+import { runLayout } from './layout.js';
+import { renderGraph, getEdgeElements, getLabelElements } from './render_graph.js';
 
 let loaded = false;
 
 // ── Hover-chain highlight ─────────────────────────────────────────────────
 function wireHoverChain(panel) {
-  const nodes    = Array.from(panel.querySelectorAll('.gg-node[data-iss]'));
-  const labels   = Array.from(panel.querySelectorAll('.gg-ilabel[data-iss]'));
-  const edges    = Array.from(panel.querySelectorAll('.gg-edge[data-src]'));
-  const allItems = [...nodes, ...labels];
+  const labels = getLabelElements(panel);
+  const edges  = getEdgeElements(panel);
+  const allItems = labels;
 
-  // Build adjacency by data-iss key
   const byKey = new Map();
   for (const el of allItems) {
     const k = el.dataset.iss;
@@ -82,40 +83,52 @@ function wireHoverChain(panel) {
   }
 }
 
-// ── Load & inject ─────────────────────────────────────────────────────────
+// ── Main graph initialization ────────────────────────────────────────────
 export async function initGraph() {
-  if (loaded) return;
   const panel = document.getElementById('graph-panel');
-  panel.textContent = 'Loading graph…';
-  try {
-    const html = await fetch('/dep-graph/', { cache: 'no-store' }).then(r => {
-      if (!r.ok) throw new Error(`/dep-graph/ ${r.status}`);
-      return r.text();
-    });
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    // v5.1 graph is a positioned-HTML layout inside .graph-wrap — not an SVG
-    const graphWrap = doc.querySelector('.graph-wrap');
-    if (!graphWrap) throw new Error('no .graph-wrap in /dep-graph/ response');
 
-    // Build toolbar with refresh button
+  const nodes = filteredNodes();
+  const nodeKeys = new Set(nodes.map(n => n.key));
+  const edges = state.edges.filter(e => nodeKeys.has(e.src) && nodeKeys.has(e.dst));
+
+  if (nodes.length === 0) {
+    panel.innerHTML = '<div class="error-msg">No issues match the current filters.</div>';
+    return;
+  }
+
+  if (!loaded) {
+    panel.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Calculating layout…</div>';
+  }
+
+  try {
+    const layoutResult = await runLayout(nodes, edges);
+    panel.innerHTML = '';
+
     const toolbar = document.createElement('div');
     toolbar.className = 'graph-toolbar';
+
     const reloadBtn = document.createElement('button');
     reloadBtn.id = 'graph-reload-btn';
     reloadBtn.type = 'button';
     reloadBtn.textContent = 'Refresh graph';
-    reloadBtn.setAttribute('aria-label', 'Refresh graph from server');
-    reloadBtn.addEventListener('click', reloadGraph);
+    reloadBtn.setAttribute('aria-label', 'Refresh graph');
+    reloadBtn.addEventListener('click', () => {
+      loaded = false;
+      initGraph();
+    });
     toolbar.appendChild(reloadBtn);
+    panel.appendChild(toolbar);
 
-    panel.replaceChildren(toolbar, graphWrap);
+    renderGraph(panel, nodes, edges, layoutResult);
     wireHoverChain(panel);
     loaded = true;
   } catch (e) {
-    panel.textContent = `Graph load failed: ${e.message}`;
+    panel.innerHTML = `<div class="error-msg">Graph layout failed: ${e.message}</div>`;
+    console.error('Graph layout error:', e);
   }
 }
 
+// ── Force reload (for external use) ───────────────────────────────────────
 export async function reloadGraph() {
   loaded = false;
   await initGraph();

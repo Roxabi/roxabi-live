@@ -259,6 +259,11 @@
   transition: opacity 0.18s, stroke-width 0.18s, stroke 0.18s;
 }
 #graph-panel .gg-edge.blocked { stroke-dasharray: 4 3; }
+#graph-panel .gg-edge.parent-edge {
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: 0.3;
+}
 #graph-panel .gg-edge[data-tone="a1"]     { stroke: var(--lane-a1); }
 #graph-panel .gg-edge[data-tone="a2"]     { stroke: var(--lane-a2); }
 #graph-panel .gg-edge[data-tone="a3"]     { stroke: var(--lane-a3); }

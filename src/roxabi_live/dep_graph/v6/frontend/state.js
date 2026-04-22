@@ -83,25 +83,40 @@ export function buildEdgeIndex(edges) {
 }
 
 // ─── Status computation ───────────────────────────────────────────────────
-export function computeStatus(node, edgesByDst, nodesByKey) {
+// Only 'blocks' edges affect status; 'parent' edges are for layout only
+export function computeStatus(node, blockingEdgesByDst, nodesByKey) {
   if (node.state === 'closed') return 'done';
-  const blockers = edgesByDst.get(node.key) ?? [];
-  const openBlocker = blockers.some(
-    e => e.kind === 'blocks' && nodesByKey.get(e.src)?.state === 'open'
-  );
+  const blockers = blockingEdgesByDst.get(node.key) ?? [];
+  const openBlocker = blockers.some(e => {
+    const srcNode = nodesByKey.get(e.src);
+    return srcNode?.state === 'open';
+  });
   return openBlocker ? 'blocked' : 'ready';
 }
 
-// Attach _status to every node after payload load
+// Attach _status and _blockers to every node after payload load
+// _blockers: all edges where this node is dst (for layout positioning)
+// _status: computed only from 'blocks' kind edges
 export function annotateNodes(nodes, edges) {
-  const byDst = new Map();
+  const blockingByDst = new Map();  // kind='blocks' only, for status
+  const allByDst = new Map();       // all edges, for _blockers
   const byKey = new Map();
+
   for (const n of nodes) byKey.set(n.key, n);
   for (const e of edges) {
-    if (!byDst.has(e.dst)) byDst.set(e.dst, []);
-    byDst.get(e.dst).push(e);
+    if (!allByDst.has(e.dst)) allByDst.set(e.dst, []);
+    allByDst.get(e.dst).push(e);
+
+    if (e.kind === 'blocks') {
+      if (!blockingByDst.has(e.dst)) blockingByDst.set(e.dst, []);
+      blockingByDst.get(e.dst).push(e);
+    }
   }
-  for (const n of nodes) n._status = computeStatus(n, byDst, byKey);
+
+  for (const n of nodes) {
+    n._blockers = allByDst.get(n.key) || [];  // all edges for layout
+    n._status = computeStatus(n, blockingByDst, byKey);  // blocks-only for status
+  }
 }
 
 // ─── Milestone parsing (client-side fallback) ──────────────────────────────

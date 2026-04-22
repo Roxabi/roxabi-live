@@ -4,6 +4,7 @@ import { renderTable } from './pivot.js';
 import { renderList }  from './list.js';
 import { initGraph }   from './graph.js';
 import { MultiSelect } from './multi_select.js';
+import { clearPinned } from './hover.js';
 
 const $ = id => document.getElementById(id);
 
@@ -17,6 +18,7 @@ const searchInput   = $('search-input');
 const searchClear   = $('search-clear');
 const pivotControls = $('pivot-controls');
 const listControls  = $('list-controls');
+const graphControls = $('graph-controls');
 const subtitle      = $('subtitle');
 const errorMsg      = $('error-msg');
 
@@ -70,6 +72,7 @@ function render() {
 
   pivotControls.style.display = isTable ? '' : 'none';
   if (listControls) listControls.style.display = isList ? '' : 'none';
+  if (graphControls) graphControls.style.display = isGraph ? '' : 'none';
 
   searchClear.hidden = !state.search;
   updateSubtitle();
@@ -110,10 +113,10 @@ function buildPivotSegs() {
 }
 
 // ─── Multi-select onChange ────────────────────────────────────────────────
-msRepo.onChange      = vals => { setState({ repo:      vals }); render(); };
-msMilestone.onChange = vals => { setState({ milestone: vals }); render(); };
-msPriority.onChange  = vals => { setState({ priority:  vals }); render(); };
-msStatus.onChange    = vals => { setState({ status:    vals }); render(); };
+msRepo.onChange      = vals => { clearPinned(); setState({ repo:      vals }); render(); };
+msMilestone.onChange = vals => { clearPinned(); setState({ milestone: vals }); render(); };
+msPriority.onChange  = vals => { clearPinned(); setState({ priority:  vals }); render(); };
+msStatus.onChange    = vals => { clearPinned(); setState({ status:    vals }); render(); };
 
 // ─── Populate filter options after data load ──────────────────────────────
 function populateFilters(repos) {

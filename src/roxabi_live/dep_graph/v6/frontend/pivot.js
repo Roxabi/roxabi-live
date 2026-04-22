@@ -1,11 +1,36 @@
-// pivot.js — pivot-matrix (Table view) renderer
+// pivot.js — pivot-matrix (Table view) renderer with hover-chain + epic grouping
 import { state, filteredNodes, dimValue, parseMilestone,
          prioritySortKey, buildEdgeLookup } from './state.js';
+import { initHover, clearPinned } from './hover.js';
 
-// ─── Card builder ─────────────────────────────────────────────────────────
+// ─── Lane tone mapping ───────────────────────────────────────────────────────
+const LANE_TONES = {
+  'a1': 'a1', 'a2': 'a2', 'a3': 'a3',
+  'b': 'b',
+  'c1': 'c1', 'c2': 'c2', 'c3': 'c3',
+  'd': 'd', 'e': 'e', 'f': 'f', 'g': 'g', 'h': 'h', 'i': 'i'
+};
+
+function getTone(node) {
+  const lane = node.lane?.toLowerCase();
+  return LANE_TONES[lane] || '';
+}
+
+// ─── Card builder with hover attrs ───────────────────────────────────────────
 function buildCard(node, edgeLookup, opts = {}) {
   const a = document.createElement('a');
-  a.className = `issue-card state-${node.state}`;
+  const tone = getTone(node);
+  a.className = `issue-card state-${node.state}${tone ? ` tone-${tone}` : ''}`;
+  if (tone) a.dataset.tone = tone;
+
+  // Hover-chain attrs
+  a.dataset.iss = node.key;
+  const blockers = edgeLookup.blocks[node.key] || [];
+  const blocking = (state.edges.filter(e => e.src === node.key && (e.kind === 'blocks' || !e.kind))
+    .map(e => e.dst).join(',')) || '';
+  if (blockers.length) a.dataset.blockedby = blockers.join(',');
+  if (blocking) a.dataset.blocking = blocking;
+
   a.href = node.url || '#';
   if (node.url) a.target = '_blank';
   a.rel = 'noopener noreferrer';
@@ -60,7 +85,7 @@ function buildCard(node, edgeLookup, opts = {}) {
   if (badges.children.length) a.appendChild(badges);
 
   if (edgeLookup) {
-    const blockedBy = edgeLookup.blocks[node.key] || [];
+    const blockedBy = blockers;
     const parentOf  = edgeLookup.parent[node.key]  || [];
     if (blockedBy.length || parentOf.length) {
       const deps = document.createElement('div');
@@ -83,7 +108,93 @@ function buildCard(node, edgeLookup, opts = {}) {
   return a;
 }
 
-// ─── Pivot sort helpers ───────────────────────────────────────────────────
+// ─── Epic group header (for lane grouping within cells) ───────────────────────
+function buildEpicHeader(lane, nodesWithLane, parentKey) {
+  const header = document.createElement('a');
+  header.className = 'epic-header';
+  const tone = lane ? (LANE_TONES[lane.toLowerCase()] || '') : '';
+  if (tone) header.dataset.tone = tone;
+
+  // Find parent issue if available
+  const parentNode = parentKey ? state.nodes.find(n => n.key === parentKey) : null;
+  if (parentNode?.url) {
+    header.href = parentNode.url;
+    header.target = '_blank';
+    header.rel = 'noopener';
+  }
+
+  const codeEl = document.createElement('span');
+  codeEl.className = 'epic-code';
+  codeEl.textContent = lane || '—';
+  header.appendChild(codeEl);
+
+  if (nodesWithLane.length > 0) {
+    const countEl = document.createElement('span');
+    countEl.className = 'epic-count';
+    countEl.textContent = `(${nodesWithLane.length})`;
+    header.appendChild(countEl);
+  }
+
+  return header;
+}
+
+// ─── Cell renderer with epic grouping ────────────────────────────────────────
+function buildCell(cellNodes, edgeLookup, opts) {
+  if (!cellNodes.length) {
+    const td = document.createElement('td');
+    td.className = 'empty-cell';
+    td.textContent = '·';
+    return td;
+  }
+
+  const td = document.createElement('td');
+
+  const cnt = document.createElement('div');
+  cnt.className = 'cell-count';
+  cnt.textContent = `${cellNodes.length}`;
+  td.appendChild(cnt);
+
+  // Group by lane if showing parent grouping
+  if (opts.groupByParent || opts.groupByLane) {
+    const byLane = new Map();
+    for (const n of cellNodes) {
+      const lane = n.lane || '—';
+      if (!byLane.has(lane)) byLane.set(lane, []);
+      byLane.get(lane).push(n);
+    }
+
+    const issues = document.createElement('div');
+    issues.className = 'cell-issues';
+
+    for (const [lane, laneNodes] of byLane) {
+      const group = document.createElement('div');
+      group.className = 'epic-group';
+
+      const header = buildEpicHeader(lane, laneNodes, null);
+      group.appendChild(header);
+
+      const cards = document.createElement('div');
+      cards.className = 'epic-cards';
+      for (const n of laneNodes) {
+        cards.appendChild(buildCard(n, edgeLookup, opts));
+      }
+      group.appendChild(cards);
+      issues.appendChild(group);
+    }
+    td.appendChild(issues);
+  } else {
+    const issues = document.createElement('div');
+    issues.className = 'cell-issues';
+    for (const n of cellNodes) {
+      issues.appendChild(buildCard(n, edgeLookup, opts));
+    }
+    td.appendChild(issues);
+  }
+
+  return td;
+}
+
+// ─── Pivot sort helpers ───────────────────────────────────────────────────────
 function sortRowValues(values, dim) {
   if (dim === 'milestone') {
     return values.sort((a, b) => {
@@ -124,7 +235,7 @@ function msHeaderHTML(code) {
   return div;
 }
 
-// ─── Table renderer ───────────────────────────────────────────────────────
+// ─── Table renderer ───────────────────────────────────────────────────────────
 export function renderTable(container) {
   const { pivotRow, pivotCol } = state;
   const nodes = filteredNodes();
@@ -149,54 +260,108 @@ export function renderTable(container) {
     return;
   }
 
-  const table = document.createElement('table');
-  table.className = 'pivot-table';
+  // Use grid layout for lane-swim matrix style
+  const grid = document.createElement('div');
+  grid.className = 'lane-swim-grid';
+  grid.style.setProperty('--cols', colVals.length);
+  grid.style.setProperty('--row-header-w', '140px');
+  grid.style.setProperty('--col-min-w', '190px');
 
-  const thead = document.createElement('thead');
-  const hrow  = document.createElement('tr');
-  const cornerTh = document.createElement('th');
-  cornerTh.className   = 'row-header-th';
-  cornerTh.textContent = `${pivotRow} \\ ${pivotCol}`;
-  hrow.appendChild(cornerTh);
+  // Header row
+  const gridHead = document.createElement('div');
+  gridHead.className = 'grid-head';
+
+  const spacer = document.createElement('div');
+  spacer.className = 'spacer';
+  gridHead.appendChild(spacer);
+
   for (const cv of colVals) {
-    const th = document.createElement('th');
-    th.textContent = cv;
-    hrow.appendChild(th);
-  }
-  thead.appendChild(hrow);
-  table.appendChild(thead);
+    const colHeader = document.createElement('div');
+    colHeader.className = 'col-header';
+    const tone = LANE_TONES[cv?.toLowerCase()] || '';
+    if (tone) colHeader.dataset.tone = tone;
 
-  const tbody = document.createElement('tbody');
+    const label = document.createElement('div');
+    label.className = 'col-label';
+    if (tone) label.dataset.tone = tone;
+    label.textContent = cv;
+    colHeader.appendChild(label);
+    gridHead.appendChild(colHeader);
+  }
+  grid.appendChild(gridHead);
+
+  // Data rows
   for (const rv of rowVals) {
-    const tr    = document.createElement('tr');
-    const rowTh = document.createElement('th');
-    rowTh.className = 'row-header-th';
-    if (pivotRow === 'milestone') rowTh.appendChild(msHeaderHTML(rv));
-    else rowTh.textContent = rv;
-    tr.appendChild(rowTh);
+    const gridRow = document.createElement('div');
+    gridRow.className = 'grid-row';
+
+    const rowHeader = document.createElement('div');
+    rowHeader.className = 'row-header';
+    if (pivotRow === 'milestone') {
+      rowHeader.appendChild(msHeaderHTML(rv));
+    } else {
+      const codeEl = document.createElement('div');
+      codeEl.className = 'ms-code';
+      codeEl.textContent = rv;
+      rowHeader.appendChild(codeEl);
+    }
+    gridRow.appendChild(rowHeader);
 
     for (const cv of colVals) {
       const cellNodes = (matrix[rv] || {})[cv] || [];
-      const td = document.createElement('td');
-      if (!cellNodes.length) { td.className = 'empty-cell'; tr.appendChild(td); continue; }
+      const cell = document.createElement('div');
+      cell.className = 'grid-cell';
+      cell.dataset.col = cv;
+      cell.dataset.row = rv;
 
-      const cnt = document.createElement('div');
-      cnt.className   = 'cell-count';
-      cnt.textContent = `${cellNodes.length}`;
-      td.appendChild(cnt);
+      if (!cellNodes.length) {
+        const empty = document.createElement('div');
+        empty.className = 'cell-empty';
+        empty.textContent = '·';
+        cell.appendChild(empty);
+      } else {
+        const cnt = document.createElement('div');
+        cnt.className = 'cell-count';
+        cnt.textContent = `${cellNodes.length}`;
+        cell.appendChild(cnt);
 
-      const issues = document.createElement('div');
-      issues.className = 'cell-issues';
-      for (const n of cellNodes) {
-        issues.appendChild(buildCard(n, edgeLookup, {
-          showRepo: pivotRow !== 'repo' && pivotCol !== 'repo',
-        }));
+        const issues = document.createElement('div');
+        issues.className = 'cell-issues';
+
+        // Group by lane within cell
+        const byLane = new Map();
+        for (const n of cellNodes) {
+          const lane = n.lane || '—';
+          if (!byLane.has(lane)) byLane.set(lane, []);
+          byLane.get(lane).push(n);
+        }
+
+        for (const [lane, laneNodes] of byLane) {
+          const group = document.createElement('div');
+          group.className = 'epic-group';
+
+          const header = buildEpicHeader(lane, laneNodes, null);
+          group.appendChild(header);
+
+          const cards = document.createElement('div');
+          cards.className = 'epic-cards';
+          for (const n of laneNodes) {
+            cards.appendChild(buildCard(n, edgeLookup, {
+              showRepo: pivotRow !== 'repo' && pivotCol !== 'repo',
+            }));
+          }
+          group.appendChild(cards);
+          issues.appendChild(group);
+        }
+        cell.appendChild(issues);
       }
-      td.appendChild(issues);
-      tr.appendChild(td);
+      gridRow.appendChild(cell);
     }
-    tbody.appendChild(tr);
+    grid.appendChild(gridRow);
   }
-  table.appendChild(tbody);
-  container.appendChild(table);
+
+  container.appendChild(grid);
+
+  // Wire hover-chain highlighting
+  initHover(container, 'table');
 }
