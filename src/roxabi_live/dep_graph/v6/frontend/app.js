@@ -23,10 +23,12 @@ const subtitle      = $('subtitle');
 const errorMsg      = $('error-msg');
 
 const PIVOT_DIMS = ['milestone', 'priority', 'repo', 'lane', 'size', 'none'];
-const LIST_DIMS  = ['milestone', 'priority', 'repo', 'lane', 'size', 'status', 'none'];
+const LIST_DIMS  = ['milestone', 'priority', 'repo', 'lane', 'size', 'status', 'parent', 'none'];
+const TABLE_GROUP_DIMS = ['lane', 'parent', 'none'];
 
-// ─── Seg group builder ────────────────────────────────────────────────────
-function buildSegs(container, values, current, onPick) {
+// ─── Seg group builder (click active to deactivate → 'none') ────────────────
+function buildSegs(container, values, current, onPick, opts = {}) {
+  const { allowDeactivate = true, noneValue = 'none' } = opts;
   container.innerHTML = '';
   for (const v of values) {
     const b = document.createElement('button');
@@ -35,8 +37,14 @@ function buildSegs(container, values, current, onPick) {
     b.dataset.v = v;
     b.textContent = v;
     b.addEventListener('click', () => {
-      container.querySelectorAll('.seg').forEach(s => s.classList.toggle('on', s.dataset.v === v));
-      onPick(v);
+      // Click active → deactivate (set to noneValue)
+      if (allowDeactivate && v === current) {
+        container.querySelectorAll('.seg').forEach(s => s.classList.toggle('on', s.dataset.v === noneValue));
+        onPick(noneValue);
+      } else {
+        container.querySelectorAll('.seg').forEach(s => s.classList.toggle('on', s.dataset.v === v));
+        onPick(v);
+      }
     });
     container.appendChild(b);
   }
@@ -109,7 +117,26 @@ searchClear.addEventListener('click', () => {
 function buildPivotSegs() {
   buildSegs($('pivot-row-segs'), PIVOT_DIMS, state.pivotRow, v => { setState({ pivotRow: v }); render(); });
   buildSegs($('pivot-col-segs'), PIVOT_DIMS, state.pivotCol, v => { setState({ pivotCol: v }); render(); });
-  buildSegs($('list-group-segs'), LIST_DIMS, state.listGroup, v => { setState({ listGroup: v }); render(); });
+  buildSegs($('table-group-segs'), TABLE_GROUP_DIMS, state.tableGroup, v => { setState({ tableGroup: v }); render(); }, { allowDeactivate: true });
+  buildSegs($('list-group-segs'), LIST_DIMS, state.listGroup, v => { setState({ listGroup: v }); render(); }, { allowDeactivate: true });
+  buildSegs($('list-group2-segs'), LIST_DIMS, state.listGroup2, v => { setState({ listGroup2: v }); render(); }, { allowDeactivate: true });
+}
+
+// ─── Graph edge toggle ─────────────────────────────────────────────────────
+function buildGraphSegs() {
+  const container = $('graph-edge-segs');
+  if (!container) return;
+  const parentsSeg = document.createElement('button');
+  parentsSeg.type = 'button';
+  parentsSeg.className = 'seg' + (state.showParents ? ' on' : '');
+  parentsSeg.textContent = 'Parents';
+  parentsSeg.addEventListener('click', () => {
+    setState({ showParents: !state.showParents });
+    buildGraphSegs();
+    initGraph();
+  });
+  container.innerHTML = '';
+  container.appendChild(parentsSeg);
 }
 
 // ─── Multi-select onChange ────────────────────────────────────────────────
@@ -151,6 +178,7 @@ function restoreControls() {
   searchInput.value  = state.search;
   searchClear.hidden = !state.search;
   buildPivotSegs();
+  buildGraphSegs();
 }
 
 async function loadGraphData() {

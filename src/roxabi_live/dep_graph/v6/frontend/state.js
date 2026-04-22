@@ -40,6 +40,10 @@ export const state = {
   pivotRow:  LS.get('v6:pivotRow', 'milestone'),
   pivotCol:  LS.get('v6:pivotCol', 'lane'),
   listGroup: LS.get('v6:listGroup', 'milestone'),
+  listGroup2: LS.get('v6:listGroup2', 'none'),
+  tableGroup: LS.get('v6:tableGroup', 'lane'),
+  // graph options
+  showParents: LS.get('v6:showParents', 'true') === 'true',
   nodes:     [],
   edges:     [],
   // built once after load
@@ -49,15 +53,18 @@ export const state = {
 };
 
 const LS_KEYS = {
-  view:      { key: 'v6:view',      json: false },
-  repo:      { key: 'v6:repo',      json: true  },
-  milestone: { key: 'v6:milestone', json: true  },
-  priority:  { key: 'v6:priority',  json: true  },
-  status:    { key: 'v6:status',    json: true  },
-  search:    { key: 'v6:search',    json: false },
-  pivotRow:  { key: 'v6:pivotRow',  json: false },
-  pivotCol:  { key: 'v6:pivotCol',  json: false },
-  listGroup: { key: 'v6:listGroup', json: false },
+  view:        { key: 'v6:view',        json: false },
+  repo:        { key: 'v6:repo',        json: true  },
+  milestone:   { key: 'v6:milestone',   json: true  },
+  priority:    { key: 'v6:priority',    json: true  },
+  status:      { key: 'v6:status',      json: true  },
+  search:      { key: 'v6:search',      json: false },
+  pivotRow:    { key: 'v6:pivotRow',    json: false },
+  pivotCol:    { key: 'v6:pivotCol',    json: false },
+  listGroup:   { key: 'v6:listGroup',   json: false },
+  listGroup2:  { key: 'v6:listGroup2',  json: false },
+  tableGroup:  { key: 'v6:tableGroup',  json: false },
+  showParents: { key: 'v6:showParents', json: false },
 };
 
 export function setState(patch) {
@@ -94,12 +101,14 @@ export function computeStatus(node, blockingEdgesByDst, nodesByKey) {
   return openBlocker ? 'blocked' : 'ready';
 }
 
-// Attach _status and _blockers to every node after payload load
+// Attach _status, _blockers, _parent to every node after payload load
 // _blockers: all edges where this node is dst (for layout positioning)
 // _status: computed only from 'blocks' kind edges
+// _parent: parent issue key (from 'parent' edges where dst=this, src=parent)
 export function annotateNodes(nodes, edges) {
   const blockingByDst = new Map();  // kind='blocks' only, for status
   const allByDst = new Map();       // all edges, for _blockers
+  const parentByDst = new Map();    // kind='parent', dst=child → src=parent
   const byKey = new Map();
 
   for (const n of nodes) byKey.set(n.key, n);
@@ -111,11 +120,18 @@ export function annotateNodes(nodes, edges) {
       if (!blockingByDst.has(e.dst)) blockingByDst.set(e.dst, []);
       blockingByDst.get(e.dst).push(e);
     }
+
+    if (e.kind === 'parent') {
+      if (!parentByDst.has(e.dst)) parentByDst.set(e.dst, []);
+      parentByDst.get(e.dst).push(e.src);  // src is the parent
+    }
   }
 
   for (const n of nodes) {
     n._blockers = allByDst.get(n.key) || [];  // all edges for layout
     n._status = computeStatus(n, blockingByDst, byKey);  // blocks-only for status
+    const parents = parentByDst.get(n.key);
+    n._parent = parents?.length ? parents[0] : null;  // first parent for grouping
   }
 }
 
@@ -165,6 +181,7 @@ export function dimValue(node, dim) {
   if (dim === 'lane')      return node.lane ?? '—';
   if (dim === 'size')      return node.size ?? '—';
   if (dim === 'status')    return node._status ?? '—';
+  if (dim === 'parent')    return node._parent ?? '—';
   return '—';
 }
 

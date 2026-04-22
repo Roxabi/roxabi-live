@@ -16,6 +16,9 @@ function getTone(node) {
   return LANE_TONES[lane] || '';
 }
 
+// ─── Collapse tracking for epic groups ───────────────────────────────────────
+const epicCollapsed = new Set();
+
 // ─── Card builder with hover attrs ───────────────────────────────────────────
 function buildCard(node, edgeLookup, opts = {}) {
   const a = document.createElement('a');
@@ -92,13 +95,13 @@ function buildCard(node, edgeLookup, opts = {}) {
       deps.className = 'card-deps';
       if (blockedBy.length) {
         const sp = document.createElement('span');
-        sp.className = 'dep-label';
+        sp.className = 'dep-label dep-blocked';
         sp.textContent = `blocked by: ${blockedBy.map(k => '#' + k.split('#')[1]).join(', ')}`;
         deps.appendChild(sp);
       }
       if (parentOf.length) {
         const sp = document.createElement('span');
-        sp.className = 'dep-label';
+        sp.className = 'dep-label dep-parent';
         sp.textContent = `parent: ${parentOf.map(k => '#' + k.split('#')[1]).join(', ')}`;
         deps.appendChild(sp);
       }
@@ -109,25 +112,40 @@ function buildCard(node, edgeLookup, opts = {}) {
 }
 
 // ─── Epic group header (for lane grouping within cells) ───────────────────────
-function buildEpicHeader(lane, nodesWithLane, parentKey) {
-  const header = document.createElement('a');
-  header.className = 'epic-header';
+function buildEpicHeader(lane, nodesWithLane, parentKey, onToggle) {
+  const collapseKey = `${lane}:${parentKey || ''}`;
+  const isCollapsed = epicCollapsed.has(collapseKey);
+
+  const header = document.createElement('div');
+  header.className = 'epic-header' + (isCollapsed ? ' collapsed' : '');
   const tone = lane ? (LANE_TONES[lane.toLowerCase()] || '') : '';
   if (tone) header.dataset.tone = tone;
 
-  // Find parent issue if available
-  const parentNode = parentKey ? state.nodes.find(n => n.key === parentKey) : null;
-  if (parentNode?.url) {
-    header.href = parentNode.url;
-    header.target = '_blank';
-    header.rel = 'noopener';
-  }
+  // Caret for collapse
+  const caret = document.createElement('span');
+  caret.className = 'epic-caret';
+  caret.textContent = isCollapsed ? '▸' : '▾';
+  caret.setAttribute('aria-hidden', 'true');
+  header.appendChild(caret);
 
+  // Code element - link if parent URL exists
   const codeEl = document.createElement('span');
   codeEl.className = 'epic-code';
-  codeEl.textContent = lane || '—';
+  const parentNode = parentKey ? state.nodes.find(n => n.key === parentKey) : null;
+  if (parentNode?.url) {
+    const link = document.createElement('a');
+    link.href = parentNode.url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = lane || '—';
+    link.addEventListener('click', e => e.stopPropagation());  // prevent collapse toggle
+    codeEl.appendChild(link);
+  } else {
+    codeEl.textContent = lane || '—';
+  }
   header.appendChild(codeEl);
 
+  // Count
   if (nodesWithLane.length > 0) {
     const countEl = document.createElement('span');
     countEl.className = 'epic-count';
@@ -135,7 +153,14 @@ function buildEpicHeader(lane, nodesWithLane, parentKey) {
     header.appendChild(countEl);
   }
 
-  return header;
+  // Click to collapse/expand
+  header.addEventListener('click', () => {
+    if (epicCollapsed.has(collapseKey)) epicCollapsed.delete(collapseKey);
+    else epicCollapsed.add(collapseKey);
+    onToggle?.();
+  });
+
+  return { header, isCollapsed };
 }
 
 // ─── Cell renderer with epic grouping ────────────────────────────────────────
@@ -237,7 +262,7 @@ function msHeaderHTML(code) {
 
 // ─── Table renderer ───────────────────────────────────────────────────────────
 export function renderTable(container) {
-  const { pivotRow, pivotCol } = state;
+  const { pivotRow, pivotCol, tableGroup } = state;
   const nodes = filteredNodes();
   const edgeLookup = buildEdgeLookup(state.edges);
 
@@ -258,6 +283,32 @@ export function renderTable(container) {
   if (!nodes.length) {
     container.textContent = 'No issues match the current filter.';
     return;
+  }
+
+  // Build parent lookup for parent grouping
+  // Edge direction: src=parent, dst=child
+  // We want: given child, find parent → child → [parents]
+  const parentOf = {};
+  for (const e of state.edges) {
+    if (e.kind === 'parent') {
+      parentOf[e.dst] = parentOf[e.dst] || [];
+      parentOf[e.dst].push(e.src);
+    }
+  }
+
+  // Helper: get grouping key for a node based on tableGroup
+  function getGroupKey(n) {
+    if (tableGroup === 'lane') return n.lane || '—';
+    if (tableGroup === 'parent') {
+      const parents = parentOf[n.key] || [];
+      return parents.length ? parents[0] : '—';
+    }
+    return '—'; // none
+  }
+
+  // Rebuild function for collapse/expand
+  function rebuild() {
+    renderTable(container);
   }
 
   // Use grid layout for lane-swim matrix style
@@ -328,30 +379,41 @@ export function renderTable(container) {
         const issues = document.createElement('div');
         issues.className = 'cell-issues';
 
-        // Group by lane within cell
-        const byLane = new Map();
-        for (const n of cellNodes) {
-          const lane = n.lane || '—';
-          if (!byLane.has(lane)) byLane.set(lane, []);
-          byLane.get(lane).push(n);
-        }
-
-        for (const [lane, laneNodes] of byLane) {
-          const group = document.createElement('div');
-          group.className = 'epic-group';
-
-          const header = buildEpicHeader(lane, laneNodes, null);
-          group.appendChild(header);
-
-          const cards = document.createElement('div');
-          cards.className = 'epic-cards';
-          for (const n of laneNodes) {
-            cards.appendChild(buildCard(n, edgeLookup, {
+        if (tableGroup === 'none') {
+          // No grouping: flat list
+          for (const n of cellNodes) {
+            issues.appendChild(buildCard(n, edgeLookup, {
               showRepo: pivotRow !== 'repo' && pivotCol !== 'repo',
             }));
           }
-          group.appendChild(cards);
-          issues.appendChild(group);
+        } else {
+          // Group by lane or parent
+          const groups = new Map();
+          for (const n of cellNodes) {
+            const gk = getGroupKey(n);
+            if (!groups.has(gk)) groups.set(gk, []);
+            groups.get(gk).push(n);
+          }
+
+          for (const [gk, groupNodes] of groups) {
+            const group = document.createElement('div');
+            group.className = 'epic-group';
+
+            const { header, isCollapsed } = buildEpicHeader(gk, groupNodes, tableGroup === 'parent' ? gk : null, rebuild);
+            group.appendChild(header);
+
+            const cards = document.createElement('div');
+            cards.className = 'epic-cards';
+            if (!isCollapsed) {
+              for (const n of groupNodes) {
+                cards.appendChild(buildCard(n, edgeLookup, {
+                  showRepo: pivotRow !== 'repo' && pivotCol !== 'repo',
+                }));
+              }
+            }
+            group.appendChild(cards);
+            issues.appendChild(group);
+          }
         }
         cell.appendChild(issues);
       }

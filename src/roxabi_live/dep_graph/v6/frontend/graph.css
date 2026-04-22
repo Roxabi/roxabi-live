@@ -32,29 +32,6 @@
   padding-top: 20px;
 }
 
-#graph-panel .graph-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-#graph-reload-btn {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 5px 12px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: border-color 0.12s, color 0.12s;
-}
-#graph-reload-btn:hover { border-color: var(--border-hi); color: var(--text); }
-#graph-reload-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
 /* ── Graph wrap (outermost container from v5) ───────────────────── */
 #graph-panel .graph-wrap {
   position: relative;

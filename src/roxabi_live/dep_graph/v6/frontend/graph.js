@@ -86,39 +86,26 @@ function wireHoverChain(panel) {
 // ── Main graph initialization ────────────────────────────────────────────
 export async function initGraph() {
   const panel = document.getElementById('graph-panel');
+  if (!panel) return;
 
   const nodes = filteredNodes();
   const nodeKeys = new Set(nodes.map(n => n.key));
-  const edges = state.edges.filter(e => nodeKeys.has(e.src) && nodeKeys.has(e.dst));
+
+  // Filter edges: only blocks edges, optionally include parent
+  const edges = state.edges.filter(e =>
+    nodeKeys.has(e.src) && nodeKeys.has(e.dst) &&
+    (e.kind === 'blocks' || state.showParents)
+  );
 
   if (nodes.length === 0) {
     panel.innerHTML = '<div class="error-msg">No issues match the current filters.</div>';
     return;
   }
 
-  if (!loaded) {
-    panel.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Calculating layout…</div>';
-  }
+  panel.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Calculating layout…</div>';
 
   try {
     const layoutResult = await runLayout(nodes, edges);
-    panel.innerHTML = '';
-
-    const toolbar = document.createElement('div');
-    toolbar.className = 'graph-toolbar';
-
-    const reloadBtn = document.createElement('button');
-    reloadBtn.id = 'graph-reload-btn';
-    reloadBtn.type = 'button';
-    reloadBtn.textContent = 'Refresh graph';
-    reloadBtn.setAttribute('aria-label', 'Refresh graph');
-    reloadBtn.addEventListener('click', () => {
-      loaded = false;
-      initGraph();
-    });
-    toolbar.appendChild(reloadBtn);
-    panel.appendChild(toolbar);
-
     renderGraph(panel, nodes, edges, layoutResult);
     wireHoverChain(panel);
     loaded = true;

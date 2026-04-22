@@ -217,10 +217,12 @@ main { padding-bottom: 24px; }
 .badge-p3   { color: var(--text-muted); }
 
 .card-deps {
+  display: flex; justify-content: space-between;
   font-family: 'JetBrains Mono', monospace; font-size: 9px;
   color: var(--text-dim); margin-top: 2px; line-height: 1.5;
 }
 .dep-label { color: var(--text-muted); }
+.dep-parent { text-align: right; }
 
 /* ─── Multi-select pill dropdown ─────────────────────────────── */
 .ms-wrap { position: relative; }
@@ -343,6 +345,7 @@ main { padding-bottom: 24px; }
 .text-dim { color: var(--text-dim); }
 
 .col-count { text-align: center; white-space: nowrap; }
+.col-center { text-align: center; }
 .edge-count {
   font-family: 'JetBrains Mono', monospace; font-size: 11px;
   color: var(--text-muted); cursor: default;
@@ -361,6 +364,18 @@ main { padding-bottom: 24px; }
   margin-left: 8px; font-size: 10px; font-weight: 400;
   color: var(--text-muted); font-family: 'JetBrains Mono', monospace;
 }
+
+/* Level-1 vs level-2 group headers */
+.group-hdr.level-1 td {
+  font-size: 12px; padding-left: 10px;
+  border-top: 2px solid var(--border-hi);
+}
+.group-hdr.level-2 td {
+  font-size: 10px; padding-left: 24px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+}
+.group-hdr.level-2:hover td { background: var(--bg-panel); color: var(--accent); }
 
 /* ─── Legacy list-items (kept for compat) ────────────────────── */
 .list-items { display: flex; flex-direction: column; gap: 5px; max-width: 960px; }
@@ -483,7 +498,6 @@ footer.page-footer a:hover { text-decoration: underline; }
   padding: 3px 4px 4px;
   border-bottom: 1px dashed var(--border);
   margin-bottom: 2px;
-  text-decoration: none;
   border-radius: 3px;
   transition: background 0.15s;
   cursor: pointer;
@@ -492,28 +506,42 @@ footer.page-footer a:hover { text-decoration: underline; }
   background: rgba(255,255,255,0.04);
   border-bottom-style: solid;
 }
+.epic-caret {
+  font-size: 8px;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
 .epic-code {
   padding: 1px 5px;
   border-radius: 3px;
   background: var(--bg-card);
-  border: 1px solid currentColor;
+  border: 1px solid var(--border-hi);
   font-weight: 700;
   letter-spacing: 0.06em;
+  color: var(--text);
+}
+.epic-code a {
+  color: var(--text);
+  text-decoration: none;
+}
+.epic-code a:hover {
+  color: var(--accent);
 }
 .epic-count { color: var(--text-dim); font-weight: 400; }
-.epic-header[data-tone="a1"] { color: var(--lane-a1); }
-.epic-header[data-tone="a2"] { color: var(--lane-a2); }
-.epic-header[data-tone="a3"] { color: var(--lane-a3); }
-.epic-header[data-tone="b"]  { color: var(--lane-b); }
-.epic-header[data-tone="c1"] { color: var(--lane-c1); }
-.epic-header[data-tone="c2"] { color: var(--lane-c2); }
-.epic-header[data-tone="c3"] { color: var(--lane-c3); }
-.epic-header[data-tone="d"]  { color: var(--lane-d); }
-.epic-header[data-tone="e"]  { color: var(--lane-e); }
-.epic-header[data-tone="f"]  { color: var(--lane-f); }
-.epic-header[data-tone="g"]  { color: var(--lane-g); }
-.epic-header[data-tone="h"]  { color: var(--lane-h); }
-.epic-header[data-tone="i"]  { color: var(--lane-i); }
+/* Lane tone accent on caret */
+.epic-header[data-tone="a1"] .epic-caret { color: var(--lane-a1); }
+.epic-header[data-tone="a2"] .epic-caret { color: var(--lane-a2); }
+.epic-header[data-tone="a3"] .epic-caret { color: var(--lane-a3); }
+.epic-header[data-tone="b"]  .epic-caret { color: var(--lane-b); }
+.epic-header[data-tone="c1"] .epic-caret { color: var(--lane-c1); }
+.epic-header[data-tone="c2"] .epic-caret { color: var(--lane-c2); }
+.epic-header[data-tone="c3"] .epic-caret { color: var(--lane-c3); }
+.epic-header[data-tone="d"]  .epic-caret { color: var(--lane-d); }
+.epic-header[data-tone="e"]  .epic-caret { color: var(--lane-e); }
+.epic-header[data-tone="f"]  .epic-caret { color: var(--lane-f); }
+.epic-header[data-tone="g"]  .epic-caret { color: var(--lane-g); }
+.epic-header[data-tone="h"]  .epic-caret { color: var(--lane-h); }
+.epic-header[data-tone="i"]  .epic-caret { color: var(--lane-i); }
 
 .epic-cards { display: flex; flex-direction: column; gap: 4px; }
 

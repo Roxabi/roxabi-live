@@ -128,46 +128,42 @@ function buildRow(n, edges) {
   titleSpan.setAttribute('title', n.title || '');
   tdTitle.appendChild(titleSpan);
 
-  // Milestone
+  // Milestone (centered)
   const tdMs = document.createElement('td');
+  tdMs.className = 'col-center';
   const ms = parseMilestone(n);
   if (ms.code) {
     const badge = document.createElement('span');
     badge.className  = 'badge badge-ms';
     badge.textContent = ms.code;
     tdMs.appendChild(badge);
-  } else {
-    tdMs.textContent = '—';
-    tdMs.className   = 'text-dim';
   }
 
-  // Priority
+  // Priority (centered)
   const tdPri = document.createElement('td');
+  tdPri.className = 'col-center';
   if (n.priority) {
     const badge = document.createElement('span');
     badge.className  = `badge badge-${PRIORITY_COLOR[n.priority] || ''}`;
     badge.textContent = n.priority;
     tdPri.appendChild(badge);
-  } else {
-    tdPri.textContent = '—';
-    tdPri.className   = 'text-dim';
   }
 
-  // Lane
+  // Lane (centered)
   const tdLane = document.createElement('td');
-  tdLane.textContent = n.lane ?? '—';
-  if (!n.lane) tdLane.className = 'text-dim';
+  tdLane.className = 'col-center';
+  tdLane.textContent = n.lane ?? '';
 
-  // Size
+  // Size (centered)
   const tdSize = document.createElement('td');
-  tdSize.textContent = n.size ?? '—';
-  if (!n.size) tdSize.className = 'text-dim';
+  tdSize.className = 'col-center';
+  tdSize.textContent = n.size ?? '';
 
   // Edge counts helper
   function makeCountCell(edgeList) {
     const td   = document.createElement('td');
     td.className = 'col-count';
-    if (!edgeList.length) { td.textContent = '—'; td.className += ' text-dim'; return td; }
+    if (!edgeList.length) { return td; }  // blank for empty
     const sp = document.createElement('span');
     sp.className = 'edge-count';
     sp.textContent = edgeList.length;
@@ -209,7 +205,9 @@ function buildThead(onSort) {
     const th = document.createElement('th');
     th.textContent = col.label;
     th.dataset.col = col.id;
-    th.className   = 'sortable';
+    // Center all columns except ref, status, title
+    const centerCols = ['milestone', 'priority', 'lane', 'size', 'blocks', 'blockedby', 'parentof'];
+    th.className = 'sortable' + (centerCols.includes(col.id) ? ' col-center' : '');
     if (sortCol === col.id) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
     th.setAttribute('aria-sort', sortCol === col.id ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none');
     th.addEventListener('click', () => onSort(col.id));
@@ -226,7 +224,8 @@ const collapsed = new Set();   // group values that are folded
 export function renderList(container) {
   const nodes = filteredNodes();
   const edges = state.edges;
-  const group = state.listGroup;
+  const group  = state.listGroup;
+  const group2 = state.listGroup2;
 
   container.innerHTML = '';
 
@@ -252,18 +251,22 @@ export function renderList(container) {
     const tbody = document.createElement('tbody');
     const reSorted = sortNodes(nodes, edges);
 
-    if (!group || group === 'none') {
+    if ((!group || group === 'none') && (!group2 || group2 === 'none')) {
+      // No grouping
       for (const n of reSorted) tbody.appendChild(buildRow(n, edges));
+    } else if (!group2 || group2 === 'none' || group2 === group) {
+      // Single-level grouping
+      renderGroups(tbody, reSorted, edges, group, 1);
     } else {
-      // Group
-      const groups = new Map();
+      // Two-level grouping
+      const groups1 = new Map();
       for (const n of reSorted) {
         const gv = dimValue(n, group);
-        if (!groups.has(gv)) groups.set(gv, []);
-        groups.get(gv).push(n);
+        if (!groups1.has(gv)) groups1.set(gv, []);
+        groups1.get(gv).push(n);
       }
-      // Sort group keys
-      const gKeys = [...groups.keys()].sort((a, b) => {
+
+      const gKeys = [...groups1.keys()].sort((a, b) => {
         const ka = groupSortKey(group, a, nodes);
         const kb = groupSortKey(group, b, nodes);
         if (typeof ka === 'number' && typeof kb === 'number') return ka - kb;
@@ -271,12 +274,13 @@ export function renderList(container) {
       });
 
       for (const gVal of gKeys) {
-        const groupNodes = groups.get(gVal);
-        const isCollapsed = collapsed.has(gVal);
+        const groupNodes = groups1.get(gVal);
+        const collapseKey = `${group}:${gVal}`;
+        const isCollapsed = collapsed.has(collapseKey);
 
-        // Header row
+        // Level-1 header
         const hdr = document.createElement('tr');
-        hdr.className = 'group-hdr';
+        hdr.className = 'group-hdr level-1';
         const hdrTd = document.createElement('td');
         hdrTd.colSpan = COLS.length;
         const caret = document.createElement('span');
@@ -288,19 +292,71 @@ export function renderList(container) {
         }));
         hdr.appendChild(hdrTd);
         hdr.addEventListener('click', () => {
-          if (collapsed.has(gVal)) collapsed.delete(gVal);
-          else collapsed.add(gVal);
+          if (collapsed.has(collapseKey)) collapsed.delete(collapseKey);
+          else collapsed.add(collapseKey);
           rebuild();
         });
         tbody.appendChild(hdr);
 
         if (!isCollapsed) {
-          for (const n of groupNodes) tbody.appendChild(buildRow(n, edges));
+          // Level-2 groups within this level-1 group
+          renderGroups(tbody, groupNodes, edges, group2, 2);
         }
       }
     }
 
     table.appendChild(tbody);
+  }
+
+  // Helper: render single-level groups at a given nesting level
+  function renderGroups(tbody, nodeList, edges, dim, level) {
+    if (!dim || dim === 'none') {
+      for (const n of nodeList) tbody.appendChild(buildRow(n, edges));
+      return;
+    }
+
+    const groups = new Map();
+    for (const n of nodeList) {
+      const gv = dimValue(n, dim);
+      if (!groups.has(gv)) groups.set(gv, []);
+      groups.get(gv).push(n);
+    }
+
+    const gKeys = [...groups.keys()].sort((a, b) => {
+      const ka = groupSortKey(dim, a, nodes);
+      const kb = groupSortKey(dim, b, nodes);
+      if (typeof ka === 'number' && typeof kb === 'number') return ka - kb;
+      return String(ka).localeCompare(String(kb));
+    });
+
+    for (const gVal of gKeys) {
+      const groupNodes = groups.get(gVal);
+      const collapseKey = `${dim}:${gVal}`;
+      const isCollapsed = collapsed.has(collapseKey);
+
+      const hdr = document.createElement('tr');
+      hdr.className = `group-hdr level-${level}`;
+      const hdrTd = document.createElement('td');
+      hdrTd.colSpan = COLS.length;
+      const caret = document.createElement('span');
+      caret.className = 'group-caret';
+      caret.textContent = isCollapsed ? '▸' : '▾';
+      caret.setAttribute('aria-hidden', 'true');
+      hdrTd.append(caret, ` ${gVal}  `, Object.assign(document.createElement('span'), {
+        className: 'group-count', textContent: `${groupNodes.length}`,
+      }));
+      hdr.appendChild(hdrTd);
+      hdr.addEventListener('click', () => {
+        if (collapsed.has(collapseKey)) collapsed.delete(collapseKey);
+        else collapsed.add(collapseKey);
+        rebuild();
+      });
+      tbody.appendChild(hdr);
+
+      if (!isCollapsed) {
+        for (const n of groupNodes) tbody.appendChild(buildRow(n, edges));
+      }
+    }
   }
 
   rebuild();
