@@ -14,7 +14,7 @@ ifneq (,$(filter $(HUB_SERVICES),$(firstword $(MAKECMDGOALS))))
 endif
 endif
 
-.PHONY: install lint typecheck test format live sync register
+.PHONY: install lint typecheck test format live sync full-sync register
 
 # ── Dev ──────────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,10 @@ live:
 # root (hub dispatcher routes non-supervisor actions as standalone targets).
 sync:                ## sync corpus with GitHub (alias for `make live sync`)
 	uv run roxabi-corpus sync $(ARGS) && uv run dep-graph-v5 --active graph
+
+full-sync:           ## full sync (clear sync_state, re-fetch all issues)
+	sqlite3 $(HOME)/.roxabi/corpus.db "DELETE FROM sync_state"
+	uv run roxabi-corpus sync && uv run dep-graph-v5 --active graph
 
 # ── Registration ─────────────────────────────────────────────────────────────
 
