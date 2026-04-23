@@ -72,19 +72,28 @@ def _parse_project_fields(
     }
     if not canonical_project_id:
         return null_result
-    items = node.get("projectItems", {}).get("nodes", [])
+    project_items: dict[str, Any] = node.get("projectItems") or {}
+    items: list[Any] = project_items.get("nodes") or []
     for item in items:
-        if (item.get("project") or {}).get("id") == canonical_project_id:
+        item_dict: dict[str, Any] = item or {}
+        project: dict[str, Any] = item_dict.get("project") or {}
+        if project.get("id") == canonical_project_id:
             fields: dict[str, str | None] = {
                 "lane": None,
                 "priority": None,
                 "size": None,
                 "status": None,
             }
-            for fv in (item.get("fieldValues") or {}).get("nodes", []):
-                fname = ((fv.get("field") or {}).get("name") or "").lower()
+            fv_container: dict[str, Any] = item_dict.get("fieldValues") or {}
+            fv_nodes: list[Any] = fv_container.get("nodes") or []
+            for fv in fv_nodes:
+                fv_dict: dict[str, Any] = fv or {}
+                field_obj: dict[str, Any] = fv_dict.get("field") or {}
+                raw_name: Any = field_obj.get("name")
+                fname = (str(raw_name) if raw_name is not None else "").lower()
                 if fname in fields:
-                    fields[fname] = fv.get("name")
+                    raw_val: Any = fv_dict.get("name")
+                    fields[fname] = str(raw_val) if raw_val is not None else None
             return fields
     if items:
         print(
@@ -256,7 +265,9 @@ def run_repo_sync(
                 "created_at": node["createdAt"],
                 "updated_at": node["updatedAt"],
                 "closed_at": node["closedAt"],
-                "milestone": (node["milestone"] or {}).get("title"),
+                "milestone": (
+                    (node["milestone"] or {}).get("title")  # type: ignore[union-attr]
+                ),
                 "is_stub": 0,
             }
             issue.update(_parse_project_fields(node, canonical_project_id))

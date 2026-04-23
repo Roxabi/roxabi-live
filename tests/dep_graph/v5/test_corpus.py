@@ -55,10 +55,7 @@ def test_project_fields_exact_ac9() -> None:
 
 def test_no_label_prefix_constants_in_v5_corpus() -> None:
     """AC-3: LANE_LABEL_PREFIX and SIZE_LABEL_PREFIX must not appear in corpus.py."""
-    src = (
-        Path(__file__).parents[3]
-        / "src/roxabi_live/dep_graph/v5/data/corpus.py"
-    )
+    src = Path(__file__).parents[3] / "src/roxabi_live/dep_graph/v5/data/corpus.py"
     for constant in ("LANE_LABEL_PREFIX", "SIZE_LABEL_PREFIX"):
         result = subprocess.run(
             ["grep", "-n", constant, str(src)],
@@ -151,10 +148,10 @@ def test_load_issues_projects_all_fields(tmp_path: Path) -> None:
     assert issue["title"] == "Test issue"
     assert issue["state"] == "open"
     assert set(issue["labels"]) == {"graph:lane/a1", "size:M", "graph:standalone"}
-    assert issue["lane_label"] == "a1"      # sourced from DB column
-    assert issue["size"] == "M"             # sourced from DB column
-    assert issue["priority"] == "P1"        # sourced from DB column
-    assert issue["status"] == "Ready"       # sourced from DB column
+    assert issue["lane_label"] == "a1"  # sourced from DB column
+    assert issue["size"] == "M"  # sourced from DB column
+    assert issue["priority"] == "P1"  # sourced from DB column
+    assert issue["status"] == "Ready"  # sourced from DB column
     assert issue["standalone"] is True
     assert issue["defer"] is False
     assert issue["milestone"] == "M1 alpha"
