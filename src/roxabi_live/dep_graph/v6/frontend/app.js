@@ -80,7 +80,6 @@ function render() {
 
   pivotControls.style.display = isTable ? '' : 'none';
   if (listControls) listControls.style.display = isList ? '' : 'none';
-  if (graphControls) graphControls.style.display = isGraph ? '' : 'none';
 
   searchClear.hidden = !state.search;
   updateSubtitle();
@@ -142,10 +141,11 @@ function buildGraphSegs() {
   parentsSeg.type = 'button';
   parentsSeg.className = 'seg' + (state.showParents ? ' on' : '');
   parentsSeg.textContent = 'Parents';
+  parentsSeg.title = 'Show parent (epic) issues';
   parentsSeg.addEventListener('click', () => {
     setState({ showParents: !state.showParents });
     buildGraphSegs();
-    initGraph();
+    render();
   });
   container.innerHTML = '';
   container.appendChild(parentsSeg);

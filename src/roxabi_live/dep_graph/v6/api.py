@@ -11,7 +11,7 @@ from typing import TypedDict
 
 import aiosqlite
 
-from .parse import derive_lane_size, derive_priority, parse_milestone
+from .parse import parse_milestone
 
 
 class Node(TypedDict):
@@ -29,6 +29,7 @@ class Node(TypedDict):
     priority: str | None
     lane: str | None
     size: str | None
+    status: str | None
     is_stub: bool
 
 
@@ -55,15 +56,14 @@ async def build_graph_json(db_path: Path) -> GraphPayload:
 
         nodes: list[Node] = []
         async with db.execute(
-            "SELECT key, repo, number, title, state, url, milestone, is_stub "
-            "FROM issues"
+            "SELECT key, repo, number, title, state, url, milestone, "
+            "lane, priority, size, status, is_stub FROM issues"
         ) as cur:
             async for row in cur:
                 issue_labels = labels_by_issue.get(row["key"], [])
                 milestone_code, milestone_name, milestone_sort_key = parse_milestone(
                     row["milestone"]
                 )
-                lane, size = derive_lane_size(issue_labels)
                 nodes.append(
                     Node(
                         key=row["key"],
@@ -77,9 +77,10 @@ async def build_graph_json(db_path: Path) -> GraphPayload:
                         milestone_name=milestone_name,
                         milestone_sort_key=milestone_sort_key,
                         labels=issue_labels,
-                        priority=derive_priority(issue_labels),
-                        lane=lane,
-                        size=size,
+                        priority=row["priority"],
+                        lane=row["lane"],
+                        size=row["size"],
+                        status=row["status"],
                         is_stub=bool(row["is_stub"]),
                     )
                 )
