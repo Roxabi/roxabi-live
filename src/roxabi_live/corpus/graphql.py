@@ -38,7 +38,7 @@ query($owner: String!, $name: String!, $cursor: String, $since: DateTime) {
         projectItems(first: 5) {
           nodes {
             project {
-              id
+              title
             }
             fieldValues(first: 20) {
               nodes {

@@ -7,7 +7,6 @@ in roxabi_live.corpus.graphql.
 
 from __future__ import annotations
 
-import os
 import re
 import sqlite3
 import sys
@@ -27,42 +26,13 @@ _SHORT_FORM = re.compile(r"^#(\d+)$")
 _FULL_KEY = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 
 
-def _load_project_ids() -> dict[str, str]:
-    """Parse CORPUS_PROJECT_IDS=owner/repo:project_node_id,... into a dict.
-
-    Defaults to the four known Roxabi hub project IDs when env var is absent.
-    """
-    raw = os.environ.get("CORPUS_PROJECT_IDS", "")
-    if raw.strip():
-        result: dict[str, str] = {}
-        for pair in raw.split(","):
-            pair = pair.strip()
-            if ":" in pair:
-                repo, _, project_id = pair.partition(":")
-                if repo and project_id:
-                    result[repo.strip()] = project_id.strip()
-        return result
-    # Default: four known Roxabi hub project IDs
-    return {
-        "Roxabi/lyra": "PVT_kwDOB8J6DM4BQrDj",
-        "Roxabi/llmCLI": "PVT_kwDOB8J6DM4BU-5r",
-        "Roxabi/voiceCLI": "PVT_kwDOB8J6DM4BQrEv",
-        "Roxabi/imageCLI": "PVT_kwDOB8J6DM4BQzJC",
-    }
-
-
-_CORPUS_PROJECT_IDS: dict[str, str] = _load_project_ids()
-
-
 def _parse_project_fields(
-    node: dict[str, Any], canonical_project_id: str | None
+    node: dict[str, Any], repo: str
 ) -> dict[str, str | None]:
     """Extract lane/priority/size/status from a GraphQL issue node's projectItems.
 
-    Returns all-None dict when canonical_project_id is None or when the issue
-    is not enrolled in the canonical project. Logs a stderr warning when
-    projectItems nodes exist but none match the configured project ID
-    (signals misconfiguration vs. genuine non-enrollment).
+    Picks the board whose title matches `{repo_short_name} board` (convention).
+    Returns all-None dict when no matching board is found.
     """
     null_result: dict[str, str | None] = {
         "lane": None,
@@ -70,37 +40,32 @@ def _parse_project_fields(
         "size": None,
         "status": None,
     }
-    if not canonical_project_id:
-        return null_result
+    short_name = repo.split("/", 1)[-1]
+    expected_title = f"{short_name} board"
     project_items: dict[str, Any] = node.get("projectItems") or {}
     items: list[Any] = project_items.get("nodes") or []
     for item in items:
         item_dict: dict[str, Any] = item or {}
         project: dict[str, Any] = item_dict.get("project") or {}
-        if project.get("id") == canonical_project_id:
-            fields: dict[str, str | None] = {
-                "lane": None,
-                "priority": None,
-                "size": None,
-                "status": None,
-            }
-            fv_container: dict[str, Any] = item_dict.get("fieldValues") or {}
-            fv_nodes: list[Any] = fv_container.get("nodes") or []
-            for fv in fv_nodes:
-                fv_dict: dict[str, Any] = fv or {}
-                field_obj: dict[str, Any] = fv_dict.get("field") or {}
-                raw_name: Any = field_obj.get("name")
-                fname = (str(raw_name) if raw_name is not None else "").lower()
-                if fname in fields:
-                    raw_val: Any = fv_dict.get("name")
-                    fields[fname] = str(raw_val) if raw_val is not None else None
-            return fields
-    if items:
-        print(
-            f"[corpus] projectItems present but none matched project"
-            f" {canonical_project_id!r} — check CORPUS_PROJECT_IDS config",
-            file=sys.stderr,
-        )
+        if project.get("title") != expected_title:
+            continue
+        fields: dict[str, str | None] = {
+            "lane": None,
+            "priority": None,
+            "size": None,
+            "status": None,
+        }
+        fv_container: dict[str, Any] = item_dict.get("fieldValues") or {}
+        fv_nodes: list[Any] = fv_container.get("nodes") or []
+        for fv in fv_nodes:
+            fv_dict: dict[str, Any] = fv or {}
+            field_obj: dict[str, Any] = fv_dict.get("field") or {}
+            raw_name: Any = field_obj.get("name")
+            fname = (str(raw_name) if raw_name is not None else "").lower()
+            if fname in fields:
+                raw_val: Any = fv_dict.get("name")
+                fields[fname] = str(raw_val) if raw_val is not None else None
+        return fields
     return null_result
 
 
@@ -238,7 +203,6 @@ def run_repo_sync(
     Returns counts dict: {"pages": N, "issues": N}.
     """
     repo = f"{owner}/{name}"
-    canonical_project_id = _CORPUS_PROJECT_IDS.get(repo)
     cursor: str | None = None
     pages = 0
     total_issues = 0
@@ -270,7 +234,7 @@ def run_repo_sync(
                 ),
                 "is_stub": 0,
             }
-            issue.update(_parse_project_fields(node, canonical_project_id))
+            issue.update(_parse_project_fields(node, repo))
             upsert_issue(conn, issue)
 
             labels = [n["name"] for n in node["labels"]["nodes"]]
