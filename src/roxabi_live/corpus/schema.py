@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS issues (
@@ -19,7 +19,11 @@ CREATE TABLE IF NOT EXISTS issues (
     updated_at  TEXT,
     closed_at   TEXT,
     milestone   TEXT,
-    is_stub     INTEGER NOT NULL DEFAULT 0
+    is_stub     INTEGER NOT NULL DEFAULT 0,
+    lane        TEXT,
+    priority    TEXT,
+    size        TEXT,
+    status      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS labels (
@@ -48,14 +52,29 @@ CREATE INDEX IF NOT EXISTS ix_labels_name ON labels(name);
 """
 
 
-def _migrate(conn: sqlite3.Connection) -> None:
-    """Apply incremental migrations to existing DBs."""
+def _alter_column(conn: sqlite3.Connection, sql: str) -> None:
+    """Execute an ALTER TABLE ADD COLUMN statement, ignoring duplicate-column errors."""
     try:
-        conn.execute("ALTER TABLE edges ADD COLUMN kind TEXT NOT NULL DEFAULT 'parent'")
+        conn.execute(sql)
         conn.commit()
     except sqlite3.OperationalError as exc:
         if "duplicate column" not in str(exc).lower():
             raise
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply incremental migrations to existing DBs."""
+    # Migration 1 — edges.kind (SCHEMA_VERSION 1 -> 2)
+    _alter_column(
+        conn, "ALTER TABLE edges ADD COLUMN kind TEXT NOT NULL DEFAULT 'parent'"
+    )
+
+    # Migration 2 — projectV2 fields on issues (SCHEMA_VERSION 2 -> 3)
+    # One call per column so a failure on column N is not swallowed by column N+1.
+    _alter_column(conn, "ALTER TABLE issues ADD COLUMN lane TEXT")
+    _alter_column(conn, "ALTER TABLE issues ADD COLUMN priority TEXT")
+    _alter_column(conn, "ALTER TABLE issues ADD COLUMN size TEXT")
+    _alter_column(conn, "ALTER TABLE issues ADD COLUMN status TEXT")
 
 
 def bootstrap(db_path: pathlib.Path) -> None:

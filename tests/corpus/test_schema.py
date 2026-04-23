@@ -16,7 +16,49 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from roxabi_live.corpus.schema import bootstrap
+from roxabi_live.corpus.schema import SCHEMA_VERSION, bootstrap
+
+# V2-era schema: issues table without the four projectV2 columns.
+# Used to seed a pre-migration DB for migration tests.
+_V2_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS issues (
+    key         TEXT PRIMARY KEY,
+    repo        TEXT NOT NULL,
+    number      INTEGER NOT NULL,
+    title       TEXT,
+    state       TEXT NOT NULL,
+    url         TEXT,
+    created_at  TEXT,
+    updated_at  TEXT,
+    closed_at   TEXT,
+    milestone   TEXT,
+    is_stub     INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS labels (
+    issue_key   TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    PRIMARY KEY (issue_key, name),
+    FOREIGN KEY (issue_key) REFERENCES issues(key) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS edges (
+    src_key     TEXT NOT NULL,
+    dst_key     TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'parent',
+    PRIMARY KEY (src_key, dst_key)
+);
+
+CREATE TABLE IF NOT EXISTS sync_state (
+    repo            TEXT PRIMARY KEY,
+    last_cursor     TEXT,
+    last_synced_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_edges_dst ON edges(dst_key);
+CREATE INDEX IF NOT EXISTS ix_issues_repo_state ON issues(repo, state);
+CREATE INDEX IF NOT EXISTS ix_labels_name ON labels(name);
+"""
 
 
 def test_bootstrap_idempotent(tmp_path: Path) -> None:
@@ -79,3 +121,37 @@ def test_schema_has_no_body_column(tmp_path: Path) -> None:
     assert "body_hash" not in columns, (
         "Column 'body_hash' found in issues table — spec says to drop it"
     )
+
+
+def test_migrate_adds_projectv2_columns(tmp_path: Path) -> None:
+    """bootstrap() on a v2 DB adds lane/priority/size/status without error."""
+    # Arrange — seed a v2-era DB (issues table without the four columns)
+    db_path = tmp_path / "corpus.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_V2_SCHEMA_SQL)
+    conn.close()
+
+    # Act — bootstrap must apply migration 2
+    bootstrap(db_path)
+
+    # Assert — all four new columns exist
+    conn = sqlite3.connect(db_path)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(issues)").fetchall()}
+        user_version = conn.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert {"lane", "priority", "size", "status"} <= cols, (
+        f"Missing projectV2 columns. Found: {cols}"
+    )
+    assert user_version == SCHEMA_VERSION, (
+        f"Expected user_version={SCHEMA_VERSION}, got {user_version}"
+    )
+
+
+def test_migrate_idempotent_on_v3(tmp_path: Path) -> None:
+    """Calling bootstrap() twice on a v3 DB is safe (duplicate column guard)."""
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    bootstrap(db_path)  # must not raise
