@@ -13,6 +13,16 @@ import aiosqlite
 
 from .parse import parse_milestone
 
+_LANE_LABEL_PREFIX = "graph:lane/"
+
+
+def _lane_from_labels(labels: list[str]) -> str | None:
+    """Fallback: derive lane from `graph:lane/X` label when board field unset."""
+    for lbl in labels:
+        if lbl.startswith(_LANE_LABEL_PREFIX):
+            return lbl[len(_LANE_LABEL_PREFIX):]
+    return None
+
 
 class Node(TypedDict):
     key: str
@@ -78,7 +88,7 @@ async def build_graph_json(db_path: Path) -> GraphPayload:
                         milestone_sort_key=milestone_sort_key,
                         labels=issue_labels,
                         priority=row["priority"],
-                        lane=row["lane"],
+                        lane=row["lane"] or _lane_from_labels(issue_labels),
                         size=row["size"],
                         status=row["status"],
                         is_stub=bool(row["is_stub"]),
