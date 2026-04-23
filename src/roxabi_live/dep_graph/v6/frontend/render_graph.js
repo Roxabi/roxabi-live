@@ -11,9 +11,19 @@ const LANE_TONES = {
   'd': 'd', 'e': 'e', 'f': 'f', 'g': 'g', 'h': 'h', 'i': 'i'
 };
 
+// Repo → tone fallback (deterministic) when lane is unset.
+// TODO: drop once Lane field is populated on every project board.
+const REPO_TONE_PALETTE = ['a1', 'a2', 'b', 'c1', 'd', 'e', 'f', 'g', 'h', 'i'];
+function repoTone(repo) {
+  if (!repo) return 'accent';
+  let h = 0;
+  for (let i = 0; i < repo.length; i++) h = (h * 31 + repo.charCodeAt(i)) | 0;
+  return REPO_TONE_PALETTE[Math.abs(h) % REPO_TONE_PALETTE.length];
+}
+
 function getTone(node) {
   const lane = node.lane?.toLowerCase();
-  return LANE_TONES[lane] || 'accent';
+  return LANE_TONES[lane] || repoTone(node.repo);
 }
 
 // ── Render nodes as .gg-node dots + .gg-ilabel labels (v4.8 style) ───────────
