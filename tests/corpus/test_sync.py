@@ -214,7 +214,6 @@ def test_run_repo_sync_hydrates_projectv2_fields(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """run_repo_sync with a mocked gh_graphql writes project fields (AC-7)."""
-    from roxabi_live.corpus import sync  # noqa: PLC0415
     from roxabi_live.corpus.sync import run_repo_sync  # noqa: PLC0415
 
     db_path = tmp_path / "corpus.db"
@@ -226,7 +225,7 @@ def test_run_repo_sync_hydrates_projectv2_fields(
             "projectItems": {
                 "nodes": [
                     {
-                        "project": {"id": "PVT_TEST"},
+                        "project": {"title": "lyra board"},
                         "fieldValues": {
                             "nodes": [
                                 {
@@ -257,11 +256,6 @@ def test_run_repo_sync_hydrates_projectv2_fields(
         "roxabi_live.corpus.sync.gh_graphql",
         lambda q, v: _make_graphql_response(project_node),
     )
-    monkeypatch.setattr(
-        sync,
-        "_CORPUS_PROJECT_IDS",
-        {"Roxabi/lyra": "PVT_TEST"},
-    )
 
     run_repo_sync(conn, "Roxabi", "lyra")
 
@@ -276,7 +270,6 @@ def test_run_repo_sync_null_project_fields_on_no_enrollment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """projectItems nodes=[] -> all four columns NULL, no error (AC-8)."""
-    from roxabi_live.corpus import sync  # noqa: PLC0415
     from roxabi_live.corpus.sync import run_repo_sync  # noqa: PLC0415
 
     db_path = tmp_path / "corpus.db"
@@ -286,11 +279,6 @@ def test_run_repo_sync_null_project_fields_on_no_enrollment(
     monkeypatch.setattr(
         "roxabi_live.corpus.sync.gh_graphql",
         lambda q, v: _make_graphql_response(_base_node()),
-    )
-    monkeypatch.setattr(
-        sync,
-        "_CORPUS_PROJECT_IDS",
-        {"Roxabi/lyra": "PVT_TEST"},
     )
 
     run_repo_sync(conn, "Roxabi", "lyra")
