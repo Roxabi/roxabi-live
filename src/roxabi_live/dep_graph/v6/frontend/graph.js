@@ -109,16 +109,9 @@ export async function initGraph() {
   const panel = document.getElementById('graph-panel');
   if (!panel) return;
 
-  // Graph filters by repo/milestone/priority/status, but search uses highlight
-  let nodes = filteredNodesForGraph();
-
-  // When showParents=false, exclude nodes that are parents (have children)
-  if (!state.showParents) {
-    const parentKeys = new Set(
-      state.edges.filter(e => e.kind === 'parent').map(e => e.src)
-    );
-    nodes = nodes.filter(n => !parentKeys.has(n.key));
-  }
+  // Graph filters by repo/milestone/priority/status, but search uses highlight.
+  // Parent-node filtering (showParents=false) is applied inside applyFilters.
+  const nodes = filteredNodesForGraph();
 
   const nodeKeys = new Set(nodes.map(n => n.key));
 

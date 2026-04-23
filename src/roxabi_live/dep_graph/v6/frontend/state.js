@@ -188,7 +188,11 @@ export function dimValue(node, dim) {
 // ─── Filter application ───────────────────────────────────────────────────
 export function applyFilters(nodes, filters) {
   const q = (filters.search ?? '').trim().toLowerCase();
+  const parentKeys = state.showParents
+    ? null
+    : new Set(state.edges.filter(e => e.kind === 'parent').map(e => e.src));
   return nodes.filter(n => {
+    if (parentKeys && parentKeys.has(n.key)) return false;
     if (filters.repo.length && !filters.repo.includes(n.repo)) return false;
     const msCode = n.milestone_code ?? '(None)';
     if (filters.milestone.length && !filters.milestone.includes(msCode)) return false;

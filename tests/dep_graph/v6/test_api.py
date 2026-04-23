@@ -27,21 +27,17 @@ def db(tmp_path: Path) -> Path:
     conn.executescript(
         """
         INSERT INTO issues
-          (key, repo, number, title, state, url, milestone, is_stub)
+          (key, repo, number, title, state, url, milestone,
+           lane, priority, size, status, is_stub)
         VALUES
           ('Roxabi/x#1', 'Roxabi/x', 1, 't1', 'OPEN', 'https://x/1',
-           'M0 — NATS hardening', 0),
+           'M0 — NATS hardening', 'infra', 'P1', 'S', 'Ready', 0),
           ('Roxabi/x#2', 'Roxabi/x', 2, 't2', 'CLOSED', 'https://x/2',
-           'Phase 0 — Foundation', 0),
+           'Phase 0 — Foundation', NULL, 'P2', 'M', 'Done', 0),
           ('Roxabi/y#3', 'Roxabi/y', 3, 't3', 'OPEN', 'https://y/3',
-           'Final Initiatives', 0);
+           'Final Initiatives', NULL, 'P3', NULL, NULL, 0);
         INSERT INTO labels (issue_key, name) VALUES
-          ('Roxabi/x#1', 'S'),
-          ('Roxabi/x#1', 'P1-high'),
-          ('Roxabi/x#1', 'graph:lane/infra'),
-          ('Roxabi/x#2', 'size:M'),
-          ('Roxabi/x#2', 'priority:medium'),
-          ('Roxabi/y#3', 'priority:low');
+          ('Roxabi/x#1', 'graph:lane/infra');
         INSERT INTO edges (src_key, dst_key, kind) VALUES
           ('Roxabi/x#2', 'Roxabi/x#1', 'parent'),
           ('Roxabi/x#1', 'Roxabi/y#3', 'blocks');
