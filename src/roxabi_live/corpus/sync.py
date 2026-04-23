@@ -7,6 +7,7 @@ in roxabi_live.corpus.graphql.
 
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 import sys
@@ -26,13 +27,90 @@ _SHORT_FORM = re.compile(r"^#(\d+)$")
 _FULL_KEY = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 
 
+def _load_project_ids() -> dict[str, str]:
+    """Parse CORPUS_PROJECT_IDS=owner/repo:project_node_id,... into a dict.
+
+    Defaults to the four known Roxabi hub project IDs when env var is absent.
+    """
+    raw = os.environ.get("CORPUS_PROJECT_IDS", "")
+    if raw.strip():
+        result: dict[str, str] = {}
+        for pair in raw.split(","):
+            pair = pair.strip()
+            if ":" in pair:
+                repo, _, project_id = pair.partition(":")
+                if repo and project_id:
+                    result[repo.strip()] = project_id.strip()
+        return result
+    # Default: four known Roxabi hub project IDs
+    return {
+        "Roxabi/lyra": "PVT_kwDOB8J6DM4BQrDj",
+        "Roxabi/llmCLI": "PVT_kwDOB8J6DM4BU-5r",
+        "Roxabi/voiceCLI": "PVT_kwDOB8J6DM4BQrEv",
+        "Roxabi/imageCLI": "PVT_kwDOB8J6DM4BQzJC",
+    }
+
+
+_CORPUS_PROJECT_IDS: dict[str, str] = _load_project_ids()
+
+
+def _parse_project_fields(
+    node: dict[str, Any], canonical_project_id: str | None
+) -> dict[str, str | None]:
+    """Extract lane/priority/size/status from a GraphQL issue node's projectItems.
+
+    Returns all-None dict when canonical_project_id is None or when the issue
+    is not enrolled in the canonical project. Logs a stderr warning when
+    projectItems nodes exist but none match the configured project ID
+    (signals misconfiguration vs. genuine non-enrollment).
+    """
+    null_result: dict[str, str | None] = {
+        "lane": None,
+        "priority": None,
+        "size": None,
+        "status": None,
+    }
+    if not canonical_project_id:
+        return null_result
+    project_items: dict[str, Any] = node.get("projectItems") or {}
+    items: list[Any] = project_items.get("nodes") or []
+    for item in items:
+        item_dict: dict[str, Any] = item or {}
+        project: dict[str, Any] = item_dict.get("project") or {}
+        if project.get("id") == canonical_project_id:
+            fields: dict[str, str | None] = {
+                "lane": None,
+                "priority": None,
+                "size": None,
+                "status": None,
+            }
+            fv_container: dict[str, Any] = item_dict.get("fieldValues") or {}
+            fv_nodes: list[Any] = fv_container.get("nodes") or []
+            for fv in fv_nodes:
+                fv_dict: dict[str, Any] = fv or {}
+                field_obj: dict[str, Any] = fv_dict.get("field") or {}
+                raw_name: Any = field_obj.get("name")
+                fname = (str(raw_name) if raw_name is not None else "").lower()
+                if fname in fields:
+                    raw_val: Any = fv_dict.get("name")
+                    fields[fname] = str(raw_val) if raw_val is not None else None
+            return fields
+    if items:
+        print(
+            f"[corpus] projectItems present but none matched project"
+            f" {canonical_project_id!r} — check CORPUS_PROJECT_IDS config",
+            file=sys.stderr,
+        )
+    return null_result
+
+
 def canonical_key(ref: int | str, repo: str) -> str:
     """Canonicalise an issue reference to 'owner/repo#N' form.
 
-    - int 42 + 'Roxabi/lyra' → 'Roxabi/lyra#42'
-    - '42' + 'Roxabi/lyra' → 'Roxabi/lyra#42'
-    - '#9' + 'Roxabi/lyra' → 'Roxabi/lyra#9'
-    - 'Roxabi/voiceCLI#7' + anything → 'Roxabi/voiceCLI#7' (pass-through)
+    - int 42 + 'Roxabi/lyra' -> 'Roxabi/lyra#42'
+    - '42' + 'Roxabi/lyra' -> 'Roxabi/lyra#42'
+    - '#9' + 'Roxabi/lyra' -> 'Roxabi/lyra#9'
+    - 'Roxabi/voiceCLI#7' + anything -> 'Roxabi/voiceCLI#7' (pass-through)
 
     Raises ValueError on invalid input.
     """
@@ -55,15 +133,16 @@ def upsert_issue(conn: sqlite3.Connection, issue: dict[str, Any]) -> None:
     Uses ON CONFLICT DO UPDATE so FK children (labels) are preserved across
     upserts — INSERT OR REPLACE would trigger ON DELETE CASCADE first.
     Expected keys: key, repo, number, title, state, url, created_at,
-    updated_at, closed_at (nullable), milestone (nullable), is_stub (0 or 1).
+    updated_at, closed_at (nullable), milestone (nullable), is_stub (0 or 1),
+    lane (nullable), priority (nullable), size (nullable), status (nullable).
     """
     conn.execute(
         """
         INSERT INTO issues
             (key, repo, number, title, state, url, created_at, updated_at,
-             closed_at, milestone, is_stub)
+             closed_at, milestone, is_stub, lane, priority, size, status)
         VALUES
-            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(key) DO UPDATE SET
             repo = excluded.repo,
             number = excluded.number,
@@ -74,7 +153,11 @@ def upsert_issue(conn: sqlite3.Connection, issue: dict[str, Any]) -> None:
             updated_at = excluded.updated_at,
             closed_at = excluded.closed_at,
             milestone = excluded.milestone,
-            is_stub = excluded.is_stub
+            is_stub = excluded.is_stub,
+            lane = excluded.lane,
+            priority = excluded.priority,
+            size = excluded.size,
+            status = excluded.status
         """,
         (
             issue["key"],
@@ -88,6 +171,10 @@ def upsert_issue(conn: sqlite3.Connection, issue: dict[str, Any]) -> None:
             issue["closed_at"],
             issue["milestone"],
             issue["is_stub"],
+            issue["lane"],
+            issue["priority"],
+            issue["size"],
+            issue["status"],
         ),
     )
 
@@ -108,11 +195,11 @@ def upsert_edges(
     blocking: list[str],
     kind: str = "parent",
 ) -> None:
-    """Wipe all edges touching issue_key (as src OR dst) of the same kind, then rewrite rows.
+    """Wipe all edges touching issue_key (as src OR dst) of the same kind, then rewrite.
 
     Canonical direction:
-    - Every blocker b in blocked_by → row (src=b, dst=issue_key).
-    - Every blockee b in blocking → row (src=issue_key, dst=b).
+    - Every blocker b in blocked_by -> row (src=b, dst=issue_key).
+    - Every blockee b in blocking -> row (src=issue_key, dst=b).
 
     Idempotent. Duplicate (src, dst) pairs coalesce via PRIMARY KEY.
     All inputs are assumed already canonical — caller must use canonical_key first.
@@ -151,6 +238,7 @@ def run_repo_sync(
     Returns counts dict: {"pages": N, "issues": N}.
     """
     repo = f"{owner}/{name}"
+    canonical_project_id = _CORPUS_PROJECT_IDS.get(repo)
     cursor: str | None = None
     pages = 0
     total_issues = 0
@@ -167,7 +255,7 @@ def run_repo_sync(
 
         for node in nodes:
             key = canonical_key(node["number"], repo)
-            issue = {
+            issue: dict[str, Any] = {
                 "key": key,
                 "repo": repo,
                 "number": node["number"],
@@ -177,9 +265,12 @@ def run_repo_sync(
                 "created_at": node["createdAt"],
                 "updated_at": node["updatedAt"],
                 "closed_at": node["closedAt"],
-                "milestone": (node["milestone"] or {}).get("title"),
+                "milestone": (
+                    (node["milestone"] or {}).get("title")  # type: ignore[union-attr]
+                ),
                 "is_stub": 0,
             }
+            issue.update(_parse_project_fields(node, canonical_project_id))
             upsert_issue(conn, issue)
 
             labels = [n["name"] for n in node["labels"]["nodes"]]
@@ -192,7 +283,16 @@ def run_repo_sync(
                 for t in node.get("subIssues", {}).get("nodes", [])
             ]
             parent_node = node.get("parent")
-            parents = [canonical_key(parent_node["number"], parent_node["repository"]["nameWithOwner"])] if parent_node else []
+            parents = (
+                [
+                    canonical_key(
+                        parent_node["number"],
+                        parent_node["repository"]["nameWithOwner"],
+                    )
+                ]
+                if parent_node
+                else []
+            )
 
             # Dependency relationships (blockedBy/blocking)
             # Edge direction: src=blocker, dst=blocked
@@ -252,7 +352,7 @@ def enumerate_org_repos(org: str) -> list[tuple[str, str]]:
 def closed_hop_pass(conn: sqlite3.Connection) -> int:
     """Find edge rows whose endpoints are missing from issues and stub-fetch them.
 
-    Select DISTINCT keys from edges (src_key ∪ dst_key) that don't appear in issues.
+    Select DISTINCT keys from edges (src_key u dst_key) that don't appear in issues.
     For each missing key, fetch minimal metadata via GraphQL and INSERT with is_stub=1.
 
     Returns the number of stubs inserted.
@@ -300,6 +400,10 @@ def closed_hop_pass(conn: sqlite3.Connection) -> int:
             "closed_at": node["closedAt"],
             "milestone": None,
             "is_stub": 1,
+            "lane": None,
+            "priority": None,
+            "size": None,
+            "status": None,
         }
         upsert_issue(conn, stub)
         inserted += 1

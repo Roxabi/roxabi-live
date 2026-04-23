@@ -14,8 +14,6 @@ from roxabi_live.corpus.schema import connect as _connect_corpus
 
 DEFAULT_DB = Path.home() / ".roxabi" / "corpus.db"
 
-LANE_LABEL_PREFIX = "graph:lane/"
-SIZE_LABEL_PREFIX = "size:"
 STANDALONE_LABEL = "graph:standalone"
 DEFER_LABEL = "graph:defer"
 
@@ -49,34 +47,27 @@ def load_issues(db_path: Path | None = None) -> dict[str, dict[str, Any]]:
         conn.close()
 
 
-def _project_lane_size(labels: list[str]) -> tuple[str | None, str | None]:
-    """Project lane_label + size from a label list.
+def _project_fields(
+    lane: str | None,
+    priority: str | None,
+    size: str | None,
+    status: str | None,
+) -> dict[str, str | None]:
+    """Map corpus.db projectV2 column values to the v5 projected-dict keys.
 
-    SINGLE SWAP POINT for the cross-repo taxonomy migration:
-      1. `Roxabi/roxabi-plugins#119` enrolls every issue in the Roxabi Hub
-         Project V2 and backfills the Lane/Size single-select fields.
-      2. `Roxabi/lyra#872` then extends corpus.db with `lane` / `size`
-         columns pulled from `projectV2.items`, and flips the body of this
-         function to read those columns instead of the label prefixes.
-
-    Do NOT inline this function into load_issues — the indirection is the
-    point; the whole migration is one function's worth of code change.
+    Key `lane_label` is preserved (not renamed to `lane`) — v5 consumers
+    already reference issue["lane_label"] and renaming would break all
+    downstream callers without a separate migration.
     """
-    lane: str | None = None
-    size: str | None = None
-
-    for lbl in labels:
-        if lane is None and lbl.startswith(LANE_LABEL_PREFIX):
-            lane = lbl[len(LANE_LABEL_PREFIX) :]
-        if size is None and lbl.startswith(SIZE_LABEL_PREFIX):
-            size = lbl[len(SIZE_LABEL_PREFIX) :]
-        if lane is not None and size is not None:
-            break
-
-    return lane, size
+    return {
+        "lane_label": lane,
+        "priority": priority,
+        "size": size,
+        "status": status,
+    }
 
 
-# ─── Private helpers ──────────────────────────────────────────────────────────
+# --- Private helpers ----------------------------------------------------------
 
 
 def _fetch_labels(conn: sqlite3.Connection) -> dict[str, list[str]]:
@@ -107,8 +98,8 @@ def _fetch_edges(
     """Return (blocking_by_key, blocked_by_key) from the edges table.
 
     edge (src, dst) means src blocks dst:
-      blocking_by_key[src]  → refs of issues that src blocks
-      blocked_by_key[dst]   → refs of issues that block dst
+      blocking_by_key[src]  -> refs of issues that src blocks
+      blocked_by_key[dst]   -> refs of issues that block dst
     """
     blocking_by_key: dict[str, list[dict[str, Any]]] = {}
     blocked_by_key: dict[str, list[dict[str, Any]]] = {}
@@ -131,7 +122,8 @@ def _fetch_issues(
 
     for row in conn.execute(
         "SELECT key, repo, number, title, state, url, "
-        "created_at, updated_at, closed_at, milestone, is_stub "
+        "created_at, updated_at, closed_at, milestone, is_stub, "
+        "lane, priority, size, status "
         "FROM issues"
     ):
         (
@@ -146,13 +138,17 @@ def _fetch_issues(
             closed_at,
             milestone,
             is_stub,
+            lane,
+            priority,
+            size,
+            status,
         ) = row
 
         # Copy the label list so downstream mutation of the projected dict's
         # `labels` cannot alias back into labels_by_key (which feeds derived
         # fields below).
         labels = list(labels_by_key.get(key, []))
-        lane_label, size = _project_lane_size(labels)
+        fields = _project_fields(lane, priority, size, status)
 
         result[key] = {
             "repo": repo,
@@ -166,8 +162,10 @@ def _fetch_issues(
             "milestone": milestone,
             "is_stub": bool(is_stub),
             "labels": labels,
-            "lane_label": lane_label,
-            "size": size,
+            "lane_label": fields["lane_label"],
+            "size": fields["size"],
+            "priority": fields["priority"],
+            "status": fields["status"],
             "standalone": STANDALONE_LABEL in labels,
             "defer": DEFER_LABEL in labels,
             "blocking": blocking_by_key.get(key, []),

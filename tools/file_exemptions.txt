@@ -5,4 +5,4 @@ src/roxabi_live/dep_graph/v1/fetch.py  # 474 lines — legacy v1, frozen for v6 
 src/roxabi_live/dep_graph/v1/milestone.py  # 580 lines — legacy v1, frozen for v6 migration
 src/roxabi_live/dep_graph/v1/audit.py  # 419 lines — legacy v1, frozen for v6 migration
 src/roxabi_live/dep_graph/v1/derive.py  # 308 lines — legacy v1, frozen for v6 migration
-src/roxabi_live/corpus/sync.py  # 320 lines — migrated from lyra, minor over limit
+src/roxabi_live/corpus/sync.py  # 442 lines — #872 adds _parse_project_fields + upsert 11->15

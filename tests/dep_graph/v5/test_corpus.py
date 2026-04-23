@@ -1,78 +1,78 @@
-"""Tests for v5.data.corpus — corpus.db adapter + lane/size projector.
-
-RED state: scripts/dep-graph/v5/data/corpus.py does not exist yet.
-All tests will fail with ModuleNotFoundError until T2 (implementation) lands.
+"""Tests for v5.data.corpus — corpus.db adapter + projectV2 field reader.
 
 Tests cover:
-- _project_lane_size() — unit tests for the isolated label projector
+- _project_fields() — unit tests for the column-based projector
 - load_issues() — integration tests seeding a real sqlite DB via
   roxabi_live.corpus.schema.bootstrap + raw INSERTs, asserting the projected
   issue dict shape matches spec §Data Model.
+- Static grep gate: LANE_LABEL_PREFIX / SIZE_LABEL_PREFIX must not appear
+  in the production corpus.py (AC-3).
 """
 
 from __future__ import annotations
 
 import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from roxabi_live.dep_graph.v5.data.corpus import _project_lane_size, load_issues
+from roxabi_live.dep_graph.v5.data.corpus import _project_fields, load_issues
 
-# ─── Unit: _project_lane_size ────────────────────────────────────────────────
-
-
-def test_project_lane_size_strips_prefixes() -> None:
-    """First graph:lane/* and size:* labels are stripped to bare values."""
-    # Arrange
-    labels = ["graph:lane/a2", "size:S", "foo"]
-
-    # Act
-    lane, size = _project_lane_size(labels)
-
-    # Assert
-    assert lane == "a2"
-    assert size == "S"
+# --- Unit: _project_fields ---------------------------------------------------
 
 
-def test_project_lane_size_first_wins() -> None:
-    """When multiple matching labels exist, the first match wins."""
-    # Arrange
-    labels = ["graph:lane/a1", "graph:lane/a2", "size:S", "size:M"]
-
-    # Act
-    lane, size = _project_lane_size(labels)
-
-    # Assert
-    assert lane == "a1"
-    assert size == "S"
+def test_project_fields_reads_columns() -> None:
+    """_project_fields() returns correct dict from column values (AC-9)."""
+    fields = _project_fields("a2", "P1", "S", "Ready")
+    assert fields == {
+        "lane_label": "a2",
+        "priority": "P1",
+        "size": "S",
+        "status": "Ready",
+    }
 
 
-def test_project_lane_size_returns_none_when_absent() -> None:
-    """Returns (None, None) when neither graph:lane/ nor size: labels present."""
-    # Arrange
-    labels = ["graph:standalone", "priority:high", "unrelated"]
-
-    # Act
-    lane, size = _project_lane_size(labels)
-
-    # Assert
-    assert lane is None
-    assert size is None
+def test_project_fields_none_columns() -> None:
+    """All-None column args -> all-None dict values (AC-9)."""
+    fields = _project_fields(None, None, None, None)
+    assert all(v is None for v in fields.values())
 
 
-def test_project_lane_size_empty_labels() -> None:
-    """Degenerate case: empty label list → (None, None) — exercised for
-    every issue with no labels in _fetch_issues."""
-    assert _project_lane_size([]) == (None, None)
+def test_project_fields_exact_ac9() -> None:
+    """AC-9 exact assertion: _project_fields('a1','P1','M','In Progress')."""
+    result = _project_fields("a1", "P1", "M", "In Progress")
+    assert result == {
+        "lane_label": "a1",
+        "priority": "P1",
+        "size": "M",
+        "status": "In Progress",
+    }
 
 
-# ─── Integration: load_issues ────────────────────────────────────────────────
+# --- Static grep gate (AC-3) -------------------------------------------------
+
+
+def test_no_label_prefix_constants_in_v5_corpus() -> None:
+    """AC-3: LANE_LABEL_PREFIX and SIZE_LABEL_PREFIX must not appear in corpus.py."""
+    src = Path(__file__).parents[3] / "src/roxabi_live/dep_graph/v5/data/corpus.py"
+    for constant in ("LANE_LABEL_PREFIX", "SIZE_LABEL_PREFIX"):
+        result = subprocess.run(
+            ["grep", "-n", constant, str(src)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0, (
+            f"{constant} still referenced in corpus.py:\n{result.stdout}"
+        )
+
+
+# --- Integration: load_issues ------------------------------------------------
 
 
 def _seed_db(db_path: Path) -> None:
     """Bootstrap schema and insert one issue with labels, no edges."""
-    from roxabi_live.corpus.schema import bootstrap
+    from roxabi_live.corpus.schema import bootstrap  # noqa: PLC0415
 
     bootstrap(db_path)
     conn = sqlite3.connect(db_path)
@@ -101,15 +101,45 @@ def _seed_db(db_path: Path) -> None:
 
 
 def test_load_issues_projects_all_fields(tmp_path: Path) -> None:
-    """Projected dict carries every field documented in spec §Data Model."""
-    # Arrange
-    db_path = tmp_path / "corpus.db"
-    _seed_db(db_path)
+    """Projected dict carries every field documented in spec §Data Model (AC-4, AC-10)."""
+    from roxabi_live.corpus.schema import bootstrap  # noqa: PLC0415
 
-    # Act
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+
+    # Seed with explicit column values for all four projectV2 fields
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """INSERT INTO issues
+                   (key, repo, number, title, state, milestone, is_stub,
+                    lane, priority, size, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "Roxabi/lyra#1",
+                "Roxabi/lyra",
+                1,
+                "Test issue",
+                "open",
+                "M1 alpha",
+                0,
+                "a1",
+                "P1",
+                "M",
+                "Ready",
+            ),
+        )
+        for label in ["graph:lane/a1", "size:M", "graph:standalone"]:
+            conn.execute(
+                "INSERT INTO labels (issue_key, name) VALUES (?, ?)",
+                ("Roxabi/lyra#1", label),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
     issues = load_issues(db_path)
 
-    # Assert
     assert "Roxabi/lyra#1" in issues
     issue = issues["Roxabi/lyra#1"]
 
@@ -118,19 +148,20 @@ def test_load_issues_projects_all_fields(tmp_path: Path) -> None:
     assert issue["title"] == "Test issue"
     assert issue["state"] == "open"
     assert set(issue["labels"]) == {"graph:lane/a1", "size:M", "graph:standalone"}
-    assert issue["lane_label"] == "a1"
+    assert issue["lane_label"] == "a1"  # sourced from DB column
+    assert issue["size"] == "M"  # sourced from DB column
+    assert issue["priority"] == "P1"  # sourced from DB column
+    assert issue["status"] == "Ready"  # sourced from DB column
     assert issue["standalone"] is True
     assert issue["defer"] is False
     assert issue["milestone"] == "M1 alpha"
-    assert issue["size"] == "M"
     assert issue["blocking"] == []
     assert issue["blocked_by"] == []
 
 
 def test_edges_populate_blocking_and_blocked_by(tmp_path: Path) -> None:
-    """Edge src blocks dst → A.blocking has B ref; B.blocked_by has A ref."""
-    # Arrange
-    from roxabi_live.corpus.schema import bootstrap
+    """Edge src blocks dst -> A.blocking has B ref; B.blocked_by has A ref."""
+    from roxabi_live.corpus.schema import bootstrap  # noqa: PLC0415
 
     db_path = tmp_path / "corpus.db"
     bootstrap(db_path)
@@ -152,16 +183,12 @@ def test_edges_populate_blocking_and_blocked_by(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    # Act
     issues = load_issues(db_path)
 
-    # Assert — A blocks B
     assert issues["Roxabi/lyra#1"]["blocking"] == [
         {"repo": "Roxabi/voiceCLI", "issue": 10}
     ]
     assert issues["Roxabi/lyra#1"]["blocked_by"] == []
-
-    # Assert — B is blocked by A
     assert issues["Roxabi/voiceCLI#10"]["blocked_by"] == [
         {"repo": "Roxabi/lyra", "issue": 1}
     ]
@@ -170,18 +197,14 @@ def test_edges_populate_blocking_and_blocked_by(tmp_path: Path) -> None:
 
 def test_missing_db_hints_make_corpus_sync(tmp_path: Path) -> None:
     """Missing db_path raises FileNotFoundError hinting at make corpus-sync."""
-    # Arrange
     db_path = tmp_path / "nonexistent.db"
-
-    # Act / Assert
     with pytest.raises(FileNotFoundError, match="make corpus-sync"):
         load_issues(db_path)
 
 
 def test_load_issues_is_stub_true_projection(tmp_path: Path) -> None:
-    """is_stub=1 in SQLite → is_stub: True in projected dict."""
-    # Arrange
-    from roxabi_live.corpus.schema import bootstrap
+    """is_stub=1 in SQLite -> is_stub: True in projected dict."""
+    from roxabi_live.corpus.schema import bootstrap  # noqa: PLC0415
 
     db_path = tmp_path / "corpus.db"
     bootstrap(db_path)
@@ -196,18 +219,13 @@ def test_load_issues_is_stub_true_projection(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    # Act
     issues = load_issues(db_path)
-
-    # Assert
     assert issues["Roxabi/lyra#1"]["is_stub"] is True
 
 
 def test_load_issues_dangling_edge_produces_orphan_ref(tmp_path: Path) -> None:
-    """Edge whose dst_key has no issues row → src.blocking still lists the
-    orphan ref (downstream compute_visible filters on `rk in issues`)."""
-    # Arrange
-    from roxabi_live.corpus.schema import bootstrap
+    """Edge whose dst_key has no issues row -> src.blocking still lists the orphan ref."""
+    from roxabi_live.corpus.schema import bootstrap  # noqa: PLC0415
 
     db_path = tmp_path / "corpus.db"
     bootstrap(db_path)
@@ -218,7 +236,6 @@ def test_load_issues_dangling_edge_produces_orphan_ref(tmp_path: Path) -> None:
                VALUES (?, ?, ?, ?, ?, ?)""",
             ("Roxabi/lyra#1", "Roxabi/lyra", 1, "A", "open", 0),
         )
-        # Edge points at a key that has no issues row.
         conn.execute(
             "INSERT INTO edges (src_key, dst_key) VALUES (?, ?)",
             ("Roxabi/lyra#1", "Roxabi/voiceCLI#999"),
@@ -227,10 +244,8 @@ def test_load_issues_dangling_edge_produces_orphan_ref(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    # Act
     issues = load_issues(db_path)
 
-    # Assert — orphan ref present on src side; no phantom issues entry.
     assert issues["Roxabi/lyra#1"]["blocking"] == [
         {"repo": "Roxabi/voiceCLI", "issue": 999}
     ]
