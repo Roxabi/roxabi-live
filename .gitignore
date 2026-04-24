@@ -18,3 +18,4 @@ coverage.xml
 *.db-wal
 .ruff_cache/
 .claude/worktrees/
+reports/

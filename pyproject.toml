@@ -67,7 +67,7 @@ reportUnusedFunction = "none"
 
 [tool.ruff]
 src = ["src", "tests"]
-exclude = [".claude/worktrees"]
+exclude = [".claude/worktrees", "tools"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "C901", "PLR0913", "PLR0915"]
@@ -100,4 +100,5 @@ dev = [
     "pytest-timeout>=2.4.0",
     "ruff>=0.15.10",
     "httpx>=0.28",
+    "pip-licenses>=5.5.5",
 ]
