@@ -258,7 +258,14 @@ class TestAuthHalt:
                 side_effect=[err_401, err_401],
             ):
                 # Act — hourly_loop should exit on its own (not require cancellation)
-                task = reconciler.hourly_loop(interval_seconds=0.01)
+                task = reconciler.hourly_loop(
+                    Settings(
+                        corpus_db_path=tmp_path / "corpus.db",
+                        github_org="Roxabi",
+                        github_webhook_secret="",
+                        corpus_sync_interval_seconds=0.01,
+                    )
+                )
                 await asyncio.wait_for(task, timeout=1.0)
 
         # Assert — task completed without TimeoutError/CancelledError
@@ -291,7 +298,14 @@ class TestAuthHalt:
             side_effect=[err_401, _success_dict(), _success_dict()],
         ):
             # Act — allow a few ticks
-            task = reconciler.hourly_loop(interval_seconds=0.01)
+            task = reconciler.hourly_loop(
+                Settings(
+                    corpus_db_path=tmp_path / "corpus.db",
+                    github_org="Roxabi",
+                    github_webhook_secret="",
+                    corpus_sync_interval_seconds=0.01,
+                )
+            )
             await asyncio.sleep(0.08)
             task.cancel()
             try:
@@ -321,7 +335,14 @@ class TestAuthHalt:
             side_effect=[OSError("connection reset"), OSError("connection reset")],
         ):
             # Act — allow two ticks
-            task = reconciler.hourly_loop(interval_seconds=0.01)
+            task = reconciler.hourly_loop(
+                Settings(
+                    corpus_db_path=tmp_path / "corpus.db",
+                    github_org="Roxabi",
+                    github_webhook_secret="",
+                    corpus_sync_interval_seconds=0.01,
+                )
+            )
             await asyncio.sleep(0.05)
 
         # Assert — counter untouched, loop still running
@@ -353,7 +374,14 @@ class TestAuthHalt:
                 side_effect=[err_403, err_403],
             ):
                 # Act
-                task = reconciler.hourly_loop(interval_seconds=0.01)
+                task = reconciler.hourly_loop(
+                    Settings(
+                        corpus_db_path=tmp_path / "corpus.db",
+                        github_org="Roxabi",
+                        github_webhook_secret="",
+                        corpus_sync_interval_seconds=0.01,
+                    )
+                )
                 await asyncio.wait_for(task, timeout=1.0)
 
         # Assert — same halt behaviour as 401
