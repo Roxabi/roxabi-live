@@ -163,9 +163,7 @@ def test_post_rejects_invalid_signature_401(client: TestClient) -> None:
     assert resp.json()["detail"] == "invalid signature"
 
 
-def test_post_valid_signature_issues_event(
-    client: TestClient, db_path: Path
-) -> None:
+def test_post_valid_signature_issues_event(client: TestClient, db_path: Path) -> None:
     """Valid sig + X-GitHub-Event: issues → 200, issue row inserted in db."""
     payload = _issues_payload(action="opened", number=42)
     body = json.dumps(payload).encode()
@@ -257,9 +255,7 @@ def test_stale_sync_triggers_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """sync_state.last_synced_at = 2h ago → reconciler.run_once is called."""
-    two_hours_ago = (
-        datetime.now(timezone.utc) - timedelta(hours=2)
-    ).isoformat()
+    two_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
     _seed_sync_state(db_path, "Roxabi/lyra", two_hours_ago)
 
     mock_run_once = AsyncMock(return_value=None)
@@ -294,9 +290,7 @@ def test_fresh_sync_does_not_trigger_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """sync_state.last_synced_at = 5min ago → reconciler.run_once is NOT called."""
-    five_min_ago = (
-        datetime.now(timezone.utc) - timedelta(minutes=5)
-    ).isoformat()
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
     _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
 
     mock_run_once = AsyncMock(return_value=None)

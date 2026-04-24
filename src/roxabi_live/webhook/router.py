@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +15,10 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from roxabi_live import reconciler
 from roxabi_live.webhook import hmac_auth
 from roxabi_live.webhook.handlers import handle_deps, handle_issues, handle_sub_issues
+
+log = logging.getLogger(__name__)
+
+MAX_WEBHOOK_BODY_BYTES = 25 * 1024 * 1024  # 25 MB
 
 router = APIRouter(tags=["webhook"])
 
@@ -38,6 +44,34 @@ async def _maybe_trigger_heal(repo: str, conn: aiosqlite.Connection) -> None:
         asyncio.create_task(reconciler.run_once())
 
 
+async def _read_capped_body(request: Request) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        try:
+            if int(declared) > MAX_WEBHOOK_BODY_BYTES:
+                log.warning(
+                    "webhook content-length %s exceeds cap %d; rejecting",
+                    declared,
+                    MAX_WEBHOOK_BODY_BYTES,
+                )
+                raise HTTPException(status_code=413, detail="payload too large")
+        except ValueError:
+            # Malformed Content-Length — fall through to streaming guard
+            pass
+    total = 0
+    chunks: list[bytes] = []
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_WEBHOOK_BODY_BYTES:
+            log.warning(
+                "webhook body exceeded %d bytes; rejecting",
+                MAX_WEBHOOK_BODY_BYTES,
+            )
+            raise HTTPException(status_code=413, detail="payload too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @router.post("/webhook/github")
 async def github_webhook(
     request: Request,
@@ -45,14 +79,20 @@ async def github_webhook(
     x_hub_signature_256: str | None = Header(default=None),
 ) -> dict[str, object]:
     """Receive and dispatch GitHub webhook events."""
-    body = await request.body()
+    try:
+        body = await asyncio.wait_for(_read_capped_body(request), timeout=30.0)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=408, detail="request timeout") from None
     secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
     if not secret:
         raise HTTPException(status_code=503, detail="webhook not configured")
     if not hmac_auth.verify(body, x_hub_signature_256, secret):
         raise HTTPException(status_code=401, detail="invalid signature")
 
-    payload = await request.json()
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="invalid JSON payload") from None
 
     async with aiosqlite.connect(_db_path()) as conn:
         if x_github_event == "issues":

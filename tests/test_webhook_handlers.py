@@ -146,9 +146,7 @@ async def _seed_issue(  # noqa: PLR0913
     await conn.commit()
 
 
-async def _fetch_issue(
-    conn: aiosqlite.Connection, key: str
-) -> aiosqlite.Row | None:
+async def _fetch_issue(conn: aiosqlite.Connection, key: str) -> aiosqlite.Row | None:
     """Return (key, repo, number, title, state) for the given issue key."""
     cursor = await conn.execute(
         "SELECT key, repo, number, title, state FROM issues WHERE key = ?",
@@ -230,9 +228,7 @@ class TestIssuesWebhookHandler:
         labels = await _fetch_labels(db, "Roxabi/lyra#7")
         assert labels == ["a", "b", "c"], f"Expected [a, b, c], got {labels}"
 
-    async def test_issues_closed_updates_state(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_issues_closed_updates_state(self, db: aiosqlite.Connection) -> None:
         """action=closed transitions state to 'closed'."""
         # Arrange — pre-seed open issue
         await _seed_issue(
@@ -258,9 +254,7 @@ class TestIssuesWebhookHandler:
         _key, _repo, _number, _title, state = row
         assert state == "closed", f"Expected state='closed', got '{state}'"
 
-    async def test_issues_edited_updates_title(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_issues_edited_updates_title(self, db: aiosqlite.Connection) -> None:
         """action=edited with new title updates the title column."""
         # Arrange — pre-seed issue with original title
         await _seed_issue(
@@ -286,9 +280,7 @@ class TestIssuesWebhookHandler:
         _key, _repo, _number, title, _state = row
         assert title == "Updated title", f"Expected 'Updated title', got '{title}'"
 
-    async def test_issues_deleted_removes_row(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_issues_deleted_removes_row(self, db: aiosqlite.Connection) -> None:
         """action=deleted removes the issue row and its labels."""
         # Arrange — pre-seed issue with labels
         await _seed_issue(
@@ -447,9 +439,7 @@ class TestDepsWebhookHandler:
         row = await _fetch_edge(db, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
         assert row is None, "Expected edge to be deleted after blocked_by_removed"
 
-    async def test_deps_blocking_added_is_noop(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_deps_blocking_added_is_noop(self, db: aiosqlite.Connection) -> None:
         """blocking_added (duplicate-direction) is ignored — no edge inserted."""
         payload = _make_deps_payload(
             action="blocking_added",
