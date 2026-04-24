@@ -3,7 +3,7 @@ import { state, filteredNodes, dimValue, parseMilestone,
          prioritySortKey, buildEdgeLookup } from './state.js';
 import { initHover, clearPinned } from './hover.js';
 
-// ─── Lane tone mapping ───────────────────────────────────────────────────────
+// ─── Lane tone mapping (kept for lane column/group headers) ──────────────────
 const LANE_TONES = {
   'a1': 'a1', 'a2': 'a2', 'a3': 'a3',
   'b': 'b',
@@ -11,9 +11,14 @@ const LANE_TONES = {
   'd': 'd', 'e': 'e', 'f': 'f', 'g': 'g', 'h': 'h', 'i': 'i'
 };
 
+// ─── Repo → tone (deterministic hash into palette) — drives card color ───────
+const REPO_TONE_PALETTE = ['a1', 'a2', 'b', 'c1', 'd', 'e', 'f', 'g', 'h', 'i'];
 function getTone(node) {
-  const lane = node.lane?.toLowerCase();
-  return LANE_TONES[lane] || '';
+  const repo = node.repo;
+  if (!repo) return '';
+  let h = 0;
+  for (let i = 0; i < repo.length; i++) h = (h * 31 + repo.charCodeAt(i)) | 0;
+  return REPO_TONE_PALETTE[Math.abs(h) % REPO_TONE_PALETTE.length];
 }
 
 // ─── Collapse tracking for epic groups ───────────────────────────────────────

@@ -3,17 +3,14 @@
 
 import { edgePath } from './layout.js';
 
-// ── Lane tone mapping ────────────────────────────────────────────────────────
-const LANE_TONES = {
-  'a1': 'a1', 'a2': 'a2', 'a3': 'a3',
-  'b': 'b',
-  'c1': 'c1', 'c2': 'c2', 'c3': 'c3',
-  'd': 'd', 'e': 'e', 'f': 'f', 'g': 'g', 'h': 'h', 'i': 'i'
-};
-
+// ── Repo → tone (deterministic hash into palette) ────────────────────────────
+const REPO_TONE_PALETTE = ['a1', 'a2', 'b', 'c1', 'd', 'e', 'f', 'g', 'h', 'i'];
 function getTone(node) {
-  const lane = node.lane?.toLowerCase();
-  return LANE_TONES[lane] || 'accent';
+  const repo = node.repo;
+  if (!repo) return 'accent';
+  let h = 0;
+  for (let i = 0; i < repo.length; i++) h = (h * 31 + repo.charCodeAt(i)) | 0;
+  return REPO_TONE_PALETTE[Math.abs(h) % REPO_TONE_PALETTE.length];
 }
 
 // ── Render nodes as .gg-node dots + .gg-ilabel labels (v4.8 style) ───────────
