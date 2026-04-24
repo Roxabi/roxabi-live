@@ -252,10 +252,10 @@ def test_run_repo_sync_hydrates_projectv2_fields(
         }
     )
 
-    monkeypatch.setattr(
-        "roxabi_live.corpus.sync.gh_graphql",
-        lambda q, v: _make_graphql_response(project_node),
-    )
+    def fake_gh_graphql(q: str, v: dict[str, Any]) -> dict[str, Any]:
+        return _make_graphql_response(project_node)
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.gh_graphql", fake_gh_graphql)
 
     run_repo_sync(conn, "Roxabi", "lyra")
 
@@ -276,10 +276,10 @@ def test_run_repo_sync_null_project_fields_on_no_enrollment(
     bootstrap(db_path)
     conn = connect(db_path)
 
-    monkeypatch.setattr(
-        "roxabi_live.corpus.sync.gh_graphql",
-        lambda q, v: _make_graphql_response(_base_node()),
-    )
+    def fake_gh_graphql(q: str, v: dict[str, Any]) -> dict[str, Any]:
+        return _make_graphql_response(_base_node())
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.gh_graphql", fake_gh_graphql)
 
     run_repo_sync(conn, "Roxabi", "lyra")
 

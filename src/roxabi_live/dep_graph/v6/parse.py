@@ -78,9 +78,9 @@ def derive_lane_size(labels: list[str]) -> tuple[str | None, str | None]:
 
     for lbl in labels:
         if lane is None and lbl.startswith(_LANE_PREFIX):
-            lane = lbl[len(_LANE_PREFIX):]
+            lane = lbl[len(_LANE_PREFIX) :]
         if size is None and lbl.startswith(_SIZE_PREFIX):
-            size = lbl[len(_SIZE_PREFIX):]
+            size = lbl[len(_SIZE_PREFIX) :]
         if lane is not None and size is not None:
             break
 

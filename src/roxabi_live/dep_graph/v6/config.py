@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -30,15 +31,17 @@ class LayoutConfig:
     column_groups: tuple[ColumnGroup, ...] = field(default_factory=tuple)
 
     @classmethod
-    def from_dict(cls, data: dict) -> LayoutConfig:
-        ms = tuple(Milestone(**m) for m in data.get("milestones", []))
+    def from_dict(cls, data: dict[str, Any]) -> LayoutConfig:
+        milestones_raw: list[dict[str, Any]] = data.get("milestones", [])
+        groups_raw: list[dict[str, Any]] = data.get("column_groups", [])
+        ms = tuple(Milestone(code=m["code"], title=m["title"]) for m in milestones_raw)
         cg = tuple(
             ColumnGroup(
                 code=c["code"],
                 title=c["title"],
                 lanes=tuple(c.get("lanes", ())),
             )
-            for c in data.get("column_groups", [])
+            for c in groups_raw
         )
         return cls(milestones=ms, column_groups=cg)
 

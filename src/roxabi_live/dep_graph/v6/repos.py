@@ -19,8 +19,6 @@ def _db_path() -> Path:
 async def get_repos() -> list[str]:
     """Return distinct repos from issues, sorted alphabetically."""
     async with aiosqlite.connect(_db_path()) as db:
-        async with db.execute(
-            "SELECT DISTINCT repo FROM issues ORDER BY repo"
-        ) as cur:
+        async with db.execute("SELECT DISTINCT repo FROM issues ORDER BY repo") as cur:
             rows = await cur.fetchall()
     return [row[0] for row in rows]

@@ -251,9 +251,7 @@ class TestCheckMetaForwards:
             captured["standalone_kwargs"] = kwargs
             return False
 
-        monkeypatch.setattr(
-            "roxabi_live.dep_graph.v1.audit._check_defer", stub_defer
-        )
+        monkeypatch.setattr("roxabi_live.dep_graph.v1.audit._check_defer", stub_defer)
         monkeypatch.setattr(
             "roxabi_live.dep_graph.v1.audit._check_standalone", stub_standalone
         )

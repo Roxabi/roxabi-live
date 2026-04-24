@@ -144,10 +144,18 @@ def ensure_labels_exist(repos_with_labels: dict[str, set[str]], apply: bool) -> 
     for repo in sorted(repos_with_labels):
         for label in sorted(repos_with_labels[repo]):
             color = LABEL_COLORS.get(label, "ededed")
-            gh(
-                ["gh", "label", "create", label, "--repo", repo, "--color", color, "--force"],
-                apply,
-            )
+            cmd = [
+                "gh",
+                "label",
+                "create",
+                label,
+                "--repo",
+                repo,
+                "--color",
+                color,
+                "--force",
+            ]
+            gh(cmd, apply)
 
 
 def main() -> int:
@@ -176,7 +184,8 @@ def main() -> int:
         for lbl in add:
             repos_with_labels[info["repo"]].add(lbl)
 
-    print(f"# {len(plans)} issues need changes (mode: {'APPLY' if args.apply else 'DRY-RUN'})")
+    mode = "APPLY" if args.apply else "DRY-RUN"
+    print(f"# {len(plans)} issues need changes (mode: {mode})")
     ensure_labels_exist(repos_with_labels, args.apply)
 
     print("\n# Step 2: per-issue label edits")

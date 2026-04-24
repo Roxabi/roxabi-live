@@ -48,6 +48,14 @@ show_missing = true
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 include = ["src", "tests"]
+# Frozen v1/v5 dep_graph code (legacy CLI + static HTML build) — excluded from
+# strict type checking. Active code (v6, corpus, app) remains strict.
+exclude = [
+    "src/roxabi_live/dep_graph/v1/**",
+    "src/roxabi_live/dep_graph/v5/**",
+    "tests/dep_graph/v1/**",
+    "tests/dep_graph/v5/**",
+]
 venvPath = "."
 venv = ".venv"
 # reportPrivateUsage: convention-only in Python; creates false positives on

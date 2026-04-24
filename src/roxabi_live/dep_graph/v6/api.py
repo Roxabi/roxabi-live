@@ -20,7 +20,7 @@ def _lane_from_labels(labels: list[str]) -> str | None:
     """Fallback: derive lane from `graph:lane/X` label when board field unset."""
     for lbl in labels:
         if lbl.startswith(_LANE_LABEL_PREFIX):
-            return lbl[len(_LANE_LABEL_PREFIX):]
+            return lbl[len(_LANE_LABEL_PREFIX) :]
     return None
 
 

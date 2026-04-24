@@ -30,6 +30,9 @@ jobs:
       - name: Check file length
         run: bash tools/check_file_length.sh
 
+      - name: Check folder size
+        run: bash tools/check_folder_size.sh
+
       - name: Check duplicate test basenames
         run: bash tools/check_duplicate_test_basenames.sh
 

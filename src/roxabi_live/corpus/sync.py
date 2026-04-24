@@ -26,9 +26,7 @@ _SHORT_FORM = re.compile(r"^#(\d+)$")
 _FULL_KEY = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 
 
-def _parse_project_fields(
-    node: dict[str, Any], repo: str
-) -> dict[str, str | None]:
+def _parse_project_fields(node: dict[str, Any], repo: str) -> dict[str, str | None]:
     """Extract lane/priority/size/status from a GraphQL issue node's projectItems.
 
     Picks the board whose title matches `{repo_short_name} board` (convention).
