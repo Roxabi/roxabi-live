@@ -288,3 +288,50 @@ def test_run_repo_sync_null_project_fields_on_no_enrollment(
     ).fetchone()
     conn.close()
     assert row == (None, None, None, None), f"Got {row}"
+
+
+def test_parent_and_blocks_edges_coexist(tmp_path: Path) -> None:
+    """Same (src, dst) pair must support both `parent` and `blocks` edges."""
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+    try:
+        upsert_edges(conn, "K", blocked_by=["A"], blocking=["Z"], kind="parent")
+        upsert_edges(conn, "K", blocked_by=["A"], blocking=["Z"], kind="blocks")
+
+        rows = set(
+            conn.execute(
+                "SELECT src_key, dst_key, kind FROM edges ORDER BY kind, src_key"
+            ).fetchall()
+        )
+    finally:
+        conn.close()
+
+    assert rows == {
+        ("A", "K", "parent"),
+        ("K", "Z", "parent"),
+        ("A", "K", "blocks"),
+        ("K", "Z", "blocks"),
+    }
+
+
+def test_upsert_edges_delete_one_kind_preserves_other(tmp_path: Path) -> None:
+    """Clearing one kind for an issue must leave rows of the other kind intact."""
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+    try:
+        upsert_edges(conn, "K", blocked_by=["A"], blocking=["Z"], kind="parent")
+        upsert_edges(conn, "K", blocked_by=["A"], blocking=["Z"], kind="blocks")
+
+        # Wipe only parent edges touching K.
+        upsert_edges(conn, "K", blocked_by=[], blocking=[], kind="parent")
+
+        rows = set(conn.execute("SELECT src_key, dst_key, kind FROM edges").fetchall())
+    finally:
+        conn.close()
+
+    assert rows == {
+        ("A", "K", "blocks"),
+        ("K", "Z", "blocks"),
+    }
