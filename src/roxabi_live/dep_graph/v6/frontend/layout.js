@@ -8,7 +8,7 @@ const Y_TOP = 2.5;
 const Y_BOT = 97.5;
 const MIN_CELL_GAP = 2;
 const MAX_CELL_WIDTH_PCT = 4.0;
-const MAX_BAND_GAP_PX = 120;
+const MAX_BAND_GAP_PX = 80;
 const MIN_CONTAINER_H = 320;
 
 function msIdx(ms, msCodes) {
