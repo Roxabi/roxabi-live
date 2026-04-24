@@ -46,7 +46,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
                 "SELECT last_synced_at FROM sync_state WHERE repo = ?",
                 (f"{owner}/{name}",),
             ).fetchone()
-            since = row[0] if row else None
+            since = None if args.full else (row[0] if row else None)
             counts = sync.run_repo_sync(conn, owner, name, since=since)
             print(
                 f"Synced {counts['issues']} issues across {counts['pages']} pages"
@@ -54,7 +54,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
             )
             return 0
         else:
-            totals = sync.run_sync(conn, "Roxabi")
+            totals = sync.run_sync(conn, "Roxabi", full=args.full)
             print(
                 f"Synced {totals['issues']} issues across {totals['pages']} pages"
                 f" from {totals['repos']} repos;"
@@ -111,6 +111,9 @@ def main(argv: list[str] | None = None) -> int:
 
     p_sync = subparsers.add_parser("sync", help="Sync issues from GitHub (V2)")
     p_sync.add_argument("--repo", default=None, metavar="OWNER/NAME")
+    p_sync.add_argument(
+        "--full", action="store_true", help="Full sync (ignore since cursor)"
+    )
     p_sync.set_defaults(func=cmd_sync)
 
     p_stats = subparsers.add_parser("stats", help="Print row counts from the corpus DB")

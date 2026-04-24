@@ -359,7 +359,10 @@ def run_repo_sync(
 
 
 def enumerate_org_repos(org: str) -> list[tuple[str, str]]:
-    """Return list of (owner, name) for every non-archived repo in the org."""
+    """Return list of (owner, name) for every active public repo in the org.
+
+    Excludes archived and private repos (filtered at the GraphQL query level).
+    """
     repos: list[tuple[str, str]] = []
     cursor: str | None = None
     while True:
@@ -436,25 +439,41 @@ def closed_hop_pass(conn: sqlite3.Connection) -> int:
     return inserted
 
 
-def run_sync(conn: sqlite3.Connection, org: str) -> dict[str, int]:
+def run_sync(conn: sqlite3.Connection, org: str, full: bool = False) -> dict[str, int]:
     """Org-wide sync: enumerate repos, per-repo sync with since cursor, closed-hop pass.
+
+    Args:
+        conn: SQLite connection.
+        org: GitHub organization name.
+        full: If True, ignore since cursor and fetch all issues.
 
     Returns counts: {"repos": N, "pages": N, "issues": N, "stubs": N, "errors": N}.
     """
     repos = enumerate_org_repos(org)
+    active_keys = {f"{owner}/{name}" for owner, name in repos}
+    cur = conn.execute("SELECT repo FROM sync_state")
+    stale = [row[0] for row in cur.fetchall() if row[0] not in active_keys]
+    if stale:
+        conn.executemany("DELETE FROM sync_state WHERE repo = ?", [(k,) for k in stale])
+        conn.commit()
+        print(
+            f"[corpus] pruned {len(stale)} stale sync_state row(s): {stale}",
+            file=sys.stderr,
+        )
     total: dict[str, int] = {
         "repos": len(repos),
         "pages": 0,
         "issues": 0,
         "stubs": 0,
         "errors": 0,
+        "pruned": len(stale),
     }
     for owner, name in repos:
         row = conn.execute(
             "SELECT last_synced_at FROM sync_state WHERE repo = ?",
             (f"{owner}/{name}",),
         ).fetchone()
-        since = row[0] if row else None
+        since = None if full else (row[0] if row else None)
         try:
             counts = run_repo_sync(conn, owner, name, since=since)
         except GraphQLError as e:

@@ -3,7 +3,14 @@ title: Cloudflared Tunnel Setup
 description: One-time provisioning of the Cloudflare Tunnel that exposes dashboard.roxabi.dev, and migration from M₂ to M₁.
 ---
 
-## Overview
+> [!NOTE]
+> **Status (2026-04-24):** this cloudflared setup is **not currently deployed**. The `roxabi.dev` zone remains on OVH, so Cloudflare Tunnel + Access cannot front it without a zone migration. Production ingress is instead served by **Tailscale Funnel** on M₁ at `https://roxabituwer.goose-logarithm.ts.net/` (see "Current deployment" below). This document is kept for reference and for the eventual migration to Cloudflare once the zone moves.
+
+## Current deployment (Tailscale Funnel)
+
+GitHub org webhooks POST to `https://roxabituwer.goose-logarithm.ts.net/webhook/github`. HMAC (`GITHUB_WEBHOOK_SECRET`) is the sole auth gate — Cloudflare Access is not in front of it. Funnel is started via `sudo tailscale funnel --bg 8000` on M₁ and survives `tailscaled` restarts. To rotate: update the GitHub webhook URL and the Funnel binding (`tailscale funnel --https=443 off` removes all bindings; re-add with `tailscale funnel --bg 8000`).
+
+## Overview (cloudflared — deferred)
 
 `cloudflared` runs as a supervised daemon that creates an outbound-only Cloudflare Tunnel from the host machine to the public domain `dashboard.roxabi.dev`. All HTTP traffic arriving at that domain is forwarded to the local FastAPI process on port 8000. No inbound firewall ports are opened; the tunnel is the sole ingress path.
 
