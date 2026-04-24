@@ -79,7 +79,6 @@ def _base_node(extra: dict[str, Any] | None = None) -> dict[str, Any]:
         "parent": None,
         "blockedBy": {"nodes": []},
         "blocking": {"nodes": []},
-        "projectItems": {"nodes": []},
     }
     if extra:
         node.update(extra)
@@ -245,12 +244,12 @@ def test_closed_hop_triggers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
 
 # ---------------------------------------------------------------------------
-# New V2 tests — projectV2 field hydration
+# Label-sourced lane/priority/size hydration (#54)
 # ---------------------------------------------------------------------------
 
 
-def test_upsert_issue_stores_projectv2_fields(tmp_path: Path) -> None:
-    """upsert_issue writes lane/priority/size/status columns (AC-5)."""
+def test_upsert_issue_stores_lane_priority_size(tmp_path: Path) -> None:
+    """upsert_issue writes lane/priority/size/status columns."""
     db_path = tmp_path / "corpus.db"
     bootstrap(db_path)
     conn = connect(db_path)
@@ -259,8 +258,8 @@ def test_upsert_issue_stores_projectv2_fields(tmp_path: Path) -> None:
             **_BASE_ISSUE,
             "lane": "a1",
             "priority": "P1",
-            "size": "M",
-            "status": "In Progress",
+            "size": "F-lite",
+            "status": None,
         }
         upsert_issue(conn, issue)
         conn.commit()
@@ -268,55 +267,36 @@ def test_upsert_issue_stores_projectv2_fields(tmp_path: Path) -> None:
             "SELECT lane, priority, size, status FROM issues WHERE key = ?",
             ("Roxabi/lyra#1",),
         ).fetchone()
-        assert row == ("a1", "P1", "M", "In Progress"), f"Got {row}"
+        assert row == ("a1", "P1", "F-lite", None), f"Got {row}"
     finally:
         conn.close()
 
 
-def test_run_repo_sync_hydrates_projectv2_fields(
+def test_run_repo_sync_populates_from_labels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """run_repo_sync with a mocked gh_graphql writes project fields (AC-7)."""
+    """run_repo_sync derives lane/priority/size from labels; status stays NULL."""
     from roxabi_live.corpus.sync import run_repo_sync  # noqa: PLC0415
 
     db_path = tmp_path / "corpus.db"
     bootstrap(db_path)
     conn = connect(db_path)
 
-    project_node = _base_node(
+    node = _base_node(
         {
-            "projectItems": {
+            "labels": {
                 "nodes": [
-                    {
-                        "project": {"title": "lyra board"},
-                        "fieldValues": {
-                            "nodes": [
-                                {
-                                    "name": "a1",
-                                    "field": {"name": "Lane"},
-                                },
-                                {
-                                    "name": "P1",
-                                    "field": {"name": "Priority"},
-                                },
-                                {
-                                    "name": "M",
-                                    "field": {"name": "Size"},
-                                },
-                                {
-                                    "name": "In Progress",
-                                    "field": {"name": "Status"},
-                                },
-                            ]
-                        },
-                    }
+                    {"name": "size:F-lite"},
+                    {"name": "priority:P2"},
+                    {"name": "graph:lane/a1"},
+                    {"name": "random"},
                 ]
             }
         }
     )
 
     def fake_gh_graphql(q: str, v: dict[str, Any]) -> dict[str, Any]:
-        return _make_graphql_response(project_node)
+        return _make_graphql_response(node)
 
     monkeypatch.setattr("roxabi_live.corpus.sync.gh_graphql", fake_gh_graphql)
 
@@ -326,13 +306,13 @@ def test_run_repo_sync_hydrates_projectv2_fields(
         "SELECT lane, priority, size, status FROM issues LIMIT 1"
     ).fetchone()
     conn.close()
-    assert row == ("a1", "P1", "M", "In Progress"), f"Got {row}"
+    assert row == ("a1", "P2", "F-lite", None), f"Got {row}"
 
 
-def test_run_repo_sync_null_project_fields_on_no_enrollment(
+def test_run_repo_sync_null_fields_when_no_labels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """projectItems nodes=[] -> all four columns NULL, no error (AC-8)."""
+    """Issue with no size/priority/lane labels → all three columns NULL, no error."""
     from roxabi_live.corpus.sync import run_repo_sync  # noqa: PLC0415
 
     db_path = tmp_path / "corpus.db"

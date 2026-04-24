@@ -88,47 +88,6 @@ def _extract_from_labels(labels: list[str]) -> dict[str, str | None]:
     }
 
 
-def _parse_project_fields(node: dict[str, Any], repo: str) -> dict[str, str | None]:
-    """Extract lane/priority/size/status from a GraphQL issue node's projectItems.
-
-    Picks the board whose title matches `{repo_short_name} board` (convention).
-    Returns all-None dict when no matching board is found.
-    """
-    null_result: dict[str, str | None] = {
-        "lane": None,
-        "priority": None,
-        "size": None,
-        "status": None,
-    }
-    short_name = repo.split("/", 1)[-1]
-    expected_title = f"{short_name} board"
-    project_items: dict[str, Any] = node.get("projectItems") or {}
-    items: list[Any] = project_items.get("nodes") or []
-    for item in items:
-        item_dict: dict[str, Any] = item or {}
-        project: dict[str, Any] = item_dict.get("project") or {}
-        if project.get("title") != expected_title:
-            continue
-        fields: dict[str, str | None] = {
-            "lane": None,
-            "priority": None,
-            "size": None,
-            "status": None,
-        }
-        fv_container: dict[str, Any] = item_dict.get("fieldValues") or {}
-        fv_nodes: list[Any] = fv_container.get("nodes") or []
-        for fv in fv_nodes:
-            fv_dict: dict[str, Any] = fv or {}
-            field_obj: dict[str, Any] = fv_dict.get("field") or {}
-            raw_name: Any = field_obj.get("name")
-            fname = (str(raw_name) if raw_name is not None else "").lower()
-            if fname in fields:
-                raw_val: Any = fv_dict.get("name")
-                fields[fname] = str(raw_val) if raw_val is not None else None
-        return fields
-    return null_result
-
-
 def canonical_key(ref: int | str, repo: str) -> str:
     """Canonicalise an issue reference to 'owner/repo#N' form.
 
@@ -294,10 +253,11 @@ def run_repo_sync(
                 ),
                 "is_stub": 0,
             }
-            issue.update(_parse_project_fields(node, repo))
+            labels = [n["name"] for n in node["labels"]["nodes"]]
+            issue.update(_extract_from_labels(labels))
+            issue["status"] = None
             upsert_issue(conn, issue)
 
-            labels = [n["name"] for n in node["labels"]["nodes"]]
             upsert_labels(conn, key, labels)
 
             # Parent/child relationships (subIssues/parent)
