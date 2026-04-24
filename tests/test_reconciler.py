@@ -1,9 +1,9 @@
 """Tests for roxabi_live.reconciler — RED phase (module does not exist yet).
 
 Covers:
-- run_once() exists, is async, calls corpus sync entrypoint
-- run_once() tolerates DB/network errors (catches and logs, does not raise)
-- hourly_loop(interval_seconds) returns an asyncio.Task, ticks run_once at
+- run_once(settings) exists, is async, calls corpus sync entrypoint
+- run_once(settings) tolerates DB/network errors (catches and logs, does not raise)
+- hourly_loop(settings) returns an asyncio.Task, ticks run_once at
   least twice within the configured interval, cancels cleanly
 """
 
@@ -18,6 +18,18 @@ import pytest
 import requests.exceptions
 
 from roxabi_live import reconciler  # noqa: F401 — expected ImportError in RED phase
+from roxabi_live.config import Settings
+
+
+def _settings(tmp_path: Path | None = None) -> Settings:
+    """Build a minimal Settings for tests."""
+    db = tmp_path / "corpus.db" if tmp_path else Path("/tmp/corpus_test.db")
+    return Settings(
+        corpus_db_path=db,
+        github_org="Roxabi",
+        github_webhook_secret="",
+        corpus_sync_interval_seconds=3600.0,
+    )
 
 
 def _make_http_error(status_code: int) -> requests.exceptions.HTTPError:
@@ -45,12 +57,13 @@ def reset_reconciler_auth_state() -> None:
 
 
 class TestRunOnce:
-    """reconciler.run_once() — async, delegates to corpus sync."""
+    """reconciler.run_once(settings) — async, delegates to corpus sync."""
 
     @pytest.mark.asyncio
     async def test_run_once_is_coroutine(self) -> None:
         """run_once must be an async function (awaitable)."""
         # Arrange
+        s = _settings()
         with patch(
             "roxabi_live.corpus.sync.run_sync",
             new_callable=MagicMock,
@@ -63,7 +76,7 @@ class TestRunOnce:
             },
         ):
             # Act
-            coro = reconciler.run_once()
+            coro = reconciler.run_once(s)
             # Assert — must be a coroutine, not a plain return value
             assert asyncio.iscoroutine(coro), "run_once() must return a coroutine"
             await coro
@@ -73,76 +86,71 @@ class TestRunOnce:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """run_once must call roxabi_live.corpus.sync.run_sync exactly once."""
-        # Arrange — isolate DB path (CI has no ~/.roxabi/)
-        db_file = tmp_path / "corpus.db"
-        monkeypatch.setenv("CORPUS_DB_PATH", str(db_file))
+        s = _settings(tmp_path)
         mock_run_sync = MagicMock(
             return_value={"repos": 2, "pages": 3, "issues": 42, "stubs": 1, "errors": 0}
         )
         with patch("roxabi_live.corpus.sync.run_sync", mock_run_sync):
-            # Act
-            await reconciler.run_once()
-        # Assert
+            await reconciler.run_once(s)
         mock_run_sync.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_run_once_tolerates_exception_does_not_raise(self) -> None:
         """run_once must catch DB/network errors and not propagate them."""
-        # Arrange — simulate a broken DB connection
+        s = _settings()
         with patch(
             "roxabi_live.corpus.sync.run_sync",
             side_effect=OSError("corpus.db: no such file"),
         ):
-            # Act & Assert — must NOT raise
-            await reconciler.run_once()
+            await reconciler.run_once(s)
 
     @pytest.mark.asyncio
     async def test_run_once_tolerates_graphql_error_does_not_raise(self) -> None:
         """run_once must catch GraphQL/network errors and not propagate them."""
-        # Arrange
         from roxabi_live.corpus.graphql import GraphQLError
 
+        s = _settings()
         with patch(
             "roxabi_live.corpus.sync.run_sync",
             side_effect=GraphQLError("rate limit exceeded"),
         ):
-            # Act & Assert — must NOT raise
-            await reconciler.run_once()
+            await reconciler.run_once(s)
 
     @pytest.mark.asyncio
     async def test_run_once_logs_on_error(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """run_once must log at ERROR level when an error is caught."""
-        # Arrange
+        s = _settings()
         with caplog.at_level(logging.ERROR, logger="roxabi_live.reconciler"):
             with patch(
                 "roxabi_live.corpus.sync.run_sync",
                 side_effect=RuntimeError("unexpected failure"),
             ):
-                # Act
-                await reconciler.run_once()
-        # Assert — an ERROR-level log record must have been emitted
+                await reconciler.run_once(s)
         assert any(rec.levelno == logging.ERROR for rec in caplog.records)
 
 
 class TestHourlyLoop:
-    """reconciler.hourly_loop() — returns asyncio.Task, ticks run_once periodically."""
+    """reconciler.hourly_loop(settings) — returns asyncio.Task, ticks run_once periodically."""
 
     @pytest.mark.asyncio
     async def test_hourly_loop_returns_task(self) -> None:
         """hourly_loop must return an asyncio.Task immediately (non-blocking)."""
-        # Arrange
         call_count = 0
 
-        async def fake_run_once() -> None:
+        async def fake_run_once(s: Settings) -> None:
             nonlocal call_count
             call_count += 1
 
+        s = Settings(
+            corpus_db_path=Path("/tmp/test.db"),
+            github_org="Roxabi",
+            github_webhook_secret="",
+            corpus_sync_interval_seconds=0.05,
+        )
         with patch.object(reconciler, "run_once", fake_run_once):
-            # Act
-            task = reconciler.hourly_loop(interval_seconds=0.05)
-            # Assert
+            task = reconciler.hourly_loop(s)
             assert isinstance(task, asyncio.Task), (
                 "hourly_loop must return an asyncio.Task"
             )
@@ -155,24 +163,26 @@ class TestHourlyLoop:
     @pytest.mark.asyncio
     async def test_hourly_loop_ticks_run_once_at_least_twice(self) -> None:
         """hourly_loop must call run_once at least twice within 3x the interval."""
-        # Arrange
         call_count = 0
 
-        async def fake_run_once() -> None:
+        async def fake_run_once(s: Settings) -> None:
             nonlocal call_count
             call_count += 1
 
+        s = Settings(
+            corpus_db_path=Path("/tmp/test.db"),
+            github_org="Roxabi",
+            github_webhook_secret="",
+            corpus_sync_interval_seconds=0.05,
+        )
         with patch.object(reconciler, "run_once", fake_run_once):
-            # Act
-            task = reconciler.hourly_loop(interval_seconds=0.05)
-            # Wait long enough for at least 2 ticks (3 × 0.05 = 0.15 s)
+            task = reconciler.hourly_loop(s)
             await asyncio.sleep(0.15)
             task.cancel()
             try:
                 await task
             except asyncio.CancelledError:
                 pass
-        # Assert
         assert call_count >= 2, (
             f"Expected run_once to be called at least 2 times, got {call_count}"
         )
@@ -183,44 +193,47 @@ class TestHourlyLoop:
         exceptions."""
 
         # Arrange
-        async def fake_run_once() -> None:
+        async def fake_run_once(s: Settings) -> None:
             pass
 
+        s = Settings(
+            corpus_db_path=Path("/tmp/test.db"),
+            github_org="Roxabi",
+            github_webhook_secret="",
+            corpus_sync_interval_seconds=0.05,
+        )
         with patch.object(reconciler, "run_once", fake_run_once):
-            task = reconciler.hourly_loop(interval_seconds=0.05)
+            task = reconciler.hourly_loop(s)
             await asyncio.sleep(0.02)
-            # Act
             task.cancel()
-            # Assert — CancelledError is the only exception permitted
             with pytest.raises(asyncio.CancelledError):
                 await task
 
     @pytest.mark.asyncio
-    async def test_hourly_loop_uses_env_interval(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """hourly_loop respects CORPUS_SYNC_INTERVAL_SECONDS env var when interval
-        derived from it."""
-        # Arrange — set env var to a tiny value
-        monkeypatch.setenv("CORPUS_SYNC_INTERVAL_SECONDS", "0.05")
+    async def test_hourly_loop_uses_settings_interval(self) -> None:
+        """hourly_loop uses the interval from Settings."""
         call_count = 0
 
-        async def fake_run_once() -> None:
+        async def fake_run_once(s: Settings) -> None:
             nonlocal call_count
             call_count += 1
 
+        s = Settings(
+            corpus_db_path=Path("/tmp/test.db"),
+            github_org="Roxabi",
+            github_webhook_secret="",
+            corpus_sync_interval_seconds=0.05,
+        )
         with patch.object(reconciler, "run_once", fake_run_once):
-            # Act — call without explicit interval; implementation reads env var
-            task = reconciler.hourly_loop()
+            task = reconciler.hourly_loop(s)
             await asyncio.sleep(0.15)
             task.cancel()
             try:
                 await task
             except asyncio.CancelledError:
                 pass
-        # Assert
         assert call_count >= 2, (
-            f"hourly_loop should use env interval; got {call_count} calls"
+            f"hourly_loop should use settings interval; got {call_count} calls"
         )
 
 

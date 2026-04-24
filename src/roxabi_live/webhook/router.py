@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +12,7 @@ import aiosqlite
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from roxabi_live import reconciler
+from roxabi_live.config import Settings
 from roxabi_live.webhook import hmac_auth
 from roxabi_live.webhook.handlers import handle_deps, handle_issues, handle_sub_issues
 
@@ -23,8 +23,20 @@ MAX_WEBHOOK_BODY_BYTES = 25 * 1024 * 1024  # 25 MB
 router = APIRouter(tags=["webhook"])
 
 
-def _db_path() -> Path:
-    return Path(os.environ.get("CORPUS_DB_PATH", Path.home() / ".roxabi" / "corpus.db"))
+def _get_db_path(request: Request) -> Path:
+    """Resolve corpus_db_path from app.state.settings if available."""
+    settings: Settings | None = getattr(request.app.state, "settings", None)
+    if settings is not None:
+        return settings.corpus_db_path
+    return Settings.from_env().corpus_db_path
+
+
+def _get_webhook_secret(request: Request) -> str:
+    """Resolve github_webhook_secret from app.state.settings if available."""
+    settings: Settings | None = getattr(request.app.state, "settings", None)
+    if settings is not None:
+        return settings.github_webhook_secret
+    return Settings.from_env().github_webhook_secret
 
 
 async def _maybe_trigger_heal(repo: str, conn: aiosqlite.Connection) -> None:
@@ -41,7 +53,7 @@ async def _maybe_trigger_heal(repo: str, conn: aiosqlite.Connection) -> None:
             last = last.replace(tzinfo=timezone.utc)
         stale = (now - last).total_seconds() > 3600
     if stale:
-        asyncio.create_task(reconciler.run_once())
+        asyncio.create_task(reconciler.run_once(Settings.from_env()))
 
 
 async def _read_capped_body(request: Request) -> bytes:
@@ -83,18 +95,18 @@ async def github_webhook(
         body = await asyncio.wait_for(_read_capped_body(request), timeout=30.0)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=408, detail="request timeout") from None
-    secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    secret = _get_webhook_secret(request)
     if not secret:
         raise HTTPException(status_code=503, detail="webhook not configured")
     if not hmac_auth.verify(body, x_hub_signature_256, secret):
         raise HTTPException(status_code=401, detail="invalid signature")
 
     try:
-        payload = json.loads(body)
+        payload = json.loads(body or b"{}")
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="invalid JSON payload") from None
 
-    async with aiosqlite.connect(_db_path()) as conn:
+    async with aiosqlite.connect(_get_db_path(request)) as conn:
         if x_github_event == "issues":
             await handle_issues(payload, conn)
             repo: str = payload["repository"]["full_name"]

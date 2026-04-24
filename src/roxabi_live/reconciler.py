@@ -13,31 +13,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sqlite3
-from pathlib import Path
 from typing import cast
 
+from roxabi_live.config import Settings
 from roxabi_live.corpus import sync as corpus_sync
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_INTERVAL = 3600.0
-_DEFAULT_DB_PATH = Path.home() / ".roxabi" / "corpus.db"
-_DEFAULT_ORG = "Roxabi"
 
 _AUTH_FAILURE_THRESHOLD = 2
 _auth_failures: int = 0
 _halted: asyncio.Event = asyncio.Event()
 _state_lock: asyncio.Lock = asyncio.Lock()
-
-
-def _db_path() -> Path:
-    return Path(os.environ.get("CORPUS_DB_PATH", _DEFAULT_DB_PATH))
-
-
-def _org() -> str:
-    return os.environ.get("GITHUB_ORG", _DEFAULT_ORG)
 
 
 def _is_auth_error(exc: BaseException) -> bool:
@@ -67,7 +55,7 @@ def _is_auth_error(exc: BaseException) -> bool:
     return True
 
 
-async def run_once() -> None:
+async def run_once(settings: Settings) -> None:
     """Run a single corpus sync cycle.
 
     Opens a fresh DB connection, calls corpus_sync.run_sync, then closes the
@@ -83,11 +71,9 @@ async def run_once() -> None:
     if _halted.is_set():
         return
     try:
-        db = _db_path()
-        org = _org()
-        conn = sqlite3.connect(db)
+        conn = sqlite3.connect(settings.corpus_db_path)
         try:
-            await asyncio.to_thread(corpus_sync.run_sync, conn, org)
+            await asyncio.to_thread(corpus_sync.run_sync, conn, settings.github_org)
         finally:
             conn.close()
         async with _state_lock:
@@ -114,13 +100,11 @@ async def run_once() -> None:
         log.exception("reconciler run_once failed")
 
 
-def hourly_loop(interval_seconds: float | None = None) -> asyncio.Task[None]:
+def hourly_loop(settings: Settings) -> asyncio.Task[None]:
     """Start a background task that calls run_once on a fixed interval.
 
     Args:
-        interval_seconds: Tick interval in seconds.  When *None* the value is
-            read from the ``CORPUS_SYNC_INTERVAL_SECONDS`` environment variable,
-            falling back to ``3600`` if the variable is unset or empty.
+        settings: Application settings providing the sync interval.
 
     Returns:
         The running :class:`asyncio.Task`.  Cancel it to stop the loop; the
@@ -128,15 +112,13 @@ def hourly_loop(interval_seconds: float | None = None) -> asyncio.Task[None]:
         cancellation.  The task may also exit normally if the reconciler is
         halted due to consecutive auth failures.
     """
-    if interval_seconds is None:
-        raw = os.environ.get("CORPUS_SYNC_INTERVAL_SECONDS", "")
-        interval_seconds = float(raw) if raw else _DEFAULT_INTERVAL
+    interval_seconds = settings.corpus_sync_interval_seconds
 
     async def _loop() -> None:
         while not _halted.is_set():
-            await asyncio.sleep(interval_seconds)  # type: ignore[arg-type]
+            await asyncio.sleep(interval_seconds)
             if _halted.is_set():
                 break
-            await run_once()
+            await run_once(settings)
 
     return asyncio.create_task(_loop())
