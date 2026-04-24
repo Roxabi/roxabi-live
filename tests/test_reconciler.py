@@ -41,7 +41,7 @@ def reset_reconciler_auth_state() -> None:
     if hasattr(reconciler, "_auth_failures"):
         reconciler._auth_failures = 0  # type: ignore[attr-defined]
     if hasattr(reconciler, "_halted"):
-        reconciler._halted = False  # type: ignore[attr-defined]
+        reconciler._halted.clear()  # type: ignore[attr-defined]
 
 
 class TestRunOnce:
@@ -291,7 +291,7 @@ class TestAuthHalt:
         assert failures == 0, (
             f"Expected _auth_failures == 0 after success, got {failures}"
         )
-        assert reconciler._halted is False  # type: ignore[attr-defined]
+        assert not reconciler._halted.is_set()  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_transient_oserror_does_not_increment_counter(
@@ -313,7 +313,7 @@ class TestAuthHalt:
 
         # Assert — counter untouched, loop still running
         assert reconciler._auth_failures == 0  # type: ignore[attr-defined]
-        assert reconciler._halted is False  # type: ignore[attr-defined]
+        assert not reconciler._halted.is_set()  # type: ignore[attr-defined]
         assert not task.done(), "Loop must still be running after transient OSErrors"
 
         # Cleanup

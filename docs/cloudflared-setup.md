@@ -251,3 +251,4 @@ Webhook delivery:
 
 - Rotate the service token: Zero Trust → Service Tokens → `github-webhook` → **Refresh**. Update the worker secret. Redeliver a test webhook to confirm.
 - Rotate the identity-provider allowlist: edit the `Allow owner` policy (Step A.5).
+- After a `_halted` reconciler event (CRITICAL log emitted due to repeated auth failures): rotate the GitHub token, then restart the `live` supervisor program to clear the sticky halt state: `supervisorctl restart live`. The reconciler will resume on the next hourly tick.

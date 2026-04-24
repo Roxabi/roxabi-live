@@ -188,7 +188,10 @@ def test_post_body_at_cap_passes_through(
     )
 
     # Assert — size gate must not reject exactly-at-cap bodies
-    assert resp.status_code != 413
+    assert resp.status_code != 413, "25 MB body should pass the size gate"
+    assert resp.status_code != 500, (
+        "25 MB raw-bytes body should map to a 4xx (invalid JSON), not 500"
+    )
 
 
 def test_post_body_one_byte_over_cap_returns_413(
@@ -242,3 +245,34 @@ def test_post_body_under_cap_unchanged(client: TestClient) -> None:
     # Assert — normal dispatch path unaffected by the cap
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
+
+
+def test_post_malformed_json_returns_400(client: TestClient, db_path: Path) -> None:
+    body = b"not json"
+    sig = "sha256=" + hmac.new(_SECRET.encode(), body, hashlib.sha256).hexdigest()
+    resp = client.post(
+        "/webhook/github",
+        content=body,
+        headers={
+            "X-Hub-Signature-256": sig,
+            "X-GitHub-Event": "issues",
+            "Content-Type": "application/json",
+        },
+    )
+    assert resp.status_code == 400
+    assert "invalid JSON" in resp.json()["detail"]
+
+
+def test_post_body_over_cap_bad_sig_returns_413(client: TestClient) -> None:
+    """413 fires before HMAC — even with a wrong signature."""
+    body = b"A" * (26 * 1024 * 1024)
+    resp = client.post(
+        "/webhook/github",
+        content=body,
+        headers={
+            "X-Hub-Signature-256": "sha256=deadbeef",
+            "X-GitHub-Event": "issues",
+            "Content-Type": "application/json",
+        },
+    )
+    assert resp.status_code == 413
