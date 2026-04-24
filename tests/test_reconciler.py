@@ -10,6 +10,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -81,21 +82,19 @@ class TestRunOnce:
 
     @pytest.mark.asyncio
     async def test_run_once_logs_on_error(
-        self, capfd: pytest.CaptureFixture[str]
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """run_once must log (stderr or logging) when an error is caught."""
+        """run_once must log at ERROR level when an error is caught."""
         # Arrange
-        with patch(
-            "roxabi_live.corpus.sync.run_sync",
-            side_effect=RuntimeError("unexpected failure"),
-        ):
-            # Act
-            await reconciler.run_once()
-        # Assert — some indication of error in output (stderr or captured log)
-        captured = capfd.readouterr()
-        combined = captured.out + captured.err
-        # Flexible: accept any non-empty error indication
-        assert combined or True  # softer gate — stronger once implementation exists
+        with caplog.at_level(logging.ERROR, logger="roxabi_live.reconciler"):
+            with patch(
+                "roxabi_live.corpus.sync.run_sync",
+                side_effect=RuntimeError("unexpected failure"),
+            ):
+                # Act
+                await reconciler.run_once()
+        # Assert — an ERROR-level log record must have been emitted
+        assert any(rec.levelno == logging.ERROR for rec in caplog.records)
 
 
 class TestHourlyLoop:

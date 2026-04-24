@@ -114,7 +114,7 @@ def db_path(tmp_path: Path) -> Path:
 
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(_init())
+    asyncio.run(_init())
     return path
 
 
@@ -194,7 +194,7 @@ def test_post_valid_signature_issues_event(
 
     import asyncio
 
-    assert asyncio.get_event_loop().run_until_complete(_check()), (
+    assert asyncio.run(_check()), (
         "Expected issue row Roxabi/lyra#42 to be present in db"
     )
 
@@ -286,7 +286,7 @@ def test_stale_sync_triggers_reconcile(
     assert resp.status_code == 200
 
     # Drain the event loop so the fire-and-forget task executes
-    asyncio.get_event_loop().run_until_complete(asyncio.sleep(0))
+    asyncio.run(asyncio.sleep(0))
     mock_run_once.assert_called_once()
 
 
@@ -322,7 +322,7 @@ def test_fresh_sync_does_not_trigger_reconcile(
     )
     assert resp.status_code == 200
 
-    asyncio.get_event_loop().run_until_complete(asyncio.sleep(0))
+    asyncio.run(asyncio.sleep(0))
     mock_run_once.assert_not_called()
 
 
@@ -353,5 +353,5 @@ def test_missing_sync_state_triggers_reconcile(
     )
     assert resp.status_code == 200
 
-    asyncio.get_event_loop().run_until_complete(asyncio.sleep(0))
+    asyncio.run(asyncio.sleep(0))
     mock_run_once.assert_called_once()

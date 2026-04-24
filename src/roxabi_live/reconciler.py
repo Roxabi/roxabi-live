@@ -68,7 +68,7 @@ def hourly_loop(interval_seconds: float | None = None) -> asyncio.Task[None]:
 
     async def _loop() -> None:
         while True:
-            await run_once()
             await asyncio.sleep(interval_seconds)  # type: ignore[arg-type]
+            await run_once()
 
     return asyncio.create_task(_loop())

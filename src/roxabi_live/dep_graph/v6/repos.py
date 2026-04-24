@@ -1,9 +1,10 @@
-"""v6 repos route — distinct repos from the corpus DB."""
+"""v6 repos route — repos and sync state from corpus DB."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 from fastapi import APIRouter
@@ -16,9 +17,21 @@ def _db_path() -> Path:
 
 
 @router.get("/repos")
-async def get_repos() -> list[str]:
-    """Return distinct repos from issues, sorted alphabetically."""
+async def get_repos() -> dict[str, Any]:
+    """Return repos and their sync state from sync_state table."""
     async with aiosqlite.connect(_db_path()) as db:
-        async with db.execute("SELECT DISTINCT repo FROM issues ORDER BY repo") as cur:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT repo, last_synced_at, last_cursor FROM sync_state ORDER BY repo"
+        ) as cur:
             rows = await cur.fetchall()
-    return [row[0] for row in rows]
+    return {
+        "repos": [
+            {
+                "repo": row["repo"],
+                "last_synced_at": row["last_synced_at"],
+                "last_cursor": row["last_cursor"],
+            }
+            for row in rows
+        ]
+    }

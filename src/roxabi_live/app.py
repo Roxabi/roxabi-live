@@ -2,9 +2,11 @@
 
 import asyncio
 import logging
+import os
+import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
@@ -19,11 +21,17 @@ from roxabi_live.webhook.router import router as webhook_router
 
 log = logging.getLogger(__name__)
 
+_DEFAULT_DB = Path.home() / ".roxabi" / "corpus.db"
+
+
+def _db_path() -> Path:
+    return Path(os.environ.get("CORPUS_DB_PATH", _DEFAULT_DB))
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     log.info("reconciler startup sync scheduled")
-    asyncio.create_task(reconciler.run_once())
+    await reconciler.run_once()
     loop_task = reconciler.hourly_loop()
     try:
         yield
@@ -53,9 +61,26 @@ async def _root() -> RedirectResponse:
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    """Health check — smoke test only.
-
-    Full implementation (db_reachable, issue_count) lands in spec #866 slice 3.
-    """
-    return {"status": "ok"}
+async def health() -> dict[str, Any]:
+    """Health check — returns db path, reachability, and issue count."""
+    db = _db_path()
+    db_reachable = False
+    issue_count = 0
+    try:
+        conn = sqlite3.connect(db)
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM issues").fetchone()
+            issue_count = row[0]
+            db_reachable = True
+        except sqlite3.OperationalError:
+            pass
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return {
+        "status": "ok",
+        "db": str(db),
+        "db_reachable": db_reachable,
+        "issue_count": issue_count,
+    }

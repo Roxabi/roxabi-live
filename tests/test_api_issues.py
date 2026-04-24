@@ -110,9 +110,12 @@ async def test_list_returns_all_issues(corpus_db: Path) -> None:
     # Assert
     assert status == 200, f"Expected 200, got {status}"
     assert body["total"] == 3
-    assert len(body["items"]) == 3
-    expected_keys = {"key", "repo", "number", "title", "state", "labels", "updated_at"}
-    for item in body["items"]:
+    assert len(body["issues"]) == 3
+    expected_keys = {
+        "key", "repo", "number", "title", "state", "labels", "updated_at",
+        "url", "milestone", "is_stub", "created_at", "closed_at",
+    }
+    for item in body["issues"]:
         assert expected_keys <= item.keys(), f"Missing keys in item: {item.keys()}"
 
 
@@ -124,7 +127,7 @@ async def test_list_filter_by_repo(corpus_db: Path) -> None:
     # Assert
     assert status == 200
     assert body["total"] == 2
-    assert all(item["repo"] == "repo-a" for item in body["items"])
+    assert all(item["repo"] == "repo-a" for item in body["issues"])
 
 
 async def test_list_filter_by_state(corpus_db: Path) -> None:
@@ -135,7 +138,7 @@ async def test_list_filter_by_state(corpus_db: Path) -> None:
     # Assert
     assert status == 200
     assert body["total"] == 2
-    assert all(item["state"] == "open" for item in body["items"])
+    assert all(item["state"] == "open" for item in body["issues"])
 
 
 async def test_list_filter_by_label(corpus_db: Path) -> None:
@@ -146,8 +149,8 @@ async def test_list_filter_by_label(corpus_db: Path) -> None:
     # Assert
     assert status == 200
     assert body["total"] == 1
-    assert body["items"][0]["key"] == "repo-a#1"
-    assert "bug" in body["items"][0]["labels"]
+    assert body["issues"][0]["key"] == "repo-a#1"
+    assert "bug" in body["issues"][0]["labels"]
 
 
 async def test_list_combined_filters(corpus_db: Path) -> None:
@@ -158,9 +161,9 @@ async def test_list_combined_filters(corpus_db: Path) -> None:
     # Assert
     assert status == 200
     assert body["total"] == 1
-    assert body["items"][0]["key"] == "repo-a#1"
-    assert body["items"][0]["state"] == "open"
-    assert body["items"][0]["repo"] == "repo-a"
+    assert body["issues"][0]["key"] == "repo-a#1"
+    assert body["issues"][0]["state"] == "open"
+    assert body["issues"][0]["repo"] == "repo-a"
 
 
 # ---------------------------------------------------------------------------
@@ -236,14 +239,18 @@ async def test_get_returns_issue_with_edges(issues_db: Path) -> None:
     assert body_blocker["number"] == 1
     assert body_blocker["title"] == "Blocker issue"
     assert "feat" in body_blocker["labels"]
-    assert body_blocker["blocking"] == ["repo1#2"]
+    assert body_blocker["blocking"] == [
+        {"key": "repo1#2", "number": 2, "repo": "repo1"}
+    ]
     assert body_blocker["blocked_by"] == []
 
     # Assert — blockee (repo1#2 is blocked by repo1#1)
     assert status_blockee == 200
     assert body_blockee["key"] == "repo1#2"
     assert body_blockee["blocking"] == []
-    assert body_blockee["blocked_by"] == ["repo1#1"]
+    assert body_blockee["blocked_by"] == [
+        {"key": "repo1#1", "number": 1, "repo": "repo1"}
+    ]
 
 
 async def test_get_unknown_key_returns_404(issues_db: Path) -> None:
