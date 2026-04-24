@@ -22,7 +22,7 @@ from typing import Any
 import aiosqlite
 import pytest
 
-from roxabi_live.webhook.handlers import handle_issues  # expected ImportError in RED
+from roxabi_live.webhook.handlers import handle_deps, handle_issues, handle_sub_issues
 
 # ---------------------------------------------------------------------------
 # Schema SQL (mirrors corpus schema — issues + labels only)
@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS labels (
     PRIMARY KEY (issue_key, name),
     FOREIGN KEY (issue_key) REFERENCES issues(key) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS edges (
+    src_key     TEXT NOT NULL,
+    dst_key     TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'parent',
+    PRIMARY KEY (src_key, dst_key)
+);
 """
 
 # ---------------------------------------------------------------------------
@@ -60,7 +67,7 @@ CREATE TABLE IF NOT EXISTS labels (
 # ---------------------------------------------------------------------------
 
 
-def _make_payload(
+def _make_payload(  # noqa: PLR0913
     action: str,
     number: int = 7,
     title: str = "Test issue",
@@ -113,7 +120,7 @@ async def db(tmp_path: Path) -> aiosqlite.Connection:
     await conn.close()
 
 
-async def _seed_issue(
+async def _seed_issue(  # noqa: PLR0913
     conn: aiosqlite.Connection,
     key: str,
     repo: str,
@@ -306,3 +313,222 @@ class TestIssuesWebhookHandler:
         # Assert — labels gone (cascade or explicit delete)
         labels = await _fetch_labels(db, "Roxabi/lyra#7")
         assert labels == [], f"Expected empty labels after delete, got {labels}"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for edges / deps / sub_issues tests
+# ---------------------------------------------------------------------------
+
+
+def _make_issue_obj(repo: str, number: int) -> dict[str, Any]:
+    """Minimal GitHub issue object with embedded repository."""
+    repo_owner, repo_name = repo.split("/", 1) if "/" in repo else ("Roxabi", repo)
+    return {
+        "number": number,
+        "title": f"Issue {number}",
+        "state": "open",
+        "html_url": f"https://github.com/{repo}/issues/{number}",
+        "labels": [],
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-04-24T12:00:00Z",
+        "closed_at": None,
+        "repository": {
+            "full_name": repo,
+            "name": repo_name,
+            "owner": {"login": repo_owner},
+        },
+    }
+
+
+def _make_deps_payload(
+    action: str,
+    issue_repo: str = "Roxabi/lyra",
+    issue_number: int = 10,
+    blocking_repo: str = "Roxabi/lyra",
+    blocking_number: int = 5,
+) -> dict[str, Any]:
+    """Build a minimal GitHub `issue_dependencies` webhook payload."""
+    return {
+        "action": action,
+        "issue": _make_issue_obj(issue_repo, issue_number),
+        "blocking_issue": _make_issue_obj(blocking_repo, blocking_number),
+        "repository": {
+            "full_name": issue_repo,
+            "name": issue_repo.split("/", 1)[-1],
+            "owner": {"login": issue_repo.split("/", 1)[0]},
+        },
+    }
+
+
+def _make_sub_issues_payload(
+    action: str,
+    parent_repo: str = "Roxabi/lyra",
+    parent_number: int = 1,
+    child_repo: str = "Roxabi/lyra",
+    child_number: int = 2,
+) -> dict[str, Any]:
+    """Build a minimal GitHub `sub_issues` webhook payload."""
+    return {
+        "action": action,
+        "issue": _make_issue_obj(parent_repo, parent_number),
+        "sub_issue": _make_issue_obj(child_repo, child_number),
+        "repository": {
+            "full_name": parent_repo,
+            "name": parent_repo.split("/", 1)[-1],
+            "owner": {"login": parent_repo.split("/", 1)[0]},
+        },
+    }
+
+
+async def _fetch_edge(
+    conn: aiosqlite.Connection, src_key: str, dst_key: str, kind: str
+) -> tuple[Any, ...] | None:
+    cursor = await conn.execute(
+        "SELECT src_key, dst_key, kind FROM edges"
+        " WHERE src_key=? AND dst_key=? AND kind=?",
+        (src_key, dst_key, kind),
+    )
+    return await cursor.fetchone()
+
+
+async def _seed_edge(
+    conn: aiosqlite.Connection, src_key: str, dst_key: str, kind: str
+) -> None:
+    await conn.execute(
+        "INSERT OR IGNORE INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)",
+        (src_key, dst_key, kind),
+    )
+    await conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Tests — handle_deps
+# ---------------------------------------------------------------------------
+
+
+class TestDepsWebhookHandler:
+    """handle_deps() — GitHub issue_dependencies webhook event processing."""
+
+    async def test_deps_blocked_by_added_inserts_edge(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """blocked_by_added inserts edge (blocker→blocked, kind='blocks')."""
+        payload = _make_deps_payload(
+            action="blocked_by_added",
+            issue_repo="Roxabi/lyra",
+            issue_number=10,
+            blocking_repo="Roxabi/lyra",
+            blocking_number=5,
+        )
+
+        await handle_deps(payload, db)
+
+        row = await _fetch_edge(db, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
+        assert row is not None, "Expected edge (blocker→blocked, blocks) to be inserted"
+        assert row == ("Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
+
+    async def test_deps_blocked_by_removed_deletes_edge(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """blocked_by_removed deletes the existing blocks edge."""
+        await _seed_edge(db, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
+
+        payload = _make_deps_payload(
+            action="blocked_by_removed",
+            issue_repo="Roxabi/lyra",
+            issue_number=10,
+            blocking_repo="Roxabi/lyra",
+            blocking_number=5,
+        )
+
+        await handle_deps(payload, db)
+
+        row = await _fetch_edge(db, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
+        assert row is None, "Expected edge to be deleted after blocked_by_removed"
+
+    async def test_deps_blocking_added_is_noop(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """blocking_added (duplicate-direction) is ignored — no edge inserted."""
+        payload = _make_deps_payload(
+            action="blocking_added",
+            issue_repo="Roxabi/lyra",
+            issue_number=5,
+            blocking_repo="Roxabi/lyra",
+            blocking_number=10,
+        )
+
+        await handle_deps(payload, db)
+
+        # Neither direction should exist
+        row_a = await _fetch_edge(db, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
+        row_b = await _fetch_edge(db, "Roxabi/lyra#10", "Roxabi/lyra#5", "blocks")
+        assert row_a is None and row_b is None, (
+            "Expected no edge for blocking_added noop"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests — handle_sub_issues
+# ---------------------------------------------------------------------------
+
+
+class TestSubIssuesWebhookHandler:
+    """handle_sub_issues() — GitHub sub_issues webhook event processing."""
+
+    async def test_sub_issues_added_inserts_parent_edge(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """sub_issue_added inserts edge (parent→child, kind='parent')."""
+        payload = _make_sub_issues_payload(
+            action="sub_issue_added",
+            parent_repo="Roxabi/lyra",
+            parent_number=1,
+            child_repo="Roxabi/lyra",
+            child_number=2,
+        )
+
+        await handle_sub_issues(payload, db)
+
+        row = await _fetch_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+        assert row is not None, "Expected edge (parent→child, parent) to be inserted"
+        assert row == ("Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+
+    async def test_sub_issues_removed_deletes_edge(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """sub_issue_removed deletes the existing parent edge."""
+        await _seed_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+
+        payload = _make_sub_issues_payload(
+            action="sub_issue_removed",
+            parent_repo="Roxabi/lyra",
+            parent_number=1,
+            child_repo="Roxabi/lyra",
+            child_number=2,
+        )
+
+        await handle_sub_issues(payload, db)
+
+        row = await _fetch_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+        assert row is None, "Expected edge to be deleted after sub_issue_removed"
+
+    async def test_sub_issues_parent_added_is_noop(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """parent_issue_added (duplicate-direction) is ignored — no edge inserted."""
+        payload = _make_sub_issues_payload(
+            action="parent_issue_added",
+            parent_repo="Roxabi/lyra",
+            parent_number=1,
+            child_repo="Roxabi/lyra",
+            child_number=2,
+        )
+
+        await handle_sub_issues(payload, db)
+
+        row_a = await _fetch_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+        row_b = await _fetch_edge(db, "Roxabi/lyra#2", "Roxabi/lyra#1", "parent")
+        assert row_a is None and row_b is None, (
+            "Expected no edge for parent_issue_added noop"
+        )

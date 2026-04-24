@@ -10,7 +10,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -27,7 +27,9 @@ class TestRunOnce:
         with patch(
             "roxabi_live.corpus.sync.run_sync",
             new_callable=MagicMock,
-            return_value={"repos": 1, "pages": 1, "issues": 10, "stubs": 0, "errors": 0},
+            return_value={
+                "repos": 1, "pages": 1, "issues": 10, "stubs": 0, "errors": 0
+            },
         ):
             # Act
             coro = reconciler.run_once()
@@ -73,7 +75,9 @@ class TestRunOnce:
             await reconciler.run_once()
 
     @pytest.mark.asyncio
-    async def test_run_once_logs_on_error(self, capfd: pytest.CaptureFixture[str]) -> None:
+    async def test_run_once_logs_on_error(
+        self, capfd: pytest.CaptureFixture[str]
+    ) -> None:
         """run_once must log (stderr or logging) when an error is caught."""
         # Arrange
         with patch(
@@ -142,7 +146,8 @@ class TestHourlyLoop:
 
     @pytest.mark.asyncio
     async def test_hourly_loop_cancels_cleanly(self) -> None:
-        """Cancelling the task returned by hourly_loop must not raise unhandled exceptions."""
+        """Cancelling the task returned by hourly_loop must not raise unhandled
+        exceptions."""
         # Arrange
         async def fake_run_once() -> None:
             pass
@@ -157,8 +162,11 @@ class TestHourlyLoop:
                 await task
 
     @pytest.mark.asyncio
-    async def test_hourly_loop_uses_env_interval(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """hourly_loop respects CORPUS_SYNC_INTERVAL_SECONDS env var when interval derived from it."""
+    async def test_hourly_loop_uses_env_interval(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """hourly_loop respects CORPUS_SYNC_INTERVAL_SECONDS env var when interval
+        derived from it."""
         # Arrange — set env var to a tiny value
         monkeypatch.setenv("CORPUS_SYNC_INTERVAL_SECONDS", "0.05")
         call_count = 0

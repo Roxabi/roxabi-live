@@ -32,6 +32,9 @@ Let:
 | `src/roxabi_live/dep_graph/v1/` | Legacy CLI renderer (frozen) |
 | `src/roxabi_live/dep_graph/v5/` | Matrix + graph HTML renderer (frozen) |
 | `src/roxabi_live/dep_graph/v6/` | API-first renderer → `GET /api/graph` |
+| `src/roxabi_live/reconciler.py` | Hourly corpus sync heal loop + startup one-shot |
+| `src/roxabi_live/api/issues.py` | `GET /api/issues`, `GET /api/issues/:key` |
+| `src/roxabi_live/webhook/` | GitHub webhook handlers (HMAC verify + issues/deps/sub_issues dispatch) |
 | `deploy/supervisor/supervisord.conf` | supervisord config |
 | `deploy/supervisor/conf.d/` | per-program supervisor units |
 | `frontend/` | Static HTML/JS/CSS (dep-graph tab + future tabs) |

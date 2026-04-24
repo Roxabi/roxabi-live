@@ -62,13 +62,16 @@ _SEED_LABELS = [
 
 
 @pytest.fixture()
-def corpus_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Path, None, None]:
+def corpus_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Generator[Path, None, None]:
     """Temporary SQLite DB seeded with fixture data; CORPUS_DB_PATH is overridden."""
     db_path = tmp_path / "corpus_test.db"
     conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA_SQL)
     conn.executemany(
-        "INSERT INTO issues (key, repo, number, title, state, updated_at) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO issues"
+        " (key, repo, number, title, state, updated_at) VALUES (?,?,?,?,?,?)",
         _SEED_ISSUES,
     )
     conn.executemany(
@@ -87,7 +90,9 @@ def corpus_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Path
 # ---------------------------------------------------------------------------
 
 async def _get(path: str) -> tuple[int, dict]:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.get(path)
     return resp.status_code, resp.json()
 
