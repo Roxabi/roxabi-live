@@ -1,0 +1,41 @@
+---
+title: Migrate edges PK to include kind (parent + blocks collision)
+issue: 57
+status: approved
+tier: F-lite
+date: 2026-04-24
+---
+
+## Problem
+
+The `edges` table primary key is `(src_key, dst_key)`. When the same issue pair exists as both a `parent` edge and a `blocks` edge (one issue both sub-issues and blocks another), `INSERT OR IGNORE` silently drops the second `kind` row. Worse, the delete-before-upsert logic in `handle_deps`/`handle_sub_issues` targets `(src_key, dst_key, kind)` but the PK cannot actually hold two rows with different `kind` values for the same pair — so reconciliation races can corrupt which row survives.
+
+Discovered during PR #55 code review (BE-2, confidence 88%). The bug is latent: it only surfaces for issues with overlapping parent + blocks relationships, but corpus.db is the single source of truth for the dep-graph UI, so any mis-kinded edge produces incorrect "blocked"/"ready" states.
+
+## Who
+
+- **Primary:** dep-graph v6 frontend users — status computation reads edges by `kind` and would silently misclassify nodes.
+- **Secondary:** corpus sync (`corpus/sync.py`) and webhook handlers (`webhook/handlers.py`) — both upsert edges and assume `kind` is part of row identity.
+
+## Constraints
+
+- Existing dev + prod `corpus.db` files must migrate cleanly (drop + rebuild PK in a single migration step; SQLite doesn't support `ALTER TABLE ... DROP CONSTRAINT`).
+- Must not break idempotency: sync re-runs and webhook replays must converge to the same edge set.
+- Must preserve all existing edges (no data loss during migration).
+- Backend-only; no frontend changes required.
+
+## Out of Scope
+
+- Changing edge `kind` values or adding new kinds.
+- Re-designing edge semantics (parent vs blocks direction).
+- Adding new indexes beyond what the new PK implies.
+
+## Complexity
+
+**Tier: F-lite** — single domain (backend/DB), clear scope, root cause identified. 4–5 files touched: `corpus/schema.py`, `corpus/sync.py`, `webhook/handlers.py`, new migration script, new test. Schema migration adds risk but the path is well-understood (CREATE TABLE new → INSERT SELECT → DROP → RENAME).
+
+Signals observed:
+- Single domain: backend + SQLite schema
+- Clear scope: 4 scoped tasks listed in issue
+- Root cause: already diagnosed in PR #55 review
+- No unknowns, no new architecture
