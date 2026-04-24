@@ -8,6 +8,8 @@ const Y_TOP = 2.5;
 const Y_BOT = 97.5;
 const MIN_CELL_GAP = 2;
 const MAX_CELL_WIDTH_PCT = 4.0;
+const MAX_BAND_GAP_PX = 120;
+const MIN_CONTAINER_H = 320;
 
 function msIdx(ms, msCodes) {
   if (!ms || ms === '(None)') return -1;
@@ -247,7 +249,10 @@ export function layoutV5(nodes, edges) {
   }
   milestoneInfo.sort((a, b) => msIdx(a.code, msCodes) - msIdx(b.code, msCodes));
 
-  const containerH = Math.max(nBands, 16) * 44 * 2 + 40;
+  const bandSpanPct = (Y_BOT - Y_TOP) / 100;
+  const containerH = nBands > 1
+    ? Math.max(MIN_CONTAINER_H, (MAX_BAND_GAP_PX * (nBands - 1)) / bandSpanPct + 80)
+    : MIN_CONTAINER_H;
 
   return {
     positions,
