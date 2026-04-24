@@ -48,20 +48,20 @@ live:
 	$(ensure_hub)
 	@_cmd="$(firstword $(SVC_CMD))"; \
 	case "$$_cmd" in \
-		sync)   uv run roxabi-corpus sync $(wordlist 2,$(words $(SVC_CMD)),$(SVC_CMD)) && uv run dep-graph-v5 --active graph ;; \
+		sync)   uv run roxabi-corpus sync $(wordlist 2,$(words $(SVC_CMD)),$(SVC_CMD)) ;; \
 		status) $(HUB_SVC) live status || true ;; \
-		"")     uv run roxabi-corpus sync && uv run dep-graph-v5 --active graph && $(HUB_SVC) live start ;; \
+		"")     uv run roxabi-corpus sync && $(HUB_SVC) live start ;; \
 		*)      $(HUB_SVC) live $(SVC_CMD) ;; \
 	esac
 
 # Top-level `sync` target — needed so `make live sync` works from the hub
 # root (hub dispatcher routes non-supervisor actions as standalone targets).
 sync:                ## sync corpus with GitHub (alias for `make live sync`)
-	uv run roxabi-corpus sync $(ARGS) && uv run dep-graph-v5 --active graph
+	uv run roxabi-corpus sync $(ARGS)
 
 full-sync:           ## full sync (clear sync_state, re-fetch all issues)
 	sqlite3 $(HOME)/.roxabi/corpus.db "DELETE FROM sync_state"
-	uv run roxabi-corpus sync && uv run dep-graph-v5 --active graph
+	uv run roxabi-corpus sync
 
 # ── Registration ─────────────────────────────────────────────────────────────
 

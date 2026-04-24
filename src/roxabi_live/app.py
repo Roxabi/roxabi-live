@@ -22,7 +22,7 @@ app.mount("/v6", StaticFiles(directory=_FE, html=True), name="v6")
 
 @app.get("/", include_in_schema=False)
 async def _root() -> RedirectResponse:
-    return RedirectResponse(url="/dep-graph/")
+    return RedirectResponse(url="/v6/")
 
 
 @app.get("/health")
