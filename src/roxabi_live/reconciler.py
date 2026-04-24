@@ -7,24 +7,27 @@ Auth-halt behaviour: two consecutive GitHub 401/403 errors cause the loop to
 exit permanently and emit a CRITICAL log.  Transient errors (OSError, non-auth
 HTTP errors) do not increment the auth-failure counter.  A successful sync
 resets the counter to zero.
+
+Also exposes TriggerHeal protocol and make_trigger_heal factory for DI into
+the webhook router (decoupling the router from this module directly).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sqlite3
-from pathlib import Path
-from typing import cast
+from datetime import datetime, timezone
+from typing import Protocol, cast
+from weakref import WeakSet
 
+import aiosqlite
+
+from roxabi_live.config import Settings
 from roxabi_live.corpus import sync as corpus_sync
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_INTERVAL = 3600.0
-_DEFAULT_DB_PATH = Path.home() / ".roxabi" / "corpus.db"
-_DEFAULT_ORG = "Roxabi"
 
 _AUTH_FAILURE_THRESHOLD = 2
 _auth_failures: int = 0
@@ -32,12 +35,27 @@ _halted: asyncio.Event = asyncio.Event()
 _state_lock: asyncio.Lock = asyncio.Lock()
 
 
-def _db_path() -> Path:
-    return Path(os.environ.get("CORPUS_DB_PATH", _DEFAULT_DB_PATH))
+class TriggerHeal(Protocol):
+    """Protocol for the heal-trigger callable injected into the webhook router.
+
+    Implementations check sync_state staleness for the given repo and, if
+    stale, schedule a background corpus sync task.
+    """
+
+    async def __call__(self, repo: str, conn: aiosqlite.Connection) -> None: ...
 
 
-def _org() -> str:
-    return os.environ.get("GITHUB_ORG", _DEFAULT_ORG)
+def _log_exc(task: asyncio.Task[None]) -> None:
+    """Done-callback: log any exception raised by a background task.
+
+    The cancelled-guard is required because `Task.exception()` *raises*
+    `CancelledError` on cancelled tasks (not returns it); without the
+    guard, normal shutdown would propagate CancelledError into the
+    callback and crash silently.
+    """
+    exc = task.exception() if not task.cancelled() else None
+    if exc is not None:
+        log.error("background heal task raised an exception", exc_info=exc)
 
 
 def _is_auth_error(exc: BaseException) -> bool:
@@ -67,7 +85,7 @@ def _is_auth_error(exc: BaseException) -> bool:
     return True
 
 
-async def run_once() -> None:
+async def run_once(settings: Settings) -> None:
     """Run a single corpus sync cycle.
 
     Opens a fresh DB connection, calls corpus_sync.run_sync, then closes the
@@ -83,11 +101,9 @@ async def run_once() -> None:
     if _halted.is_set():
         return
     try:
-        db = _db_path()
-        org = _org()
-        conn = sqlite3.connect(db)
+        conn = sqlite3.connect(settings.corpus_db_path)
         try:
-            await asyncio.to_thread(corpus_sync.run_sync, conn, org)
+            await asyncio.to_thread(corpus_sync.run_sync, conn, settings.github_org)
         finally:
             conn.close()
         async with _state_lock:
@@ -114,13 +130,11 @@ async def run_once() -> None:
         log.exception("reconciler run_once failed")
 
 
-def hourly_loop(interval_seconds: float | None = None) -> asyncio.Task[None]:
+def hourly_loop(settings: Settings) -> asyncio.Task[None]:
     """Start a background task that calls run_once on a fixed interval.
 
     Args:
-        interval_seconds: Tick interval in seconds.  When *None* the value is
-            read from the ``CORPUS_SYNC_INTERVAL_SECONDS`` environment variable,
-            falling back to ``3600`` if the variable is unset or empty.
+        settings: Application settings providing the sync interval.
 
     Returns:
         The running :class:`asyncio.Task`.  Cancel it to stop the loop; the
@@ -128,15 +142,55 @@ def hourly_loop(interval_seconds: float | None = None) -> asyncio.Task[None]:
         cancellation.  The task may also exit normally if the reconciler is
         halted due to consecutive auth failures.
     """
-    if interval_seconds is None:
-        raw = os.environ.get("CORPUS_SYNC_INTERVAL_SECONDS", "")
-        interval_seconds = float(raw) if raw else _DEFAULT_INTERVAL
+    interval_seconds = settings.corpus_sync_interval_seconds
 
     async def _loop() -> None:
         while not _halted.is_set():
-            await asyncio.sleep(interval_seconds)  # type: ignore[arg-type]
+            await asyncio.sleep(interval_seconds)
             if _halted.is_set():
                 break
-            await run_once()
+            await run_once(settings)
 
     return asyncio.create_task(_loop())
+
+
+def make_trigger_heal(
+    settings: Settings,
+    background_tasks: WeakSet[asyncio.Task[None]],
+) -> TriggerHeal:
+    """Factory: build a TriggerHeal closure capturing settings + the WeakSet.
+
+    The returned callable:
+    1. Checks sync_state staleness (>1h or missing) for the repo.
+    2. If stale, schedules asyncio.create_task(run_once(settings)).
+    3. Registers the task in background_tasks WeakSet.
+    4. Attaches _log_exc as a done-callback to surface exceptions in logs.
+
+    Args:
+        settings: App settings (db path, org, interval).
+        background_tasks: WeakSet owned by app.state; populated so lifespan
+            can cancel all tracked tasks on shutdown.
+
+    Returns:
+        An async callable matching the TriggerHeal protocol.
+    """
+
+    async def _trigger_heal(repo: str, conn: aiosqlite.Connection) -> None:
+        cur = await conn.execute(
+            "SELECT last_synced_at FROM sync_state WHERE repo = ?", (repo,)
+        )
+        row = await cur.fetchone()
+        now = datetime.now(timezone.utc)
+        stale = True
+        if row is not None:
+            raw = row[0]
+            last = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            stale = (now - last).total_seconds() > settings.corpus_sync_interval_seconds
+        if stale:
+            task: asyncio.Task[None] = asyncio.create_task(run_once(settings))
+            background_tasks.add(task)
+            task.add_done_callback(_log_exc)
+
+    return _trigger_heal  # type: ignore[return-value]

@@ -25,6 +25,68 @@ _BARE_INT = re.compile(r"^\d+$")
 _SHORT_FORM = re.compile(r"^#(\d+)$")
 _FULL_KEY = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 
+# ---------------------------------------------------------------------------
+# SQL constants — shared by corpus.sync (sync path) and corpus.mutations (async path)
+# ---------------------------------------------------------------------------
+
+# Full upsert: used by corpus.sync for complete issue data from GraphQL.
+# Updates ALL columns including milestone, is_stub, lane, priority, size, status.
+UPSERT_ISSUE_SQL = """
+    INSERT INTO issues
+        (key, repo, number, title, state, url, created_at, updated_at,
+         closed_at, milestone, is_stub, lane, priority, size, status)
+    VALUES
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+        repo       = excluded.repo,
+        number     = excluded.number,
+        title      = excluded.title,
+        state      = excluded.state,
+        url        = excluded.url,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at,
+        closed_at  = excluded.closed_at,
+        milestone  = excluded.milestone,
+        is_stub    = excluded.is_stub,
+        lane       = excluded.lane,
+        priority   = excluded.priority,
+        size       = excluded.size,
+        status     = excluded.status
+"""
+
+# Webhook upsert: used by corpus.mutations for partial webhook payload data.
+# Inserts with milestone/is_stub/lane/priority/size/status as NULL on new rows,
+# but on conflict ONLY updates the fields present in a webhook payload so that
+# pre-existing values (set by a full sync) are never overwritten with NULL.
+UPSERT_ISSUE_FROM_WEBHOOK_SQL = """
+    INSERT INTO issues
+        (key, repo, number, title, state, url, created_at, updated_at, closed_at,
+         milestone, is_stub, lane, priority, size, status)
+    VALUES
+        (?, ?, ?, ?, ?, ?, ?, ?, ?,
+         NULL, 0, NULL, NULL, NULL, NULL)
+    ON CONFLICT(key) DO UPDATE SET
+        repo       = excluded.repo,
+        number     = excluded.number,
+        title      = excluded.title,
+        state      = excluded.state,
+        url        = excluded.url,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at,
+        closed_at  = excluded.closed_at
+"""
+
+DELETE_LABELS_SQL = "DELETE FROM labels WHERE issue_key = ?"
+INSERT_LABEL_SQL = "INSERT OR IGNORE INTO labels (issue_key, name) VALUES (?, ?)"
+
+DELETE_EDGES_BY_KIND_SQL = (
+    "DELETE FROM edges WHERE (src_key = ? OR dst_key = ?) AND kind = ?"
+)
+INSERT_EDGE_SQL = (
+    "INSERT OR IGNORE INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)"
+)
+DELETE_EDGE_SQL = "DELETE FROM edges WHERE src_key = ? AND dst_key = ? AND kind = ?"
+
 _LANE_PREFIX = "graph:lane/"
 _SIZE_PREFIX = "size:"
 _LEGACY_SIZE_RAW = {"XS", "S", "M", "L", "XL"}
@@ -121,28 +183,7 @@ def upsert_issue(conn: sqlite3.Connection, issue: dict[str, Any]) -> None:
     lane (nullable), priority (nullable), size (nullable), status (nullable).
     """
     conn.execute(
-        """
-        INSERT INTO issues
-            (key, repo, number, title, state, url, created_at, updated_at,
-             closed_at, milestone, is_stub, lane, priority, size, status)
-        VALUES
-            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-            repo = excluded.repo,
-            number = excluded.number,
-            title = excluded.title,
-            state = excluded.state,
-            url = excluded.url,
-            created_at = excluded.created_at,
-            updated_at = excluded.updated_at,
-            closed_at = excluded.closed_at,
-            milestone = excluded.milestone,
-            is_stub = excluded.is_stub,
-            lane = excluded.lane,
-            priority = excluded.priority,
-            size = excluded.size,
-            status = excluded.status
-        """,
+        UPSERT_ISSUE_SQL,
         (
             issue["key"],
             issue["repo"],
@@ -165,9 +206,9 @@ def upsert_issue(conn: sqlite3.Connection, issue: dict[str, Any]) -> None:
 
 def upsert_labels(conn: sqlite3.Connection, issue_key: str, names: list[str]) -> None:
     """Wipe and rewrite labels for issue_key."""
-    conn.execute("DELETE FROM labels WHERE issue_key = ?", (issue_key,))
+    conn.execute(DELETE_LABELS_SQL, (issue_key,))
     conn.executemany(
-        "INSERT OR IGNORE INTO labels (issue_key, name) VALUES (?, ?)",
+        INSERT_LABEL_SQL,
         [(issue_key, name) for name in names],
     )
 
@@ -189,7 +230,7 @@ def upsert_edges(
     All inputs are assumed already canonical — caller must use canonical_key first.
     """
     conn.execute(
-        "DELETE FROM edges WHERE (src_key = ? OR dst_key = ?) AND kind = ?",
+        DELETE_EDGES_BY_KIND_SQL,
         (issue_key, issue_key, kind),
     )
     rows: list[tuple[str, str, str]] = []
@@ -198,7 +239,7 @@ def upsert_edges(
     for blockee in blocking:
         rows.append((issue_key, blockee, kind))
     conn.executemany(
-        "INSERT OR IGNORE INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)",
+        INSERT_EDGE_SQL,
         rows,
     )
 

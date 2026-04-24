@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-import os
 import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+
+from roxabi_live.config import get_settings
 
 router = APIRouter(prefix="/api", tags=["issues"])
 
 
-def _db_path() -> Path:
-    return Path(os.environ.get("CORPUS_DB_PATH", Path.home() / ".roxabi" / "corpus.db"))
+def _get_db_path(request: Request) -> Path:
+    return get_settings(request).corpus_db_path
 
 
 def _parse_key(key: str) -> tuple[str, int | None]:
@@ -30,7 +31,8 @@ ISSUE_KEY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+$")
 
 
 @router.get("/issues")
-async def list_issues(
+async def list_issues(  # noqa: PLR0913 — FastAPI query params, not domain args
+    request: Request,
     repo: str | None = None,
     state: str | None = None,
     label: str | None = None,
@@ -80,7 +82,7 @@ async def list_issues(
         LIMIT ? OFFSET ?
     """
 
-    async with aiosqlite.connect(_db_path()) as db:
+    async with aiosqlite.connect(_get_db_path(request)) as db:
         db.row_factory = aiosqlite.Row
 
         async with db.execute(count_sql, params) as cnt_cur:
@@ -125,14 +127,14 @@ async def list_issues(
 
 
 @router.get("/issues/{key:path}")
-async def get_issue(key: str) -> dict[str, Any]:
+async def get_issue(request: Request, key: str) -> dict[str, Any]:
     """Return a single issue by key, including blocking/blocked_by edge arrays."""
     if not ISSUE_KEY_RE.fullmatch(key):
         raise HTTPException(
             status_code=400,
             detail="invalid issue key; expected '<owner>/<repo>#<number>'",
         )
-    async with aiosqlite.connect(_db_path()) as db:
+    async with aiosqlite.connect(_get_db_path(request)) as db:
         db.row_factory = aiosqlite.Row
 
         sql = (

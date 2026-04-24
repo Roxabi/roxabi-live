@@ -523,3 +523,103 @@ class TestSubIssuesWebhookHandler:
         assert row_a is None and row_b is None, (
             "Expected no edge for parent_issue_added noop"
         )
+
+
+# ---------------------------------------------------------------------------
+# T8 [RED] — Transactional write tests (SC9)
+# ---------------------------------------------------------------------------
+
+
+class TestHandleIssuesTransaction:
+    """handle_issues wraps writes in async with conn: (SC9)."""
+
+    async def test_handle_issues_uses_transaction(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """handle_issues completes atomically — issue + labels committed together.
+
+        SC9: The handler must use async with conn: so that a crash mid-write
+        rolls back the entire operation rather than leaving a partial state.
+        This test verifies the happy path: both issue and labels are present
+        after a successful call.
+        """
+        payload = _make_payload(
+            action="opened",
+            number=20,
+            title="Transactional test",
+            state="open",
+            labels=["bug", "urgent"],
+            repo="Roxabi/lyra",
+        )
+
+        await handle_issues(payload, db)
+
+        # Verify issue row was committed
+        row = await _fetch_issue(db, "Roxabi/lyra#20")
+        assert row is not None, "Issue row must be committed after handle_issues"
+
+        # Verify labels were committed
+        labels = await _fetch_labels(db, "Roxabi/lyra#20")
+        assert sorted(labels) == ["bug", "urgent"], (
+            f"Labels must be committed together with issue: {labels}"
+        )
+
+    async def test_handle_issues_rolls_back_on_label_failure(
+        self, db: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SC9 rollback: label-write failure must roll back the issue upsert too.
+
+        Patches replace_labels_async to raise after upsert_issue_async has
+        succeeded, then asserts the issue row is absent (rolled back) — proving
+        the explicit rollback path in handle_issues actually triggers.
+        """
+        # Pre-condition: nothing in DB
+        before = await _fetch_issue(db, "Roxabi/lyra#21")
+        assert before is None
+
+        async def _boom(
+            _conn: aiosqlite.Connection, _key: str, _names: list[str]
+        ) -> None:
+            raise RuntimeError("simulated label-write failure")
+
+        monkeypatch.setattr("roxabi_live.webhook.handlers.replace_labels_async", _boom)
+
+        payload = _make_payload(
+            action="opened",
+            number=21,
+            title="Rollback test",
+            state="open",
+            labels=["bug"],
+            repo="Roxabi/lyra",
+        )
+
+        with pytest.raises(RuntimeError, match="simulated label-write failure"):
+            await handle_issues(payload, db)
+
+        # The issue upsert must have been rolled back along with the labels.
+        after = await _fetch_issue(db, "Roxabi/lyra#21")
+        assert after is None, (
+            f"Issue row must be rolled back when label write fails, got: {after}"
+        )
+
+    async def test_handle_issues_no_raw_sql_strings(self) -> None:
+        """SC8: handlers.py must contain zero raw INSERT/UPDATE/DELETE SQL strings."""
+        import pathlib
+
+        handlers_src = (
+            pathlib.Path(__file__).parent.parent
+            / "src"
+            / "roxabi_live"
+            / "webhook"
+            / "handlers.py"
+        ).read_text()
+
+        raw_sql_lines = [
+            line.strip()
+            for line in handlers_src.splitlines()
+            if any(kw in line.upper() for kw in ("INSERT ", "UPDATE ", "DELETE "))
+            and not line.strip().startswith("#")
+        ]
+        assert raw_sql_lines == [], (
+            f"handlers.py contains raw SQL strings: {raw_sql_lines}"
+        )

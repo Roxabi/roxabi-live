@@ -2,18 +2,19 @@
 
 import asyncio
 import logging
-import os
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncGenerator
+from weakref import WeakSet
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from roxabi_live import reconciler
 from roxabi_live.api.issues import router as issues_router
+from roxabi_live.config import Settings, get_settings
 from roxabi_live.dep_graph.v5.serve import router as dep_graph_v5_router
 from roxabi_live.dep_graph.v6.repos import router as repos_router
 from roxabi_live.dep_graph.v6.routes import router as dep_graph_v6_router
@@ -21,18 +22,23 @@ from roxabi_live.webhook.router import router as webhook_router
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_DB = Path.home() / ".roxabi" / "corpus.db"
-
-
-def _db_path() -> Path:
-    return Path(os.environ.get("CORPUS_DB_PATH", _DEFAULT_DB))
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    settings = Settings.from_env()
+    app.state.settings = settings
+    if not settings.github_webhook_secret:
+        log.critical(
+            "GITHUB_WEBHOOK_SECRET is empty — /webhook/github will return 503 "
+            "for every request. Set the env var to enable webhook ingestion."
+        )
+    bg_tasks: WeakSet[asyncio.Task[None]] = WeakSet()
+    app.state.background_tasks = bg_tasks
+    app.state.trigger_heal = reconciler.make_trigger_heal(settings, bg_tasks)
+
     log.info("reconciler startup sync scheduled")
-    await reconciler.run_once()
-    loop_task = reconciler.hourly_loop()
+    await reconciler.run_once(settings)
+    loop_task = reconciler.hourly_loop(settings)
     try:
         yield
     finally:
@@ -41,6 +47,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await loop_task
         except asyncio.CancelledError:
             pass
+        # Cancel and await all tracked background heal tasks
+        tasks = list(app.state.background_tasks)
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 app = FastAPI(title="Roxabi Live", version="0.1.0", lifespan=lifespan)
@@ -61,9 +72,9 @@ async def _root() -> RedirectResponse:
 
 
 @app.get("/health")
-async def health() -> dict[str, Any]:
+async def health(request: Request) -> dict[str, Any]:
     """Health check — returns db path, reachability, and issue count."""
-    db = _db_path()
+    db = get_settings(request).corpus_db_path
     db_reachable = False
     issue_count = 0
     try:

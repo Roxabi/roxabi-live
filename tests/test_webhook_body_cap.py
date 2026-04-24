@@ -9,14 +9,13 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import json
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-import aiosqlite
 import pytest
 from fastapi.testclient import TestClient
 
@@ -99,28 +98,40 @@ def _issues_payload(
 
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
-    """Create a real sqlite file with the corpus schema and return its path."""
+    """Create a real sqlite file with the corpus schema and return its path.
+
+    Uses synchronous sqlite3 — the schema is pure DDL with no async I/O, and
+    avoiding `asyncio.run()` in a sync fixture sidesteps event-loop collisions
+    under pytest-asyncio strict/auto mode.
+    """
+    import sqlite3
+
     path = tmp_path / "corpus.db"
-
-    async def _init() -> None:
-        async with aiosqlite.connect(path) as conn:
-            await conn.executescript(_SCHEMA_SQL)
-            await conn.commit()
-
-    asyncio.run(_init())
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(_SCHEMA_SQL)
+        conn.commit()
+    finally:
+        conn.close()
     return path
 
 
 @pytest.fixture()
-def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """TestClient with env vars pointing at the tmp db."""
+def client(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Generator[TestClient, None, None]:
+    """TestClient with env vars pointing at the tmp db.
+
+    Uses context-manager form so FastAPI lifespan runs (sets app.state.settings,
+    app.state.trigger_heal, app.state.background_tasks).
+    """
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
-    # Import app AFTER env vars are set so _db_path() resolves correctly
     from roxabi_live.app import app
 
-    return TestClient(app)
+    with TestClient(app) as c:
+        yield c
 
 
 # ---------------------------------------------------------------------------
@@ -141,21 +152,20 @@ def test_post_body_over_cap_returns_413(
     # raise_server_exceptions=False so oversized bodies return a response
     # rather than re-raising internal errors (before the cap middleware exists,
     # the server will 500; after implementation it should 413).
-    client = TestClient(app, raise_server_exceptions=False)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        body = b"A" * (26 * 1024 * 1024)
+        sig = _sign(body)
 
-    body = b"A" * (26 * 1024 * 1024)
-    sig = _sign(body)
-
-    # Act
-    resp = client.post(
-        "/webhook/github",
-        content=body,
-        headers={
-            "X-GitHub-Event": "issues",
-            "Content-Type": "application/json",
-            "X-Hub-Signature-256": sig,
-        },
-    )
+        # Act
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
 
     # Assert
     assert resp.status_code == 413
@@ -171,21 +181,20 @@ def test_post_body_at_cap_passes_through(
 
     from roxabi_live.app import app
 
-    client = TestClient(app, raise_server_exceptions=False)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        body = b"A" * _CAP_BYTES
+        sig = _sign(body)
 
-    body = b"A" * _CAP_BYTES
-    sig = _sign(body)
-
-    # Act
-    resp = client.post(
-        "/webhook/github",
-        content=body,
-        headers={
-            "X-GitHub-Event": "issues",
-            "Content-Type": "application/json",
-            "X-Hub-Signature-256": sig,
-        },
-    )
+        # Act
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
 
     # Assert — size gate must not reject exactly-at-cap bodies
     assert resp.status_code != 413, "25 MB body should pass the size gate"
@@ -204,21 +213,20 @@ def test_post_body_one_byte_over_cap_returns_413(
 
     from roxabi_live.app import app
 
-    client = TestClient(app, raise_server_exceptions=False)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        body = b"A" * (_CAP_BYTES + 1)
+        sig = _sign(body)
 
-    body = b"A" * (_CAP_BYTES + 1)
-    sig = _sign(body)
-
-    # Act
-    resp = client.post(
-        "/webhook/github",
-        content=body,
-        headers={
-            "X-GitHub-Event": "issues",
-            "Content-Type": "application/json",
-            "X-Hub-Signature-256": sig,
-        },
-    )
+        # Act
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
 
     # Assert
     assert resp.status_code == 413
