@@ -187,3 +187,67 @@ supervisorctl stop cloudflared live
 ```
 
 Set `autostart=false` for both programs on M₂ to prevent them from restarting after reboot.
+
+## Cloudflare Access (zero-trust gate)
+
+`corpus.db` contains issues from private repos. Cloudflare Access sits in front of the tunnel and redirects unauthenticated browsers to an identity provider. The GitHub webhook bypasses the gate via a service-token policy so deliveries still land at `/webhook/github`.
+
+### Step A — Create the Access application
+
+1. Zero Trust dashboard → **Access** → **Applications** → **Add application** → **Self-hosted**.
+2. Application name: `Roxabi Live Dashboard`.
+3. Subdomain: `dashboard`. Domain: `roxabi.dev`.
+4. Session duration: `24h`.
+5. **Policies** → **Add policy**
+   - Name: `Allow owner`
+   - Action: `Allow`
+   - Include selector: `Emails` → `mickael@bouly.io`
+6. Save the application.
+
+### Step B — Bypass webhook via service token
+
+1. Zero Trust → **Access** → **Service Auth** → **Service Tokens** → **Create Service Token**.
+2. Name: `github-webhook`. Duration: non-expiring (or set a rotation cadence).
+3. Copy `Client ID` and `Client Secret` immediately — the secret is shown once.
+4. Back in the `Roxabi Live Dashboard` application → **Policies** → **Add policy**
+   - Name: `GitHub webhook bypass`
+   - Action: `Service Auth`
+   - Include selector: `Service Token` → `github-webhook`
+5. Keep this policy *above* any `Deny` / `Require` policies so it evaluates first for tokenized requests. Save.
+
+### Step C — Attach the service token to the GitHub webhook
+
+GitHub's built-in webhook UI does not support custom headers directly. Two options:
+
+- **Option 1 — Cloudflare Worker trampoline (recommended):** deploy a small worker on a separate subdomain (e.g. `webhook-ingest.roxabi.dev`, not protected by Access) that injects `CF-Access-Client-Id` + `CF-Access-Client-Secret` on every inbound request and proxies to `https://dashboard.roxabi.dev/webhook/github`. Point the GitHub webhook at the worker URL.
+- **Option 2 — GitHub App with custom headers:** replace the repo webhook with a GitHub App; GitHub Apps allow custom headers via their delivery config.
+
+Either way, every proxied request to `dashboard.roxabi.dev/webhook/github` must carry:
+
+```
+CF-Access-Client-Id: <client-id>
+CF-Access-Client-Secret: <client-secret>
+```
+
+Store `Client Secret` in the worker's secret binding (never commit). Rotate via Step B on secret leak.
+
+### Step D — Verify
+
+Unauthenticated browser / curl:
+
+```bash
+curl -sI https://dashboard.roxabi.dev/api/issues | head -1
+# expected:  HTTP/2 302
+# Location redirect to <team>.cloudflareaccess.com
+```
+
+Webhook delivery:
+
+1. GitHub repo → **Settings** → **Webhooks** → pick `/webhook/github` → **Recent Deliveries**.
+2. Hit **Redeliver** on the most recent event.
+3. Response must be `200 OK`. If `302` is returned, the service-token headers are not reaching Cloudflare — re-check Step C.
+
+### Rotation
+
+- Rotate the service token: Zero Trust → Service Tokens → `github-webhook` → **Refresh**. Update the worker secret. Redeliver a test webhook to confirm.
+- Rotate the identity-provider allowlist: edit the `Allow owner` policy (Step A.5).

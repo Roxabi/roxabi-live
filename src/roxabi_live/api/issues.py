@@ -26,6 +26,9 @@ def _parse_key(key: str) -> tuple[str, int | None]:
     return key, None
 
 
+ISSUE_KEY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+$")
+
+
 @router.get("/issues")
 async def list_issues(
     repo: str | None = None,
@@ -124,6 +127,11 @@ async def list_issues(
 @router.get("/issues/{key:path}")
 async def get_issue(key: str) -> dict[str, Any]:
     """Return a single issue by key, including blocking/blocked_by edge arrays."""
+    if not ISSUE_KEY_RE.fullmatch(key):
+        raise HTTPException(
+            status_code=400,
+            detail="invalid issue key; expected '<owner>/<repo>#<number>'",
+        )
     async with aiosqlite.connect(_db_path()) as db:
         db.row_factory = aiosqlite.Row
 
@@ -173,9 +181,7 @@ async def get_issue(key: str) -> dict[str, Any]:
             return {"key": edge_key, "number": parsed_number, "repo": parsed_repo}
         return {"key": edge_key, "number": number, "repo": edge_repo}
 
-    blocking = [
-        _edge_item(r["dst_key"], r["number"], r["repo"]) for r in blocking_rows
-    ]
+    blocking = [_edge_item(r["dst_key"], r["number"], r["repo"]) for r in blocking_rows]
     blocked_by = [
         _edge_item(r["src_key"], r["number"], r["repo"]) for r in blocked_by_rows
     ]
