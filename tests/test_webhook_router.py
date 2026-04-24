@@ -19,6 +19,7 @@ import hmac
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from collections.abc import Generator
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -119,15 +120,20 @@ def db_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """TestClient with env vars pointing at the tmp db."""
+def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
+    """TestClient with env vars pointing at the tmp db.
+
+    Uses context manager form so that the FastAPI lifespan runs (which sets
+    app.state.settings, app.state.trigger_heal, etc.).
+    """
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
-    # Import app AFTER env vars are set so _db_path() resolves correctly
+    # Import app AFTER env vars are set
     from roxabi_live.app import app
 
-    return TestClient(app)
+    with TestClient(app) as c:
+        yield c
 
 
 # ---------------------------------------------------------------------------
@@ -254,85 +260,158 @@ def _seed_sync_state(db_path: Path, repo: str, last_synced_at: str) -> None:
 def test_stale_sync_triggers_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sync_state.last_synced_at = 2h ago → reconciler.run_once is called."""
+    """A 2h-old sync_state triggers the heal scheduler."""
     two_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
     _seed_sync_state(db_path, "Roxabi/lyra", two_hours_ago)
 
     mock_run_once = AsyncMock(return_value=None)
-    monkeypatch.setattr("roxabi_live.webhook.router.reconciler.run_once", mock_run_once)
+    # The trigger_heal factory calls roxabi_live.reconciler.run_once.
+    # Patch before TestClient enters lifespan; lifespan startup call = call 1,
+    # webhook-triggered heal = call 2 (total >= 2).
+    monkeypatch.setattr("roxabi_live.reconciler.run_once", mock_run_once)
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
     from roxabi_live.app import app
 
-    client = TestClient(app)
     payload = _issues_payload(repo="Roxabi/lyra")
     body = json.dumps(payload).encode()
     sig = _sign(body)
 
-    resp = client.post(
-        "/webhook/github",
-        content=body,
-        headers={
-            "X-GitHub-Event": "issues",
-            "Content-Type": "application/json",
-            "X-Hub-Signature-256": sig,
-        },
-    )
-    assert resp.status_code == 200
+    with TestClient(app) as client:
+        call_count_after_startup = mock_run_once.call_count  # startup call
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        # Drain the event loop so the fire-and-forget task executes
+        asyncio.run(asyncio.sleep(0))
 
-    # Drain the event loop so the fire-and-forget task executes
-    asyncio.run(asyncio.sleep(0))
-    mock_run_once.assert_called_once()
+    # One additional call triggered by the stale webhook heal
+    assert mock_run_once.call_count > call_count_after_startup, (
+        "Expected trigger_heal to schedule an additional run_once call"
+    )
 
 
 def test_fresh_sync_does_not_trigger_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sync_state.last_synced_at = 5min ago → reconciler.run_once is NOT called."""
+    """A fresh sync_state (5min ago) skips the heal scheduling."""
     five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
     _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
 
     mock_run_once = AsyncMock(return_value=None)
-    monkeypatch.setattr("roxabi_live.webhook.router.reconciler.run_once", mock_run_once)
+    monkeypatch.setattr("roxabi_live.reconciler.run_once", mock_run_once)
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
     from roxabi_live.app import app
 
-    client = TestClient(app)
     payload = _issues_payload(repo="Roxabi/lyra")
     body = json.dumps(payload).encode()
     sig = _sign(body)
 
-    resp = client.post(
-        "/webhook/github",
-        content=body,
-        headers={
-            "X-GitHub-Event": "issues",
-            "Content-Type": "application/json",
-            "X-Hub-Signature-256": sig,
-        },
-    )
-    assert resp.status_code == 200
+    with TestClient(app) as client:
+        call_count_after_startup = mock_run_once.call_count
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
 
-    asyncio.run(asyncio.sleep(0))
-    mock_run_once.assert_not_called()
+    # No additional calls — sync is fresh
+    assert mock_run_once.call_count == call_count_after_startup, (
+        "Expected trigger_heal NOT to schedule run_once for a fresh sync"
+    )
 
 
 def test_missing_sync_state_triggers_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No row in sync_state for the repo → reconciler.run_once is called."""
+    """No row in sync_state for the repo → trigger_heal schedules run_once."""
     mock_run_once = AsyncMock(return_value=None)
-    monkeypatch.setattr("roxabi_live.webhook.router.reconciler.run_once", mock_run_once)
+    monkeypatch.setattr("roxabi_live.reconciler.run_once", mock_run_once)
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
     from roxabi_live.app import app
 
-    client = TestClient(app)
     payload = _issues_payload(repo="Roxabi/lyra")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        call_count_after_startup = mock_run_once.call_count
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_once.call_count > call_count_after_startup, (
+        "Expected trigger_heal to schedule run_once when sync_state is missing"
+    )
+
+
+# ---------------------------------------------------------------------------
+# T8 [RED] — Decoupling, body fix, transactional handlers
+# ---------------------------------------------------------------------------
+
+
+def test_router_does_not_import_reconciler() -> None:
+    """SC4: webhook/router.py must not have a runtime import of roxabi_live.reconciler.
+
+    TYPE_CHECKING-only imports (inside `if TYPE_CHECKING:` block) are allowed
+    since they are never executed at runtime — they satisfy the decoupling
+    requirement (no runtime dependency on the reconciler module).
+    """
+    router_src = (
+        __import__("pathlib").Path(__file__).parent.parent
+        / "src" / "roxabi_live" / "webhook" / "router.py"
+    ).read_text()
+
+    # Collect lines with reconciler imports, skipping those inside TYPE_CHECKING blocks
+    in_type_checking = False
+    runtime_import_lines = []
+    for line in router_src.splitlines():
+        stripped = line.strip()
+        if "TYPE_CHECKING" in stripped and stripped.startswith("if"):
+            in_type_checking = True
+        # Dedent back to top-level ends the TYPE_CHECKING block
+        if in_type_checking and stripped and not stripped.startswith("#") and not line.startswith(" ") and not line.startswith("\t") and "TYPE_CHECKING" not in stripped:
+            in_type_checking = False
+        if "import" in line and "reconciler" in line and not in_type_checking:
+            runtime_import_lines.append(line)
+
+    assert runtime_import_lines == [], (
+        f"router.py has runtime reconciler imports: {runtime_import_lines}"
+    )
+
+
+def test_json_loads_body_no_request_json(client: TestClient) -> None:
+    """SC10: body parsed via json.loads, not await request.json() after request.body().
+
+    Verifies that a valid webhook with body read once succeeds without 422/500.
+    """
+    payload = _issues_payload(action="opened", number=99)
     body = json.dumps(payload).encode()
     sig = _sign(body)
 
@@ -345,7 +424,6 @@ def test_missing_sync_state_triggers_reconcile(
             "X-Hub-Signature-256": sig,
         },
     )
+    # If body was double-read, the second parse would fail → 500 or empty payload
     assert resp.status_code == 200
-
-    asyncio.run(asyncio.sleep(0))
-    mock_run_once.assert_called_once()
+    assert resp.json() == {"ok": True}

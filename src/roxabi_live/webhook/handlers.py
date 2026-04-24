@@ -6,11 +6,21 @@ from typing import Any, cast
 
 import aiosqlite
 
+from roxabi_live.corpus.mutations import (
+    add_edge_async,
+    delete_issue_async,
+    remove_edge_async,
+    replace_labels_async,
+    upsert_issue_async,
+)
+
 
 async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> None:
     """Process a GitHub `issues` webhook event.
 
     Supported actions: opened, edited, reopened, labeled, unlabeled, closed, deleted.
+    Issue upsert + label replacement are committed atomically: both succeed or
+    neither is persisted (SC9).
     """
     action = payload.get("action")
     issue = payload["issue"]
@@ -18,46 +28,33 @@ async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> 
     key = f"{repo}#{issue['number']}"
 
     if action == "deleted":
-        await conn.execute("DELETE FROM issues WHERE key = ?", (key,))
+        await delete_issue_async(conn, key)
         await conn.commit()
         return
 
-    await conn.execute(
-        """
-        INSERT INTO issues
-            (key, repo, number, title, state, url, created_at, updated_at, closed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-            title      = excluded.title,
-            state      = excluded.state,
-            url        = excluded.url,
-            updated_at = excluded.updated_at,
-            closed_at  = excluded.closed_at
-        """,
-        (
-            key,
-            repo,
-            issue["number"],
-            issue["title"],
-            issue["state"],
-            issue.get("html_url"),
-            issue.get("created_at"),
-            issue.get("updated_at"),
-            issue.get("closed_at"),
-        ),
-    )
+    # Build partial from webhook payload (non-payload columns preserved by SQL)
+    issue_partial: dict[str, Any] = {
+        "key": key,
+        "repo": repo,
+        "number": issue["number"],
+        "title": issue["title"],
+        "state": issue["state"],
+        "url": issue.get("html_url"),
+        "created_at": issue.get("created_at"),
+        "updated_at": issue.get("updated_at"),
+        "closed_at": issue.get("closed_at"),
+    }
+    await upsert_issue_async(conn, issue_partial)
 
-    await conn.execute("DELETE FROM labels WHERE issue_key = ?", (key,))
     raw_labels: list[Any] = issue.get("labels") or []
+    names: list[str] = []
     for label in raw_labels:
         if isinstance(label, dict):
-            name: str = str(cast(dict[str, Any], label)["name"])
+            names.append(str(cast(dict[str, Any], label)["name"]))
         else:
-            name = str(label)
-        await conn.execute(
-            "INSERT INTO labels (issue_key, name) VALUES (?, ?)", (key, name)
-        )
+            names.append(str(label))
 
+    await replace_labels_async(conn, key, names)
     await conn.commit()
 
 
@@ -77,11 +74,7 @@ async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> No
         blocked = payload["issue"]
         blocker_key = f"{blocker['repository']['full_name']}#{blocker['number']}"
         blocked_key = f"{blocked['repository']['full_name']}#{blocked['number']}"
-        await conn.execute(
-            "INSERT OR IGNORE INTO edges (src_key, dst_key, kind)"
-            " VALUES (?, ?, 'blocks')",
-            (blocker_key, blocked_key),
-        )
+        await add_edge_async(conn, blocker_key, blocked_key, "blocks")
         await conn.commit()
         return
 
@@ -90,10 +83,7 @@ async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> No
         blocked = payload["issue"]
         blocker_key = f"{blocker['repository']['full_name']}#{blocker['number']}"
         blocked_key = f"{blocked['repository']['full_name']}#{blocked['number']}"
-        await conn.execute(
-            "DELETE FROM edges WHERE src_key = ? AND dst_key = ? AND kind = 'blocks'",
-            (blocker_key, blocked_key),
-        )
+        await remove_edge_async(conn, blocker_key, blocked_key, "blocks")
         await conn.commit()
 
 
@@ -115,11 +105,7 @@ async def handle_sub_issues(
         child = payload["sub_issue"]
         parent_key = f"{parent['repository']['full_name']}#{parent['number']}"
         child_key = f"{child['repository']['full_name']}#{child['number']}"
-        await conn.execute(
-            "INSERT OR IGNORE INTO edges (src_key, dst_key, kind)"
-            " VALUES (?, ?, 'parent')",
-            (parent_key, child_key),
-        )
+        await add_edge_async(conn, parent_key, child_key, "parent")
         await conn.commit()
         return
 
@@ -128,8 +114,5 @@ async def handle_sub_issues(
         child = payload["sub_issue"]
         parent_key = f"{parent['repository']['full_name']}#{parent['number']}"
         child_key = f"{child['repository']['full_name']}#{child['number']}"
-        await conn.execute(
-            "DELETE FROM edges WHERE src_key = ? AND dst_key = ? AND kind = 'parent'",
-            (parent_key, child_key),
-        )
+        await remove_edge_async(conn, parent_key, child_key, "parent")
         await conn.commit()

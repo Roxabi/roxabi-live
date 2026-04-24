@@ -6,6 +6,7 @@ import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncGenerator
+from weakref import WeakSet
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
@@ -26,6 +27,9 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = Settings.from_env()
     app.state.settings = settings
+    bg_tasks: WeakSet[asyncio.Task[None]] = WeakSet()
+    app.state.background_tasks = bg_tasks
+    app.state.trigger_heal = reconciler.make_trigger_heal(settings, bg_tasks)
 
     log.info("reconciler startup sync scheduled")
     await reconciler.run_once(settings)
@@ -38,6 +42,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await loop_task
         except asyncio.CancelledError:
             pass
+        # Cancel and await all tracked background heal tasks
+        tasks = list(app.state.background_tasks)
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 app = FastAPI(title="Roxabi Live", version="0.1.0", lifespan=lifespan)

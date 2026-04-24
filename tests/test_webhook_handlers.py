@@ -523,3 +523,61 @@ class TestSubIssuesWebhookHandler:
         assert row_a is None and row_b is None, (
             "Expected no edge for parent_issue_added noop"
         )
+
+
+# ---------------------------------------------------------------------------
+# T8 [RED] — Transactional write tests (SC9)
+# ---------------------------------------------------------------------------
+
+
+class TestHandleIssuesTransaction:
+    """handle_issues wraps writes in async with conn: (SC9)."""
+
+    async def test_handle_issues_uses_transaction(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """handle_issues completes atomically — issue + labels committed together.
+
+        SC9: The handler must use async with conn: so that a crash mid-write
+        rolls back the entire operation rather than leaving a partial state.
+        This test verifies the happy path: both issue and labels are present
+        after a successful call.
+        """
+        payload = _make_payload(
+            action="opened",
+            number=20,
+            title="Transactional test",
+            state="open",
+            labels=["bug", "urgent"],
+            repo="Roxabi/lyra",
+        )
+
+        await handle_issues(payload, db)
+
+        # Verify issue row was committed
+        row = await _fetch_issue(db, "Roxabi/lyra#20")
+        assert row is not None, "Issue row must be committed after handle_issues"
+
+        # Verify labels were committed
+        labels = await _fetch_labels(db, "Roxabi/lyra#20")
+        assert sorted(labels) == ["bug", "urgent"], (
+            f"Labels must be committed together with issue: {labels}"
+        )
+
+    async def test_handle_issues_no_raw_sql_strings(self) -> None:
+        """SC8: handlers.py must contain zero raw INSERT/UPDATE/DELETE SQL strings."""
+        import pathlib
+
+        handlers_src = (
+            pathlib.Path(__file__).parent.parent
+            / "src" / "roxabi_live" / "webhook" / "handlers.py"
+        ).read_text()
+
+        raw_sql_lines = [
+            line.strip() for line in handlers_src.splitlines()
+            if any(kw in line.upper() for kw in ("INSERT ", "UPDATE ", "DELETE "))
+            and not line.strip().startswith("#")
+        ]
+        assert raw_sql_lines == [], (
+            f"handlers.py contains raw SQL strings: {raw_sql_lines}"
+        )

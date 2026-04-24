@@ -7,6 +7,9 @@ Auth-halt behaviour: two consecutive GitHub 401/403 errors cause the loop to
 exit permanently and emit a CRITICAL log.  Transient errors (OSError, non-auth
 HTTP errors) do not increment the auth-failure counter.  A successful sync
 resets the counter to zero.
+
+Also exposes TriggerHeal protocol and make_trigger_heal factory for DI into
+the webhook router (decoupling the router from this module directly).
 """
 
 from __future__ import annotations
@@ -14,7 +17,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
-from typing import cast
+from datetime import datetime, timezone
+from typing import Protocol, cast
+from weakref import WeakSet
+
+import aiosqlite
 
 from roxabi_live.config import Settings
 from roxabi_live.corpus import sync as corpus_sync
@@ -26,6 +33,23 @@ _AUTH_FAILURE_THRESHOLD = 2
 _auth_failures: int = 0
 _halted: asyncio.Event = asyncio.Event()
 _state_lock: asyncio.Lock = asyncio.Lock()
+
+
+class TriggerHeal(Protocol):
+    """Protocol for the heal-trigger callable injected into the webhook router.
+
+    Implementations check sync_state staleness for the given repo and, if
+    stale, schedule a background corpus sync task.
+    """
+
+    async def __call__(self, repo: str, conn: aiosqlite.Connection) -> None: ...
+
+
+def _log_exc(task: asyncio.Task[None]) -> None:
+    """Done-callback: log any exception raised by a background task."""
+    exc = task.exception() if not task.cancelled() else None
+    if exc is not None:
+        log.error("background heal task raised an exception", exc_info=exc)
 
 
 def _is_auth_error(exc: BaseException) -> bool:
@@ -122,3 +146,45 @@ def hourly_loop(settings: Settings) -> asyncio.Task[None]:
             await run_once(settings)
 
     return asyncio.create_task(_loop())
+
+
+def make_trigger_heal(
+    settings: Settings,
+    background_tasks: WeakSet[asyncio.Task[None]],
+) -> TriggerHeal:
+    """Factory: build a TriggerHeal closure capturing settings + the WeakSet.
+
+    The returned callable:
+    1. Checks sync_state staleness (>1h or missing) for the repo.
+    2. If stale, schedules asyncio.create_task(run_once(settings)).
+    3. Registers the task in background_tasks WeakSet.
+    4. Attaches _log_exc as a done-callback to surface exceptions in logs.
+
+    Args:
+        settings: App settings (db path, org, interval).
+        background_tasks: WeakSet owned by app.state; populated so lifespan
+            can cancel all tracked tasks on shutdown.
+
+    Returns:
+        An async callable matching the TriggerHeal protocol.
+    """
+
+    async def _trigger_heal(repo: str, conn: aiosqlite.Connection) -> None:
+        cur = await conn.execute(
+            "SELECT last_synced_at FROM sync_state WHERE repo = ?", (repo,)
+        )
+        row = await cur.fetchone()
+        now = datetime.now(timezone.utc)
+        stale = True
+        if row is not None:
+            raw = row[0]
+            last = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            stale = (now - last).total_seconds() > 3600
+        if stale:
+            task: asyncio.Task[None] = asyncio.create_task(run_once(settings))
+            background_tasks.add(task)
+            task.add_done_callback(_log_exc)
+
+    return _trigger_heal  # type: ignore[return-value]
