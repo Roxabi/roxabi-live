@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiosqlite
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from roxabi_live.config import Settings
 from roxabi_live.webhook import hmac_auth
@@ -42,8 +42,16 @@ def _get_webhook_secret(request: Request) -> str:
 
 
 def get_trigger_heal(request: Request) -> TriggerHeal:
-    """FastAPI dependency: retrieve the injected TriggerHeal from app.state."""
-    return request.app.state.trigger_heal  # type: ignore[no-any-return]
+    """FastAPI dependency: retrieve the injected TriggerHeal from app.state.
+
+    Raises 503 when lifespan has not run (e.g. bare TestClient(app) without a
+    `with` block), mirroring the guard pattern used by `_get_db_path` and
+    `_get_webhook_secret`.
+    """
+    trigger_heal: TriggerHeal | None = getattr(request.app.state, "trigger_heal", None)
+    if trigger_heal is None:
+        raise HTTPException(status_code=503, detail="trigger_heal not configured")
+    return trigger_heal
 
 
 async def _read_capped_body(request: Request) -> bytes:
@@ -75,10 +83,11 @@ async def _read_capped_body(request: Request) -> bytes:
 
 
 @router.post("/webhook/github")
-async def github_webhook(
+async def github_webhook(  # noqa: PLR0913 — FastAPI deps + headers, not domain args
     request: Request,
     x_github_event: str | None = Header(default=None),
     x_hub_signature_256: str | None = Header(default=None),
+    trigger_heal: TriggerHeal = Depends(get_trigger_heal),
 ) -> dict[str, object]:
     """Receive and dispatch GitHub webhook events."""
     try:
@@ -96,8 +105,6 @@ async def github_webhook(
         payload: dict[str, object] = json.loads(body or b"{}")
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="invalid JSON payload") from None
-
-    trigger_heal: TriggerHeal = get_trigger_heal(request)
 
     async with aiosqlite.connect(_get_db_path(request)) as conn:
         if x_github_event == "issues":

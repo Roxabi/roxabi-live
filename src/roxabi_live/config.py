@@ -41,7 +41,16 @@ class Settings:
             env = os.environ
 
         raw_interval = env.get("CORPUS_SYNC_INTERVAL_SECONDS", "")
-        interval = float(raw_interval) if raw_interval else _DEFAULT_INTERVAL
+        if raw_interval:
+            try:
+                interval = float(raw_interval)
+            except ValueError as exc:
+                raise ValueError(
+                    f"CORPUS_SYNC_INTERVAL_SECONDS={raw_interval!r}"
+                    " is not a valid float"
+                ) from exc
+        else:
+            interval = _DEFAULT_INTERVAL
 
         return cls(
             corpus_db_path=Path(env.get("CORPUS_DB_PATH", _DEFAULT_DB)),

@@ -44,8 +44,6 @@ async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> 
         "updated_at": issue.get("updated_at"),
         "closed_at": issue.get("closed_at"),
     }
-    await upsert_issue_async(conn, issue_partial)
-
     raw_labels: list[Any] = issue.get("labels") or []
     names: list[str] = []
     for label in raw_labels:
@@ -54,8 +52,17 @@ async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> 
         else:
             names.append(str(label))
 
-    await replace_labels_async(conn, key, names)
-    await conn.commit()
+    # Atomic upsert + label replacement (SC9). aiosqlite's connect()
+    # context manager only closes — it does not commit. We do an explicit
+    # commit on success and rollback on any exception so a crash between
+    # the two writes leaves the prior state intact.
+    try:
+        await upsert_issue_async(conn, issue_partial)
+        await replace_labels_async(conn, key, names)
+        await conn.commit()
+    except Exception:
+        await conn.rollback()
+        raise
 
 
 async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> None:

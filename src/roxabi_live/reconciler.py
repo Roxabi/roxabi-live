@@ -46,7 +46,13 @@ class TriggerHeal(Protocol):
 
 
 def _log_exc(task: asyncio.Task[None]) -> None:
-    """Done-callback: log any exception raised by a background task."""
+    """Done-callback: log any exception raised by a background task.
+
+    The cancelled-guard is required because `Task.exception()` *raises*
+    `CancelledError` on cancelled tasks (not returns it); without the
+    guard, normal shutdown would propagate CancelledError into the
+    callback and crash silently.
+    """
     exc = task.exception() if not task.cancelled() else None
     if exc is not None:
         log.error("background heal task raised an exception", exc_info=exc)
@@ -181,7 +187,7 @@ def make_trigger_heal(
             last = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
             if last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
-            stale = (now - last).total_seconds() > 3600
+            stale = (now - last).total_seconds() > settings.corpus_sync_interval_seconds
         if stale:
             task: asyncio.Task[None] = asyncio.create_task(run_once(settings))
             background_tasks.add(task)

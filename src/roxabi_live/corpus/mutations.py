@@ -22,11 +22,7 @@ from roxabi_live.corpus.sync import (
     INSERT_EDGE_SQL,
     INSERT_LABEL_SQL,
     UPSERT_ISSUE_FROM_WEBHOOK_SQL,
-    _extract_from_labels,
 )
-
-# Re-export for callers that need label derivation without underscore import.
-extract_from_labels = _extract_from_labels
 
 
 async def upsert_issue_async(

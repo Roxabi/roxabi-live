@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator
 from weakref import WeakSet
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -67,9 +67,10 @@ async def _root() -> RedirectResponse:
 
 
 @app.get("/health")
-async def health() -> dict[str, Any]:
+async def health(request: Request) -> dict[str, Any]:
     """Health check — returns db path, reachability, and issue count."""
-    db = Settings.from_env().corpus_db_path
+    settings: Settings | None = getattr(request.app.state, "settings", None)
+    db = settings.corpus_db_path if settings else Settings.from_env().corpus_db_path
     db_reachable = False
     issue_count = 0
     try:

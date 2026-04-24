@@ -63,9 +63,6 @@ class TestHealTaskExceptionLogged:
         bg_tasks: WeakSet[asyncio.Task[None]] = WeakSet()
         trigger_heal = make_trigger_heal(s, bg_tasks)
 
-        async def _raise() -> None:
-            raise RuntimeError("heal task blew up")
-
         # Monkey-patch run_once to raise inside the scheduled task
         import roxabi_live.reconciler as rec_module
 
@@ -166,6 +163,8 @@ class TestLifespanShutdownCancelsHealTasks:
         rec_module.run_once = _fast_run_once  # type: ignore[assignment]
 
         try:
+            import time
+
             from fastapi import FastAPI
 
             from roxabi_live.app import lifespan
@@ -173,21 +172,32 @@ class TestLifespanShutdownCancelsHealTasks:
             test_app = FastAPI(lifespan=lifespan)
 
             # Run lifespan startup
-            async with lifespan(test_app):
-                # Now switch run_once to the long-running version so
-                # the next trigger_heal call spawns a long task
-                rec_module.run_once = _long_running  # type: ignore[assignment]
+            shutdown_start: float = 0.0
+            shutdown_elapsed: float = 0.0
+            try:
+                async with lifespan(test_app):
+                    # Now switch run_once to the long-running version so
+                    # the next trigger_heal call spawns a long task
+                    rec_module.run_once = _long_running  # type: ignore[assignment]
 
-                # Manually inject a sleeping task into background_tasks
-                async def _sleeping() -> None:
-                    await asyncio.sleep(60)
+                    # Manually inject a sleeping task into background_tasks
+                    async def _sleeping() -> None:
+                        await asyncio.sleep(60)
 
-                task: asyncio.Task[None] = asyncio.create_task(_sleeping())
-                test_app.state.background_tasks.add(task)
+                    task: asyncio.Task[None] = asyncio.create_task(_sleeping())
+                    test_app.state.background_tasks.add(task)
+                    shutdown_start = time.monotonic()
+            finally:
+                shutdown_elapsed = time.monotonic() - shutdown_start
 
-            # After lifespan exit: task must be cancelled (not pending)
-            assert task.cancelled() or task.done(), (
-                "Expected heal task to be cancelled on lifespan shutdown"
+            # SC15: lifespan exit must cancel the sleeping task in <1s
+            assert shutdown_elapsed < 1.0, (
+                f"Lifespan shutdown took {shutdown_elapsed:.2f}s; SC15 budget is 1s"
+            )
+            # Task must be done (cancelled) — not still pending
+            assert task.done(), "Expected heal task to be done after lifespan shutdown"
+            assert task.cancelled(), (
+                "Expected heal task to be cancelled, not completed normally"
             )
 
             with warnings.catch_warnings(record=True) as w:

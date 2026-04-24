@@ -172,7 +172,7 @@ class TestUpsertIssueAsync:
                 "a1",  # lane
                 "P1",  # priority
                 "F-lite",  # size
-                None,
+                "In Progress",  # status
             ),
         )
         await db.commit()
@@ -199,15 +199,16 @@ class TestUpsertIssueAsync:
         )
         row = await cur.fetchone()
         assert row is not None
-        title, state, milestone, lane, priority, size, _status = row
+        title, state, milestone, lane, priority, size, status = row
         # Updated fields
         assert title == "Updated title"
         assert state == "closed"
-        # Preserved non-payload fields
+        # Preserved non-payload fields (SC13)
         assert milestone == "v1.0", f"milestone was NULLed: {milestone!r}"
         assert lane == "a1", f"lane was NULLed: {lane!r}"
         assert priority == "P1", f"priority was NULLed: {priority!r}"
         assert size == "F-lite", f"size was NULLed: {size!r}"
+        assert status == "In Progress", f"status was NULLed: {status!r}"
 
     async def test_sync_and_async_produce_identical_rows(self, tmp_path: Path) -> None:
         """Async + sync upserts on the same key produce identical rows.
@@ -289,13 +290,31 @@ class TestUpsertIssueAsync:
             )
             async_row = await cur.fetchone()
 
-        # Core fields should match (async preserves milestone/lane/etc from DB)
+        # All 15 columns must match — both paths share the same SQL constants
+        # so the row layout written by sync upsert_issue and async
+        # upsert_issue_async must be identical (SC7).
         assert sync_row is not None
         assert async_row is not None
-        # key, repo, number, title, state, url match
-        for i in range(6):
+        column_names = (
+            "key",
+            "repo",
+            "number",
+            "title",
+            "state",
+            "url",
+            "created_at",
+            "updated_at",
+            "closed_at",
+            "milestone",
+            "is_stub",
+            "lane",
+            "priority",
+            "size",
+            "status",
+        )
+        for i, name in enumerate(column_names):
             assert sync_row[i] == async_row[i], (
-                f"Column {i} mismatch: {sync_row[i]!r} vs {async_row[i]!r}"
+                f"Column {name}: {sync_row[i]!r} (sync) vs {async_row[i]!r} (async)"
             )
 
 
