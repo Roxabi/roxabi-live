@@ -25,6 +25,68 @@ _BARE_INT = re.compile(r"^\d+$")
 _SHORT_FORM = re.compile(r"^#(\d+)$")
 _FULL_KEY = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 
+_LANE_PREFIX = "graph:lane/"
+_SIZE_PREFIX = "size:"
+_LEGACY_SIZE_RAW = {"XS", "S", "M", "L", "XL"}
+_LEGACY_SIZE_MAP = {"M": "F-lite"}  # closed-issue drift → canonical
+
+_PRIORITY_EXACT: dict[str, str] = {
+    "P0": "P0",
+    "priority:P0": "P0",
+    "P1-high": "P1",
+    "priority:high": "P1",
+    "priority:P1": "P1",
+    "P2-medium": "P2",
+    "priority:medium": "P2",
+    "priority:P2": "P2",
+    "P3-low": "P3",
+    "priority:low": "P3",
+    "priority: low": "P3",
+    "priority:P3": "P3",
+}
+
+
+def _derive_lane(labels: list[str]) -> str | None:
+    for lbl in labels:
+        if lbl.startswith(_LANE_PREFIX):
+            return lbl[len(_LANE_PREFIX) :]
+    return None
+
+
+def _derive_priority(labels: list[str]) -> str | None:
+    for lbl in labels:
+        if lbl in _PRIORITY_EXACT:
+            return _PRIORITY_EXACT[lbl]
+    return None
+
+
+def _derive_size(labels: list[str]) -> str | None:
+    for lbl in labels:
+        if lbl.startswith(_SIZE_PREFIX):
+            raw = lbl[len(_SIZE_PREFIX) :]
+            return _LEGACY_SIZE_MAP.get(raw, raw)
+    for lbl in labels:
+        if lbl in _LEGACY_SIZE_RAW:
+            return lbl
+    return None
+
+
+def _extract_from_labels(labels: list[str]) -> dict[str, str | None]:
+    """Derive lane/priority/size from an issue's label list.
+
+    Vocabulary (first match wins per field):
+    - lane:     ``graph:lane/<x>`` → ``<x>``
+    - priority: canonical ``priority:P0..P3`` / bare ``P0``; legacy
+                ``P1-high`` / ``priority:high`` → ``P1`` (and P2/P3 variants)
+    - size:     canonical ``size:S|F-lite|F-full``; legacy ``size:M`` →
+                ``F-lite``; fallback to raw ``XS|S|M|L|XL`` bare labels
+    """
+    return {
+        "lane": _derive_lane(labels),
+        "priority": _derive_priority(labels),
+        "size": _derive_size(labels),
+    }
+
 
 def _parse_project_fields(node: dict[str, Any], repo: str) -> dict[str, str | None]:
     """Extract lane/priority/size/status from a GraphQL issue node's projectItems.

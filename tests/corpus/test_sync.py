@@ -14,6 +14,7 @@ import pytest
 
 from roxabi_live.corpus.schema import bootstrap, connect
 from roxabi_live.corpus.sync import (
+    _extract_from_labels,
     canonical_key,
     log_rate_limit,
     upsert_edges,
@@ -83,6 +84,68 @@ def _base_node(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     if extra:
         node.update(extra)
     return node
+
+
+# ---------------------------------------------------------------------------
+# _extract_from_labels — derive lane/priority/size from label vocab (#54)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_from_labels_canonical_size() -> None:
+    assert _extract_from_labels(["size:S"]) == {
+        "lane": None,
+        "priority": None,
+        "size": "S",
+    }
+    assert _extract_from_labels(["size:F-lite"])["size"] == "F-lite"
+    assert _extract_from_labels(["size:F-full"])["size"] == "F-full"
+
+
+def test_extract_from_labels_canonical_priority() -> None:
+    assert _extract_from_labels(["priority:P0"])["priority"] == "P0"
+    assert _extract_from_labels(["priority:P1"])["priority"] == "P1"
+    assert _extract_from_labels(["priority:P2"])["priority"] == "P2"
+    assert _extract_from_labels(["priority:P3"])["priority"] == "P3"
+    assert _extract_from_labels(["P0"])["priority"] == "P0"
+
+
+def test_extract_from_labels_legacy_priority() -> None:
+    assert _extract_from_labels(["P1-high"])["priority"] == "P1"
+    assert _extract_from_labels(["priority:high"])["priority"] == "P1"
+    assert _extract_from_labels(["P2-medium"])["priority"] == "P2"
+    assert _extract_from_labels(["priority:medium"])["priority"] == "P2"
+    assert _extract_from_labels(["P3-low"])["priority"] == "P3"
+    assert _extract_from_labels(["priority:low"])["priority"] == "P3"
+    assert _extract_from_labels(["priority: low"])["priority"] == "P3"
+
+
+def test_extract_from_labels_legacy_size_m_maps_to_flite() -> None:
+    """Legacy drift: `size:M` (seen only on closed issues) → canonical F-lite."""
+    assert _extract_from_labels(["size:M"])["size"] == "F-lite"
+
+
+def test_extract_from_labels_lane() -> None:
+    assert _extract_from_labels(["graph:lane/a1"])["lane"] == "a1"
+    assert _extract_from_labels(["graph:lane/standalone"])["lane"] == "standalone"
+
+
+def test_extract_from_labels_all_fields() -> None:
+    result = _extract_from_labels(
+        ["size:F-lite", "priority:P2", "graph:lane/a1", "random-label"]
+    )
+    assert result == {"lane": "a1", "priority": "P2", "size": "F-lite"}
+
+
+def test_extract_from_labels_empty() -> None:
+    assert _extract_from_labels([]) == {"lane": None, "priority": None, "size": None}
+
+
+def test_extract_from_labels_first_match_wins() -> None:
+    """First matching label wins per field — mirrors dep_graph/v6/parse.py semantics."""
+    result = _extract_from_labels(["size:S", "size:F-full"])
+    assert result["size"] == "S"
+    result = _extract_from_labels(["priority:P1", "priority:P3"])
+    assert result["priority"] == "P1"
 
 
 # ---------------------------------------------------------------------------
