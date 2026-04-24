@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS issues (
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS edges (
     src_key     TEXT NOT NULL,
     dst_key     TEXT NOT NULL,
     kind        TEXT NOT NULL DEFAULT 'parent',
-    PRIMARY KEY (src_key, dst_key)
+    PRIMARY KEY (src_key, dst_key, kind)
 );
 
 CREATE TABLE IF NOT EXISTS sync_state (
@@ -62,6 +62,47 @@ def _alter_column(conn: sqlite3.Connection, sql: str) -> None:
             raise
 
 
+def _edges_pk_includes_kind(conn: sqlite3.Connection) -> bool:
+    """True when the live `edges` table PK already includes the `kind` column."""
+    rows = conn.execute("PRAGMA table_info(edges)").fetchall()
+    pk_cols = {r[1] for r in rows if r[5] > 0}
+    return "kind" in pk_cols
+
+
+def _migrate_edges_pk(conn: sqlite3.Connection) -> None:
+    """Rebuild edges with PK (src_key, dst_key, kind). SQLite has no DROP CONSTRAINT.
+
+    All statements run inside an explicit transaction so an interrupt between
+    DROP and RENAME rolls back cleanly; `executescript` auto-commits per
+    statement and cannot offer that guarantee.
+    """
+    if _edges_pk_includes_kind(conn):
+        return
+    try:
+        conn.execute("BEGIN")
+        conn.execute(
+            """
+            CREATE TABLE edges_new (
+                src_key     TEXT NOT NULL,
+                dst_key     TEXT NOT NULL,
+                kind        TEXT NOT NULL DEFAULT 'parent',
+                PRIMARY KEY (src_key, dst_key, kind)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO edges_new (src_key, dst_key, kind) "
+            "SELECT src_key, dst_key, kind FROM edges"
+        )
+        conn.execute("DROP TABLE edges")
+        conn.execute("ALTER TABLE edges_new RENAME TO edges")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_edges_dst ON edges(dst_key)")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """Apply incremental migrations to existing DBs."""
     # Migration 1 — edges.kind (SCHEMA_VERSION 1 -> 2)
@@ -75,6 +116,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _alter_column(conn, "ALTER TABLE issues ADD COLUMN priority TEXT")
     _alter_column(conn, "ALTER TABLE issues ADD COLUMN size TEXT")
     _alter_column(conn, "ALTER TABLE issues ADD COLUMN status TEXT")
+
+    # Migration 3 — edges PK includes `kind` (SCHEMA_VERSION 3 -> 4).
+    # CREATE TABLE IF NOT EXISTS above cannot alter an existing PK.
+    _migrate_edges_pk(conn)
 
 
 def bootstrap(db_path: pathlib.Path) -> None:

@@ -155,3 +155,134 @@ def test_migrate_idempotent_on_v3(tmp_path: Path) -> None:
     db_path = tmp_path / "corpus.db"
     bootstrap(db_path)
     bootstrap(db_path)  # must not raise
+
+
+# V3-era edges DDL: PK on (src_key, dst_key) only. Used to seed a pre-v4 DB.
+_V3_EDGES_SQL = """
+CREATE TABLE edges (
+    src_key     TEXT NOT NULL,
+    dst_key     TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'parent',
+    PRIMARY KEY (src_key, dst_key)
+);
+CREATE INDEX ix_edges_dst ON edges(dst_key);
+"""
+
+
+def _edges_pk_columns(conn: sqlite3.Connection) -> list[str]:
+    """Return PK column names for `edges`, ordered by PK position."""
+    rows = conn.execute("PRAGMA table_info(edges)").fetchall()
+    pk_rows = sorted((r for r in rows if r[5] > 0), key=lambda r: r[5])
+    return [r[1] for r in pk_rows]
+
+
+def test_fresh_edges_pk_has_kind(tmp_path: Path) -> None:
+    """Fresh bootstrap must produce `edges` with PK (src_key, dst_key, kind)."""
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        assert _edges_pk_columns(conn) == ["src_key", "dst_key", "kind"]
+    finally:
+        conn.close()
+
+
+def test_migration_v3_to_v4_preserves_edges(tmp_path: Path) -> None:
+    """A v3 DB with edges migrates to v4 PK without losing rows."""
+    db_path = tmp_path / "corpus.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_V3_EDGES_SQL)
+    conn.executemany(
+        "INSERT INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)",
+        [
+            ("A", "B", "parent"),
+            ("B", "C", "parent"),
+            ("X", "Y", "blocks"),
+        ],
+    )
+    conn.execute("PRAGMA user_version = 3")
+    conn.commit()
+    conn.close()
+
+    bootstrap(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+        rows = set(conn.execute("SELECT src_key, dst_key, kind FROM edges").fetchall())
+        user_version = conn.execute("PRAGMA user_version").fetchone()[0]
+        pk_cols = _edges_pk_columns(conn)
+    finally:
+        conn.close()
+
+    assert count == 3
+    assert rows == {
+        ("A", "B", "parent"),
+        ("B", "C", "parent"),
+        ("X", "Y", "blocks"),
+    }
+    assert user_version == SCHEMA_VERSION
+    assert pk_cols == ["src_key", "dst_key", "kind"]
+
+
+def test_migration_v2_to_v4_upgrades_edges_pk_and_preserves_data(
+    tmp_path: Path,
+) -> None:
+    """Full v2 -> v4 path: projectV2 columns added AND edges PK upgraded, rows kept."""
+    db_path = tmp_path / "corpus.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_V2_SCHEMA_SQL)
+    conn.executemany(
+        "INSERT INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)",
+        [("A", "B", "parent"), ("X", "Y", "blocks")],
+    )
+    conn.execute("PRAGMA user_version = 2")
+    conn.commit()
+    conn.close()
+
+    bootstrap(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        issue_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(issues)").fetchall()
+        }
+        edge_rows = set(
+            conn.execute("SELECT src_key, dst_key, kind FROM edges").fetchall()
+        )
+        pk_cols = _edges_pk_columns(conn)
+        user_version = conn.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert {"lane", "priority", "size", "status"} <= issue_cols
+    assert edge_rows == {("A", "B", "parent"), ("X", "Y", "blocks")}
+    assert pk_cols == ["src_key", "dst_key", "kind"]
+    assert user_version == SCHEMA_VERSION
+
+
+def test_migration_v3_to_v4_idempotent(tmp_path: Path) -> None:
+    """Running bootstrap twice on a v3 DB converges to the same v4 state."""
+    db_path = tmp_path / "corpus.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_V3_EDGES_SQL)
+    conn.execute(
+        "INSERT INTO edges (src_key, dst_key, kind) VALUES ('A', 'B', 'parent')"
+    )
+    conn.execute("PRAGMA user_version = 3")
+    conn.commit()
+    conn.close()
+
+    bootstrap(db_path)
+    bootstrap(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+        pk_cols = _edges_pk_columns(conn)
+    finally:
+        conn.close()
+
+    assert count == 1
+    assert pk_cols == ["src_key", "dst_key", "kind"]
