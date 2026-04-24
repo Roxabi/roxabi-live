@@ -25,46 +25,67 @@ _BARE_INT = re.compile(r"^\d+$")
 _SHORT_FORM = re.compile(r"^#(\d+)$")
 _FULL_KEY = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 
+_LANE_PREFIX = "graph:lane/"
+_SIZE_PREFIX = "size:"
+_LEGACY_SIZE_RAW = {"XS", "S", "M", "L", "XL"}
+_LEGACY_SIZE_MAP = {"M": "F-lite"}  # closed-issue drift → canonical
 
-def _parse_project_fields(node: dict[str, Any], repo: str) -> dict[str, str | None]:
-    """Extract lane/priority/size/status from a GraphQL issue node's projectItems.
+_PRIORITY_EXACT: dict[str, str] = {
+    "P0": "P0",
+    "priority:P0": "P0",
+    "P1-high": "P1",
+    "priority:high": "P1",
+    "priority:P1": "P1",
+    "P2-medium": "P2",
+    "priority:medium": "P2",
+    "priority:P2": "P2",
+    "P3-low": "P3",
+    "priority:low": "P3",
+    "priority: low": "P3",
+    "priority:P3": "P3",
+}
 
-    Picks the board whose title matches `{repo_short_name} board` (convention).
-    Returns all-None dict when no matching board is found.
+
+def _derive_lane(labels: list[str]) -> str | None:
+    for lbl in labels:
+        if lbl.startswith(_LANE_PREFIX):
+            return lbl[len(_LANE_PREFIX) :]
+    return None
+
+
+def _derive_priority(labels: list[str]) -> str | None:
+    for lbl in labels:
+        if lbl in _PRIORITY_EXACT:
+            return _PRIORITY_EXACT[lbl]
+    return None
+
+
+def _derive_size(labels: list[str]) -> str | None:
+    for lbl in labels:
+        if lbl.startswith(_SIZE_PREFIX):
+            raw = lbl[len(_SIZE_PREFIX) :]
+            return _LEGACY_SIZE_MAP.get(raw, raw)
+    for lbl in labels:
+        if lbl in _LEGACY_SIZE_RAW:
+            return lbl
+    return None
+
+
+def _extract_from_labels(labels: list[str]) -> dict[str, str | None]:
+    """Derive lane/priority/size from an issue's label list.
+
+    Vocabulary (first match wins per field):
+    - lane:     ``graph:lane/<x>`` → ``<x>``
+    - priority: canonical ``priority:P0..P3`` / bare ``P0``; legacy
+                ``P1-high`` / ``priority:high`` → ``P1`` (and P2/P3 variants)
+    - size:     canonical ``size:S|F-lite|F-full``; legacy ``size:M`` →
+                ``F-lite``; fallback to raw ``XS|S|M|L|XL`` bare labels
     """
-    null_result: dict[str, str | None] = {
-        "lane": None,
-        "priority": None,
-        "size": None,
-        "status": None,
+    return {
+        "lane": _derive_lane(labels),
+        "priority": _derive_priority(labels),
+        "size": _derive_size(labels),
     }
-    short_name = repo.split("/", 1)[-1]
-    expected_title = f"{short_name} board"
-    project_items: dict[str, Any] = node.get("projectItems") or {}
-    items: list[Any] = project_items.get("nodes") or []
-    for item in items:
-        item_dict: dict[str, Any] = item or {}
-        project: dict[str, Any] = item_dict.get("project") or {}
-        if project.get("title") != expected_title:
-            continue
-        fields: dict[str, str | None] = {
-            "lane": None,
-            "priority": None,
-            "size": None,
-            "status": None,
-        }
-        fv_container: dict[str, Any] = item_dict.get("fieldValues") or {}
-        fv_nodes: list[Any] = fv_container.get("nodes") or []
-        for fv in fv_nodes:
-            fv_dict: dict[str, Any] = fv or {}
-            field_obj: dict[str, Any] = fv_dict.get("field") or {}
-            raw_name: Any = field_obj.get("name")
-            fname = (str(raw_name) if raw_name is not None else "").lower()
-            if fname in fields:
-                raw_val: Any = fv_dict.get("name")
-                fields[fname] = str(raw_val) if raw_val is not None else None
-        return fields
-    return null_result
 
 
 def canonical_key(ref: int | str, repo: str) -> str:
@@ -232,10 +253,11 @@ def run_repo_sync(
                 ),
                 "is_stub": 0,
             }
-            issue.update(_parse_project_fields(node, repo))
+            labels = [n["name"] for n in node["labels"]["nodes"]]
+            issue.update(_extract_from_labels(labels))
+            issue["status"] = None
             upsert_issue(conn, issue)
 
-            labels = [n["name"] for n in node["labels"]["nodes"]]
             upsert_labels(conn, key, labels)
 
             # Parent/child relationships (subIssues/parent)

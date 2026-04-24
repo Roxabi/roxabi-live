@@ -35,25 +35,6 @@ query($owner: String!, $name: String!, $cursor: String, $since: DateTime) {
         parent { number repository { nameWithOwner } }
         blockedBy(first: 50) { nodes { number repository { nameWithOwner } } }
         blocking(first: 50) { nodes { number repository { nameWithOwner } } }
-        projectItems(first: 5) {
-          nodes {
-            project {
-              title
-            }
-            fieldValues(first: 20) {
-              nodes {
-                ... on ProjectV2ItemFieldSingleSelectValue {
-                  name
-                  field {
-                    ... on ProjectV2FieldCommon {
-                      name
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
       }
     }
   }
