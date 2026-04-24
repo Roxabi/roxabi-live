@@ -204,7 +204,8 @@ async function loadRepos() {
   try {
     const resp = await fetch('/api/repos');
     if (!resp.ok) throw new Error(`/api/repos ${resp.status}`);
-    return resp.json();
+    const j = await resp.json();
+    return (j.repos ?? []).map(r => r.repo);
   } catch {
     return [...new Set(state.nodes.map(n => n.repo))].sort();
   }
