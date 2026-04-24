@@ -14,4 +14,8 @@ async def test_health_ok() -> None:
         response = await client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert "db" in body
+    assert isinstance(body["db_reachable"], bool)
+    assert isinstance(body["issue_count"], int)

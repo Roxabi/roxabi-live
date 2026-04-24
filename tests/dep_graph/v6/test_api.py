@@ -175,5 +175,7 @@ async def test_get_repos(db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         resp = await client.get("/api/repos")
 
     assert resp.status_code == 200
-    repos = resp.json()
-    assert repos == ["Roxabi/x", "Roxabi/y"]
+    data = resp.json()
+    assert "repos" in data
+    # DB fixture has no sync_state rows → empty list
+    assert data["repos"] == []
