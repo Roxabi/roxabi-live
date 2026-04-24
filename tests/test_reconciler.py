@@ -10,6 +10,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,9 +39,13 @@ class TestRunOnce:
             await coro
 
     @pytest.mark.asyncio
-    async def test_run_once_calls_corpus_sync(self) -> None:
+    async def test_run_once_calls_corpus_sync(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """run_once must call roxabi_live.corpus.sync.run_sync exactly once."""
-        # Arrange
+        # Arrange — isolate DB path (CI has no ~/.roxabi/)
+        db_file = tmp_path / "corpus.db"
+        monkeypatch.setenv("CORPUS_DB_PATH", str(db_file))
         mock_run_sync = MagicMock(
             return_value={"repos": 2, "pages": 3, "issues": 42, "stubs": 1, "errors": 0}
         )
