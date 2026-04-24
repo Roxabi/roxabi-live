@@ -9,7 +9,6 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import json
@@ -17,7 +16,6 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-import aiosqlite
 import pytest
 from fastapi.testclient import TestClient
 
@@ -100,15 +98,21 @@ def _issues_payload(
 
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
-    """Create a real sqlite file with the corpus schema and return its path."""
+    """Create a real sqlite file with the corpus schema and return its path.
+
+    Uses synchronous sqlite3 — the schema is pure DDL with no async I/O, and
+    avoiding `asyncio.run()` in a sync fixture sidesteps event-loop collisions
+    under pytest-asyncio strict/auto mode.
+    """
+    import sqlite3
+
     path = tmp_path / "corpus.db"
-
-    async def _init() -> None:
-        async with aiosqlite.connect(path) as conn:
-            await conn.executescript(_SCHEMA_SQL)
-            await conn.commit()
-
-    asyncio.run(_init())
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(_SCHEMA_SQL)
+        conn.commit()
+    finally:
+        conn.close()
     return path
 
 

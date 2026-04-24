@@ -43,19 +43,6 @@ def _success_dict() -> dict[str, int]:
     return {"repos": 1, "pages": 1, "issues": 10, "stubs": 0, "errors": 0}
 
 
-@pytest.fixture(autouse=True)
-def reset_reconciler_auth_state() -> None:
-    """Reset auth-failure counters before each test (no-op in RED phase).
-
-    Once T8 adds _auth_failures / _halted to the reconciler module these
-    assignments ensure tests start from a clean state.
-    """
-    if hasattr(reconciler, "_auth_failures"):
-        reconciler._auth_failures = 0  # type: ignore[attr-defined]
-    if hasattr(reconciler, "_halted"):
-        reconciler._halted.clear()  # type: ignore[attr-defined]
-
-
 class TestRunOnce:
     """reconciler.run_once(settings) — async, delegates to corpus sync."""
 

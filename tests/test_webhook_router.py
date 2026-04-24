@@ -105,17 +105,20 @@ def _issues_payload(
 
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
-    """Create a real sqlite file with the corpus schema and return its path."""
+    """Create a real sqlite file with the corpus schema and return its path.
+
+    Uses synchronous sqlite3 — pure DDL needs no async; avoids `asyncio.run`
+    in a sync fixture under pytest-asyncio strict/auto mode.
+    """
+    import sqlite3
+
     path = tmp_path / "corpus.db"
-
-    async def _init() -> None:
-        async with aiosqlite.connect(path) as conn:
-            await conn.executescript(_SCHEMA_SQL)
-            await conn.commit()
-
-    import asyncio
-
-    asyncio.run(_init())
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(_SCHEMA_SQL)
+        conn.commit()
+    finally:
+        conn.close()
     return path
 
 

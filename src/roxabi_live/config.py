@@ -10,7 +10,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
+
+if TYPE_CHECKING:
+    from fastapi import Request
 
 _DEFAULT_DB = Path.home() / ".roxabi" / "corpus.db"
 _DEFAULT_ORG = "Roxabi"
@@ -58,3 +61,16 @@ class Settings:
             github_webhook_secret=env.get("GITHUB_WEBHOOK_SECRET", ""),
             corpus_sync_interval_seconds=interval,
         )
+
+
+def get_settings(request: Request) -> Settings:
+    """FastAPI-friendly resolver for app settings.
+
+    Reads from ``request.app.state.settings`` when the lifespan has run, and
+    falls back to ``Settings.from_env()`` for tests that bypass lifespan
+    (e.g. bare ``TestClient(app)`` without a ``with`` block).
+    """
+    settings: Settings | None = getattr(request.app.state, "settings", None)
+    if settings is not None:
+        return settings
+    return Settings.from_env()

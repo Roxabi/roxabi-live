@@ -10,17 +10,13 @@ from typing import Any
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request
 
-from roxabi_live.config import Settings
+from roxabi_live.config import get_settings
 
 router = APIRouter(prefix="/api", tags=["issues"])
 
 
 def _get_db_path(request: Request) -> Path:
-    """Resolve corpus_db_path from app.state.settings if available."""
-    settings: Settings | None = getattr(request.app.state, "settings", None)
-    if settings is not None:
-        return settings.corpus_db_path
-    return Settings.from_env().corpus_db_path
+    return get_settings(request).corpus_db_path
 
 
 def _parse_key(key: str) -> tuple[str, int | None]:

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import aiosqlite
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
-from roxabi_live.config import Settings
+from roxabi_live.config import get_settings
 from roxabi_live.webhook import hmac_auth
 from roxabi_live.webhook.handlers import handle_deps, handle_issues, handle_sub_issues
 
@@ -26,19 +26,11 @@ router = APIRouter(tags=["webhook"])
 
 
 def _get_db_path(request: Request) -> Path:
-    """Resolve corpus_db_path from app.state.settings if available."""
-    settings: Settings | None = getattr(request.app.state, "settings", None)
-    if settings is not None:
-        return settings.corpus_db_path
-    return Settings.from_env().corpus_db_path
+    return get_settings(request).corpus_db_path
 
 
 def _get_webhook_secret(request: Request) -> str:
-    """Resolve github_webhook_secret from app.state.settings if available."""
-    settings: Settings | None = getattr(request.app.state, "settings", None)
-    if settings is not None:
-        return settings.github_webhook_secret
-    return Settings.from_env().github_webhook_secret
+    return get_settings(request).github_webhook_secret
 
 
 def get_trigger_heal(request: Request) -> TriggerHeal:
