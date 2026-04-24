@@ -1,0 +1,53 @@
+---
+title: Webhook layer cleanup — central config, decouple reconciler, consolidate SQL
+issue: 58
+status: approved
+tier: F-lite
+date: 2026-04-24
+---
+
+## Problem
+
+PR #55 review surfaced seven correlated findings on the webhook layer (5 architecture + 2 backend). Symptoms:
+
+- `_db_path()` is duplicated across `api/issues.py`, `webhook/router.py`, and `reconciler.py`. Env vars (`GITHUB_ORG`, `GITHUB_WEBHOOK_SECRET`, `CORPUS_SYNC_INTERVAL_SECONDS`) are read inline at multiple call sites.
+- Webhook router fires `asyncio.create_task(...)` without retaining references — tasks can be garbage-collected mid-flight, exceptions are silently swallowed, and there is no shutdown cancellation.
+- `webhook/router.py` imports `reconciler` directly, coupling the HTTP layer to a background-loop module.
+- Webhook handlers issue raw SQL (DELETE+INSERT label dance, ad-hoc upserts) that diverges from `corpus/sync.py`'s `upsert_edges`/`upsert_issue` semantics. New schema columns added to the sync path silently NULL for webhook-origin rows.
+- Label reconciliation in `handle_issues` is non-transactional — a crash mid-DELETE+INSERT corrupts the labels set.
+- `await request.json()` after `await request.body()` re-reads an already-consumed stream.
+
+Drift between webhook + sync code paths means corpus rows differ depending on which writer touched them last. Bug surface grows with every schema change.
+
+## Who
+
+- **Primary:** Backend developers maintaining the corpus sync + webhook layer (writes are split across two modules with different invariants).
+- **Secondary:** Operators relying on `dashboard.roxabi.dev` data freshness — silent webhook task failures degrade the live view without alerting.
+
+## Constraints
+
+- Blocker #57 (edges PK migration) must be merged first — done (closed). Schema is now `(src, dst, kind)` so SQL consolidation lands on the correct PK.
+- Cannot break GitHub webhook contract — HMAC verification, headers, and JSON payload shape stay as-is.
+- Reconciler hourly heal loop + startup one-shot must keep working through the protocol indirection.
+- Single-domain refactor (backend Python) — F-lite scope.
+- Behavior-preserving: webhook handlers still update issues + edges + labels with the same end state, only via shared helpers.
+
+## Out of Scope
+
+- Frontend changes (`frontend/`, dep-graph renderers).
+- Adding new webhook event types beyond `issues`/`sub_issues`/`dependencies` already handled.
+- Switching ORMs / introducing SQLAlchemy / migrating off `aiosqlite`.
+- Reconciler scheduling changes (interval, jitter, concurrency).
+- Observability/metrics additions beyond logging exceptions from tracked async tasks.
+- Performance tuning.
+
+## Complexity
+
+**Tier: F-lite** — Scope is bounded by the seven review findings. Single domain (backend). Touches ~6–8 files (`config` new + `api/issues.py` + `webhook/router.py` + `reconciler.py` + `corpus/sync.py` + `corpus/mutations.py` + `app.py` + tests). No new external dependencies, no new architectural patterns beyond a small `TriggerHeal` protocol for DI.
+
+Signals:
+- Clear scope from review findings (✓ F-lite)
+- Single domain — backend (✓ F-lite)
+- No unknowns: each finding has a confidence ≥78% and a named fix (✓ F-lite)
+- > 3 files touched (✗ S)
+- No multi-domain or new arch patterns (✗ F-full)
