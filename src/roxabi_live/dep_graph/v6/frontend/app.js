@@ -227,4 +227,21 @@ async function init() {
   }
 }
 
+// ─── Theme ────────────────────────────────────────────────────────────────
+const themeBtn = $('theme-btn');
+const htmlEl   = document.documentElement;
+let theme = localStorage.getItem('v6:theme')
+  || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+
+function applyTheme(t) {
+  htmlEl.setAttribute('data-theme', t);
+  themeBtn.textContent = t === 'dark' ? '🌙' : '☀️';
+  localStorage.setItem('v6:theme', t);
+}
+themeBtn.addEventListener('click', () => {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  applyTheme(theme);
+});
+applyTheme(theme);
+
 init();
