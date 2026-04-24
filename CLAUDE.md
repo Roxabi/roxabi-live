@@ -8,11 +8,11 @@ Let:
 
 ## Project
 
-**Roxabi Live** — operations cockpit (FastAPI + aiosqlite + cloudflared)
+**Roxabi Live** — operations cockpit (FastAPI + aiosqlite + Tailscale Funnel)
 - Exposes `~/.roxabi/corpus.db` via live HTTP API (`GET /api/*`)
-- Receives GitHub org webhooks for near-real-time updates
+- Receives GitHub org webhooks at `POST /webhook/github` (HMAC-gated)
 - Frontend: static HTML/JS (dep-graph tab first, see spec #866)
-- Public via cloudflared tunnel at `dashboard.roxabi.dev`
+- Public via Tailscale Funnel on M₁ at `https://roxabituwer.goose-logarithm.ts.net/` (cloudflared setup deferred pending `roxabi.dev` zone migration from OVH)
 
 → `docs/ARCHITECTURE.md` (to be created)
 
@@ -114,5 +114,5 @@ Rules: add/delete/move → update P | new `src/roxabi_live/` subdir → nearest 
 Log dir: `~/.local/state/roxabi-live/logs/`
 
 Programs added per spec slice:
-- Slice 3: `dashboard.conf` (FastAPI + uvicorn)
-- Slice 2: `cloudflared.conf` (tunnel daemon)
+- Slice 3: `live.conf` (FastAPI + uvicorn) — installed on M₁ as `~/projects/conf.d/live.conf`, program name `live`
+- Slice 2: `cloudflared.conf` (tunnel daemon) — not deployed; Tailscale Funnel used instead on M₁
