@@ -70,24 +70,37 @@ def _edges_pk_includes_kind(conn: sqlite3.Connection) -> bool:
 
 
 def _migrate_edges_pk(conn: sqlite3.Connection) -> None:
-    """Rebuild edges with PK (src_key, dst_key, kind). SQLite has no DROP CONSTRAINT."""
+    """Rebuild edges with PK (src_key, dst_key, kind). SQLite has no DROP CONSTRAINT.
+
+    All statements run inside an explicit transaction so an interrupt between
+    DROP and RENAME rolls back cleanly; `executescript` auto-commits per
+    statement and cannot offer that guarantee.
+    """
     if _edges_pk_includes_kind(conn):
         return
-    conn.executescript(
-        """
-        CREATE TABLE edges_new (
-            src_key     TEXT NOT NULL,
-            dst_key     TEXT NOT NULL,
-            kind        TEXT NOT NULL DEFAULT 'parent',
-            PRIMARY KEY (src_key, dst_key, kind)
-        );
-        INSERT INTO edges_new (src_key, dst_key, kind)
-            SELECT src_key, dst_key, kind FROM edges;
-        DROP TABLE edges;
-        ALTER TABLE edges_new RENAME TO edges;
-        CREATE INDEX IF NOT EXISTS ix_edges_dst ON edges(dst_key);
-        """
-    )
+    try:
+        conn.execute("BEGIN")
+        conn.execute(
+            """
+            CREATE TABLE edges_new (
+                src_key     TEXT NOT NULL,
+                dst_key     TEXT NOT NULL,
+                kind        TEXT NOT NULL DEFAULT 'parent',
+                PRIMARY KEY (src_key, dst_key, kind)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO edges_new (src_key, dst_key, kind) "
+            "SELECT src_key, dst_key, kind FROM edges"
+        )
+        conn.execute("DROP TABLE edges")
+        conn.execute("ALTER TABLE edges_new RENAME TO edges")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_edges_dst ON edges(dst_key)")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def _migrate(conn: sqlite3.Connection) -> None:

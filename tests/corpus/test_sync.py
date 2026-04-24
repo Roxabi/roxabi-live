@@ -315,7 +315,13 @@ def test_parent_and_blocks_edges_coexist(tmp_path: Path) -> None:
     }
 
 
-def test_upsert_edges_delete_one_kind_preserves_other(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("wipe_kind", "surviving_kind"),
+    [("parent", "blocks"), ("blocks", "parent")],
+)
+def test_upsert_edges_delete_one_kind_preserves_other(
+    tmp_path: Path, wipe_kind: str, surviving_kind: str
+) -> None:
     """Clearing one kind for an issue must leave rows of the other kind intact."""
     db_path = tmp_path / "corpus.db"
     bootstrap(db_path)
@@ -324,14 +330,14 @@ def test_upsert_edges_delete_one_kind_preserves_other(tmp_path: Path) -> None:
         upsert_edges(conn, "K", blocked_by=["A"], blocking=["Z"], kind="parent")
         upsert_edges(conn, "K", blocked_by=["A"], blocking=["Z"], kind="blocks")
 
-        # Wipe only parent edges touching K.
-        upsert_edges(conn, "K", blocked_by=[], blocking=[], kind="parent")
+        # Wipe only `wipe_kind` edges touching K.
+        upsert_edges(conn, "K", blocked_by=[], blocking=[], kind=wipe_kind)
 
         rows = set(conn.execute("SELECT src_key, dst_key, kind FROM edges").fetchall())
     finally:
         conn.close()
 
     assert rows == {
-        ("A", "K", "blocks"),
-        ("K", "Z", "blocks"),
+        ("A", "K", surviving_kind),
+        ("K", "Z", surviving_kind),
     }

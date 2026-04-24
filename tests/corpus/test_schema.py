@@ -209,12 +209,14 @@ def test_migration_v3_to_v4_preserves_edges(tmp_path: Path) -> None:
 
     conn = sqlite3.connect(db_path)
     try:
+        count = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
         rows = set(conn.execute("SELECT src_key, dst_key, kind FROM edges").fetchall())
         user_version = conn.execute("PRAGMA user_version").fetchone()[0]
         pk_cols = _edges_pk_columns(conn)
     finally:
         conn.close()
 
+    assert count == 3
     assert rows == {
         ("A", "B", "parent"),
         ("B", "C", "parent"),
@@ -222,6 +224,42 @@ def test_migration_v3_to_v4_preserves_edges(tmp_path: Path) -> None:
     }
     assert user_version == SCHEMA_VERSION
     assert pk_cols == ["src_key", "dst_key", "kind"]
+
+
+def test_migration_v2_to_v4_upgrades_edges_pk_and_preserves_data(
+    tmp_path: Path,
+) -> None:
+    """Full v2 -> v4 path: projectV2 columns added AND edges PK upgraded, rows kept."""
+    db_path = tmp_path / "corpus.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_V2_SCHEMA_SQL)
+    conn.executemany(
+        "INSERT INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)",
+        [("A", "B", "parent"), ("X", "Y", "blocks")],
+    )
+    conn.execute("PRAGMA user_version = 2")
+    conn.commit()
+    conn.close()
+
+    bootstrap(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        issue_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(issues)").fetchall()
+        }
+        edge_rows = set(
+            conn.execute("SELECT src_key, dst_key, kind FROM edges").fetchall()
+        )
+        pk_cols = _edges_pk_columns(conn)
+        user_version = conn.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert {"lane", "priority", "size", "status"} <= issue_cols
+    assert edge_rows == {("A", "B", "parent"), ("X", "Y", "blocks")}
+    assert pk_cols == ["src_key", "dst_key", "kind"]
+    assert user_version == SCHEMA_VERSION
 
 
 def test_migration_v3_to_v4_idempotent(tmp_path: Path) -> None:
