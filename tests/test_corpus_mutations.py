@@ -144,7 +144,7 @@ class TestUpsertIssueAsync:
     async def test_preserves_non_payload_columns(
         self, db: aiosqlite.Connection
     ) -> None:
-        """upsert_issue_async called twice: second call preserves milestone/lane/priority/size/status.
+        """Second call preserves milestone/lane/priority/size/status from first.
 
         SC13: non-payload columns must not be NULL'd by a webhook upsert.
         """
@@ -167,11 +167,11 @@ class TestUpsertIssueAsync:
                 "2026-01-01T00:00:00Z",
                 "2026-01-01T00:00:00Z",
                 None,
-                "v1.0",   # milestone
+                "v1.0",  # milestone
                 0,
-                "a1",     # lane
-                "P1",     # priority
-                "F-lite", # size
+                "a1",  # lane
+                "P1",  # priority
+                "F-lite",  # size
                 None,
             ),
         )
@@ -199,7 +199,7 @@ class TestUpsertIssueAsync:
         )
         row = await cur.fetchone()
         assert row is not None
-        title, state, milestone, lane, priority, size, status = row
+        title, state, milestone, lane, priority, size, _status = row
         # Updated fields
         assert title == "Updated title"
         assert state == "closed"
@@ -209,10 +209,8 @@ class TestUpsertIssueAsync:
         assert priority == "P1", f"priority was NULLed: {priority!r}"
         assert size == "F-lite", f"size was NULLed: {size!r}"
 
-    async def test_sync_and_async_produce_identical_rows(
-        self, tmp_path: Path
-    ) -> None:
-        """upsert_issue_async then upsert_issue (sync) on same key produce identical rows.
+    async def test_sync_and_async_produce_identical_rows(self, tmp_path: Path) -> None:
+        """Async + sync upserts on the same key produce identical rows.
 
         SC7: SQL constants are shared — both paths write the same column set.
         """
@@ -248,11 +246,21 @@ class TestUpsertIssueAsync:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    issue["key"], issue["repo"], issue["number"], issue["title"],
-                    issue["state"], issue["url"], issue["created_at"],
-                    issue["updated_at"], issue["closed_at"], issue["milestone"],
-                    issue["is_stub"], issue["lane"], issue["priority"],
-                    issue["size"], issue["status"],
+                    issue["key"],
+                    issue["repo"],
+                    issue["number"],
+                    issue["title"],
+                    issue["state"],
+                    issue["url"],
+                    issue["created_at"],
+                    issue["updated_at"],
+                    issue["closed_at"],
+                    issue["milestone"],
+                    issue["is_stub"],
+                    issue["lane"],
+                    issue["priority"],
+                    issue["size"],
+                    issue["status"],
                 ),
             )
             await aconn.commit()
@@ -281,7 +289,7 @@ class TestUpsertIssueAsync:
             )
             async_row = await cur.fetchone()
 
-        # Core fields should match (async preserves milestone/lane/priority/size from DB)
+        # Core fields should match (async preserves milestone/lane/etc from DB)
         assert sync_row is not None
         assert async_row is not None
         # key, repo, number, title, state, url match
@@ -305,14 +313,15 @@ class TestEdgeAsync:
         await db.commit()
 
         cur = await db.execute(
-            "SELECT src_key, dst_key, kind FROM edges WHERE src_key=? AND dst_key=? AND kind=?",
+            "SELECT src_key, dst_key, kind FROM edges"
+            " WHERE src_key=? AND dst_key=? AND kind=?",
             ("A#1", "B#2", "blocks"),
         )
         row = await cur.fetchone()
         assert row == ("A#1", "B#2", "blocks")
 
     async def test_add_edge_is_idempotent(self, db: aiosqlite.Connection) -> None:
-        """add_edge_async called twice on same (src, dst, kind) does not error or duplicate."""
+        """Calling add_edge_async twice on same (src, dst, kind) is idempotent."""
         await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
         await add_edge_async(db, "A#1", "B#2", "blocks")
@@ -347,7 +356,7 @@ class TestEdgeAsync:
         await db.commit()
 
         cur = await db.execute("SELECT src_key, dst_key, kind FROM edges")
-        rows = await cur.fetchall()
+        rows = list(await cur.fetchall())
         assert len(rows) == 1
         assert rows[0] == ("A#1", "B#2", "blocks")
 

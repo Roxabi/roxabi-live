@@ -132,7 +132,7 @@ class TestRunOnce:
 
 
 class TestHourlyLoop:
-    """reconciler.hourly_loop(settings) — returns asyncio.Task, ticks run_once periodically."""
+    """hourly_loop(settings) returns an asyncio.Task that ticks run_once."""
 
     @pytest.mark.asyncio
     async def test_hourly_loop_returns_task(self) -> None:

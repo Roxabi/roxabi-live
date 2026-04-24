@@ -35,7 +35,7 @@ ISSUE_KEY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+$")
 
 
 @router.get("/issues")
-async def list_issues(
+async def list_issues(  # noqa: PLR0913 — FastAPI query params, not domain args
     request: Request,
     repo: str | None = None,
     state: str | None = None,

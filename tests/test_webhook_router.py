@@ -17,9 +17,9 @@ import asyncio
 import hashlib
 import hmac
 import json
+from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from collections.abc import Generator
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -120,7 +120,9 @@ def db_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
+def client(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Generator[TestClient, None, None]:
     """TestClient with env vars pointing at the tmp db.
 
     Uses context manager form so that the FastAPI lifespan runs (which sets
@@ -385,18 +387,28 @@ def test_router_does_not_import_reconciler() -> None:
     """
     router_src = (
         __import__("pathlib").Path(__file__).parent.parent
-        / "src" / "roxabi_live" / "webhook" / "router.py"
+        / "src"
+        / "roxabi_live"
+        / "webhook"
+        / "router.py"
     ).read_text()
 
     # Collect lines with reconciler imports, skipping those inside TYPE_CHECKING blocks
     in_type_checking = False
-    runtime_import_lines = []
+    runtime_import_lines: list[str] = []
     for line in router_src.splitlines():
         stripped = line.strip()
         if "TYPE_CHECKING" in stripped and stripped.startswith("if"):
             in_type_checking = True
         # Dedent back to top-level ends the TYPE_CHECKING block
-        if in_type_checking and stripped and not stripped.startswith("#") and not line.startswith(" ") and not line.startswith("\t") and "TYPE_CHECKING" not in stripped:
+        if (
+            in_type_checking
+            and stripped
+            and not stripped.startswith("#")
+            and not line.startswith(" ")
+            and not line.startswith("\t")
+            and "TYPE_CHECKING" not in stripped
+        ):
             in_type_checking = False
         if "import" in line and "reconciler" in line and not in_type_checking:
             runtime_import_lines.append(line)

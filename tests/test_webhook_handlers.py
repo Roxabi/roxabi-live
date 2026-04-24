@@ -570,11 +570,15 @@ class TestHandleIssuesTransaction:
 
         handlers_src = (
             pathlib.Path(__file__).parent.parent
-            / "src" / "roxabi_live" / "webhook" / "handlers.py"
+            / "src"
+            / "roxabi_live"
+            / "webhook"
+            / "handlers.py"
         ).read_text()
 
         raw_sql_lines = [
-            line.strip() for line in handlers_src.splitlines()
+            line.strip()
+            for line in handlers_src.splitlines()
             if any(kw in line.upper() for kw in ("INSERT ", "UPDATE ", "DELETE "))
             and not line.strip().startswith("#")
         ]

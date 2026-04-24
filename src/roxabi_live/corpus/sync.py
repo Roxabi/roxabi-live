@@ -82,10 +82,10 @@ INSERT_LABEL_SQL = "INSERT OR IGNORE INTO labels (issue_key, name) VALUES (?, ?)
 DELETE_EDGES_BY_KIND_SQL = (
     "DELETE FROM edges WHERE (src_key = ? OR dst_key = ?) AND kind = ?"
 )
-INSERT_EDGE_SQL = "INSERT OR IGNORE INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)"
-DELETE_EDGE_SQL = (
-    "DELETE FROM edges WHERE src_key = ? AND dst_key = ? AND kind = ?"
+INSERT_EDGE_SQL = (
+    "INSERT OR IGNORE INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)"
 )
+DELETE_EDGE_SQL = "DELETE FROM edges WHERE src_key = ? AND dst_key = ? AND kind = ?"
 
 _LANE_PREFIX = "graph:lane/"
 _SIZE_PREFIX = "size:"
