@@ -1,12 +1,30 @@
-// tone.js — deterministic repo → tone mapping
-// Same hash must be used everywhere a repo gets colored (cards, graph nodes,
-// filter pills) so a repo has one stable color across the whole UI.
+// tone.js — stable repo → color mapping
+// Consumed as data-tone="<name>" on graph nodes, cards, and filter pills.
+// CSS defines --repo-<name> in graph.css; selectors live in graph.css + app.css.
 
-const REPO_TONE_PALETTE = ['a1', 'a2', 'b', 'c1', 'd', 'e', 'f', 'g', 'h', 'i'];
+const REPO_TONE_MAP = {
+  'Roxabi/lyra':               'teal',
+  'Roxabi/voiceCLI':           'blue',
+  'Roxabi/imageCLI':           'pink',
+  'Roxabi/llmCLI':             'plum',
+  'Roxabi/roxabi-forge':       'orange',
+  'Roxabi/roxabi-live':        'red',
+  'Roxabi/roxabi-plugins':     'lime',
+  'Roxabi/roxabi-vault':       'amber',
+  'Roxabi/roxabi-production':  'green',
+  'Roxabi/roxabi-boilerplate': 'gray',
+  'Roxabi/projects-meta':      'cyan',
+};
+
+const FALLBACK_PALETTE = [
+  'teal', 'blue', 'pink', 'plum', 'orange',
+  'red', 'lime', 'amber', 'green', 'gray', 'cyan',
+];
 
 export function repoTone(repo) {
   if (!repo) return '';
+  if (REPO_TONE_MAP[repo]) return REPO_TONE_MAP[repo];
   let h = 0;
   for (let i = 0; i < repo.length; i++) h = (h * 31 + repo.charCodeAt(i)) | 0;
-  return REPO_TONE_PALETTE[Math.abs(h) % REPO_TONE_PALETTE.length];
+  return FALLBACK_PALETTE[Math.abs(h) % FALLBACK_PALETTE.length];
 }

@@ -1,0 +1,71 @@
+---
+title: "feat(corpus): drop ProjectV2, source size/priority/lane from labels"
+issue: 54
+status: draft
+tier: F-lite
+date: 2026-04-24
+---
+
+## Problem
+
+The corpus sync layer fetches `size`, `priority`, `lane`, and `status` for every
+issue via a heavy GraphQL fragment (`projectItems > fieldValues > singleSelect`)
+that walks the org's hub ProjectV2. The fragment is the second-most expensive
+part of `ISSUES_QUERY` and the only thing forcing roxabi-live to depend on the
+projects-meta hub schema.
+
+Audit of `~/.roxabi/corpus.db` (215 open issues) shows the dependency is mostly
+illusory:
+
+- `lane` column is **empty across all 215 issues** — the `graph:lane/X` label
+  fallback in `dep_graph/v6/api.py` is doing 100% of the work
+- `size` column is populated for 55% (118/215); the `size:*` label coverage,
+  once normalized to canonical vocab, was at ~80% pre-backfill
+- `priority` column is populated for 44% (94/215)
+
+After the just-shipped backfill (`tools/backfill_labels.py --apply`, 116 issues
+edited), labels are the better source for all four fields. Keeping the
+ProjectV2 path adds GraphQL cost and a redundant code branch.
+
+## Who
+
+- **Primary:** Mickael (operator running `dep-graph-v6` and the dashboard) —
+  benefits from a smaller GraphQL footprint and one canonical source for issue
+  metadata.
+- **Secondary:** `dev-core:issue-triage` — already dual-writes labels alongside
+  ProjectV2 fields (Phase 3 override), so the contract on its side is unchanged.
+
+## Constraints
+
+- Label vocabulary must match dev-core canonical values (`size:S|F-lite|F-full`,
+  `priority:P0|P1|P2|P3`, `graph:lane/X`) so triage stays compatible.
+- DB schema columns (`size`, `priority`, `lane`, `status`) stay in place — only
+  the source changes. Avoid a forced migration.
+- Webhook path (`POST /webhook/github`) and the periodic sync must both adopt
+  the new parser; they share `corpus/sync.py`.
+- `dep_graph/v6/api.py` already reads from labels for lane fallback; no frontend
+  change required.
+
+## Out of Scope
+
+- Frontend tone/color logic — handled by PRs #51, #52, #53.
+- Issues missing both ProjectV2 data and existing labels after backfill (~97
+  size gaps, ~121 priority gaps) — manual triage, not blocking this change.
+- `tier:*` namespace — `size:*` doubles as the dev-process tier marker; no
+  separate label set.
+- `dev-core:issue-triage` skill changes — it already dual-writes; no contract
+  change here.
+
+## Complexity
+
+**Tier: F-lite** — Single domain (corpus sync), clear scope (~5 files:
+`graphql.py`, `sync.py`, `schema.py` decision on `status` column, plus tests),
+no architectural unknowns. Backfill prerequisite already done. One real design
+question (drop `status` column vs leave NULL) lands at spec time.
+
+Signals observed:
+- Single domain (backend / corpus sync)
+- Vocabulary + mapping already decided
+- File count 4–6
+- No new dependencies, no new endpoints
+- Clear acceptance criteria written in the issue

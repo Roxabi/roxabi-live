@@ -35,6 +35,23 @@
   --lane-i:  #06b6d4;  /* teal - Vault ingest */
 }
 
+/* Repo palette — 11 distinct hues, decoupled from lanes.
+   Global scope so cards/pills/nodes outside #graph-panel resolve them.
+   Consumed via data-tone="<name>" on repo-colored elements. */
+:root {
+  --repo-teal:   #06b6d4;
+  --repo-blue:   #3b82f6;
+  --repo-pink:   #ec4899;
+  --repo-plum:   #a855f7;
+  --repo-orange: #f97316;
+  --repo-red:    #ef4444;
+  --repo-lime:   #84cc16;
+  --repo-amber:  #f59e0b;
+  --repo-green:  #22c55e;
+  --repo-gray:   #94a3b8;
+  --repo-cyan:   #22d3ee;
+}
+
 /* ── Panel chrome ───────────────────────────────────────────────── */
 #graph-panel {
   padding-top: 20px;
@@ -141,6 +158,17 @@
 #graph-panel .gg-node[data-tone="g"]      { color: var(--lane-g); }
 #graph-panel .gg-node[data-tone="h"]      { color: var(--lane-h); }
 #graph-panel .gg-node[data-tone="i"]      { color: var(--lane-i); }
+#graph-panel .gg-node[data-tone="teal"]   { color: var(--repo-teal); }
+#graph-panel .gg-node[data-tone="blue"]   { color: var(--repo-blue); }
+#graph-panel .gg-node[data-tone="pink"]   { color: var(--repo-pink); }
+#graph-panel .gg-node[data-tone="plum"]   { color: var(--repo-plum); }
+#graph-panel .gg-node[data-tone="orange"] { color: var(--repo-orange); }
+#graph-panel .gg-node[data-tone="red"]    { color: var(--repo-red); }
+#graph-panel .gg-node[data-tone="lime"]   { color: var(--repo-lime); }
+#graph-panel .gg-node[data-tone="amber"]  { color: var(--repo-amber); }
+#graph-panel .gg-node[data-tone="green"]  { color: var(--repo-green); }
+#graph-panel .gg-node[data-tone="gray"]   { color: var(--repo-gray); }
+#graph-panel .gg-node[data-tone="cyan"]   { color: var(--repo-cyan); }
 #graph-panel .gg-node[data-tone="accent"] { color: var(--accent); }
 
 /* ── Inline pill label ───────────────────────────────────────────── */
@@ -225,6 +253,17 @@
 #graph-panel .gg-ilabel[data-tone="g"]      { color: var(--lane-g); }
 #graph-panel .gg-ilabel[data-tone="h"]      { color: var(--lane-h); }
 #graph-panel .gg-ilabel[data-tone="i"]      { color: var(--lane-i); }
+#graph-panel .gg-ilabel[data-tone="teal"]   { color: var(--repo-teal); }
+#graph-panel .gg-ilabel[data-tone="blue"]   { color: var(--repo-blue); }
+#graph-panel .gg-ilabel[data-tone="pink"]   { color: var(--repo-pink); }
+#graph-panel .gg-ilabel[data-tone="plum"]   { color: var(--repo-plum); }
+#graph-panel .gg-ilabel[data-tone="orange"] { color: var(--repo-orange); }
+#graph-panel .gg-ilabel[data-tone="red"]    { color: var(--repo-red); }
+#graph-panel .gg-ilabel[data-tone="lime"]   { color: var(--repo-lime); }
+#graph-panel .gg-ilabel[data-tone="amber"]  { color: var(--repo-amber); }
+#graph-panel .gg-ilabel[data-tone="green"]  { color: var(--repo-green); }
+#graph-panel .gg-ilabel[data-tone="gray"]   { color: var(--repo-gray); }
+#graph-panel .gg-ilabel[data-tone="cyan"]   { color: var(--repo-cyan); }
 #graph-panel .gg-ilabel[data-tone="accent"] { color: var(--accent); }
 
 /* ── SVG edges ───────────────────────────────────────────────────── */
@@ -262,6 +301,17 @@
 #graph-panel .gg-edge[data-tone="g"]      { stroke: var(--lane-g); }
 #graph-panel .gg-edge[data-tone="h"]      { stroke: var(--lane-h); }
 #graph-panel .gg-edge[data-tone="i"]      { stroke: var(--lane-i); }
+#graph-panel .gg-edge[data-tone="teal"]   { stroke: var(--repo-teal); }
+#graph-panel .gg-edge[data-tone="blue"]   { stroke: var(--repo-blue); }
+#graph-panel .gg-edge[data-tone="pink"]   { stroke: var(--repo-pink); }
+#graph-panel .gg-edge[data-tone="plum"]   { stroke: var(--repo-plum); }
+#graph-panel .gg-edge[data-tone="orange"] { stroke: var(--repo-orange); }
+#graph-panel .gg-edge[data-tone="red"]    { stroke: var(--repo-red); }
+#graph-panel .gg-edge[data-tone="lime"]   { stroke: var(--repo-lime); }
+#graph-panel .gg-edge[data-tone="amber"]  { stroke: var(--repo-amber); }
+#graph-panel .gg-edge[data-tone="green"]  { stroke: var(--repo-green); }
+#graph-panel .gg-edge[data-tone="gray"]   { stroke: var(--repo-gray); }
+#graph-panel .gg-edge[data-tone="cyan"]   { stroke: var(--repo-cyan); }
 #graph-panel .gg-edge[data-tone="accent"] { stroke: var(--accent); }
 
 /* ── Hover-chain highlight ───────────────────────────────────────── */
