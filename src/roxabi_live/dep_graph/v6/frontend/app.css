@@ -248,6 +248,18 @@ main { padding-bottom: 24px; }
   border: 1px solid rgba(232,93,4,0.3);
   font-size: 10px; font-weight: 600; white-space: nowrap;
 }
+/* Tone-colored pills (repo filter) — same palette as cards/graph nodes.
+   color-mix keeps the translucent chip look without per-tone background vars. */
+.ms-pill[data-tone="a1"] { color: var(--lane-a1); background: color-mix(in srgb, var(--lane-a1) 15%, transparent); border-color: color-mix(in srgb, var(--lane-a1) 40%, transparent); }
+.ms-pill[data-tone="a2"] { color: var(--lane-a2); background: color-mix(in srgb, var(--lane-a2) 15%, transparent); border-color: color-mix(in srgb, var(--lane-a2) 40%, transparent); }
+.ms-pill[data-tone="b"]  { color: var(--lane-b);  background: color-mix(in srgb, var(--lane-b)  15%, transparent); border-color: color-mix(in srgb, var(--lane-b)  40%, transparent); }
+.ms-pill[data-tone="c1"] { color: var(--lane-c1); background: color-mix(in srgb, var(--lane-c1) 15%, transparent); border-color: color-mix(in srgb, var(--lane-c1) 40%, transparent); }
+.ms-pill[data-tone="d"]  { color: var(--lane-d);  background: color-mix(in srgb, var(--lane-d)  15%, transparent); border-color: color-mix(in srgb, var(--lane-d)  40%, transparent); }
+.ms-pill[data-tone="e"]  { color: var(--lane-e);  background: color-mix(in srgb, var(--lane-e)  15%, transparent); border-color: color-mix(in srgb, var(--lane-e)  40%, transparent); }
+.ms-pill[data-tone="f"]  { color: var(--lane-f);  background: color-mix(in srgb, var(--lane-f)  15%, transparent); border-color: color-mix(in srgb, var(--lane-f)  40%, transparent); }
+.ms-pill[data-tone="g"]  { color: var(--lane-g);  background: color-mix(in srgb, var(--lane-g)  15%, transparent); border-color: color-mix(in srgb, var(--lane-g)  40%, transparent); }
+.ms-pill[data-tone="h"]  { color: var(--lane-h);  background: color-mix(in srgb, var(--lane-h)  15%, transparent); border-color: color-mix(in srgb, var(--lane-h)  40%, transparent); }
+.ms-pill[data-tone="i"]  { color: var(--lane-i);  background: color-mix(in srgb, var(--lane-i)  15%, transparent); border-color: color-mix(in srgb, var(--lane-i)  40%, transparent); }
 
 .ms-panel {
   position: fixed; z-index: 500;

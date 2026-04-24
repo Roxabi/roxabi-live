@@ -5,6 +5,7 @@ import { renderList }  from './list.js';
 import { initGraph, clearSearchHighlight }   from './graph.js';
 import { MultiSelect } from './multi_select.js';
 import { clearPinned } from './hover.js';
+import { repoTone } from './tone.js';
 
 const $ = id => document.getElementById(id);
 
@@ -161,7 +162,7 @@ msStatus.onChange    = vals => { clearPinned(); setState({ status:    vals }); r
 function populateFilters(repos) {
   const nodes = state.nodes;
 
-  const repoItems = repos.map(r => ({ value: r, label: r.split('/')[1] || r }));
+  const repoItems = repos.map(r => ({ value: r, label: r.split('/')[1] || r, tone: repoTone(r) }));
   msRepo.setItems(repoItems, state.repo);
 
   const msMap = new Map();

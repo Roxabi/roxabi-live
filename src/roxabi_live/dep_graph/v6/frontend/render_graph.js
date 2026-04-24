@@ -2,15 +2,10 @@
 // Matches v5 HTML structure: percentage coords, SVG with viewBox="0 0 100 100"
 
 import { edgePath } from './layout.js';
+import { repoTone } from './tone.js';
 
-// ── Repo → tone (deterministic hash into palette) ────────────────────────────
-const REPO_TONE_PALETTE = ['a1', 'a2', 'b', 'c1', 'd', 'e', 'f', 'g', 'h', 'i'];
 function getTone(node) {
-  const repo = node.repo;
-  if (!repo) return 'accent';
-  let h = 0;
-  for (let i = 0; i < repo.length; i++) h = (h * 31 + repo.charCodeAt(i)) | 0;
-  return REPO_TONE_PALETTE[Math.abs(h) % REPO_TONE_PALETTE.length];
+  return repoTone(node.repo) || 'accent';
 }
 
 // ── Render nodes as .gg-node dots + .gg-ilabel labels (v4.8 style) ───────────

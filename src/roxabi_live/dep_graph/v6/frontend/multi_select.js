@@ -146,7 +146,8 @@ export class MultiSelect {
     } else {
       const pills = sel.map(v => {
         const item = this.items.find(i => i.value === v);
-        return `<span class="ms-pill">${item ? item.label : v}</span>`;
+        const toneAttr = item && item.tone ? ` data-tone="${item.tone}"` : '';
+        return `<span class="ms-pill"${toneAttr}>${item ? item.label : v}</span>`;
       }).join('');
       this.trigger.innerHTML = pills;
     }
