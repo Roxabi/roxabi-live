@@ -16,6 +16,7 @@ Namespaces reserved per spec:
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -110,7 +111,7 @@ def _make_payload(  # noqa: PLR0913
 
 
 @pytest.fixture()
-async def db(tmp_path: Path) -> aiosqlite.Connection:
+async def db(tmp_path: Path) -> AsyncIterator[aiosqlite.Connection]:
     """In-memory aiosqlite connection with issues + labels schema."""
     conn = await aiosqlite.connect(":memory:")
     await conn.executescript(_SCHEMA_SQL)
@@ -147,7 +148,7 @@ async def _seed_issue(  # noqa: PLR0913
 
 async def _fetch_issue(
     conn: aiosqlite.Connection, key: str
-) -> tuple[Any, ...] | None:
+) -> aiosqlite.Row | None:
     """Return (key, repo, number, title, state) for the given issue key."""
     cursor = await conn.execute(
         "SELECT key, repo, number, title, state FROM issues WHERE key = ?",
@@ -382,7 +383,7 @@ def _make_sub_issues_payload(
 
 async def _fetch_edge(
     conn: aiosqlite.Connection, src_key: str, dst_key: str, kind: str
-) -> tuple[Any, ...] | None:
+) -> aiosqlite.Row | None:
     cursor = await conn.execute(
         "SELECT src_key, dst_key, kind FROM edges"
         " WHERE src_key=? AND dst_key=? AND kind=?",

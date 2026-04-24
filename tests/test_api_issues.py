@@ -8,6 +8,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -89,7 +90,7 @@ def corpus_db(
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _get(path: str) -> tuple[int, dict]:
+async def _get(path: str) -> tuple[int, dict[str, Any]]:
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
