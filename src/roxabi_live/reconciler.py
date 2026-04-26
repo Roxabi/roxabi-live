@@ -100,12 +100,15 @@ async def run_once(settings: Settings) -> None:
     global _auth_failures
     if _halted.is_set():
         return
-    try:
+    def _sync() -> dict[str, int]:
         conn = sqlite3.connect(settings.corpus_db_path)
         try:
-            await asyncio.to_thread(corpus_sync.run_sync, conn, settings.github_org)
+            return corpus_sync.run_sync(conn, settings.github_org)
         finally:
             conn.close()
+
+    try:
+        await asyncio.to_thread(_sync)
         async with _state_lock:
             _auth_failures = 0
     except Exception as exc:
