@@ -242,6 +242,9 @@ main { padding-bottom: 24px; }
 .state-open .card-dot {
   background: var(--status-open); box-shadow: 0 0 4px var(--status-open);
 }
+.status-blocked .card-dot {
+  background: var(--status-blocked); box-shadow: 0 0 4px rgba(249,115,22,0.6);
+}
 .card-num {
   font-family: 'JetBrains Mono', monospace; font-size: 10px;
   font-weight: 700; color: var(--accent); flex-shrink: 0;
