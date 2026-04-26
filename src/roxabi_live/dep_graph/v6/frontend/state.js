@@ -35,15 +35,15 @@ export const state = {
   repo:      migrateRepo(),
   milestone: LS.getJSON('v6:milestone', []),
   priority:  LS.getJSON('v6:priority', []),
-  status:    LS.getJSON('v6:status', []),
+  status:    LS.getJSON('v6:status', ['ready', 'blocked']),
   search:    LS.get('v6:search', ''),
   pivotRow:  LS.get('v6:pivotRow', 'milestone'),
   pivotCol:  LS.get('v6:pivotCol', 'lane'),
   listGroup: LS.get('v6:listGroup', 'milestone'),
   listGroup2: LS.get('v6:listGroup2', 'none'),
-  tableGroup: LS.get('v6:tableGroup', 'lane'),
+  tableGroup: LS.get('v6:tableGroup', 'parent'),
   // graph options
-  showParents: LS.get('v6:showParents', 'true') === 'true',
+  showParents: LS.get('v6:showParents', 'false') === 'true',
   nodes:     [],
   edges:     [],
   // built once after load
