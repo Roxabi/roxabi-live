@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, cast
 
 import aiosqlite
@@ -13,6 +14,8 @@ from roxabi_live.corpus.mutations import (
     replace_labels_async,
     upsert_issue_async,
 )
+
+log = logging.getLogger(__name__)
 
 
 async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> None:
@@ -65,6 +68,14 @@ async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> 
         raise
 
 
+def _issue_key(
+    issue: dict[str, Any], repo_override: dict[str, Any] | None = None
+) -> str:
+    repo = repo_override or issue.get("repository") or {}
+    full_name: str = repo.get("full_name", "")
+    return f"{full_name}#{issue['number']}"
+
+
 async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> None:
     """Process a GitHub `issue_dependencies` webhook event.
 
@@ -76,20 +87,34 @@ async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> No
     if action in ("blocking_added", "blocking_removed"):
         return
 
-    if action == "blocked_by_added":
-        blocker = payload["blocking_issue"]
-        blocked = payload["issue"]
-        blocker_key = f"{blocker['repository']['full_name']}#{blocker['number']}"
-        blocked_key = f"{blocked['repository']['full_name']}#{blocked['number']}"
-        await add_edge_async(conn, blocker_key, blocked_key, "blocks")
-        await conn.commit()
+    if action not in ("blocked_by_added", "blocked_by_removed"):
         return
 
-    if action == "blocked_by_removed":
-        blocker = payload["blocking_issue"]
-        blocked = payload["issue"]
-        blocker_key = f"{blocker['repository']['full_name']}#{blocker['number']}"
-        blocked_key = f"{blocked['repository']['full_name']}#{blocked['number']}"
+    # GitHub docs list `blocking_issue` + `blocked_issue`; log keys on mismatch to
+    # capture the real schema if it ever differs.
+    blocking_issue: dict[str, Any] | None = payload.get("blocking_issue")
+    blocked_issue: dict[str, Any] | None = (
+        payload.get("blocked_issue") or payload.get("issue")  # type: ignore[assignment]
+    )
+    blocking_repo: dict[str, Any] | None = payload.get("blocking_issue_repo")
+
+    if blocking_issue is None or blocked_issue is None:
+        log.warning(
+            "handle_deps: unexpected payload shape for %s — keys=%s payload=%s",
+            action,
+            list(payload.keys()),
+            payload,
+        )
+        return
+
+    blocker_key = _issue_key(blocking_issue, blocking_repo)
+    blocked_key = _issue_key(blocked_issue, payload.get("repository"))  # type: ignore[arg-type]
+
+    if action == "blocked_by_added":
+        await add_edge_async(conn, blocker_key, blocked_key, "blocks")
+        await conn.commit()
+
+    elif action == "blocked_by_removed":
         await remove_edge_async(conn, blocker_key, blocked_key, "blocks")
         await conn.commit()
 
