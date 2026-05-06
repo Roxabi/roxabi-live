@@ -86,35 +86,36 @@ For local dev, use a tunnel (e.g. `ngrok http 8000`) to expose the local server.
 
 See [GitHub docs — Creating webhooks](https://docs.github.com/en/webhooks/using-webhooks/creating-webhooks) for details.
 
-## Production Deployment (supervisord)
+## Production Deployment (systemd)
 
-Roxabi Live is deployed via supervisord on M1 (`roxabituwer`). The supervisor unit is at `deploy/supervisor/conf.d/live.conf`.
+Roxabi Live is deployed as a systemd user service on M1 (`roxabituwer`). The unit is at `deploy/systemd/live.service`.
 
-### Register with the hub
+### Install
 
 Run once on the target machine:
 
 ```bash
-make register
+cp deploy/systemd/live.service ~/.config/systemd/user/live.service
+systemctl --user daemon-reload
+systemctl --user enable live.service
+systemctl --user start live.service
 ```
 
-This links `deploy/supervisor/conf.d/live.conf` into the hub supervisor and creates the log directory at `~/.local/state/roxabi-live/logs/`.
+Requires `loginctl enable-linger $USER` (already set on M1).
 
 ### Service control
 
 ```bash
-make live           # sync corpus then start
-make live start     # start only
-make live stop      # stop
-make live status    # supervisor status
-make live logs      # tail live.log
-make live reload    # restart
+systemctl --user status live.service
+systemctl --user start live.service
+systemctl --user stop live.service
+systemctl --user restart live.service
+journalctl --user -u live.service -f   # follow logs
 ```
 
-Logs are written to `~/.local/state/roxabi-live/logs/`:
+Logs also written to `~/.local/state/roxabi-live/logs/`:
 - `live.log` — stdout
 - `live_error.log` — stderr
-- `supervisord.log` — supervisor daemon log
 
 ### Tailscale Funnel
 

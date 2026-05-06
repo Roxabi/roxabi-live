@@ -153,15 +153,16 @@ rsync -r ~/.cloudflared/ roxabituwer:~/.cloudflared/
 
 Option B — re-authenticate on M₁ (`cloudflared tunnel login`) and reuse the same tunnel name; the tunnel ID and DNS record do not change.
 
-**Step 3 — Start the supervisord stack on M₁**
+**Step 3 — Start the stack on M₁**
 
-On M₁, ensure the supervisord configuration is deployed, then start both programs:
+On M₁, start both services:
 
 ```bash
-supervisorctl start live cloudflared
+systemctl --user start live.service
+supervisorctl start cloudflared
 ```
 
-Set `autostart=true` in both `.conf` files on M₁ so they survive reboots.
+`live` is managed by systemd (`live.service`, enabled at boot via linger). `cloudflared` would use supervisord if deployed.
 
 **Step 4 — Flip tunnel ingress target (if using a new tunnel)**
 
@@ -258,4 +259,4 @@ Webhook delivery:
 
 - Rotate the service token: Zero Trust → Service Tokens → `github-webhook` → **Refresh**. Update the worker secret. Redeliver a test webhook to confirm.
 - Rotate the identity-provider allowlist: edit the `Allow owner` policy (Step A.5).
-- After a `_halted` reconciler event (CRITICAL log emitted due to repeated auth failures): rotate the GitHub token, then restart the `live` supervisor program to clear the sticky halt state: `supervisorctl restart live`. The reconciler will resume on the next hourly tick.
+- After a `_halted` reconciler event (CRITICAL log emitted due to repeated auth failures): rotate the GitHub token, then restart the live service to clear the sticky halt state: `systemctl --user restart live.service`. The reconciler will resume on the next hourly tick.
