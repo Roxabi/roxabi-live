@@ -191,7 +191,7 @@ Once M₁ is confirmed serving traffic:
 
 ```bash
 # On M₂
-supervisorctl stop cloudflared live
+supervisorctl stop cloudflared
 ```
 
 Set `autostart=false` for both programs on M₂ to prevent them from restarting after reboot.
