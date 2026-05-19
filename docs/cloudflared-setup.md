@@ -185,7 +185,7 @@ curl https://dashboard.roxabi.dev/health
 
 Confirm `db_reachable: true` and that `issue_count` reflects current corpus state.
 
-**Step 6 — Stop cloudflared and FastAPI on M₂**
+**Step 6 — Stop cloudflared on M₂**
 
 Once M₁ is confirmed serving traffic:
 
@@ -194,7 +194,7 @@ Once M₁ is confirmed serving traffic:
 supervisorctl stop cloudflared
 ```
 
-Set `autostart=false` for both programs on M₂ to prevent them from restarting after reboot.
+Set `autostart=false` for cloudflared on M₂ to prevent it from restarting after reboot.
 
 ## Cloudflare Access (zero-trust gate)
 
