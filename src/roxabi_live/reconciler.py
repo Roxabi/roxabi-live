@@ -24,6 +24,7 @@ from weakref import WeakSet
 import aiosqlite
 
 from roxabi_live.config import Settings
+from roxabi_live.corpus import schema as corpus_schema
 from roxabi_live.corpus import sync as corpus_sync
 
 log = logging.getLogger(__name__)
@@ -102,6 +103,9 @@ async def run_once(settings: Settings) -> None:
         return
 
     def _sync() -> dict[str, int]:
+        # Apply any pending schema migrations before opening the sync connection
+        # so a redeploy at a new SCHEMA_VERSION doesn't crash with "no such table".
+        corpus_schema.bootstrap(settings.corpus_db_path)
         conn = sqlite3.connect(settings.corpus_db_path)
         try:
             return corpus_sync.run_sync(conn, settings.github_org)

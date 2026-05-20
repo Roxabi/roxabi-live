@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from roxabi_live import reconciler
 from roxabi_live.api.issues import router as issues_router
 from roxabi_live.config import Settings, get_settings
+from roxabi_live.corpus import schema as corpus_schema
 from roxabi_live.dep_graph.v5.serve import router as dep_graph_v5_router
 from roxabi_live.dep_graph.v6.repos import router as repos_router
 from roxabi_live.dep_graph.v6.routes import router as dep_graph_v6_router
@@ -35,6 +36,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     bg_tasks: WeakSet[asyncio.Task[None]] = WeakSet()
     app.state.background_tasks = bg_tasks
     app.state.trigger_heal = reconciler.make_trigger_heal(settings, bg_tasks)
+
+    # Apply pending schema migrations before accepting traffic so endpoints
+    # never observe a half-migrated DB.
+    corpus_schema.bootstrap(settings.corpus_db_path)
 
     log.info("reconciler startup sync scheduled")
     await reconciler.run_once(settings)
