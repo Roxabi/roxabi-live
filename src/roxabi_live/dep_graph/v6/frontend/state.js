@@ -103,12 +103,15 @@ export function computeStatus(node, blockingEdgesByDst, nodesByKey) {
 
 // Attach _status, _blockers, _parent to every node after payload load
 // _blockers: all edges where this node is dst (for layout positioning)
-// _status: computed only from 'blocks' kind edges
+// _status: computed from 'blocks' kind edges, then propagated through 'parent'
+//          edges so any descendant of a blocked node is also rendered blocked
+//          (unless the descendant itself is already closed → kept as 'done').
 // _parent: parent issue key (from 'parent' edges where dst=this, src=parent)
 export function annotateNodes(nodes, edges) {
   const blockingByDst = new Map();  // kind='blocks' only, for status
   const allByDst = new Map();       // all edges, for _blockers
   const parentByDst = new Map();    // kind='parent', dst=child → src=parent
+  const childrenBySrc = new Map();  // kind='parent', src=parent → [child nodes]
   const byKey = new Map();
 
   for (const n of nodes) byKey.set(n.key, n);
@@ -124,14 +127,36 @@ export function annotateNodes(nodes, edges) {
     if (e.kind === 'parent') {
       if (!parentByDst.has(e.dst)) parentByDst.set(e.dst, []);
       parentByDst.get(e.dst).push(e.src);  // src is the parent
+      if (!childrenBySrc.has(e.src)) childrenBySrc.set(e.src, []);
+      childrenBySrc.get(e.src).push(e.dst);  // dst is the child
     }
   }
 
+  // Pass 1: direct status from blocks-edges + closed-state
   for (const n of nodes) {
-    n._blockers = allByDst.get(n.key) || [];  // all edges for layout
-    n._status = computeStatus(n, blockingByDst, byKey);  // blocks-only for status
+    n._blockers = allByDst.get(n.key) || [];
+    n._status = computeStatus(n, blockingByDst, byKey);
     const parents = parentByDst.get(n.key);
-    n._parent = parents?.length ? parents[0] : null;  // first parent for grouping
+    n._parent = parents?.length ? parents[0] : null;
+  }
+
+  // Pass 2: propagate 'blocked' through parent → child edges (BFS).
+  // A descendant of a blocked parent is itself rendered blocked, unless it
+  // is already 'done' (closed) — closed always wins.  Visited guard handles
+  // any pathological parent cycles.
+  const queue = nodes.filter(n => n._status === 'blocked').map(n => n.key);
+  const visited = new Set(queue);
+  while (queue.length) {
+    const parentKey = queue.shift();
+    const childKeys = childrenBySrc.get(parentKey) || [];
+    for (const childKey of childKeys) {
+      if (visited.has(childKey)) continue;
+      visited.add(childKey);
+      const child = byKey.get(childKey);
+      if (!child || child._status === 'done') continue;
+      child._status = 'blocked';
+      queue.push(childKey);
+    }
   }
 }
 
