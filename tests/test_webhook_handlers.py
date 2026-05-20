@@ -78,6 +78,7 @@ def _make_payload(  # noqa: PLR0913
     repo: str = "Roxabi/lyra",
     url: str | None = None,
     updated_at: str = "2026-04-24T12:00:00Z",
+    milestone: str | None = None,
 ) -> dict[str, Any]:
     """Build a minimal GitHub `issues` webhook payload."""
     if labels is None:
@@ -96,7 +97,7 @@ def _make_payload(  # noqa: PLR0913
             "created_at": "2026-01-01T00:00:00Z",
             "updated_at": updated_at,
             "closed_at": None,
-            "milestone": None,
+            "milestone": ({"title": milestone} if milestone else None),
         },
         "repository": {
             "full_name": repo,
@@ -202,6 +203,99 @@ class TestIssuesWebhookHandler:
         # Assert — labels inserted
         labels = await _fetch_labels(db, "Roxabi/lyra#7")
         assert labels == ["enhancement", "good first issue"]
+
+    async def test_issues_milestoned_writes_milestone(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """action=milestoned propagates the milestone title to the issues row."""
+        payload = _make_payload(
+            action="milestoned",
+            number=475,
+            milestone="Phase 4 — Autonomy & Scheduling",
+        )
+
+        await handle_issues(payload, db)
+
+        cursor = await db.execute(
+            "SELECT milestone FROM issues WHERE key=?", ("Roxabi/lyra#475",)
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == "Phase 4 — Autonomy & Scheduling"
+
+    async def test_issues_demilestoned_clears_milestone(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """action=demilestoned (milestone=null in payload) clears the column.
+
+        Regression: previously the webhook upsert preserved milestone on
+        conflict, so a demilestoned event never reached the DB until the next
+        hourly full sync.
+        """
+        # Seed the issue with an existing milestone
+        await db.execute(
+            "INSERT INTO issues (key, repo, number, title, state, milestone)"
+            " VALUES (?,?,?,?,?,?)",
+            ("Roxabi/lyra#475", "Roxabi/lyra", 475, "t", "open", "Phase 4"),
+        )
+        await db.commit()
+
+        payload = _make_payload(action="demilestoned", number=475, milestone=None)
+        await handle_issues(payload, db)
+
+        cursor = await db.execute(
+            "SELECT milestone FROM issues WHERE key=?", ("Roxabi/lyra#475",)
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] is None, f"Expected milestone cleared, got {row[0]!r}"
+
+    async def test_issues_label_change_updates_lane_priority_size(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """Label-derived columns (lane/priority/size) follow the webhook payload."""
+        # Seed with old derived values
+        await db.execute(
+            "INSERT INTO issues (key, repo, number, title, state,"
+            " lane, priority, size) VALUES (?,?,?,?,?,?,?,?)",
+            ("Roxabi/lyra#7", "Roxabi/lyra", 7, "t", "open", "a1", "P1", "F-lite"),
+        )
+        await db.commit()
+
+        payload = _make_payload(
+            action="labeled",
+            number=7,
+            labels=["graph:lane/b", "priority:P2", "size:S"],
+        )
+        await handle_issues(payload, db)
+
+        cursor = await db.execute(
+            "SELECT lane, priority, size FROM issues WHERE key=?",
+            ("Roxabi/lyra#7",),
+        )
+        row = await cursor.fetchone()
+        assert row == ("b", "P2", "S")
+
+    async def test_issues_preserves_status_from_project_board(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """status (sourced from a GitHub Project v2 board) survives the upsert."""
+        await db.execute(
+            "INSERT INTO issues (key, repo, number, title, state, status)"
+            " VALUES (?,?,?,?,?,?)",
+            ("Roxabi/lyra#7", "Roxabi/lyra", 7, "t", "open", "In Progress"),
+        )
+        await db.commit()
+
+        payload = _make_payload(action="edited", number=7)
+        await handle_issues(payload, db)
+
+        cursor = await db.execute(
+            "SELECT status FROM issues WHERE key=?", ("Roxabi/lyra#7",)
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == "In Progress", f"status was overwritten: {row[0]!r}"
 
     async def test_issues_labeled_replaces_labels(
         self, db: aiosqlite.Connection

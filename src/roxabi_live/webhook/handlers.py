@@ -14,6 +14,7 @@ from roxabi_live.corpus.mutations import (
     replace_labels_async,
     upsert_issue_async,
 )
+from roxabi_live.corpus.sync import extract_from_labels
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +36,21 @@ async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> 
         await conn.commit()
         return
 
-    # Build partial from webhook payload (non-payload columns preserved by SQL)
+    raw_labels: list[Any] = issue.get("labels") or []
+    names: list[str] = []
+    for label in raw_labels:
+        if isinstance(label, dict):
+            names.append(str(cast(dict[str, Any], label)["name"]))
+        else:
+            names.append(str(label))
+
+    milestone_obj = issue.get("milestone")
+    milestone_title: str | None = None
+    if isinstance(milestone_obj, dict):
+        title_val = cast(dict[str, Any], milestone_obj).get("title")
+        milestone_title = str(title_val) if title_val is not None else None
+    derived = extract_from_labels(names)
+
     issue_partial: dict[str, Any] = {
         "key": key,
         "repo": repo,
@@ -46,14 +61,11 @@ async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> 
         "created_at": issue.get("created_at"),
         "updated_at": issue.get("updated_at"),
         "closed_at": issue.get("closed_at"),
+        "milestone": milestone_title,
+        "lane": derived["lane"],
+        "priority": derived["priority"],
+        "size": derived["size"],
     }
-    raw_labels: list[Any] = issue.get("labels") or []
-    names: list[str] = []
-    for label in raw_labels:
-        if isinstance(label, dict):
-            names.append(str(cast(dict[str, Any], label)["name"]))
-        else:
-            names.append(str(label))
 
     # Atomic upsert + label replacement (SC9). aiosqlite's connect()
     # context manager only closes — it does not commit. We do an explicit

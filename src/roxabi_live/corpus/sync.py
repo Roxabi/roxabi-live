@@ -54,17 +54,20 @@ UPSERT_ISSUE_SQL = """
         status     = excluded.status
 """
 
-# Webhook upsert: used by corpus.mutations for partial webhook payload data.
-# Inserts with milestone/is_stub/lane/priority/size/status as NULL on new rows,
-# but on conflict ONLY updates the fields present in a webhook payload so that
-# pre-existing values (set by a full sync) are never overwritten with NULL.
+# Webhook upsert: used by corpus.mutations for webhook payload data.
+# The `issues` event payload is always complete for milestone + labels (GitHub
+# re-emits the full issue object on every action, including milestoned /
+# demilestoned / labeled / unlabeled), so we propagate them through on
+# conflict.  Only `status` is preserved on conflict — it comes from a
+# GitHub Project v2 board, not from the `issues` payload, and would otherwise
+# get clobbered to NULL.
 UPSERT_ISSUE_FROM_WEBHOOK_SQL = """
     INSERT INTO issues
         (key, repo, number, title, state, url, created_at, updated_at, closed_at,
          milestone, is_stub, lane, priority, size, status)
     VALUES
         (?, ?, ?, ?, ?, ?, ?, ?, ?,
-         NULL, 0, NULL, NULL, NULL, NULL)
+         ?, 0, ?, ?, ?, NULL)
     ON CONFLICT(key) DO UPDATE SET
         repo       = excluded.repo,
         number     = excluded.number,
@@ -73,7 +76,12 @@ UPSERT_ISSUE_FROM_WEBHOOK_SQL = """
         url        = excluded.url,
         created_at = excluded.created_at,
         updated_at = excluded.updated_at,
-        closed_at  = excluded.closed_at
+        closed_at  = excluded.closed_at,
+        milestone  = excluded.milestone,
+        is_stub    = excluded.is_stub,
+        lane       = excluded.lane,
+        priority   = excluded.priority,
+        size       = excluded.size
 """
 
 DELETE_LABELS_SQL = "DELETE FROM labels WHERE issue_key = ?"
@@ -133,7 +141,7 @@ def _derive_size(labels: list[str]) -> str | None:
     return None
 
 
-def _extract_from_labels(labels: list[str]) -> dict[str, str | None]:
+def extract_from_labels(labels: list[str]) -> dict[str, str | None]:
     """Derive lane/priority/size from an issue's label list.
 
     Vocabulary (first match wins per field):
@@ -295,7 +303,7 @@ def run_repo_sync(
                 "is_stub": 0,
             }
             labels = [n["name"] for n in node["labels"]["nodes"]]
-            issue.update(_extract_from_labels(labels))
+            issue.update(extract_from_labels(labels))
             issue["status"] = None
             upsert_issue(conn, issue)
 

@@ -30,14 +30,15 @@ async def upsert_issue_async(
 ) -> None:
     """Insert-or-update an issue row from a webhook payload.
 
-    Uses UPSERT_ISSUE_FROM_WEBHOOK_SQL which preserves milestone, is_stub,
-    lane, priority, size, status on conflict — those columns are only updated
-    by a full corpus.sync run, never by a webhook event.
+    Uses UPSERT_ISSUE_FROM_WEBHOOK_SQL which propagates every column carried
+    by the GitHub `issues` event (including milestone, lane, priority, size).
+    Only `status` is preserved on conflict — it is sourced from a GitHub
+    Project v2 board and never present in the `issues` payload.
 
     Expected keys in issue_partial:
-        key, repo, number, title, state, url, created_at, updated_at, closed_at
-    All other columns (milestone, is_stub, lane, priority, size, status) are
-    preserved from the existing row on conflict.
+        key, repo, number, title, state, url, created_at, updated_at, closed_at,
+        milestone, lane, priority, size
+    Missing keys default to NULL.
     """
     await conn.execute(
         UPSERT_ISSUE_FROM_WEBHOOK_SQL,
@@ -51,6 +52,10 @@ async def upsert_issue_async(
             issue_partial.get("created_at"),
             issue_partial.get("updated_at"),
             issue_partial.get("closed_at"),
+            issue_partial.get("milestone"),
+            issue_partial.get("lane"),
+            issue_partial.get("priority"),
+            issue_partial.get("size"),
         ),
     )
 

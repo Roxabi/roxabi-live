@@ -141,15 +141,17 @@ class TestUpsertIssueAsync:
         assert row[1] == "New issue"
         assert row[2] == "open"
 
-    async def test_preserves_non_payload_columns(
+    async def test_propagates_milestone_and_label_derived_fields(
         self, db: aiosqlite.Connection
     ) -> None:
-        """Second call preserves milestone/lane/priority/size/status from first.
+        """Webhook upsert writes milestone, lane, priority, size from the partial.
 
-        SC13: non-payload columns must not be NULL'd by a webhook upsert.
+        The `issues` event payload is always complete for these columns, so the
+        webhook upsert propagates them through.  Only `status` (sourced from a
+        GitHub Project v2 board, never present in the `issues` payload) is
+        preserved on conflict.
         """
-        # First call: full sync upsert (sets milestone, lane, priority, size)
-        # We simulate this by directly inserting a row with all columns set
+        # First call: full sync upsert (sets all columns including status)
         await db.execute(
             """
             INSERT INTO issues
@@ -172,12 +174,13 @@ class TestUpsertIssueAsync:
                 "a1",  # lane
                 "P1",  # priority
                 "F-lite",  # size
-                "In Progress",  # status
+                "In Progress",  # status (project board)
             ),
         )
         await db.commit()
 
-        # Second call: webhook upsert (without milestone/lane/priority/size)
+        # Second call: webhook upsert with updated milestone/lane/priority/size
+        # (e.g. user demilestoned + relabeled the issue)
         partial = {
             "key": "Roxabi/lyra#1",
             "repo": "Roxabi/lyra",
@@ -188,6 +191,10 @@ class TestUpsertIssueAsync:
             "created_at": "2026-01-01T00:00:00Z",
             "updated_at": "2026-04-24T00:00:00Z",
             "closed_at": "2026-04-24T00:00:00Z",
+            "milestone": None,  # demilestoned
+            "lane": "b",  # relabeled into lane b
+            "priority": "P2",
+            "size": "S",
         }
         await upsert_issue_async(db, partial)
         await db.commit()
@@ -200,15 +207,15 @@ class TestUpsertIssueAsync:
         row = await cur.fetchone()
         assert row is not None
         title, state, milestone, lane, priority, size, status = row
-        # Updated fields
+        # Updated by webhook
         assert title == "Updated title"
         assert state == "closed"
-        # Preserved non-payload fields (SC13)
-        assert milestone == "v1.0", f"milestone was NULLed: {milestone!r}"
-        assert lane == "a1", f"lane was NULLed: {lane!r}"
-        assert priority == "P1", f"priority was NULLed: {priority!r}"
-        assert size == "F-lite", f"size was NULLed: {size!r}"
-        assert status == "In Progress", f"status was NULLed: {status!r}"
+        assert milestone is None, f"milestone not demilestoned: {milestone!r}"
+        assert lane == "b", f"lane not updated: {lane!r}"
+        assert priority == "P2", f"priority not updated: {priority!r}"
+        assert size == "S", f"size not updated: {size!r}"
+        # Preserved: status comes from GitHub Project board, not webhook payload
+        assert status == "In Progress", f"status was overwritten: {status!r}"
 
     async def test_sync_and_async_produce_identical_rows(self, tmp_path: Path) -> None:
         """Async + sync upserts on the same key produce identical rows.
@@ -266,7 +273,9 @@ class TestUpsertIssueAsync:
             )
             await aconn.commit()
 
-            # Update via async path
+            # Update via async path — feed the same payload columns as the
+            # sync path so the two rows can be compared 1:1.  status stays
+            # NULL through the async path (it comes from a Project board).
             partial = {
                 "key": issue["key"],
                 "repo": issue["repo"],
@@ -277,6 +286,10 @@ class TestUpsertIssueAsync:
                 "created_at": issue["created_at"],
                 "updated_at": issue["updated_at"],
                 "closed_at": issue["closed_at"],
+                "milestone": issue["milestone"],
+                "lane": issue["lane"],
+                "priority": issue["priority"],
+                "size": issue["size"],
             }
             await upsert_issue_async(aconn, partial)
             await aconn.commit()
