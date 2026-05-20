@@ -5,9 +5,13 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS repo_allowlist (
+    repo TEXT PRIMARY KEY  -- "owner/name"
+);
+
 CREATE TABLE IF NOT EXISTS issues (
     key         TEXT PRIMARY KEY,
     repo        TEXT NOT NULL,
@@ -120,6 +124,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Migration 3 — edges PK includes `kind` (SCHEMA_VERSION 3 -> 4).
     # CREATE TABLE IF NOT EXISTS above cannot alter an existing PK.
     _migrate_edges_pk(conn)
+
+    # Migration 4 — repo_allowlist (SCHEMA_VERSION 4 -> 5).
+    # Seed from existing issues only if the allowlist is currently empty,
+    # so existing DBs get their current repos on first upgrade (opt-in).
+    # Fresh DBs start empty (allowlist table created above via SCHEMA_SQL).
+    count = conn.execute("SELECT COUNT(*) FROM repo_allowlist").fetchone()[0]
+    if count == 0:
+        conn.execute(
+            "INSERT OR IGNORE INTO repo_allowlist(repo)"
+            " SELECT DISTINCT repo FROM issues"
+        )
+        conn.commit()
 
 
 def bootstrap(db_path: pathlib.Path) -> None:

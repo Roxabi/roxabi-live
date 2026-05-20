@@ -286,3 +286,103 @@ def test_migration_v3_to_v4_idempotent(tmp_path: Path) -> None:
 
     assert count == 1
     assert pk_cols == ["src_key", "dst_key", "kind"]
+
+
+# ---------------------------------------------------------------------------
+# Migration 4 — repo_allowlist (SCHEMA_VERSION 4 -> 5)
+# ---------------------------------------------------------------------------
+
+
+def test_fresh_db_has_empty_repo_allowlist(tmp_path: Path) -> None:
+    """A fresh bootstrap must create repo_allowlist with zero rows."""
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM repo_allowlist").fetchone()[0]
+        tables = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+
+    assert "repo_allowlist" in tables
+    assert count == 0, f"Expected empty allowlist on fresh DB, got {count} rows"
+
+
+def test_migration_v4_seeds_allowlist_from_issues(tmp_path: Path) -> None:
+    """Upgrading a v4 DB with issues seeds repo_allowlist with DISTINCT repos."""
+    db_path = tmp_path / "corpus.db"
+
+    # Build a v4-era DB manually (no repo_allowlist table, issues present)
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_V2_SCHEMA_SQL)  # gives us the base tables
+    # Add the v3->v4 edges PK (not critical for this test, just realistic)
+    conn.execute("PRAGMA user_version = 4")
+    conn.executemany(
+        "INSERT INTO issues(key, repo, number, title, state, url,"
+        " created_at, updated_at, closed_at, milestone, is_stub)"
+        " VALUES (?, ?, ?, 'T', 'open', 'u', 'c', 'u', NULL, NULL, 0)",
+        [
+            ("Roxabi/lyra#1", "Roxabi/lyra", 1),
+            ("Roxabi/lyra#2", "Roxabi/lyra", 2),
+            ("Roxabi/voiceCLI#1", "Roxabi/voiceCLI", 1),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    # bootstrap applies migration 4
+    bootstrap(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        repos = {
+            r[0] for r in conn.execute("SELECT repo FROM repo_allowlist").fetchall()
+        }
+    finally:
+        conn.close()
+
+    assert repos == {"Roxabi/lyra", "Roxabi/voiceCLI"}
+
+
+def test_migration_v4_seed_idempotent(tmp_path: Path) -> None:
+    """Migration 4 must NOT re-seed when allowlist already has rows (idempotent)."""
+    db_path = tmp_path / "corpus.db"
+
+    # Fully initialise to v5
+    bootstrap(db_path)
+
+    # Manually add a row to the allowlist
+    conn = sqlite3.connect(db_path)
+    conn.execute("INSERT INTO repo_allowlist(repo) VALUES('Roxabi/lyra')")
+    conn.commit()
+    conn.close()
+
+    # Add an issue with a different repo, then bootstrap again
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO issues(key, repo, number, title, state, url,"
+        " created_at, updated_at, closed_at, milestone, is_stub)"
+        " VALUES ('Roxabi/other#1', 'Roxabi/other', 1, 'T', 'open',"
+        " 'u', 'c', 'u', NULL, NULL, 0)"
+    )
+    conn.commit()
+    conn.close()
+
+    bootstrap(db_path)  # migration 4 must not re-seed
+
+    conn = sqlite3.connect(db_path)
+    try:
+        repos = {
+            r[0] for r in conn.execute("SELECT repo FROM repo_allowlist").fetchall()
+        }
+    finally:
+        conn.close()
+
+    # Should still be only the manually added row — no re-seed
+    assert repos == {"Roxabi/lyra"}
