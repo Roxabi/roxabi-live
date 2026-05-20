@@ -387,6 +387,127 @@ def test_upsert_edges_delete_one_kind_preserves_other(
 
 
 # ---------------------------------------------------------------------------
+# run_single_repo_sync
+# ---------------------------------------------------------------------------
+
+
+def test_run_single_repo_sync_calls_run_repo_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_single_repo_sync delegates to run_repo_sync with owner/name/since."""
+    from roxabi_live.corpus.sync import run_single_repo_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+
+    calls: list[tuple[Any, ...]] = []
+
+    def fake_run_repo_sync(
+        c: Any, owner: str, name: str, since: str | None = None
+    ) -> dict[str, int]:
+        calls.append((owner, name, since))
+        return {"pages": 1, "issues": 2}
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.run_repo_sync", fake_run_repo_sync)
+
+    result = run_single_repo_sync(conn, "Roxabi/lyra")
+    conn.close()
+
+    assert result == {"pages": 1, "issues": 2}
+    assert len(calls) == 1
+    assert calls[0][0] == "Roxabi"
+    assert calls[0][1] == "lyra"
+    assert calls[0][2] is None  # no sync_state row → since=None
+
+
+def test_run_single_repo_sync_uses_since_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_single_repo_sync reads since from sync_state when a row exists."""
+    from roxabi_live.corpus.sync import run_single_repo_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_state(repo, last_cursor, last_synced_at)"
+        " VALUES (?, ?, ?)",
+        ("Roxabi/lyra", None, "2026-01-01T00:00:00+00:00"),
+    )
+    conn.commit()
+
+    captured_since: list[str | None] = []
+
+    def fake_run_repo_sync(
+        c: Any, owner: str, name: str, since: str | None = None
+    ) -> dict[str, int]:
+        captured_since.append(since)
+        return {"pages": 0, "issues": 0}
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.run_repo_sync", fake_run_repo_sync)
+
+    run_single_repo_sync(conn, "Roxabi/lyra")
+    conn.close()
+
+    assert captured_since == ["2026-01-01T00:00:00+00:00"]
+
+
+def test_run_single_repo_sync_does_not_call_enumerate_or_hop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_single_repo_sync must NOT call enumerate_org_repos or closed_hop_pass."""
+    from roxabi_live.corpus import sync as sync_mod  # noqa: PLC0415
+    from roxabi_live.corpus.sync import run_single_repo_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+
+    enumerate_called = False
+    hop_called = False
+
+    def fake_enumerate(org: str) -> list[Any]:
+        nonlocal enumerate_called
+        enumerate_called = True
+        return []
+
+    def fake_hop(c: Any) -> int:
+        nonlocal hop_called
+        hop_called = True
+        return 0
+
+    def fake_run_repo_sync(
+        c: Any, owner: str, name: str, since: str | None = None
+    ) -> dict[str, int]:
+        return {"pages": 0, "issues": 0}
+
+    monkeypatch.setattr(sync_mod, "enumerate_org_repos", fake_enumerate)
+    monkeypatch.setattr(sync_mod, "closed_hop_pass", fake_hop)
+    monkeypatch.setattr(sync_mod, "run_repo_sync", fake_run_repo_sync)
+
+    run_single_repo_sync(conn, "Roxabi/lyra")
+    conn.close()
+
+    assert not enumerate_called, "enumerate_org_repos must NOT be called"
+    assert not hop_called, "closed_hop_pass must NOT be called"
+
+
+def test_run_single_repo_sync_malformed_repo_raises(tmp_path: Path) -> None:
+    """run_single_repo_sync raises ValueError for repos without a slash."""
+    from roxabi_live.corpus.sync import run_single_repo_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+    try:
+        with pytest.raises(ValueError, match="owner/name"):
+            run_single_repo_sync(conn, "no-slash-here")
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # run_sync allowlist filtering
 # ---------------------------------------------------------------------------
 
@@ -459,9 +580,7 @@ def test_run_sync_filters_by_allowlist(
     def fake_enum_three(_org: str) -> list[tuple[str, str]]:
         return [("Roxabi", "lyra"), ("Roxabi", "voiceCLI"), ("Roxabi", "noise")]
 
-    monkeypatch.setattr(
-        "roxabi_live.corpus.sync.enumerate_org_repos", fake_enum_three
-    )
+    monkeypatch.setattr("roxabi_live.corpus.sync.enumerate_org_repos", fake_enum_three)
 
     synced: list[str] = []
 
@@ -472,6 +591,7 @@ def test_run_sync_filters_by_allowlist(
         return {"pages": 1, "issues": 2}
 
     monkeypatch.setattr("roxabi_live.corpus.sync.run_repo_sync", fake_run_repo_sync)
+
     # closed_hop_pass also needs mocking to avoid DB issues
     def fake_closed_hop(_c: Any) -> int:
         return 0

@@ -269,11 +269,9 @@ def test_stale_sync_triggers_reconcile(
     two_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
     _seed_sync_state(db_path, "Roxabi/lyra", two_hours_ago)
 
-    mock_run_once = AsyncMock(return_value=None)
-    # The trigger_heal factory calls roxabi_live.reconciler.run_once.
-    # Patch before TestClient enters lifespan; lifespan startup call = call 1,
-    # webhook-triggered heal = call 2 (total >= 2).
-    monkeypatch.setattr("roxabi_live.reconciler.run_once", mock_run_once)
+    mock_run_repo_once = AsyncMock(return_value=None)
+    # trigger_heal now calls run_repo_once (not run_once) for single-repo heal.
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
@@ -284,7 +282,6 @@ def test_stale_sync_triggers_reconcile(
     sig = _sign(body)
 
     with TestClient(app) as client:
-        call_count_after_startup = mock_run_once.call_count  # startup call
         resp = client.post(
             "/webhook/github",
             content=body,
@@ -298,9 +295,9 @@ def test_stale_sync_triggers_reconcile(
         # Drain the event loop so the fire-and-forget task executes
         asyncio.run(asyncio.sleep(0))
 
-    # One additional call triggered by the stale webhook heal
-    assert mock_run_once.call_count > call_count_after_startup, (
-        "Expected trigger_heal to schedule an additional run_once call"
+    # One call triggered by the stale webhook heal
+    assert mock_run_repo_once.call_count >= 1, (
+        "Expected trigger_heal to schedule a run_repo_once call"
     )
 
 
@@ -311,8 +308,8 @@ def test_fresh_sync_does_not_trigger_reconcile(
     five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
     _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
 
-    mock_run_once = AsyncMock(return_value=None)
-    monkeypatch.setattr("roxabi_live.reconciler.run_once", mock_run_once)
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
@@ -323,7 +320,6 @@ def test_fresh_sync_does_not_trigger_reconcile(
     sig = _sign(body)
 
     with TestClient(app) as client:
-        call_count_after_startup = mock_run_once.call_count
         resp = client.post(
             "/webhook/github",
             content=body,
@@ -336,9 +332,9 @@ def test_fresh_sync_does_not_trigger_reconcile(
         assert resp.status_code == 200
         asyncio.run(asyncio.sleep(0))
 
-    # No additional calls — sync is fresh
-    assert mock_run_once.call_count == call_count_after_startup, (
-        "Expected trigger_heal NOT to schedule run_once for a fresh sync"
+    # No calls — sync is fresh
+    assert mock_run_repo_once.call_count == 0, (
+        "Expected trigger_heal NOT to schedule run_repo_once for a fresh sync"
     )
 
 
@@ -346,8 +342,8 @@ def test_missing_sync_state_triggers_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No row in sync_state for the repo → trigger_heal schedules run_once."""
-    mock_run_once = AsyncMock(return_value=None)
-    monkeypatch.setattr("roxabi_live.reconciler.run_once", mock_run_once)
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
@@ -358,7 +354,6 @@ def test_missing_sync_state_triggers_reconcile(
     sig = _sign(body)
 
     with TestClient(app) as client:
-        call_count_after_startup = mock_run_once.call_count
         resp = client.post(
             "/webhook/github",
             content=body,
@@ -371,8 +366,8 @@ def test_missing_sync_state_triggers_reconcile(
         assert resp.status_code == 200
         asyncio.run(asyncio.sleep(0))
 
-    assert mock_run_once.call_count > call_count_after_startup, (
-        "Expected trigger_heal to schedule run_once when sync_state is missing"
+    assert mock_run_repo_once.call_count >= 1, (
+        "Expected trigger_heal to schedule run_repo_once when sync_state is missing"
     )
 
 

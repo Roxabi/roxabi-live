@@ -439,6 +439,29 @@ def closed_hop_pass(conn: sqlite3.Connection) -> int:
     return inserted
 
 
+def run_single_repo_sync(conn: sqlite3.Connection, repo: str) -> dict[str, int]:
+    """Sync ONE repo. Used by webhook-driven heal — does NOT enumerate the
+    org and does NOT run closed_hop_pass (those stay in the hourly run_sync).
+
+    Args:
+        conn: SQLite connection.
+        repo: Repository in 'owner/name' form (e.g. 'Roxabi/lyra').
+
+    Returns counts: {"pages": N, "issues": N}.
+
+    Raises ValueError on malformed repo.
+    """
+    owner, sep, name = repo.partition("/")
+    if not owner or not sep or not name:
+        raise ValueError(f"repo must be in 'owner/name' form, got: {repo!r}")
+    row = conn.execute(
+        "SELECT last_synced_at FROM sync_state WHERE repo = ?",
+        (repo,),
+    ).fetchone()
+    since: str | None = row[0] if row else None
+    return run_repo_sync(conn, owner, name, since=since)
+
+
 def run_sync(conn: sqlite3.Connection, org: str, full: bool = False) -> dict[str, int]:
     """Org-wide sync: enumerate repos, per-repo sync with since cursor, closed-hop pass.
 
