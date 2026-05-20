@@ -50,6 +50,12 @@
   --repo-green:  #22c55e;
   --repo-gray:   #94a3b8;
   --repo-cyan:   #22d3ee;
+  --repo-indigo:  #6366f1;
+  --repo-rose:    #f43f5e;
+  --repo-violet:  #8b5cf6;
+  --repo-brown:   #b45309;
+  --repo-fuchsia: #d946ef;
+  --repo-yellow:  #eab308;
 }
 
 /* ── Panel chrome ───────────────────────────────────────────────── */
@@ -169,7 +175,13 @@
 #graph-panel .gg-node[data-tone="green"]  { color: var(--repo-green); }
 #graph-panel .gg-node[data-tone="gray"]   { color: var(--repo-gray); }
 #graph-panel .gg-node[data-tone="cyan"]   { color: var(--repo-cyan); }
-#graph-panel .gg-node[data-tone="accent"] { color: var(--accent); }
+#graph-panel .gg-node[data-tone="indigo"]  { color: var(--repo-indigo); }
+#graph-panel .gg-node[data-tone="rose"]    { color: var(--repo-rose); }
+#graph-panel .gg-node[data-tone="violet"]  { color: var(--repo-violet); }
+#graph-panel .gg-node[data-tone="brown"]   { color: var(--repo-brown); }
+#graph-panel .gg-node[data-tone="fuchsia"] { color: var(--repo-fuchsia); }
+#graph-panel .gg-node[data-tone="yellow"]  { color: var(--repo-yellow); }
+#graph-panel .gg-node[data-tone="accent"]  { color: var(--accent); }
 
 /* ── Inline pill label ───────────────────────────────────────────── */
 #graph-panel .gg-ilabel {
@@ -264,7 +276,13 @@
 #graph-panel .gg-ilabel[data-tone="green"]  { color: var(--repo-green); }
 #graph-panel .gg-ilabel[data-tone="gray"]   { color: var(--repo-gray); }
 #graph-panel .gg-ilabel[data-tone="cyan"]   { color: var(--repo-cyan); }
-#graph-panel .gg-ilabel[data-tone="accent"] { color: var(--accent); }
+#graph-panel .gg-ilabel[data-tone="indigo"]  { color: var(--repo-indigo); }
+#graph-panel .gg-ilabel[data-tone="rose"]    { color: var(--repo-rose); }
+#graph-panel .gg-ilabel[data-tone="violet"]  { color: var(--repo-violet); }
+#graph-panel .gg-ilabel[data-tone="brown"]   { color: var(--repo-brown); }
+#graph-panel .gg-ilabel[data-tone="fuchsia"] { color: var(--repo-fuchsia); }
+#graph-panel .gg-ilabel[data-tone="yellow"]  { color: var(--repo-yellow); }
+#graph-panel .gg-ilabel[data-tone="accent"]  { color: var(--accent); }
 
 /* ── SVG edges ───────────────────────────────────────────────────── */
 #graph-panel .graph-svg {

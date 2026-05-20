@@ -319,6 +319,12 @@ main { padding-bottom: 24px; }
 .ms-pill[data-tone="green"]  { color: var(--repo-green);  background: color-mix(in srgb, var(--repo-green)  15%, transparent); border-color: color-mix(in srgb, var(--repo-green)  40%, transparent); }
 .ms-pill[data-tone="gray"]   { color: var(--repo-gray);   background: color-mix(in srgb, var(--repo-gray)   15%, transparent); border-color: color-mix(in srgb, var(--repo-gray)   40%, transparent); }
 .ms-pill[data-tone="cyan"]   { color: var(--repo-cyan);   background: color-mix(in srgb, var(--repo-cyan)   15%, transparent); border-color: color-mix(in srgb, var(--repo-cyan)   40%, transparent); }
+.ms-pill[data-tone="indigo"]  { color: var(--repo-indigo);  background: color-mix(in srgb, var(--repo-indigo)  15%, transparent); border-color: color-mix(in srgb, var(--repo-indigo)  40%, transparent); }
+.ms-pill[data-tone="rose"]    { color: var(--repo-rose);    background: color-mix(in srgb, var(--repo-rose)    15%, transparent); border-color: color-mix(in srgb, var(--repo-rose)    40%, transparent); }
+.ms-pill[data-tone="violet"]  { color: var(--repo-violet);  background: color-mix(in srgb, var(--repo-violet)  15%, transparent); border-color: color-mix(in srgb, var(--repo-violet)  40%, transparent); }
+.ms-pill[data-tone="brown"]   { color: var(--repo-brown);   background: color-mix(in srgb, var(--repo-brown)   15%, transparent); border-color: color-mix(in srgb, var(--repo-brown)   40%, transparent); }
+.ms-pill[data-tone="fuchsia"] { color: var(--repo-fuchsia); background: color-mix(in srgb, var(--repo-fuchsia) 15%, transparent); border-color: color-mix(in srgb, var(--repo-fuchsia) 40%, transparent); }
+.ms-pill[data-tone="yellow"]  { color: var(--repo-yellow);  background: color-mix(in srgb, var(--repo-yellow)  15%, transparent); border-color: color-mix(in srgb, var(--repo-yellow)  40%, transparent); }
 
 .ms-panel {
   position: fixed; z-index: 500;
