@@ -300,7 +300,9 @@
   opacity: 0.45;
   transition: opacity 0.18s, stroke-width 0.18s, stroke 0.18s;
 }
-#graph-panel .gg-edge.blocked { stroke-dasharray: 4 3; }
+/* blocks edges stay solid; active blockers (dst still open) get an opacity
+   boost so the live blocking link reads stronger than the historic one. */
+#graph-panel .gg-edge.blocked { opacity: 0.9; }
 #graph-panel .gg-edge.parent-edge {
   stroke-width: 1;
   stroke-dasharray: 2 2;
