@@ -75,6 +75,65 @@ def cmd_sync(args: argparse.Namespace) -> int:
         conn.close()
 
 
+_REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
+
+
+def _validate_repo(repo: str) -> bool:
+    return bool(_REPO_RE.match(repo))
+
+
+def cmd_repo(args: argparse.Namespace) -> int:
+    db_path = Path(args.db)
+    if not db_path.exists():
+        print(f"ERROR: {db_path} not found — run `init` first", file=sys.stderr)
+        return 1
+    conn = schema.connect(db_path)
+    try:
+        action = args.repo_action
+        if action == "list":
+            rows = conn.execute(
+                "SELECT repo FROM repo_allowlist ORDER BY repo"
+            ).fetchall()
+            if rows:
+                for (repo,) in rows:
+                    print(repo)
+            else:
+                print("(empty)")
+            return 0
+
+        repo = args.repo_name
+        if not _validate_repo(repo):
+            print(
+                f"ERROR: repo must be OWNER/NAME, got: {repo!r}",
+                file=sys.stderr,
+            )
+            return 1
+
+        if action == "add":
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO repo_allowlist(repo) VALUES(?)", (repo,)
+            )
+            conn.commit()
+            if cur.rowcount:
+                print(f"added {repo}")
+            else:
+                print(f"already present {repo}")
+            return 0
+
+        if action == "remove":
+            cur = conn.execute("DELETE FROM repo_allowlist WHERE repo = ?", (repo,))
+            conn.commit()
+            if cur.rowcount:
+                print(f"removed {repo}")
+            else:
+                print(f"not in allowlist {repo}")
+            return 0
+
+    finally:
+        conn.close()
+    return 0  # unreachable — satisfies type checker
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     db_path = Path(args.db)
     if not db_path.exists():
@@ -118,6 +177,20 @@ def main(argv: list[str] | None = None) -> int:
 
     p_stats = subparsers.add_parser("stats", help="Print row counts from the corpus DB")
     p_stats.set_defaults(func=cmd_stats)
+
+    p_repo = subparsers.add_parser("repo", help="Manage repo allowlist")
+    p_repo.set_defaults(func=cmd_repo)
+    repo_sub = p_repo.add_subparsers(dest="repo_action", required=True)
+
+    repo_sub.add_parser("list", help="List repos in allowlist")
+
+    p_repo_add = repo_sub.add_parser("add", help="Add a repo to the allowlist")
+    p_repo_add.add_argument("repo_name", metavar="OWNER/NAME")
+
+    p_repo_remove = repo_sub.add_parser(
+        "remove", help="Remove a repo from the allowlist"
+    )
+    p_repo_remove.add_argument("repo_name", metavar="OWNER/NAME")
 
     args = parser.parse_args(argv)
     return args.func(args)

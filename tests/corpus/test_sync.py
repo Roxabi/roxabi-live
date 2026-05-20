@@ -384,3 +384,103 @@ def test_upsert_edges_delete_one_kind_preserves_other(
         ("A", "K", surviving_kind),
         ("K", "Z", surviving_kind),
     }
+
+
+# ---------------------------------------------------------------------------
+# run_sync allowlist filtering
+# ---------------------------------------------------------------------------
+
+
+def _make_repos_response(repos: list[tuple[str, str]]) -> dict[str, Any]:
+    """Wrap repo list in the GraphQL org repositories envelope."""
+    return {
+        "data": {
+            "organization": {
+                "repositories": {
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    "nodes": [{"owner": {"login": o}, "name": n} for o, n in repos],
+                }
+            },
+            "rateLimit": {
+                "cost": 1,
+                "remaining": 4999,
+                "resetAt": "2026-04-21T10:00:00Z",
+            },
+        }
+    }
+
+
+def test_run_sync_empty_allowlist_returns_zeros(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """run_sync with an empty allowlist returns zero counts and prints a warning."""
+    from roxabi_live.corpus.sync import run_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+
+    # enumerate_org_repos returns something but allowlist is empty
+    def fake_enum_empty(_org: str) -> list[tuple[str, str]]:
+        return [("Roxabi", "lyra"), ("Roxabi", "voiceCLI")]
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.enumerate_org_repos", fake_enum_empty)
+
+    result = run_sync(conn, "Roxabi")
+    conn.close()
+
+    assert result == {
+        "repos": 0,
+        "pages": 0,
+        "issues": 0,
+        "stubs": 0,
+        "errors": 0,
+        "pruned": 0,
+    }
+    err = capsys.readouterr().err
+    assert "repo_allowlist is empty" in err
+    assert "corpus repo add" in err
+
+
+def test_run_sync_filters_by_allowlist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_sync with allowlist=[lyra] only calls run_repo_sync for lyra, not others."""
+    from roxabi_live.corpus.sync import run_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+
+    # Seed allowlist with only lyra
+    conn.execute("INSERT INTO repo_allowlist(repo) VALUES('Roxabi/lyra')")
+    conn.commit()
+
+    def fake_enum_three(_org: str) -> list[tuple[str, str]]:
+        return [("Roxabi", "lyra"), ("Roxabi", "voiceCLI"), ("Roxabi", "noise")]
+
+    monkeypatch.setattr(
+        "roxabi_live.corpus.sync.enumerate_org_repos", fake_enum_three
+    )
+
+    synced: list[str] = []
+
+    def fake_run_repo_sync(
+        c: Any, owner: str, name: str, since: str | None = None
+    ) -> dict[str, int]:
+        synced.append(f"{owner}/{name}")
+        return {"pages": 1, "issues": 2}
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.run_repo_sync", fake_run_repo_sync)
+    # closed_hop_pass also needs mocking to avoid DB issues
+    def fake_closed_hop(_c: Any) -> int:
+        return 0
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.closed_hop_pass", fake_closed_hop)
+
+    result = run_sync(conn, "Roxabi")
+    conn.close()
+
+    assert synced == ["Roxabi/lyra"], f"Expected only lyra to be synced, got {synced}"
+    assert result["repos"] == 1
+    assert result["issues"] == 2

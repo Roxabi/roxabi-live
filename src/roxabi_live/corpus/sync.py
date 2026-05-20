@@ -450,6 +450,25 @@ def run_sync(conn: sqlite3.Connection, org: str, full: bool = False) -> dict[str
     Returns counts: {"repos": N, "pages": N, "issues": N, "stubs": N, "errors": N}.
     """
     repos = enumerate_org_repos(org)
+
+    # Filter by allowlist; warn and bail if empty.
+    allowlist = {row[0] for row in conn.execute("SELECT repo FROM repo_allowlist")}
+    if not allowlist:
+        print(
+            "[corpus] repo_allowlist is empty — nothing to sync."
+            " Add repos with `corpus repo add OWNER/NAME`.",
+            file=sys.stderr,
+        )
+        return {
+            "repos": 0,
+            "pages": 0,
+            "issues": 0,
+            "stubs": 0,
+            "errors": 0,
+            "pruned": 0,
+        }
+    repos = [(o, n) for (o, n) in repos if f"{o}/{n}" in allowlist]
+
     active_keys = {f"{owner}/{name}" for owner, name in repos}
     cur = conn.execute("SELECT repo FROM sync_state")
     stale = [row[0] for row in cur.fetchall() if row[0] not in active_keys]

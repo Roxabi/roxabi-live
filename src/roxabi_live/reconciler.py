@@ -100,6 +100,7 @@ async def run_once(settings: Settings) -> None:
     global _auth_failures
     if _halted.is_set():
         return
+
     def _sync() -> dict[str, int]:
         conn = sqlite3.connect(settings.corpus_db_path)
         try:

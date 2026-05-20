@@ -50,7 +50,6 @@ query($org: String!, $cursor: String) {
       first: 100
       after: $cursor
       isArchived: false
-      privacy: PUBLIC
       orderBy: { field: NAME, direction: ASC }
     ) {
       pageInfo { hasNextPage endCursor }
