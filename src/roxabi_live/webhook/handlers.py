@@ -126,25 +126,47 @@ async def handle_sub_issues(
 
     Acted upon: sub_issue_added, sub_issue_removed.
     Ignored (duplicate-direction): parent_issue_added, parent_issue_removed.
+
+    Per GitHub's webhook docs, the payload uses top-level ``parent_issue`` /
+    ``parent_issue_repo`` / ``sub_issue`` / ``sub_issue_repo`` keys.  Repo info
+    is NOT nested under the issue objects.  Malformed payloads are logged and
+    skipped rather than raising — webhooks must always return 200.
     """
     action = payload.get("action")
 
     if action in ("parent_issue_added", "parent_issue_removed"):
         return
 
-    if action == "sub_issue_added":
-        parent = payload["issue"]
-        child = payload["sub_issue"]
-        parent_key = f"{parent['repository']['full_name']}#{parent['number']}"
-        child_key = f"{child['repository']['full_name']}#{child['number']}"
-        await add_edge_async(conn, parent_key, child_key, "parent")
-        await conn.commit()
+    if action not in ("sub_issue_added", "sub_issue_removed"):
         return
 
-    if action == "sub_issue_removed":
-        parent = payload["issue"]
-        child = payload["sub_issue"]
-        parent_key = f"{parent['repository']['full_name']}#{parent['number']}"
-        child_key = f"{child['repository']['full_name']}#{child['number']}"
+    parent_issue = payload.get("parent_issue")
+    parent_repo = payload.get("parent_issue_repo")
+    sub_issue = payload.get("sub_issue")
+    sub_repo = payload.get("sub_issue_repo")
+
+    if not (parent_issue and parent_repo and sub_issue and sub_repo):
+        log.warning(
+            "handle_sub_issues: unexpected payload shape for %s — keys=%s",
+            action,
+            sorted(payload.keys()),
+        )
+        return
+
+    try:
+        parent_key = f"{parent_repo['full_name']}#{parent_issue['number']}"
+        child_key = f"{sub_repo['full_name']}#{sub_issue['number']}"
+    except KeyError as exc:
+        log.warning(
+            "handle_sub_issues: malformed payload for %s — missing %s — keys=%s",
+            action,
+            exc.args[0] if exc.args else "?",
+            sorted(payload.keys()),
+        )
+        return
+
+    if action == "sub_issue_added":
+        await add_edge_async(conn, parent_key, child_key, "parent")
+    else:  # sub_issue_removed
         await remove_edge_async(conn, parent_key, child_key, "parent")
-        await conn.commit()
+    await conn.commit()

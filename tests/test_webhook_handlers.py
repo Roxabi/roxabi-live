@@ -16,6 +16,7 @@ Namespaces reserved per spec:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -360,11 +361,25 @@ def _make_sub_issues_payload(
     child_repo: str = "Roxabi/lyra",
     child_number: int = 2,
 ) -> dict[str, Any]:
-    """Build a minimal GitHub `sub_issues` webhook payload."""
+    """Build a minimal GitHub `sub_issues` webhook payload.
+
+    Mirrors the real GitHub payload: separate ``parent_issue`` / ``sub_issue``
+    objects with sibling ``parent_issue_repo`` / ``sub_issue_repo`` fields.
+    """
     return {
         "action": action,
-        "issue": _make_issue_obj(parent_repo, parent_number),
+        "parent_issue": _make_issue_obj(parent_repo, parent_number),
+        "parent_issue_repo": {
+            "full_name": parent_repo,
+            "name": parent_repo.split("/", 1)[-1],
+            "owner": {"login": parent_repo.split("/", 1)[0]},
+        },
         "sub_issue": _make_issue_obj(child_repo, child_number),
+        "sub_issue_repo": {
+            "full_name": child_repo,
+            "name": child_repo.split("/", 1)[-1],
+            "owner": {"login": child_repo.split("/", 1)[0]},
+        },
         "repository": {
             "full_name": parent_repo,
             "name": parent_repo.split("/", 1)[-1],
@@ -523,6 +538,26 @@ class TestSubIssuesWebhookHandler:
         assert row_a is None and row_b is None, (
             "Expected no edge for parent_issue_added noop"
         )
+
+    async def test_sub_issues_malformed_payload_is_logged_not_raised(
+        self,
+        db: aiosqlite.Connection,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Malformed sub_issue_added (missing parent_issue/repo fields) must
+        log a warning and return rather than raise — webhooks must return 200.
+        Regression for production KeyError observed when GitHub payload
+        omitted the expected fields."""
+        payload: dict[str, Any] = {"action": "sub_issue_added"}
+
+        with caplog.at_level(logging.WARNING, logger="roxabi_live.webhook.handlers"):
+            await handle_sub_issues(payload, db)
+
+        assert any(
+            "unexpected payload shape" in rec.message for rec in caplog.records
+        ), "Expected a warning log for malformed payload"
+        row = await _fetch_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+        assert row is None, "No edge should be inserted for malformed payload"
 
 
 # ---------------------------------------------------------------------------
