@@ -34,6 +34,7 @@ _AUTH_FAILURE_THRESHOLD = 2
 _auth_failures: int = 0
 _halted: asyncio.Event = asyncio.Event()
 _state_lock: asyncio.Lock = asyncio.Lock()
+_sync_in_flight: bool = False
 
 
 class TriggerHeal(Protocol):
@@ -138,6 +139,49 @@ async def run_once(settings: Settings) -> None:
         log.exception("reconciler run_once failed")
 
 
+async def run_repo_once(settings: Settings, repo: str) -> None:
+    """Single-repo sync cycle for webhook-driven heal.
+
+    Mirrors run_once's auth-halt handling but calls run_single_repo_sync
+    instead of run_sync. Never raises.
+    """
+    global _auth_failures
+    if _halted.is_set():
+        return
+
+    def _sync() -> dict[str, int]:
+        conn = sqlite3.connect(settings.corpus_db_path)
+        try:
+            return corpus_sync.run_single_repo_sync(conn, repo)
+        finally:
+            conn.close()
+
+    try:
+        await asyncio.to_thread(_sync)
+        async with _state_lock:
+            _auth_failures = 0
+    except Exception as exc:
+        if _is_auth_error(exc):
+            async with _state_lock:
+                _auth_failures += 1
+                should_halt = _auth_failures >= _AUTH_FAILURE_THRESHOLD
+                failures = _auth_failures
+            if should_halt and not _halted.is_set():
+                _halted.set()
+                log.critical(
+                    "reconciler halted: %d consecutive auth failures",
+                    failures,
+                )
+            else:
+                log.warning(
+                    "reconciler auth error %d/%d",
+                    failures,
+                    _AUTH_FAILURE_THRESHOLD,
+                )
+            return
+        log.exception("reconciler run_repo_once failed (repo=%s)", repo)
+
+
 def hourly_loop(settings: Settings) -> asyncio.Task[None]:
     """Start a background task that calls run_once on a fixed interval.
 
@@ -162,6 +206,14 @@ def hourly_loop(settings: Settings) -> asyncio.Task[None]:
     return asyncio.create_task(_loop())
 
 
+def _reset_state_for_tests() -> None:
+    """Reset all module-level sync state. Call from test fixtures only."""
+    global _auth_failures, _sync_in_flight
+    _auth_failures = 0
+    _sync_in_flight = False
+    _halted.clear()
+
+
 def make_trigger_heal(
     settings: Settings,
     background_tasks: WeakSet[asyncio.Task[None]],
@@ -169,10 +221,12 @@ def make_trigger_heal(
     """Factory: build a TriggerHeal closure capturing settings + the WeakSet.
 
     The returned callable:
-    1. Checks sync_state staleness (>1h or missing) for the repo.
-    2. If stale, schedules asyncio.create_task(run_once(settings)).
-    3. Registers the task in background_tasks WeakSet.
-    4. Attaches _log_exc as a done-callback to surface exceptions in logs.
+    1. Acquires _state_lock and checks _sync_in_flight; returns if already running.
+    2. Checks sync_state staleness (>1h or missing) for the repo.
+    3. If stale, sets _sync_in_flight = True and schedules a task calling
+       run_repo_once(settings, repo).  The task clears _sync_in_flight on finish.
+    4. Registers the task in background_tasks WeakSet.
+    5. Attaches _log_exc as a done-callback to surface exceptions in logs.
 
     Args:
         settings: App settings (db path, org, interval).
@@ -184,21 +238,38 @@ def make_trigger_heal(
     """
 
     async def _trigger_heal(repo: str, conn: aiosqlite.Connection) -> None:
-        cur = await conn.execute(
-            "SELECT last_synced_at FROM sync_state WHERE repo = ?", (repo,)
-        )
-        row = await cur.fetchone()
-        now = datetime.now(timezone.utc)
-        stale = True
-        if row is not None:
-            raw = row[0]
-            last = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=timezone.utc)
-            stale = (now - last).total_seconds() > settings.corpus_sync_interval_seconds
-        if stale:
-            task: asyncio.Task[None] = asyncio.create_task(run_once(settings))
-            background_tasks.add(task)
-            task.add_done_callback(_log_exc)
+        global _sync_in_flight
+        async with _state_lock:
+            if _sync_in_flight:
+                return
+            cur = await conn.execute(
+                "SELECT last_synced_at FROM sync_state WHERE repo = ?", (repo,)
+            )
+            row = await cur.fetchone()
+            now = datetime.now(timezone.utc)
+            stale = True
+            if row is not None:
+                raw = row[0]
+                last = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
+                if last.tzinfo is None:
+                    last = last.replace(tzinfo=timezone.utc)
+                stale = (
+                    now - last
+                ).total_seconds() > settings.corpus_sync_interval_seconds
+            if not stale:
+                return
+            _sync_in_flight = True
+
+        async def _run_and_clear() -> None:
+            global _sync_in_flight
+            try:
+                await run_repo_once(settings, repo)
+            finally:
+                async with _state_lock:
+                    _sync_in_flight = False
+
+        task: asyncio.Task[None] = asyncio.create_task(_run_and_clear())
+        background_tasks.add(task)
+        task.add_done_callback(_log_exc)
 
     return _trigger_heal  # type: ignore[return-value]

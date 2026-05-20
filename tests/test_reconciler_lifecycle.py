@@ -63,15 +63,15 @@ class TestHealTaskExceptionLogged:
         bg_tasks: WeakSet[asyncio.Task[None]] = WeakSet()
         trigger_heal = make_trigger_heal(s, bg_tasks)
 
-        # Monkey-patch run_once to raise inside the scheduled task
+        # Monkey-patch run_repo_once to raise inside the scheduled task
         import roxabi_live.reconciler as rec_module
 
-        original_run_once = rec_module.run_once
+        original_run_repo_once = rec_module.run_repo_once
 
-        async def _bad_run_once(settings: Settings) -> None:
+        async def _bad_run_repo_once(settings: Settings, repo: str) -> None:
             raise RuntimeError("heal task blew up")
 
-        rec_module.run_once = _bad_run_once  # type: ignore[assignment]
+        rec_module.run_repo_once = _bad_run_repo_once  # type: ignore[assignment]
 
         try:
             async with aiosqlite.connect(":memory:") as conn:
@@ -82,7 +82,7 @@ class TestHealTaskExceptionLogged:
                     # Let the event loop run the task to completion
                     await asyncio.sleep(0.05)
         finally:
-            rec_module.run_once = original_run_once  # type: ignore[assignment]
+            rec_module.run_repo_once = original_run_repo_once  # type: ignore[assignment]
 
         error_records = [
             r
@@ -104,7 +104,9 @@ class TestHealTaskExceptionLogged:
         bg_tasks: WeakSet[asyncio.Task[None]] = WeakSet()
         trigger_heal = make_trigger_heal(s, bg_tasks)
 
-        with patch("roxabi_live.reconciler.run_once", AsyncMock(return_value=None)):
+        with patch(
+            "roxabi_live.reconciler.run_repo_once", AsyncMock(return_value=None)
+        ):
             async with aiosqlite.connect(":memory:") as conn:
                 await conn.executescript(_SCHEMA_SQL)
                 # No sync_state row → stale → task created
@@ -213,3 +215,121 @@ class TestLifespanShutdownCancelsHealTasks:
             )
         finally:
             rec_module.run_once = original  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# Dedup / single-repo path / flag-cleared-after
+# ---------------------------------------------------------------------------
+
+
+class TestTriggerHealDedup:
+    """make_trigger_heal schedules at most one task when _sync_in_flight is True."""
+
+    @pytest.mark.asyncio
+    async def test_dedup_concurrent_triggers(self, tmp_path: Path) -> None:
+        """Two concurrent stale trigger_heal calls only schedule ONE task."""
+        from unittest.mock import patch
+
+        import aiosqlite
+
+        import roxabi_live.reconciler as rec_module
+
+        s = _settings(tmp_path)
+        bg_tasks: WeakSet[asyncio.Task[None]] = WeakSet()
+        trigger_heal = make_trigger_heal(s, bg_tasks)
+
+        call_count = 0
+
+        async def slow_run_repo_once(settings: Settings, repo: str) -> None:
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(0.05)  # hold the in-flight flag
+
+        with patch.object(rec_module, "run_repo_once", slow_run_repo_once):
+            async with aiosqlite.connect(":memory:") as conn:
+                await conn.executescript(_SCHEMA_SQL)
+                # No sync_state row → both calls see stale state
+                await asyncio.gather(
+                    trigger_heal("Roxabi/foo", conn),
+                    trigger_heal("Roxabi/foo", conn),
+                )
+                # Drain tasks
+                tasks = list(bg_tasks)
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+        assert call_count == 1, (
+            f"Expected exactly 1 run_repo_once call (dedup); got {call_count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_single_repo_path_not_run_once(self, tmp_path: Path) -> None:
+        """trigger_heal schedules run_repo_once, NOT run_once."""
+        from unittest.mock import AsyncMock, patch
+
+        import aiosqlite
+
+        import roxabi_live.reconciler as rec_module
+
+        s = _settings(tmp_path)
+        bg_tasks: WeakSet[asyncio.Task[None]] = WeakSet()
+        trigger_heal = make_trigger_heal(s, bg_tasks)
+
+        run_once_mock = AsyncMock()
+        run_repo_once_mock = AsyncMock()
+
+        with (
+            patch.object(rec_module, "run_once", run_once_mock),
+            patch.object(rec_module, "run_repo_once", run_repo_once_mock),
+        ):
+            async with aiosqlite.connect(":memory:") as conn:
+                await conn.executescript(_SCHEMA_SQL)
+                await trigger_heal("Roxabi/lyra", conn)
+                tasks = list(bg_tasks)
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+        run_once_mock.assert_not_called()
+        run_repo_once_mock.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_flag_cleared_after_task_completes(self, tmp_path: Path) -> None:
+        """After the heal task finishes, _sync_in_flight is False so a new stale trigger
+        can spawn a fresh task."""
+        from unittest.mock import patch
+
+        import aiosqlite
+
+        import roxabi_live.reconciler as rec_module
+
+        s = _settings(tmp_path)
+        bg_tasks: WeakSet[asyncio.Task[None]] = WeakSet()
+        trigger_heal = make_trigger_heal(s, bg_tasks)
+
+        call_count = 0
+
+        async def counting_run_repo_once(settings: Settings, repo: str) -> None:
+            nonlocal call_count
+            call_count += 1
+
+        with patch.object(rec_module, "run_repo_once", counting_run_repo_once):
+            async with aiosqlite.connect(":memory:") as conn:
+                await conn.executescript(_SCHEMA_SQL)
+                # First trigger
+                await trigger_heal("Roxabi/lyra", conn)
+                tasks = list(bg_tasks)
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Flag must be cleared now
+                assert not rec_module._sync_in_flight  # type: ignore[attr-defined]
+
+                # Second trigger on still-stale state should spawn a new task
+                await trigger_heal("Roxabi/lyra", conn)
+                tasks2 = list(bg_tasks)
+                if tasks2:
+                    await asyncio.gather(*tasks2, return_exceptions=True)
+
+        assert call_count == 2, (
+            f"Expected 2 run_repo_once calls (flag cleared between); got {call_count}"
+        )

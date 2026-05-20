@@ -384,3 +384,62 @@ class TestAuthHalt:
             "Expected a CRITICAL log mentioning 'halt' or 'auth' for 403 errors; "
             f"got records: {caplog.records}"
         )
+
+
+class TestRunRepoOnce:
+    """reconciler.run_repo_once(settings, repo) — single-repo webhook-driven heal."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_calls_run_single_repo_sync(self, tmp_path: Path) -> None:
+        """run_repo_once calls corpus_sync.run_single_repo_sync exactly once."""
+        s = _settings(tmp_path)
+        mock_fn = MagicMock(return_value={"pages": 1, "issues": 5})
+        with patch("roxabi_live.corpus.sync.run_single_repo_sync", mock_fn):
+            await reconciler.run_repo_once(s, "Roxabi/lyra")
+        mock_fn.assert_called_once()
+        args = mock_fn.call_args
+        # second positional arg is repo
+        assert args[0][1] == "Roxabi/lyra"
+
+    @pytest.mark.asyncio
+    async def test_auth_halt_after_two_consecutive_errors(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Two consecutive 401 errors via run_repo_once must set _halted and emit
+        CRITICAL."""
+        s = _settings(tmp_path)
+        err_401 = _make_http_error(401)
+        with caplog.at_level(logging.CRITICAL, logger="roxabi_live.reconciler"):
+            with patch(
+                "roxabi_live.corpus.sync.run_single_repo_sync",
+                side_effect=err_401,
+            ):
+                await reconciler.run_repo_once(s, "Roxabi/lyra")
+                await reconciler.run_repo_once(s, "Roxabi/lyra")
+
+        assert reconciler._halted.is_set()  # type: ignore[attr-defined]
+        critical_records = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.CRITICAL
+            and ("halt" in r.message.lower() or "auth" in r.message.lower())
+        ]
+        assert critical_records, f"Expected CRITICAL log; got: {caplog.records}"
+
+    @pytest.mark.asyncio
+    async def test_success_resets_auth_failures(self, tmp_path: Path) -> None:
+        """A successful run_repo_once resets _auth_failures to 0."""
+        s = _settings(tmp_path)
+        err_401 = _make_http_error(401)
+        # One failure then success
+        with patch(
+            "roxabi_live.corpus.sync.run_single_repo_sync",
+            side_effect=[err_401, {"pages": 1, "issues": 3}],
+        ):
+            await reconciler.run_repo_once(s, "Roxabi/lyra")
+            await reconciler.run_repo_once(s, "Roxabi/lyra")
+
+        assert reconciler._auth_failures == 0  # type: ignore[attr-defined]
+        assert not reconciler._halted.is_set()  # type: ignore[attr-defined]
