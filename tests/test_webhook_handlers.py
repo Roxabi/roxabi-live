@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS edges (
     src_key     TEXT NOT NULL,
     dst_key     TEXT NOT NULL,
     kind        TEXT NOT NULL DEFAULT 'parent',
-    PRIMARY KEY (src_key, dst_key)
+    PRIMARY KEY (src_key, dst_key, kind)
 );
 """
 
@@ -565,6 +565,39 @@ class TestDepsWebhookHandler:
         row_b = await _fetch_edge(db, "Roxabi/lyra#10", "Roxabi/lyra#5", "blocks")
         assert row_a is None and row_b is None, (
             "Expected no edge for blocking_added noop"
+        )
+
+    async def test_blocked_by_added_malformed_payload_logged_not_raised(
+        self,
+        db: aiosqlite.Connection,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Malformed blocked_by_added (missing blocked_issue/issue fields) must
+        log a warning and return rather than raise — webhooks must return 200."""
+        payload: dict[str, Any] = {
+            "action": "blocked_by_added",
+            "repository": {
+                "full_name": "Roxabi/lyra",
+                "name": "lyra",
+                "owner": {"login": "Roxabi"},
+            },
+            # Intentionally omit both 'blocked_issue' and 'issue' keys
+            # so that blocked_issue resolves to None inside handle_deps.
+        }
+
+        with caplog.at_level(logging.WARNING, logger="roxabi_live.webhook.handlers"):
+            await handle_deps(payload, db)
+
+        assert any(
+            "unexpected payload shape" in rec.message for rec in caplog.records
+        ), "Expected a warning log for malformed payload"
+
+        # No edge should have been written
+        cursor = await db.execute("SELECT COUNT(*) FROM edges")
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == 0, (
+            f"Expected no edges written for malformed payload, got {row[0]}"
         )
 
 
