@@ -18,6 +18,7 @@ import aiosqlite
 
 from roxabi_live.corpus.sync import (
     DELETE_EDGE_SQL,
+    DELETE_EDGES_BY_KIND_SQL,
     DELETE_LABELS_SQL,
     INSERT_EDGE_SQL,
     INSERT_LABEL_SQL,
@@ -100,3 +101,31 @@ async def delete_issue_async(conn: aiosqlite.Connection, key: str) -> None:
     Runs inside the caller's transaction — no commit() here.
     """
     await conn.execute("DELETE FROM issues WHERE key = ?", (key,))
+
+
+async def upsert_edges_async(
+    conn: aiosqlite.Connection,
+    issue_key: str,
+    blocked_by: list[str],
+    blocking: list[str],
+    kind: str = "parent",
+) -> None:
+    """Async mirror of corpus.sync.upsert_edges for use in the webhook layer.
+
+    Wipes all edges touching issue_key (as src OR dst) of the given kind, then
+    rewrites from blocked_by + blocking.
+
+    Canonical direction:
+    - Every blocker b in blocked_by -> row (src=b, dst=issue_key).
+    - Every blockee b in blocking  -> row (src=issue_key, dst=b).
+
+    Runs inside the caller's transaction — no commit() here.
+    """
+    await conn.execute(DELETE_EDGES_BY_KIND_SQL, (issue_key, issue_key, kind))
+    rows: list[tuple[str, str, str]] = []
+    for blocker in blocked_by:
+        rows.append((blocker, issue_key, kind))
+    for blockee in blocking:
+        rows.append((issue_key, blockee, kind))
+    if rows:
+        await conn.executemany(INSERT_EDGE_SQL, rows)

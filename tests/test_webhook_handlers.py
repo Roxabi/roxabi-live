@@ -752,3 +752,196 @@ class TestHandleIssuesTransaction:
         assert raw_sql_lines == [], (
             f"handlers.py contains raw SQL strings: {raw_sql_lines}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Helpers for cross-repo deps tests
+# ---------------------------------------------------------------------------
+
+
+def _make_cross_repo_deps_payload(
+    action: str,
+    blocked_repo: str = "Roxabi/llmCLI",
+    blocked_number: int = 64,
+    event_repo: str = "Roxabi/llmCLI",
+) -> dict[str, Any]:
+    """Build a minimal cross-repo `issue_dependencies` payload.
+
+    Mirrors the actual GitHub delivery shape observed 2026-05-21:
+    ``blocking_issue`` and ``blocking_issue_repo`` are absent; only
+    ``blocked_issue`` (and/or ``issue``) + ``repository`` are present.
+    """
+    repo_owner, repo_name = event_repo.split("/", 1)
+    return {
+        "action": action,
+        "blocked_issue_id": blocked_number,
+        "blocked_issue": _make_issue_obj(blocked_repo, blocked_number),
+        "repository": {
+            "full_name": event_repo,
+            "name": repo_name,
+            "owner": {"login": repo_owner},
+        },
+        "organization": {"login": repo_owner},
+        "sender": {"login": "test-user"},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tests — cross-repo handle_deps (point-fetch path)
+# ---------------------------------------------------------------------------
+
+
+class TestDepsWebhookHandlerCrossRepo:
+    """handle_deps() cross-repo path — point-fetch fallback when blocking_issue absent.
+
+    Covers the GitHub schema gap where cross-repo blocked_by payloads omit
+    ``blocking_issue``.
+    """
+
+    async def test_cross_repo_blocked_by_added_writes_edge(
+        self,
+        db: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Cross-repo blocked_by_added: missing blocking_issue triggers point-fetch.
+
+        Mock fetch_issue_deps to return a known blockedBy list and assert that the
+        corresponding blocks edge is written to corpus.db.
+        """
+
+        # Blocker is Roxabi/lyra#1063, blocked issue is Roxabi/llmCLI#64
+        def _mock_fetch(owner: str, name: str, number: int) -> dict[str, list[str]]:
+            assert owner == "Roxabi"
+            assert name == "llmCLI"
+            assert number == 64
+            return {
+                "blocked_by": ["Roxabi/lyra#1063"],
+                "blocking": [],
+            }
+
+        monkeypatch.setattr(
+            "roxabi_live.webhook.handlers.fetch_issue_deps", _mock_fetch
+        )
+
+        payload = _make_cross_repo_deps_payload(
+            action="blocked_by_added",
+            blocked_repo="Roxabi/llmCLI",
+            blocked_number=64,
+            event_repo="Roxabi/llmCLI",
+        )
+        await handle_deps(payload, db)
+
+        row = await _fetch_edge(db, "Roxabi/lyra#1063", "Roxabi/llmCLI#64", "blocks")
+        assert row is not None, (
+            "Expected edge (Roxabi/lyra#1063 → Roxabi/llmCLI#64, blocks) after"
+            " cross-repo blocked_by_added"
+        )
+        assert row == ("Roxabi/lyra#1063", "Roxabi/llmCLI#64", "blocks")
+
+    async def test_cross_repo_blocked_by_removed_removes_edge(
+        self,
+        db: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Cross-repo blocked_by_removed: point-fetch returns empty blockedBy;
+        upsert_edges wipes the previous edge for this issue.
+        """
+        # Seed the edge that should disappear after the removal event
+        await _seed_edge(db, "Roxabi/lyra#1063", "Roxabi/llmCLI#64", "blocks")
+
+        def _mock_fetch(owner: str, name: str, number: int) -> dict[str, list[str]]:
+            # GitHub now reports no blockers (the dep was removed)
+            return {"blocked_by": [], "blocking": []}
+
+        monkeypatch.setattr(
+            "roxabi_live.webhook.handlers.fetch_issue_deps", _mock_fetch
+        )
+
+        payload = _make_cross_repo_deps_payload(
+            action="blocked_by_removed",
+            blocked_repo="Roxabi/llmCLI",
+            blocked_number=64,
+            event_repo="Roxabi/llmCLI",
+        )
+        await handle_deps(payload, db)
+
+        row = await _fetch_edge(db, "Roxabi/lyra#1063", "Roxabi/llmCLI#64", "blocks")
+        assert row is None, (
+            "Expected edge to be removed after cross-repo blocked_by_removed"
+        )
+
+    async def test_same_repo_blocked_by_added_regression(
+        self,
+        db: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Same-repo blocked_by_added: fast path uses payload directly, NO GraphQL.
+
+        Regression guard — the old behavior must still work when blocking_issue
+        IS present in the payload.
+        """
+        fetch_called: list[bool] = []
+
+        def _mock_fetch(
+            owner: str, name: str, number: int
+        ) -> dict[str, list[str]]:  # pragma: no cover
+            fetch_called.append(True)
+            return {"blocked_by": [], "blocking": []}
+
+        monkeypatch.setattr(
+            "roxabi_live.webhook.handlers.fetch_issue_deps", _mock_fetch
+        )
+
+        payload = _make_deps_payload(
+            action="blocked_by_added",
+            issue_repo="Roxabi/lyra",
+            issue_number=10,
+            blocking_repo="Roxabi/lyra",
+            blocking_number=5,
+        )
+        await handle_deps(payload, db)
+
+        # Fast path: edge written directly from payload, no GraphQL call
+        assert fetch_called == [], "GraphQL fetch must NOT be called for same-repo path"
+        row = await _fetch_edge(db, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
+        assert row is not None, (
+            "Expected direct edge insert for same-repo blocked_by_added"
+        )
+
+    async def test_cross_repo_graphql_failure_logs_and_returns_cleanly(
+        self,
+        db: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """GraphQL fetch failure: handler logs warning and returns cleanly.
+
+        No exception should bubble — webhooks must return 200.
+        """
+        from roxabi_live.corpus.graphql import GraphQLError
+
+        def _mock_fetch(owner: str, name: str, number: int) -> dict[str, list[str]]:
+            raise GraphQLError("gh exited 1: authentication failed")
+
+        monkeypatch.setattr(
+            "roxabi_live.webhook.handlers.fetch_issue_deps", _mock_fetch
+        )
+
+        payload = _make_cross_repo_deps_payload(
+            action="blocked_by_added",
+            blocked_repo="Roxabi/llmCLI",
+            blocked_number=64,
+            event_repo="Roxabi/llmCLI",
+        )
+
+        with caplog.at_level(logging.WARNING, logger="roxabi_live.webhook.handlers"):
+            # Must NOT raise — handler swallows GraphQL errors
+            await handle_deps(payload, db)
+
+        assert any("point-fetch failed" in rec.message for rec in caplog.records), (
+            "Expected a warning log when GraphQL fetch fails"
+        )
+
+        # No edge should have been written
+        row = await _fetch_edge(db, "Roxabi/lyra#1063", "Roxabi/llmCLI#64", "blocks")
+        assert row is None, "No edge should be written when GraphQL fetch fails"
