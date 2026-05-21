@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, cast
 
 import aiosqlite
 
+from roxabi_live.corpus.graphql import GraphQLError, fetch_issue_deps
 from roxabi_live.corpus.mutations import (
     add_edge_async,
     delete_issue_async,
     remove_edge_async,
     replace_labels_async,
+    upsert_edges_async,
     upsert_issue_async,
 )
-from roxabi_live.corpus.sync import extract_from_labels
+from roxabi_live.corpus.sync import canonical_key, extract_from_labels
 
 log = logging.getLogger(__name__)
 
@@ -88,11 +91,64 @@ def _issue_key(
     return f"{full_name}#{issue['number']}"
 
 
+async def _point_fetch_and_upsert_deps(
+    conn: aiosqlite.Connection,
+    blocked_issue: dict[str, Any],
+    repo: dict[str, Any],
+) -> None:
+    """Point-fetch the current blockedBy/blocking state for a single issue and
+    upsert edges into corpus.db.
+
+    Used when GitHub omits ``blocking_issue`` from cross-repo dependency
+    payloads.  Fetches via GraphQL (1 attempt — no retry loop so auth failures
+    surface quickly) and rewrites all ``blocks`` edges for the issue via
+    ``upsert_edges_async``.
+    """
+    number = blocked_issue.get("number")
+    if number is None:
+        log.warning(
+            "handle_deps: missing number in blocked_issue — keys=%s",
+            list(blocked_issue.keys()),
+        )
+        return
+    full_name: str = repo.get("full_name", "")
+    owner, _, name = full_name.partition("/")
+    if not owner or not name:
+        log.warning(
+            "handle_deps: cannot point-fetch — malformed repository.full_name=%r",
+            full_name,
+        )
+        return
+
+    issue_key = canonical_key(number, full_name)
+
+    try:
+        deps = await asyncio.to_thread(fetch_issue_deps, owner, name, number)
+        await upsert_edges_async(
+            conn,
+            issue_key,
+            deps["blocked_by"],
+            deps["blocking"],
+            "blocks",
+        )
+    except GraphQLError as exc:
+        log.warning("handle_deps: point-fetch failed for %s — %s", issue_key, exc)
+        return
+    except Exception:
+        log.error("handle_deps: unexpected error for %s", issue_key, exc_info=True)
+        return
+
+
 async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> None:
     """Process a GitHub `issue_dependencies` webhook event.
 
     Acted upon: blocked_by_added, blocked_by_removed.
     Ignored (duplicate-direction): blocking_added, blocking_removed.
+
+    Cross-repo case: GitHub omits ``blocking_issue`` from payloads when the
+    blocker is in a different repo.  When that field is absent we fall back to a
+    point-fetch of the affected issue's current dependency lists and rewrite all
+    its ``blocks`` edges via ``upsert_edges``.
     """
     action = payload.get("action")
 
@@ -110,7 +166,7 @@ async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> No
     )
     blocking_repo: dict[str, Any] | None = payload.get("blocking_issue_repo")
 
-    if blocking_issue is None or blocked_issue is None:
+    if blocked_issue is None:
         log.warning(
             "handle_deps: unexpected payload shape for %s — keys=%s payload=%s",
             action,
@@ -119,6 +175,15 @@ async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> No
         )
         return
 
+    # Cross-repo case: blocking_issue absent — point-fetch the downstream issue's
+    # current dep graph and derive edges from the authoritative GitHub state.
+    if blocking_issue is None:
+        repo_obj: dict[str, Any] = payload.get("repository") or {}
+        await _point_fetch_and_upsert_deps(conn, blocked_issue, repo_obj)
+        await conn.commit()
+        return
+
+    # Same-repo fast path: both sides are in the payload — use them directly.
     blocker_key = _issue_key(blocking_issue, blocking_repo)
     blocked_key = _issue_key(blocked_issue, payload.get("repository"))  # type: ignore[arg-type]
 
