@@ -947,11 +947,16 @@ class TestDepsWebhookHandlerCrossRepo:
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """GraphQL fetch failure: handler logs warning and returns cleanly.
+        """GraphQL fetch failure: handler logs warning, returns cleanly, preserves DB.
 
+        Pre-seeds an unrelated edge for the same downstream issue so we can assert
+        the edge is NOT wiped by an accidental upsert_edges_async([], []) call.
         No exception should bubble — webhooks must return 200.
         """
         from roxabi_live.corpus.graphql import GraphQLError
+
+        # Arrange: pre-seed an unrelated edge for the same downstream issue
+        await _seed_edge(db, "Roxabi/lyra#999", "Roxabi/llmCLI#64", "blocks")
 
         def _mock_fetch(owner: str, name: str, number: int) -> dict[str, list[str]]:
             raise GraphQLError("gh exited 1: authentication failed")
@@ -975,6 +980,9 @@ class TestDepsWebhookHandlerCrossRepo:
             "Expected a warning log when GraphQL fetch fails"
         )
 
-        # No edge should have been written
-        row = await _fetch_edge(db, "Roxabi/lyra#1063", "Roxabi/llmCLI#64", "blocks")
-        assert row is None, "No edge should be written when GraphQL fetch fails"
+        # Pre-seeded edge must NOT have been wiped by an accidental upsert call
+        row = await _fetch_edge(db, "Roxabi/lyra#999", "Roxabi/llmCLI#64", "blocks")
+        assert row is not None, (
+            "Pre-seeded edge must survive a GraphQL fetch failure"
+            " — upsert_edges_async must not be called on error"
+        )

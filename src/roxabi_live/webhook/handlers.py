@@ -104,7 +104,13 @@ async def _point_fetch_and_upsert_deps(
     surface quickly) and rewrites all ``blocks`` edges for the issue via
     ``upsert_edges_async``.
     """
-    number: int = blocked_issue["number"]
+    number = blocked_issue.get("number")
+    if number is None:
+        log.warning(
+            "handle_deps: missing number in blocked_issue — keys=%s",
+            list(blocked_issue.keys()),
+        )
+        return
     full_name: str = repo.get("full_name", "")
     owner, _, name = full_name.partition("/")
     if not owner or not name:
@@ -117,21 +123,20 @@ async def _point_fetch_and_upsert_deps(
     issue_key = canonical_key(number, full_name)
 
     try:
-        deps = await asyncio.get_event_loop().run_in_executor(
-            None, fetch_issue_deps, owner, name, number
+        deps = await asyncio.to_thread(fetch_issue_deps, owner, name, number)
+        await upsert_edges_async(
+            conn,
+            issue_key,
+            deps["blocked_by"],
+            deps["blocking"],
+            "blocks",
         )
     except GraphQLError as exc:
         log.warning("handle_deps: point-fetch failed for %s — %s", issue_key, exc)
         return
-
-    await upsert_edges_async(
-        conn,
-        issue_key,
-        deps["blocked_by"],
-        deps["blocking"],
-        "blocks",
-    )
-    await conn.commit()
+    except Exception:
+        log.error("handle_deps: unexpected error for %s", issue_key, exc_info=True)
+        return
 
 
 async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> None:
@@ -175,6 +180,7 @@ async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> No
     if blocking_issue is None:
         repo_obj: dict[str, Any] = payload.get("repository") or {}
         await _point_fetch_and_upsert_deps(conn, blocked_issue, repo_obj)
+        await conn.commit()
         return
 
     # Same-repo fast path: both sides are in the payload — use them directly.
