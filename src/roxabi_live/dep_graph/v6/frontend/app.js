@@ -138,6 +138,8 @@ function buildPivotSegs() {
 function buildGraphSegs() {
   const container = $('graph-edge-segs');
   if (!container) return;
+  container.innerHTML = '';
+
   const parentsSeg = document.createElement('button');
   parentsSeg.type = 'button';
   parentsSeg.className = 'seg' + (state.showParents ? ' on' : '');
@@ -148,8 +150,19 @@ function buildGraphSegs() {
     buildGraphSegs();
     render();
   });
-  container.innerHTML = '';
   container.appendChild(parentsSeg);
+
+  const closedSeg = document.createElement('button');
+  closedSeg.type = 'button';
+  closedSeg.className = 'seg' + (state.showClosedUnderOpenEpic ? ' on' : '');
+  closedSeg.textContent = 'Closed';
+  closedSeg.title = 'Show closed issues whose parent epic is still open';
+  closedSeg.addEventListener('click', () => {
+    setState({ showClosedUnderOpenEpic: !state.showClosedUnderOpenEpic });
+    buildGraphSegs();
+    render();
+  });
+  container.appendChild(closedSeg);
 }
 
 // ─── Multi-select onChange ────────────────────────────────────────────────
@@ -219,6 +232,7 @@ async function init() {
     const edges = data.edges || [];
     annotateNodes(nodes, edges);
     setState({ nodes, edges });
+    state.nodesByKey = new Map(nodes.map(n => [n.key, n]));
     populateFilters(repos);
     render();
   } catch (e) {

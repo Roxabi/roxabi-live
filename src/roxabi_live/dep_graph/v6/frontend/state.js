@@ -44,6 +44,7 @@ export const state = {
   tableGroup: LS.get('v6:tableGroup', 'parent'),
   // graph options
   showParents: LS.get('v6:showParents', 'false') === 'true',
+  showClosedUnderOpenEpic: LS.get('v6:showClosedUnderOpenEpic', 'false') === 'true',
   nodes:     [],
   edges:     [],
   // built once after load
@@ -65,6 +66,7 @@ const LS_KEYS = {
   listGroup2:  { key: 'v6:listGroup2',  json: false },
   tableGroup:  { key: 'v6:tableGroup',  json: false },
   showParents: { key: 'v6:showParents', json: false },
+  showClosedUnderOpenEpic: { key: 'v6:showClosedUnderOpenEpic', json: false },
 };
 
 export function setState(patch) {
@@ -243,14 +245,27 @@ export function filteredNodes() {
   });
 }
 
-// For graph view: filter by all except search (search uses highlight)
+// For graph view: filter by all except search (search uses highlight).
+// When `showClosedUnderOpenEpic` is enabled, a closed (`done`) issue whose
+// parent epic is still open is kept visible even when the status filter
+// excludes `done`. The node keeps its `_status='done'` so the rest of the
+// rendering logic is unchanged.
 export function filteredNodesForGraph() {
-  return applyFilters(state.nodes, {
+  const base = applyFilters(state.nodes, {
     repo:      state.repo,
     milestone: state.milestone,
     priority:  state.priority,
-    status:    state.status,
-    search:    '',  // exclude search from filtering
+    status:    [],   // bypass status here, re-apply with override below
+    search:    '',
+  });
+  if (state.status.length === 0) return base;
+  return base.filter(n => {
+    if (state.status.includes(n._status)) return true;
+    if (state.showClosedUnderOpenEpic && n._status === 'done' && n._parent) {
+      const parent = state.nodesByKey.get(n._parent);
+      if (parent && parent.state === 'open') return true;
+    }
+    return false;
   });
 }
 
