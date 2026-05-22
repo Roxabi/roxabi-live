@@ -140,6 +140,12 @@
   transform: translate(-50%, -50%) scale(1.25);
   z-index: 11;
 }
+/* Parent nodes: rounded square to distinguish epics from leaf issues */
+#graph-panel .gg-node.parent {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
 #graph-panel .gg-node.blocked {
   background: transparent;
   border: 2px dashed currentColor;
@@ -225,6 +231,11 @@
   border-radius: 50%;
   flex-shrink: 0;
   background: currentColor;
+}
+#graph-panel .gg-ilabel.parent .gg-ldot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
 }
 #graph-panel .gg-ilabel-num {
   font-family: 'JetBrains Mono', monospace;

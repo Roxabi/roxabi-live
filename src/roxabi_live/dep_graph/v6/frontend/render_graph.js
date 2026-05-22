@@ -20,6 +20,7 @@ function renderNodes(container, nodes, positions, usePercentage) {
     const tone = getTone(node);
     const isDone = node.state === 'closed';
     const isBlocked = node._status === 'blocked';
+    const isParent = node._isParent === true;
 
     // Determine blockers/unblockers for data attrs
     const blockers = (node._blockers || []).map(e => e.src).join(',');
@@ -34,7 +35,7 @@ function renderNodes(container, nodes, positions, usePercentage) {
 
     // ── Dot (.gg-node) ──────────────────────────────────────────────────────
     const dot = document.createElement('a');
-    dot.className = 'gg-node' + (isDone ? ' done' : '') + (isBlocked ? ' blocked' : '');
+    dot.className = 'gg-node' + (isParent ? ' parent' : '') + (isDone ? ' done' : '') + (isBlocked ? ' blocked' : '');
     dot.dataset.tone = tone;
     dot.dataset.iss = key;
     dot.dataset.blockedby = blockers;
@@ -48,7 +49,7 @@ function renderNodes(container, nodes, positions, usePercentage) {
 
     // ── Label (.gg-ilabel) ──────────────────────────────────────────────────
     const label = document.createElement('a');
-    label.className = 'gg-ilabel' + (isDone ? ' done' : '') + (isBlocked ? ' blocked' : '');
+    label.className = 'gg-ilabel' + (isParent ? ' parent' : '') + (isDone ? ' done' : '') + (isBlocked ? ' blocked' : '');
     label.dataset.tone = tone;
     label.dataset.iss = key;
     label.dataset.blockedby = blockers;

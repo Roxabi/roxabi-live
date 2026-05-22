@@ -142,6 +142,11 @@ export function annotateNodes(nodes, edges) {
     n._parent = parents?.length ? parents[0] : null;
   }
 
+  // Stamp _isParent on nodes that have at least one child edge
+  for (const n of nodes) {
+    n._isParent = childrenBySrc.has(n.key);
+  }
+
   // Pass 2: propagate 'blocked' through parent → child edges (BFS).
   // A descendant of a blocked parent is itself rendered blocked, unless it
   // is already 'done' (closed) — closed always wins.  Visited guard handles
