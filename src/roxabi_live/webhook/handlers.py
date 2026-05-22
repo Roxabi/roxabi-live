@@ -25,7 +25,8 @@ log = logging.getLogger(__name__)
 async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> None:
     """Process a GitHub `issues` webhook event.
 
-    Supported actions: opened, edited, reopened, labeled, unlabeled, closed, deleted.
+    Supported actions: opened, edited, reopened, labeled, unlabeled, closed, deleted,
+    transferred.
     Issue upsert + label replacement are committed atomically: both succeed or
     neither is persisted (SC9).
     """
@@ -34,7 +35,7 @@ async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> 
     repo = payload["repository"]["full_name"]
     key = f"{repo}#{issue['number']}"
 
-    if action == "deleted":
+    if action in ("deleted", "transferred"):
         await delete_issue_async(conn, key)
         await conn.commit()
         return
