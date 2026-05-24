@@ -60,17 +60,19 @@ function renderNodes(container, nodes, positions, usePercentage) {
     label.style.cssText = style;
     label.title = `#${node.number} — ${node.title || ''}`;
 
-    // Dot indicator inside label
-    const ldot = document.createElement('span');
-    ldot.className = 'gg-ldot';
-    ldot.setAttribute('aria-hidden', 'true');
-    label.appendChild(ldot);
-
     // Issue number
     const num = document.createElement('span');
     num.className = 'gg-ilabel-num';
     num.textContent = `#${node.number}`;
     label.appendChild(num);
+
+    // Size
+    if (node.size) {
+      const size = document.createElement('span');
+      size.className = 'gg-ilabel-size';
+      size.textContent = node.size;
+      label.appendChild(size);
+    }
 
     // Title (truncated)
     const title = document.createElement('span');
