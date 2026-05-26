@@ -364,6 +364,12 @@ async def handle_pull_request(
     pr: dict[str, Any] = payload.get("pull_request", {})
     repo: str = payload.get("repository", {}).get("full_name", "")
     number: int = int(pr.get("number", 0))
+    if not number:
+        log.warning(
+            "pull_request webhook missing PR number; payload keys: %s",
+            list(pr.keys()),
+        )
+        return
 
     raw_state: str = str(pr.get("state", "open"))
     merged: bool = bool(pr.get("merged"))

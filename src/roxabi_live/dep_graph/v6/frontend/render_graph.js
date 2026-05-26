@@ -54,8 +54,9 @@ function renderNodes(container, nodes, positions, usePercentage) {
         dot.className += ' ' + devClass;
         // Inject second orbit dot host element for pr_reviewed (orbit-2)
         if (devClass.includes('orbit-2')) {
-          const orbitChild = document.createElement('i');
+          const orbitChild = document.createElement('span');
           orbitChild.className = 'gg-orbit-2nd';
+          orbitChild.setAttribute('aria-hidden', 'true');
           dot.appendChild(orbitChild);
         }
       }

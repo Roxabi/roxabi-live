@@ -42,7 +42,12 @@ def _fake_prs_response(
                     "pageInfo": {"hasNextPage": has_next, "endCursor": None},
                     "nodes": nodes,
                 }
-            }
+            },
+            "rateLimit": {
+                "cost": 1,
+                "remaining": 4999,
+                "resetAt": "2099-01-01T00:00:00Z",
+            },
         }
     }
 

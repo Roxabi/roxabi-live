@@ -33,6 +33,8 @@ _FULL_KEY = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 # Rejects: dependabot/..., release-please--..., main, staging
 BRANCH_ISSUE_RE = re.compile(r"^(?:[a-z]+/)?(\d+)-")
 
+MAX_PAGES = 500
+
 # ---------------------------------------------------------------------------
 # SQL constants — shared by corpus.sync (sync path) and corpus.mutations (async path)
 # ---------------------------------------------------------------------------
@@ -78,6 +80,10 @@ UPSERT_ISSUE_FROM_WEBHOOK_SQL = """
     VALUES
         (?, ?, ?, ?, ?, ?, ?, ?, ?,
          ?, 0, ?, ?, ?, NULL, 0)
+    -- has_active_branch is intentionally NOT in ON CONFLICT SET:
+    -- the column is managed exclusively by sync_branches() / handle_ref_*
+    -- and must never be overwritten by webhook issue payloads (which carry 0
+    -- by default).
     ON CONFLICT(key) DO UPDATE SET
         repo       = excluded.repo,
         number     = excluded.number,
@@ -96,6 +102,20 @@ UPSERT_ISSUE_FROM_WEBHOOK_SQL = """
 
 DELETE_LABELS_SQL = "DELETE FROM labels WHERE issue_key = ?"
 INSERT_LABEL_SQL = "INSERT OR IGNORE INTO labels (issue_key, name) VALUES (?, ?)"
+
+# PR state upsert — SSoT shared with corpus.mutations (imported there to guarantee
+# byte-identical SQL on both the sync and webhook paths).
+UPSERT_PR_STATE_SQL = """
+    INSERT INTO pr_state
+        (repo, number, state, has_reviewed_label, closing_issue_keys, updated_at)
+    VALUES
+        (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(repo, number) DO UPDATE SET
+        state               = excluded.state,
+        has_reviewed_label  = excluded.has_reviewed_label,
+        closing_issue_keys  = excluded.closing_issue_keys,
+        updated_at          = excluded.updated_at
+"""
 
 DELETE_EDGES_BY_KIND_SQL = (
     "DELETE FROM edges WHERE (src_key = ? OR dst_key = ?) AND kind = ?"
@@ -362,7 +382,19 @@ def run_repo_sync(
 
         page_info = issues_page["pageInfo"]
         if page_info["hasNextPage"]:
-            cursor = page_info["endCursor"]
+            if pages >= MAX_PAGES:
+                raise GraphQLError(
+                    f"run_repo_sync exceeded MAX_PAGES={MAX_PAGES} for repo {repo}"
+                )
+            next_cursor = page_info["endCursor"]
+            if next_cursor is None:
+                print(
+                    f"[corpus] run_repo_sync: hasNextPage=true but endCursor is None"
+                    f" for repo {repo} at page {pages} — stopping pagination",
+                    file=sys.stderr,
+                )
+                break
+            cursor = next_cursor
         else:
             break
 
@@ -569,21 +601,36 @@ def sync_branches(repo: str, conn: sqlite3.Connection) -> None:
 
     matched_numbers: set[int] = set()
     cursor: str | None = None
+    page_count = 0
 
     while True:
         response = gh_graphql(
             REFS_QUERY,
             {"owner": owner, "name": name, "cursor": cursor},
         )
+        log_rate_limit(response["data"]["rateLimit"])
         refs_page = response["data"]["repository"]["refs"]
         for node in refs_page["nodes"]:
             m = BRANCH_ISSUE_RE.match(node["name"])
             if m:
                 matched_numbers.add(int(m.group(1)))
 
+        page_count += 1
         page_info = refs_page["pageInfo"]
         if page_info["hasNextPage"]:
-            cursor = page_info["endCursor"]
+            if page_count >= MAX_PAGES:
+                raise GraphQLError(
+                    f"sync_branches exceeded MAX_PAGES={MAX_PAGES} for repo {repo}"
+                )
+            next_cursor = page_info["endCursor"]
+            if next_cursor is None:
+                print(
+                    f"[corpus] sync_branches: hasNextPage=true but endCursor is None"
+                    f" for repo {repo} at page {page_count} — stopping pagination",
+                    file=sys.stderr,
+                )
+                break
+            cursor = next_cursor
         else:
             break
 
@@ -628,26 +675,17 @@ def sync_prs(repo: str, conn: sqlite3.Connection) -> None:
     if not owner or not sep or not name:
         raise ValueError(f"repo must be in 'owner/name' form, got: {repo!r}")
 
-    upsert_sql = """
-        INSERT INTO pr_state
-            (repo, number, state, has_reviewed_label, closing_issue_keys, updated_at)
-        VALUES
-            (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(repo, number) DO UPDATE SET
-            state               = excluded.state,
-            has_reviewed_label  = excluded.has_reviewed_label,
-            closing_issue_keys  = excluded.closing_issue_keys,
-            updated_at          = excluded.updated_at
-    """
-
     cursor: str | None = None
     now_iso = datetime.now(timezone.utc).isoformat()
+    seen_pr_numbers: list[int] = []
+    page_count = 0
 
     while True:
         response = gh_graphql(
             PRS_QUERY,
             {"owner": owner, "name": name, "cursor": cursor},
         )
+        log_rate_limit(response["data"]["rateLimit"])
         prs_page = response["data"]["repository"]["pullRequests"]
 
         for pr in prs_page["nodes"]:
@@ -660,8 +698,9 @@ def sync_prs(repo: str, conn: sqlite3.Connection) -> None:
                 for ref in closing_refs
             ]
 
+            seen_pr_numbers.append(pr["number"])
             conn.execute(
-                upsert_sql,
+                UPSERT_PR_STATE_SQL,
                 (
                     repo,
                     pr["number"],
@@ -672,8 +711,36 @@ def sync_prs(repo: str, conn: sqlite3.Connection) -> None:
                 ),
             )
 
+        page_count += 1
         page_info = prs_page["pageInfo"]
         if page_info["hasNextPage"]:
-            cursor = page_info["endCursor"]
+            if page_count >= MAX_PAGES:
+                raise GraphQLError(
+                    f"sync_prs exceeded MAX_PAGES={MAX_PAGES} for repo {repo}"
+                )
+            next_cursor = page_info["endCursor"]
+            if next_cursor is None:
+                print(
+                    f"[corpus] sync_prs: hasNextPage=true but endCursor is None"
+                    f" for repo {repo} at page {page_count} — stopping pagination",
+                    file=sys.stderr,
+                )
+                break
+            cursor = next_cursor
         else:
             break
+
+    # Mark stale open rows closed (PRs that closed between syncs)
+    if seen_pr_numbers:
+        placeholders = ",".join("?" * len(seen_pr_numbers))
+        conn.execute(
+            f"UPDATE pr_state SET state='closed' "
+            f"WHERE repo=? AND state='open' AND number NOT IN ({placeholders})",
+            (repo, *seen_pr_numbers),
+        )
+    else:
+        # No open PRs at all — close any orphaned 'open' rows for this repo
+        conn.execute(
+            "UPDATE pr_state SET state='closed' WHERE repo=? AND state='open'",
+            (repo,),
+        )

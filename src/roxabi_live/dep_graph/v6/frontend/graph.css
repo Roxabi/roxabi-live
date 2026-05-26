@@ -19,6 +19,9 @@
   --amber: #f59e0b;
   --cyan:  #22d3ee;
 
+  /* Dev-state animation tokens */
+  --dev-orbit-2nd: #f0abfc;
+
   /* Lane → color mapping (v4.8 style) */
   --lane-a1: #22c55e;  /* green - NATS maturity */
   --lane-a2: #a855f7;  /* plum - roxabi-nats */
@@ -78,6 +81,7 @@
   right: 0;
   top: 0;
   bottom: 0;
+  overflow: visible;
 }
 
 /* ── Milestone row-headers (left gutter) ────────────────────────── */
@@ -416,10 +420,19 @@
   position: absolute;
   inset: -6px;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 0%, #f0abfc 0 2.2px, transparent 2.6px);
+  background: radial-gradient(circle at 50% 0%, var(--dev-orbit-2nd) 0 2.2px, transparent 2.6px);
   animation: gg-orbit 1.8s linear infinite;
   animation-delay: -0.9s;
   pointer-events: none;
 }
 
 @keyframes gg-orbit { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  #graph-panel .gg-node.pulse::before,
+  #graph-panel .gg-node.orbit-1::after,
+  #graph-panel .gg-node.orbit-2::after,
+  #graph-panel .gg-node.orbit-2 .gg-orbit-2nd::before {
+    animation: none;
+  }
+}

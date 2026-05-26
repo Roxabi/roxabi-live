@@ -69,6 +69,7 @@ query($owner: String!, $name: String!, $cursor: String) {
       nodes { name }
     }
   }
+  rateLimit { cost remaining resetAt }
 }
 """
 
@@ -80,13 +81,16 @@ query($owner: String!, $name: String!, $cursor: String) {
       nodes {
         number
         state
-        closingIssuesReferences(first: 5) {
+        # first: 25 — PRs closing more issues are out of scope for this tool
+        # (Roxabi convention: 1 PR ≈ 1 epic)
+        closingIssuesReferences(first: 25) {
           nodes { number repository { nameWithOwner } }
         }
         labels(first: 20) { nodes { name } }
       }
     }
   }
+  rateLimit { cost remaining resetAt }
 }
 """
 

@@ -165,7 +165,11 @@ async def run_repo_once(settings: Settings, repo: str) -> None:
     def _sync() -> dict[str, int]:
         conn = sqlite3.connect(settings.corpus_db_path)
         try:
-            return corpus_sync.run_single_repo_sync(conn, repo)
+            result = corpus_sync.run_single_repo_sync(conn, repo)
+            corpus_sync.sync_branches(repo, conn)
+            corpus_sync.sync_prs(repo, conn)
+            conn.commit()
+            return result
         finally:
             conn.close()
 

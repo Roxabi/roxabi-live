@@ -23,6 +23,7 @@ from roxabi_live.corpus.sync import (
     INSERT_EDGE_SQL,
     INSERT_LABEL_SQL,
     UPSERT_ISSUE_FROM_WEBHOOK_SQL,
+    UPSERT_PR_STATE_SQL,
 )
 
 # SQL constants for branch and PR state mutations (webhook + sync paths)
@@ -32,18 +33,6 @@ SET_ACTIVE_BRANCH_ON_SQL = (
 SET_ACTIVE_BRANCH_OFF_SQL = (
     "UPDATE issues SET has_active_branch=0 WHERE repo=? AND number=?"
 )
-
-UPSERT_PR_STATE_SQL = """
-    INSERT INTO pr_state
-        (repo, number, state, has_reviewed_label, closing_issue_keys, updated_at)
-    VALUES
-        (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(repo, number) DO UPDATE SET
-        state               = excluded.state,
-        has_reviewed_label  = excluded.has_reviewed_label,
-        closing_issue_keys  = excluded.closing_issue_keys,
-        updated_at          = excluded.updated_at
-"""
 
 
 async def upsert_issue_async(
