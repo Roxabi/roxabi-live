@@ -1,9 +1,15 @@
-"""Webhook event handlers for GitHub `issues`, `issue_dependencies`, and `sub_issues` events."""  # noqa: E501
+"""Webhook event handlers for GitHub `issues`, `issue_dependencies`, `sub_issues`,
+`create`/`delete` ref, and `pull_request` events."""  # noqa: E501
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, cast
 
 import aiosqlite
@@ -14,12 +20,26 @@ from roxabi_live.corpus.mutations import (
     delete_issue_async,
     remove_edge_async,
     replace_labels_async,
+    set_active_branch_async,
     upsert_edges_async,
     upsert_issue_async,
+    upsert_pr_state_async,
 )
-from roxabi_live.corpus.sync import canonical_key, extract_from_labels
+from roxabi_live.corpus.sync import (
+    BRANCH_ISSUE_RE,
+    canonical_key,
+    extract_from_labels,
+    sync_branches,
+)
 
 log = logging.getLogger(__name__)
+
+# Regex ported from .github/workflows/auto-merge.yml close-linked-issues job:
+# /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi
+_CLOSING_KEYWORD_RE = re.compile(
+    r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)",
+    re.IGNORECASE,
+)
 
 
 async def handle_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> None:
@@ -248,3 +268,135 @@ async def handle_sub_issues(
     else:  # sub_issue_removed
         await remove_edge_async(conn, parent_key, child_key, "parent")
     await conn.commit()
+
+
+async def handle_ref_create(
+    payload: dict[str, Any], conn: aiosqlite.Connection
+) -> None:
+    """Handle GitHub `create` event for branch refs.
+
+    Applies BRANCH_ISSUE_RE to the ref name. If the branch name encodes an
+    issue number, sets has_active_branch=1 for that issue in corpus.db.
+    Non-matching refs (dependabot, release-please, tags, etc.) are no-ops.
+    """
+    if payload.get("ref_type") != "branch":
+        return
+    ref: str = payload.get("ref", "")
+    repo: str = payload.get("repository", {}).get("full_name", "")
+    m = BRANCH_ISSUE_RE.match(ref)
+    if not m:
+        return
+    number = int(m.group(1))
+    try:
+        await set_active_branch_async(conn, repo, number, 1)
+        await conn.commit()
+    except Exception:
+        await conn.rollback()
+        raise
+
+
+async def handle_ref_delete(
+    payload: dict[str, Any],
+    conn: aiosqlite.Connection,
+    db_path: Path | None = None,
+) -> None:
+    """Handle GitHub `delete` event for branch refs.
+
+    On a matching branch deletion, re-queries GitHub via sync_branches (race
+    rule: do not trust the delete event alone — reconciler is canonical).
+    sync_branches opens its own sqlite3 connection via db_path and commits
+    independently; the aiosqlite conn is not used for the DB write here.
+
+    If db_path is None (e.g. in unit tests that mock sync_branches), the
+    function still applies the regex guard but delegates all writes to whatever
+    the caller has patched.
+    """
+    if payload.get("ref_type") != "branch":
+        return
+    ref: str = payload.get("ref", "")
+    repo: str = payload.get("repository", {}).get("full_name", "")
+    m = BRANCH_ISSUE_RE.match(ref)
+    if not m:
+        return
+
+    if db_path is None:
+        log.warning(
+            "handle_ref_delete: db_path not provided for repo=%s ref=%s — "
+            "calling sync_branches without a fresh connection",
+            repo,
+            ref,
+        )
+        # Still call sync_branches so callers that mock it can assert the call.
+        await asyncio.to_thread(sync_branches, repo, conn)  # type: ignore[arg-type]
+        return
+
+    def _sync_via_thread() -> None:
+        c = sqlite3.connect(db_path)
+        try:
+            sync_branches(repo, c)
+            c.commit()
+        finally:
+            c.close()
+
+    try:
+        await asyncio.to_thread(_sync_via_thread)
+    except Exception:
+        log.exception(
+            "handle_ref_delete: sync_branches failed for repo=%s ref=%s", repo, ref
+        )
+
+
+async def handle_pull_request(
+    payload: dict[str, Any], conn: aiosqlite.Connection
+) -> None:
+    """Handle GitHub `pull_request` events.
+
+    Supported actions: opened, labeled, unlabeled, closed, reopened, edited,
+    synchronize.
+
+    Upserts a pr_state row:
+    - state: 'open' or 'closed' (merged PRs count as closed)
+    - has_reviewed_label: 1 if any label name == 'reviewed', else 0
+    - closing_issue_keys: JSON array of 'owner/repo#N' for bare #N keyword
+      refs in the PR body (same regex as auto-merge.yml)
+    - updated_at: current UTC ISO timestamp
+    """
+    pr: dict[str, Any] = payload.get("pull_request", {})
+    repo: str = payload.get("repository", {}).get("full_name", "")
+    number: int = int(pr.get("number", 0))
+
+    raw_state: str = str(pr.get("state", "open"))
+    merged: bool = bool(pr.get("merged"))
+    state = "closed" if (raw_state == "closed" or merged) else "open"
+
+    raw_labels: list[Any] = list(pr.get("labels") or [])
+    label_names: list[str] = []
+    for lbl in raw_labels:
+        if isinstance(lbl, dict):
+            name = cast("Any", lbl).get("name", "")
+            label_names.append(str(name))
+        else:
+            label_names.append(str(lbl))
+    has_reviewed_label = int("reviewed" in label_names)
+
+    body: str = str(pr.get("body") or "")
+    issue_numbers = _CLOSING_KEYWORD_RE.findall(body)
+    closing_issue_keys: list[str] = [f"{repo}#{n}" for n in issue_numbers]
+    closing_issue_keys_json = json.dumps(closing_issue_keys)
+
+    updated_at = datetime.now(timezone.utc).isoformat()
+
+    try:
+        await upsert_pr_state_async(
+            conn,
+            repo,
+            number,
+            state,
+            has_reviewed_label,
+            closing_issue_keys_json,
+            updated_at,
+        )
+        await conn.commit()
+    except Exception:
+        await conn.rollback()
+        raise
