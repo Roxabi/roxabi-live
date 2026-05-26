@@ -223,10 +223,14 @@ async def heal_pr_branch_state(
     """
 
     def _heal_repo(repo: str) -> None:
+        # sync_branches and sync_prs document "caller controls the transaction",
+        # so we must commit before closing — otherwise SQLite rolls back the
+        # implicit transaction and the writes vanish.
         conn = sqlite3.connect(db_path)
         try:
             corpus_sync.sync_branches(repo, conn)
             corpus_sync.sync_prs(repo, conn)
+            conn.commit()
         finally:
             conn.close()
 
