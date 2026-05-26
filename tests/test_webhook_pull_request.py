@@ -171,9 +171,7 @@ class TestHandlePullRequest:
         row = await _fetch_pr_state(db, "Roxabi/lyra", 42)
         assert row is not None
         flag = row["has_reviewed_label"]
-        assert flag == 0, (
-            f"Expected has_reviewed_label=0 after unlabel, got {flag!r}"
-        )
+        assert flag == 0, f"Expected has_reviewed_label=0 after unlabel, got {flag!r}"
 
     async def test_closed_with_merged_true_sets_closed(
         self, db: aiosqlite.Connection
