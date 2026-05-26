@@ -61,6 +61,35 @@ query($org: String!, $cursor: String) {
 """
 
 
+REFS_QUERY = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    refs(refPrefix: "refs/heads/", first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { name }
+    }
+  }
+}
+"""
+
+PRS_QUERY = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 50, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        state
+        closingIssuesReferences(first: 5) {
+          nodes { number repository { nameWithOwner } }
+        }
+        labels(first: 20) { nodes { name } }
+      }
+    }
+  }
+}
+"""
+
 STUB_ISSUE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
