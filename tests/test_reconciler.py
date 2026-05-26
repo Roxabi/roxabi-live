@@ -394,7 +394,11 @@ class TestRunRepoOnce:
         """run_repo_once calls corpus_sync.run_single_repo_sync exactly once."""
         s = _settings(tmp_path)
         mock_fn = MagicMock(return_value={"pages": 1, "issues": 5})
-        with patch("roxabi_live.corpus.sync.run_single_repo_sync", mock_fn):
+        with (
+            patch("roxabi_live.corpus.sync.run_single_repo_sync", mock_fn),
+            patch("roxabi_live.corpus.sync.sync_branches"),
+            patch("roxabi_live.corpus.sync.sync_prs"),
+        ):
             await reconciler.run_repo_once(s, "Roxabi/lyra")
         mock_fn.assert_called_once()
         args = mock_fn.call_args
@@ -434,9 +438,13 @@ class TestRunRepoOnce:
         s = _settings(tmp_path)
         err_401 = _make_http_error(401)
         # One failure then success
-        with patch(
-            "roxabi_live.corpus.sync.run_single_repo_sync",
-            side_effect=[err_401, {"pages": 1, "issues": 3}],
+        with (
+            patch(
+                "roxabi_live.corpus.sync.run_single_repo_sync",
+                side_effect=[err_401, {"pages": 1, "issues": 3}],
+            ),
+            patch("roxabi_live.corpus.sync.sync_branches"),
+            patch("roxabi_live.corpus.sync.sync_prs"),
         ):
             await reconciler.run_repo_once(s, "Roxabi/lyra")
             await reconciler.run_repo_once(s, "Roxabi/lyra")

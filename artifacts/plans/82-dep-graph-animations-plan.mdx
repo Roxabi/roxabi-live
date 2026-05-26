@@ -1,0 +1,388 @@
+---
+title: "Plan: pulse + satellite animations for dev/PR state"
+issue: 82
+spec: artifacts/specs/82-dep-graph-animations-spec.mdx
+complexity: 6/10
+tier: F-lite
+generated: 2026-05-26
+---
+
+## Summary
+
+Wire branch-existence + PR state into corpus.db, expose per-node `dev_state` via `/api/graph`, animate dep-graph v6 nodes with pulse (halo) + satellites (orbiting dots). 8 slices, 6 waves, 5 backend-dev instances + 1 frontend-dev + 1 tester.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph webhook[webhook/handlers.py]
+        WH_REF[handle_ref<br/>create/delete branch]
+        WH_PR[handle_pull_request<br/>labeled/closed/...]
+    end
+    subgraph sync[corpus/sync.py]
+        SB[sync_branches<br/>regex match]
+        SP[sync_prs<br/>closingIssuesReferences]
+    end
+    subgraph reconciler[reconciler.py]
+        HEAL[heal_pr_branch_state<br/>hourly]
+    end
+    subgraph corpus[(corpus.db)]
+        I[issues<br/>+ has_active_branch]
+        P[pr_state NEW]
+    end
+    WH_REF --> I
+    WH_PR --> P
+    SB --> I
+    SP --> P
+    HEAL --> SB
+    HEAL --> SP
+    I --> API[GET /api/graph<br/>dep_graph/v6/api.py<br/>+ dev_state per node]
+    P --> API
+    API --> FE_STATE[frontend/state.js<br/>derive class]
+    FE_STATE --> FE_RENDER[frontend/render_graph.js<br/>apply class]
+    FE_RENDER --> CSS[frontend/graph.css<br/>.pulse .orbit-1 .orbit-2]
+```
+
+## Agents
+
+| Agent instance | Tasks | Files | Subjects |
+|---|---|---|---|
+| backend-dev-A | T1-T4 | corpus/schema.py | schema |
+| backend-dev-B | T5-T10 | corpus/graphql.py, corpus/sync.py | graphql, sync |
+| backend-dev-C | T11-T14 | webhook/handlers.py, webhook/router.py | webhook |
+| backend-dev-D | T15-T16 | dep_graph/v6/api.py | api |
+| backend-dev-E | T17-T18 | reconciler.py | reconciler |
+| frontend-dev-A | T19-T23 | frontend/{graph.css, state.js, render_graph.js} | css, fe-state |
+| frontend-dev-B | T24-T25 | artifacts/frames/node-animation-proposals.html | forge |
+| tester-A | T26-T27 | tests/*, /api/graph e2e | testing |
+
+## Wave Structure
+
+6 waves, max 2 parallel agents. Estimated elapsed ~1 day vs ~2 days sequential.
+
+| Wave | Trigger | Agents | Tasks |
+|------|---------|--------|-------|
+| 1 | start | backend-dev-A | T1, T2, T3 (schema) → T4 (test) |
+| 2 | Wave 1 done | backend-dev-B | T5, T6 (graphql) → T7, T8, T9 (sync) → T10 (test) |
+| 3 | Wave 2 done | backend-dev-C ∥ backend-dev-D | C: T11, T12, T13 → T14 · D: T15 → T16 |
+| 4 | Wave 3 done | backend-dev-E ∥ frontend-dev-A | E: T17 → T18 · A: T19, T20 → T21, T22 → T23 |
+| 5 | Wave 4 done | frontend-dev-B | T24 → T25 (deploy) |
+| 6 | Wave 5 done | tester-A | T26 → T27 |
+
+### Budget — per task
+
+| Task | Class | Est. ops | Split? |
+|---|---|---|---|
+| T1-T3 schema column/table | bounded | 2-3 each | — |
+| T5-T6 GraphQL queries | judgmental | 4-5 each | — |
+| T7 UPSERT SQL update | bounded | 3 | — |
+| T8-T9 sync_branches/sync_prs | judgmental | 5-6 each | — |
+| T11-T12 webhook handlers | judgmental | 5-6 each | — |
+| T15 api JOIN query | judgmental | 6 | — |
+| T17 reconciler hook | bounded | 4 | — |
+| T19-T20 CSS animations (port) | bounded | 3 each | — |
+| T21-T22 state.js + render | judgmental | 4-5 each | — |
+| T24 forge artifact update | bounded | 4 | — |
+| T25 make deploy | trivial | 2 | — |
+| T26 e2e sample script | judgmental | 6 | — |
+
+**Total estimated ops: ~110** (across all instances). No single task > 10 ops.
+
+### Budget — per agent instance
+
+| Instance | Tasks | Σ ops | Subjects | Split? |
+|---|---|---|---|---|
+| backend-dev-A | T1-T4 | 12 | schema | — |
+| backend-dev-B | T5-T10 | 28 | graphql, sync | — (2 subjects, OK) |
+| backend-dev-C | T11-T14 | 20 | webhook | — |
+| backend-dev-D | T15-T16 | 9 | api | — |
+| backend-dev-E | T17-T18 | 7 | reconciler | — |
+| frontend-dev-A | T19-T23 | 19 | css, fe-state | — |
+| frontend-dev-B | T24-T25 | 6 | forge | — |
+| tester-A | T26-T27 | 9 | testing | — |
+
+All under per-instance cap (Σ ops ≤ 50, |tasks| ≤ 6, distinct subjects ≤ 2).
+
+## Consistency Report
+
+| Spec ID | Tasks | Coverage |
+|---|---|---|
+| U1 (dev pulse node) | T19, T21, T22 | ✓ |
+| U2 (pr_open 1 satellite) | T20, T21, T22 | ✓ |
+| U3 (pr_reviewed 2 satellites) | T20, T21, T22 | ✓ |
+| N1 (/api/graph dev_state) | T15, T16 | ✓ |
+| N2 (webhook create ref) | T11, T13 | ✓ |
+| N3 (webhook delete ref) | T11, T13 | ✓ |
+| N4 (webhook pull_request) | T12, T13 | ✓ |
+| S1 (sync_branches) | T5, T8 | ✓ |
+| S2 (sync_prs) | T6, T9 | ✓ |
+| S3 (reconciler heal) | T17, T18 | ✓ |
+| S4 (schema migration) | T1, T2, T3 | ✓ |
+| S5 (forge artifact) | T24, T25 | ✓ |
+| SC-1 (branch→dev) | T8, T11, T14, T16 | ✓ |
+| SC-2 (PR label transitions) | T9, T12, T14, T16 | ✓ |
+| SC-3 (close/merge revert) | T12, T14 | ✓ |
+| SC-4 (no regression existing states) | T22, T23 | ✓ |
+| SC-5 (idempotent migration) | T1, T2, T4 | ✓ |
+| SC-6 (e2e sampling) | T26 | ✓ |
+| SC-7 (forge updated) | T24, T25 | ✓ |
+| SC-8 (pytest green) | T27 | ✓ |
+| SC-9 (no /api/graph regression) | T16, T22 | ✓ |
+
+**Covered: 21/21. Uncovered: 0. Untraced tasks: 0.**
+
+## Micro-Tasks
+
+### Slice 1 — Schema migration (Wave 1, backend-dev-A)
+
+**T1 [P:N] [schema]** [SC-5, S4] — Add `has_active_branch` column to `issues` table
+- File: `src/roxabi_live/corpus/schema.py`
+- Pattern: mirror `_alter_column(conn, "ALTER TABLE issues ADD COLUMN lane TEXT")` at line 119 — use existing helper; `has_active_branch INTEGER NOT NULL DEFAULT 0`
+- Verify: `sqlite3 ~/.roxabi/corpus.db "PRAGMA table_info(issues)" | grep has_active_branch`
+- Expected: `has_active_branch|INTEGER|0||0`
+
+**T2 [P:N] [schema]** [SC-5, S4] — Create `pr_state` table
+- File: `src/roxabi_live/corpus/schema.py`
+- Pattern: append `CREATE TABLE IF NOT EXISTS pr_state (...)` in `init_schema()` per spec data model
+- Columns: `repo TEXT, number INTEGER, state TEXT NOT NULL, has_reviewed_label INTEGER NOT NULL DEFAULT 0, closing_issue_keys TEXT, updated_at TEXT NOT NULL, PRIMARY KEY (repo, number)`
+- Verify: `sqlite3 ~/.roxabi/corpus.db ".schema pr_state"`
+- Expected: matches spec
+
+**T3 [P:N] [schema]** [S4] — Add lookup index for issue→PR
+- File: `src/roxabi_live/corpus/schema.py`
+- `CREATE INDEX IF NOT EXISTS ix_pr_state_state ON pr_state(state)` for filtering open PRs in API JOIN
+- Verify: `sqlite3 ~/.roxabi/corpus.db ".indexes pr_state"`
+
+**T4 [P:N] [schema-test] RED-GATE** [SC-5] — Test schema migration idempotency
+- File: `tests/test_schema_migration.py`
+- Run `init_schema()` twice on temp DB; assert no errors, no duplicates
+- Verify: `uv run pytest tests/test_schema_migration.py -v`
+
+### Slice 2 — GraphQL + sync (Wave 2, backend-dev-B)
+
+**T5 [P:Y] [graphql]** [S1] — GraphQL query for `repository.refs`
+- File: `src/roxabi_live/corpus/graphql.py`
+- Query: `repository(owner,name){refs(refPrefix:"refs/heads/",first:100,after:$cursor){pageInfo{hasNextPage,endCursor},nodes{name}}}`
+- **Pagination required** per existing pattern in `sync.py:276-356`
+- Verify: `uv run python -c "from roxabi_live.corpus.graphql import REFS_QUERY; print(REFS_QUERY)"`
+
+**T6 [P:Y] [graphql]** [S2] — GraphQL query for open PRs
+- File: `src/roxabi_live/corpus/graphql.py`
+- Query: `repository(...).pullRequests(states:OPEN,first:50,after:$cursor){pageInfo,nodes{number,state,closingIssuesReferences(first:5){nodes{number,repository{nameWithOwner}}},labels(first:20){nodes{name}}}}`
+- Verify: as T5 with PRS_QUERY
+
+**T7 [P:N] [sync]** [S4 dependency] — Update `UPSERT_ISSUE_SQL` + `UPSERT_ISSUE_FROM_WEBHOOK_SQL` to include `has_active_branch`
+- File: `src/roxabi_live/corpus/sync.py` lines 34 and 64
+- Add column to INSERT list, VALUES placeholders, and `ON CONFLICT DO UPDATE SET` clause
+- **Critical**: without this, full sync resets `has_active_branch` to default
+- Verify: `grep -c has_active_branch src/roxabi_live/corpus/sync.py` ≥ 4
+
+**T8 [P:N] [sync]** [S1, SC-1] — Implement `sync_branches(repo, conn)`
+- File: `src/roxabi_live/corpus/sync.py`
+- Logic: paginated fetch refs → regex `^(?:[a-z]+/)?(\d+)-` → group by issue number → UPDATE `issues SET has_active_branch=1 WHERE key IN (...)` for matched, 0 elsewhere in repo
+- Verify: `uv run roxabi-live --sync --repo Roxabi/lyra`; `sqlite3 ~/.roxabi/corpus.db "SELECT COUNT(*) FROM issues WHERE has_active_branch=1"` > 0
+
+**T9 [P:N] [sync]** [S2, SC-2] — Implement `sync_prs(repo, conn)`
+- File: `src/roxabi_live/corpus/sync.py`
+- Logic: paginated fetch open PRs → for each, extract `closing_issue_keys` (JSON array of `"owner/repo#N"`) + check `labels` for `reviewed` → upsert `pr_state`
+- Verify: `sqlite3 ~/.roxabi/corpus.db "SELECT * FROM pr_state LIMIT 3"`
+
+**T10 [P:N] [sync-test] RED-GATE** [SC-1, SC-2] — Test branch regex + sync_prs upsert
+- File: `tests/test_sync_branches_prs.py`
+- Cases: `feat/123-x`, `123-x`, `dependabot/...` (reject), `release-please--...` (reject), multi-PR for same issue, missing closing keywords
+- Verify: `uv run pytest tests/test_sync_branches_prs.py -v`
+
+### Slice 3 — Webhook handlers (Wave 3, backend-dev-C)
+
+**T11 [P:N] [webhook]** [N2, N3, SC-1] — `handle_ref(payload, conn)` for create/delete branch events
+- File: `src/roxabi_live/webhook/handlers.py`
+- Logic: filter `ref_type == "branch"`; regex extract issue#N from `payload.ref`; on `create` → set has_active_branch=1; on `delete` → re-query GraphQL refs for that repo, update flag based on remaining matches (do NOT trust delete alone — race rule)
+- Verify: `uv run pytest tests/test_webhook_ref.py -v` (T14)
+
+**T12 [P:N] [webhook]** [N4, SC-2, SC-3] — `handle_pull_request(payload, conn)`
+- File: `src/roxabi_live/webhook/handlers.py`
+- Actions handled: opened, labeled, unlabeled, closed, reopened, edited (body change → reparse closing refs)
+- Upsert `pr_state` row; recompute `has_reviewed_label` from `payload.pull_request.labels`; extract `closing_issue_keys` from PR body via same regex used by auto-merge.yml (`/(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi`)
+- Verify: `uv run pytest tests/test_webhook_pull_request.py -v` (T14)
+
+**T13 [P:N] [webhook]** [N2, N3, N4] — Register events in `router.py`
+- File: `src/roxabi_live/webhook/router.py`
+- Add dispatch for `create`, `delete`, `pull_request` event headers; route to new handlers
+- Verify: `grep -c 'create\|delete\|pull_request' src/roxabi_live/webhook/router.py` ≥ 3
+
+**T14 [P:N] [webhook-test] RED-GATE** [SC-1, SC-2, SC-3] — Test webhook handlers with replayed payloads
+- File: `tests/test_webhook_ref.py`, `tests/test_webhook_pull_request.py`
+- Fixture payloads from `gh api repos/Roxabi/lyra/events` or hand-rolled
+- Verify: `uv run pytest tests/test_webhook_*.py -v`
+
+### Slice 4 — API exposure (Wave 3, backend-dev-D, parallel with Slice 3)
+
+**T15 [P:Y wave-3] [api]** [N1, SC-1, SC-2] — Extend `/api/graph` with `dev_state` per node
+- File: `src/roxabi_live/dep_graph/v6/api.py`
+- SQL: LEFT JOIN `pr_state` on `pr_state.closing_issue_keys LIKE '%' || issues.key || '%'` AND `pr_state.state = 'open'`; compute `dev_state` per priority: `pr_reviewed` if any `has_reviewed_label=1`, `pr_open` if any open PR, `dev` if `has_active_branch=1`, `idle` else
+- Add `dev_state` to JSON response per node
+- Verify: `curl http://localhost:8088/api/graph | jq '.nodes[] | select(.dev_state != "idle")' | head`
+
+**T16 [P:Y wave-3] [api-test] RED-GATE** [SC-1, SC-2, SC-9] — Test `/api/graph` dev_state correctness
+- File: `tests/test_api_graph_dev_state.py`
+- Cases: idle (no branch, no PR), dev (branch only), pr_open (PR no reviewed), pr_reviewed (PR with reviewed); multi-PR precedence
+- Verify: `uv run pytest tests/test_api_graph_dev_state.py -v`
+
+### Slice 5 — Reconciler heal (Wave 4, backend-dev-E)
+
+**T17 [P:Y wave-4] [reconciler]** [S3, SC-1] — Add `heal_pr_branch_state()` to reconciler hourly tick
+- File: `src/roxabi_live/reconciler.py`
+- Call `sync_branches(repo, conn)` + `sync_prs(repo, conn)` per repo in `repo_allowlist`
+- Position: alongside existing heal hooks
+- Verify: `uv run python -c "from roxabi_live.reconciler import heal_pr_branch_state; ..."`
+
+**T18 [P:Y wave-4] [reconciler-test] RED-GATE** [S3] — Test reconciler heal corrects drift
+- File: `tests/test_reconciler_pr_branch.py`
+- Setup: write wrong `has_active_branch=0` for an issue that has a branch on GitHub; run heal; assert flag corrected to 1
+- Verify: `uv run pytest tests/test_reconciler_pr_branch.py -v`
+
+### Slice 6 — Frontend CSS + JS (Wave 4, frontend-dev-A, parallel with Slice 5)
+
+**T19 [P:Y wave-4] [css]** [U1] — Port `.pulse` (halo) animation to `graph.css`
+- File: `src/roxabi_live/dep_graph/v6/frontend/graph.css`
+- Source: `artifacts/frames/node-animation-proposals.html` Proposition 1 (halo pulse, 1.6s)
+- Scope under `#graph-panel .gg-node.pulse::before`
+- Verify: open dep-graph, manually add `.pulse` class via DevTools → halo expands
+
+**T20 [P:Y wave-4] [css]** [U2, U3] — Port `.orbit-1` + `.orbit-2` (orbiting dots) to `graph.css`
+- File: same as T19
+- Source: Proposition 3 (orbit, 1.8s) — radial-gradient pseudo-elements
+- 1 satellite: only ::before. 2 satellites: ::before + ::after with -0.9s delay
+- Verify: DevTools add `.pulse.orbit-1` and `.pulse.orbit-2` classes
+
+**T21 [P:Y wave-4] [fe-state]** [U1, U2, U3] — Derive class from `dev_state` in `state.js`
+- File: `src/roxabi_live/dep_graph/v6/frontend/state.js`
+- Function: `mapDevStateToClass(node) → "pulse" | "pulse orbit-1" | "pulse orbit-2" | ""`
+- Verify: `node` console.log of `mapDevStateToClass({dev_state: "pr_reviewed"})` → `"pulse orbit-2"`
+
+**T22 [P:Y wave-4] [fe-state]** [U1, U2, U3, SC-4] — Apply class in `render_graph.js`
+- File: `src/roxabi_live/dep_graph/v6/frontend/render_graph.js`
+- After existing tone/state class application, add `mapDevStateToClass` result
+- Ensure no conflict with existing `.blocked` / `.done` classes
+- Verify: load dep-graph, inspect `.gg-node` elements — `.pulse` / `.orbit-*` present where expected
+
+**T23 [P:N] [fe-visual] RED-GATE** [SC-4, SC-9] — Manual visual verification on live dep-graph
+- Action: open local dep-graph at `http://localhost:8088/dep-graph/`; pick 5 issues with known state (1 idle, 1 with active branch, 1 with open PR no-reviewed, 1 with reviewed, 1 done); confirm animations match
+- Verify: visual eyeball confirms; existing done/blocked unchanged
+
+### Slice 7 — Forge artifact update (Wave 5, frontend-dev-B)
+
+**T24 [P:N] [forge]** [SC-7] — Update `node-animation-proposals.html` to show 4 cumulative states
+- File: `artifacts/frames/node-animation-proposals.html`
+- Replace 3-column "Halo Pulse / Dashed Ring / Orbit" comparison with 4-state showcase: Idle / Dev (pulse) / PR Open (pulse + 1 orbit) / PR Reviewed (pulse + 2 orbits)
+- Keep dark theme, fonts, design tokens
+- Verify: open file in browser — 4 columns rendering correctly
+
+**T25 [P:N] [forge]** [SC-7] — Redeploy to forge.roxabi.dev
+- Command: `cd ~/.roxabi/forge && make deploy`
+- Verify: `curl -sI https://forge.roxabi.dev/roxabi-live/visuals/node-animation-proposals` → HTTP 200
+
+### Slice 8 — Integration tests (Wave 6, tester-A)
+
+**T26 [P:N] [integration]** [SC-6] — End-to-end sampling criterion script
+- File: `tests/test_e2e_dev_state_accuracy.py`
+- Script: query `gh api repos/Roxabi/lyra/branches | jq` → pick 10 random open issues with active branches → curl `/api/graph` → assert ≥8/10 have correct `dev_state`
+- Verify: `uv run pytest tests/test_e2e_dev_state_accuracy.py -v`
+
+**T27 [P:N] [integration] RED-GATE** [SC-8] — Full pytest suite green
+- Command: `uv run pytest tests/`
+- Verify: exit 0; all new + existing tests pass
+
+## Task Seeding Blueprint
+
+<!-- Used by /implement to seed TaskCreate calls.
+     Format: T{n} | agent-instance | blockedBy | subject -->
+
+### Wave 1 — start, 1 agent ∥
+
+| Task | Agent instance | blockedBy | Subject |
+|---|---|---|---|
+| T1 | backend-dev-A | — | schema |
+| T2 | backend-dev-A | T1 | schema |
+| T3 | backend-dev-A | T2 | schema |
+| T4 | backend-dev-A | T3 | schema-test |
+
+### Wave 2 — after Wave 1, 1 agent ∥
+
+| Task | Agent instance | blockedBy | Subject |
+|---|---|---|---|
+| T5 | backend-dev-B | T4 | graphql |
+| T6 | backend-dev-B | T4 | graphql |
+| T7 | backend-dev-B | T4 | sync |
+| T8 | backend-dev-B | T5, T7 | sync |
+| T9 | backend-dev-B | T6, T7 | sync |
+| T10 | backend-dev-B | T8, T9 | sync-test |
+
+### Wave 3 — after Wave 2, 2 agents ∥
+
+| Task | Agent instance | blockedBy | Subject |
+|---|---|---|---|
+| T11 | backend-dev-C | T10 | webhook |
+| T12 | backend-dev-C | T10 | webhook |
+| T13 | backend-dev-C | T11, T12 | webhook |
+| T14 | backend-dev-C | T13 | webhook-test |
+| T15 | backend-dev-D | T10 | api |
+| T16 | backend-dev-D | T15 | api-test |
+
+### Wave 4 — after Wave 3, 2 agents ∥
+
+| Task | Agent instance | blockedBy | Subject |
+|---|---|---|---|
+| T17 | backend-dev-E | T14, T16 | reconciler |
+| T18 | backend-dev-E | T17 | reconciler-test |
+| T19 | frontend-dev-A | T16 | css |
+| T20 | frontend-dev-A | T16 | css |
+| T21 | frontend-dev-A | T19, T20 | fe-state |
+| T22 | frontend-dev-A | T21 | fe-state |
+| T23 | frontend-dev-A | T22 | fe-visual |
+
+### Wave 5 — after Wave 4, 1 agent ∥
+
+| Task | Agent instance | blockedBy | Subject |
+|---|---|---|---|
+| T24 | frontend-dev-B | T23 | forge |
+| T25 | frontend-dev-B | T24 | forge |
+
+### Wave 6 — after Wave 5, 1 agent ∥
+
+| Task | Agent instance | blockedBy | Subject |
+|---|---|---|---|
+| T26 | tester-A | T25 | integration |
+| T27 | tester-A | T26 | integration |
+
+## Task IDs
+
+<!-- Generated by /plan. Used by /implement to resume tasks on session restart. -->
+
+- T1: 13 — schema
+- T2: 14 — schema
+- T3: 15 — schema
+- T4: 16 — schema-test
+- T5: 17 — graphql
+- T6: 18 — graphql
+- T7: 19 — sync
+- T8: 20 — sync
+- T9: 21 — sync
+- T10: 22 — sync-test
+- T11: 23 — webhook
+- T12: 24 — webhook
+- T13: 25 — webhook
+- T14: 26 — webhook-test
+- T15: 27 — api
+- T16: 28 — api-test
+- T17: 29 — reconciler
+- T18: 30 — reconciler-test
+- T19: 31 — css
+- T20: 32 — css
+- T21: 33 — fe-state
+- T22: 34 — fe-state
+- T23: 35 — fe-visual
+- T24: 36 — forge
+- T25: 37 — forge
+- T26: 38 — integration
+- T27: 39 — integration

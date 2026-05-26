@@ -3,6 +3,7 @@
 
 import { edgePath } from './layout.js';
 import { repoTone } from './tone.js';
+import { mapDevStateToClass } from './state.js';
 
 function getTone(node) {
   return repoTone(node.repo) || 'accent';
@@ -45,6 +46,22 @@ function renderNodes(container, nodes, positions, usePercentage) {
     dot.rel = 'noopener';
     dot.style.cssText = style;
     dot.title = `#${node.number} — ${node.title || ''}`;
+
+    // Dev-state animation classes — skip for closed nodes (done wins)
+    if (!isDone) {
+      const devClass = mapDevStateToClass(node.dev_state);
+      if (devClass) {
+        dot.className += ' ' + devClass;
+        // Inject second orbit dot host element for pr_reviewed (orbit-2)
+        if (devClass.includes('orbit-2')) {
+          const orbitChild = document.createElement('span');
+          orbitChild.className = 'gg-orbit-2nd';
+          orbitChild.setAttribute('aria-hidden', 'true');
+          dot.appendChild(orbitChild);
+        }
+      }
+    }
+
     container.appendChild(dot);
 
     // ── Label (.gg-ilabel) ──────────────────────────────────────────────────

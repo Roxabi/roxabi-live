@@ -17,7 +17,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+from collections.abc import Iterable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Protocol, cast
 from weakref import WeakSet
 
@@ -113,8 +115,19 @@ async def run_once(settings: Settings) -> None:
         finally:
             conn.close()
 
+    def _get_allowlist() -> list[str]:
+        conn = sqlite3.connect(settings.corpus_db_path)
+        try:
+            rows = conn.execute("SELECT repo FROM repo_allowlist").fetchall()
+            return [row[0] for row in rows]
+        finally:
+            conn.close()
+
     try:
         await asyncio.to_thread(_sync)
+        repos = await asyncio.to_thread(_get_allowlist)
+        if repos:
+            await heal_pr_branch_state(settings.corpus_db_path, repos)
         async with _state_lock:
             _auth_failures = 0
     except Exception as exc:
@@ -152,7 +165,11 @@ async def run_repo_once(settings: Settings, repo: str) -> None:
     def _sync() -> dict[str, int]:
         conn = sqlite3.connect(settings.corpus_db_path)
         try:
-            return corpus_sync.run_single_repo_sync(conn, repo)
+            result = corpus_sync.run_single_repo_sync(conn, repo)
+            corpus_sync.sync_branches(repo, conn)
+            corpus_sync.sync_prs(repo, conn)
+            conn.commit()
+            return result
         finally:
             conn.close()
 
@@ -180,6 +197,49 @@ async def run_repo_once(settings: Settings, repo: str) -> None:
                 )
             return
         log.exception("reconciler run_repo_once failed (repo=%s)", repo)
+
+
+async def heal_pr_branch_state(
+    db_path: Path,
+    repos: Iterable[str],
+) -> None:
+    """Re-sync branch flags and PR state for each repo in *repos*.
+
+    For every repository in the iterable this function:
+    1. Opens a fresh SQLite connection (thread-safe: one per call).
+    2. Calls ``corpus_sync.sync_branches(repo, conn)`` — refreshes
+       ``has_active_branch`` on every issue in the repo against live GitHub refs.
+    3. Calls ``corpus_sync.sync_prs(repo, conn)`` — upserts open PRs into
+       ``pr_state``.
+
+    This is the authoritative source for ``has_active_branch`` and ``pr_state``
+    when a conflict arises with webhook-driven updates (reconciler wins per the
+    Race & Precedence Rules in the spec).
+
+    Both underlying functions are synchronous (they call GitHub synchronously via
+    ``gh_graphql``).  All work is offloaded to a thread with ``asyncio.to_thread``
+    so the event loop is not blocked.
+
+    Args:
+        db_path: Path to the corpus SQLite database file.
+        repos:   Iterable of repository slugs in ``owner/name`` form.
+                 An empty iterable is a no-op.
+    """
+
+    def _heal_repo(repo: str) -> None:
+        # sync_branches and sync_prs document "caller controls the transaction",
+        # so we must commit before closing — otherwise SQLite rolls back the
+        # implicit transaction and the writes vanish.
+        conn = sqlite3.connect(db_path)
+        try:
+            corpus_sync.sync_branches(repo, conn)
+            corpus_sync.sync_prs(repo, conn)
+            conn.commit()
+        finally:
+            conn.close()
+
+    for repo in repos:
+        await asyncio.to_thread(_heal_repo, repo)
 
 
 def hourly_loop(settings: Settings) -> asyncio.Task[None]:

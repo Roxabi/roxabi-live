@@ -23,6 +23,15 @@ from roxabi_live.corpus.sync import (
     INSERT_EDGE_SQL,
     INSERT_LABEL_SQL,
     UPSERT_ISSUE_FROM_WEBHOOK_SQL,
+    UPSERT_PR_STATE_SQL,
+)
+
+# SQL constants for branch and PR state mutations (webhook + sync paths)
+SET_ACTIVE_BRANCH_ON_SQL = (
+    "UPDATE issues SET has_active_branch=1 WHERE repo=? AND number=?"
+)
+SET_ACTIVE_BRANCH_OFF_SQL = (
+    "UPDATE issues SET has_active_branch=0 WHERE repo=? AND number=?"
 )
 
 
@@ -129,3 +138,34 @@ async def upsert_edges_async(
         rows.append((issue_key, blockee, kind))
     if rows:
         await conn.executemany(INSERT_EDGE_SQL, rows)
+
+
+async def set_active_branch_async(
+    conn: aiosqlite.Connection, repo: str, number: int, value: int
+) -> None:
+    """Set has_active_branch for the given issue.
+
+    Runs inside the caller's transaction — no commit() here.
+    value: 1 to mark active, 0 to clear.
+    """
+    sql = SET_ACTIVE_BRANCH_ON_SQL if value else SET_ACTIVE_BRANCH_OFF_SQL
+    await conn.execute(sql, (repo, number))
+
+
+async def upsert_pr_state_async(  # noqa: PLR0913
+    conn: aiosqlite.Connection,
+    repo: str,
+    number: int,
+    state: str,
+    has_reviewed_label: int,
+    closing_issue_keys_json: str,
+    updated_at: str,
+) -> None:
+    """Insert or update a pr_state row.
+
+    Runs inside the caller's transaction — no commit() here.
+    """
+    await conn.execute(
+        UPSERT_PR_STATE_SQL,
+        (repo, number, state, has_reviewed_label, closing_issue_keys_json, updated_at),
+    )
