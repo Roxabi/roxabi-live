@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS repo_allowlist (
@@ -50,9 +50,20 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_synced_at  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS pr_state (
+    repo                 TEXT NOT NULL,
+    number               INTEGER NOT NULL,
+    state                TEXT NOT NULL,
+    has_reviewed_label   INTEGER NOT NULL DEFAULT 0,
+    closing_issue_keys   TEXT,
+    updated_at           TEXT NOT NULL,
+    PRIMARY KEY (repo, number)
+);
+
 CREATE INDEX IF NOT EXISTS ix_edges_dst ON edges(dst_key);
 CREATE INDEX IF NOT EXISTS ix_issues_repo_state ON issues(repo, state);
 CREATE INDEX IF NOT EXISTS ix_labels_name ON labels(name);
+CREATE INDEX IF NOT EXISTS ix_pr_state_state ON pr_state(state);
 """
 
 
@@ -136,6 +147,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
             " SELECT DISTINCT repo FROM issues"
         )
         conn.commit()
+
+    # Migration 5 — branch/PR animation state (SCHEMA_VERSION 5 -> 6).
+    # pr_state table is created above via SCHEMA_SQL (CREATE TABLE IF NOT EXISTS).
+    # Only the issues column needs an explicit ALTER because the table already exists.
+    _alter_column(
+        conn,
+        "ALTER TABLE issues ADD COLUMN has_active_branch INTEGER NOT NULL DEFAULT 0",
+    )
 
 
 def bootstrap(db_path: pathlib.Path) -> None:
