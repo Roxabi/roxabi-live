@@ -303,7 +303,7 @@ async def handle_ref_delete(
     """Handle GitHub `delete` event for branch refs.
 
     On a matching branch deletion, re-queries GitHub via sync_branches (race
-    rule: do not trust the delete event alone — reconciler is canonical).
+    rule: do not trust the branch-removal event alone — reconciler is canonical).
     sync_branches opens its own sqlite3 connection via db_path and commits
     independently; the aiosqlite conn is not used for the DB write here.
 
