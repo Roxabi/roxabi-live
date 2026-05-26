@@ -1,0 +1,99 @@
+---
+title: "PR #83 review findings — Expert Consensus"
+issue: 82
+status: consensus-reached
+date: 2026-05-26
+panel: architect, backend-dev, frontend-dev
+confidence: high
+---
+
+## Problem
+
+Code review on PR #83 (`feat/82-dep-graph-animations`) produced 11 blocking findings + 10 suggestions + 5 nitpicks. Panel asked to partition them into **Fix-now** (this PR), **Document-only** (comment, no code change), and **Defer-to-followup** (separate issue) for an internal solo-operator ops cockpit (Tailscale-only, ~30 repos, no public traffic).
+
+## Panel
+
+| α | Focus |
+|---|-------|
+| architect | arch soundness, transactional discipline, scalability |
+| backend-dev | impl complexity, API design, pragmatism for THIS codebase |
+| frontend-dev | UX, a11y, client perf pragmatism (solo internal tool) |
+
+## Consensus ρ
+
+### Verdict matrix
+
+| # | Finding | Architect | Backend | Frontend | **Consensus** |
+|---|---|:---:|:---:|:---:|:---:|
+| B1 | Pagination infinite-loop guard | Fix-now | Defer | — | **Fix-now** (cost ≈ 3 lines, 24/7 reliability) |
+| B2 | `closingIssuesReferences(first:5)` truncation | Defer | Document | — | **Document-only** (bump to 25 + comment) |
+| B3 | `prefers-reduced-motion` missing | Fix-now | Fix-now | Fix-now | **Fix-now** (unanimous) |
+| B4 | `.graph-wrap` overflow clips | Fix-now | Fix-now | Defer | **Fix-now** (2-1, conservative fix) |
+| B5 | `<i>` semantic + `aria-hidden` | Fix-now | Fix-now | Fix-now | **Fix-now** (unanimous) |
+| B6 | `run_repo_once` overwrites `has_active_branch` | Fix-now | Fix-now | — | **Fix-now** (core invariant breach) |
+| B7 | `UPSERT_ISSUE_FROM_WEBHOOK_SQL` ON CONFLICT | Document | Document | — | **Document-only** (omission is actually safer) |
+| B8 | `UPSERT_PR_STATE_SQL` duplicated | Fix-now | Fix-now | — | **Fix-now** (parallel-path-drift, 3 lines) |
+| B9 | REFS/PRS missing `rateLimit` | Fix-now | Fix-now | — | **Fix-now** (24/7 observability) |
+| B10 | `number=0` ghost-row guard | Fix-now | Fix-now | — | **Fix-now** (2 lines, mirror sibling) |
+| B11 | `sync_prs` no stale-close | Fix-now | Defer | — | **Fix-now** (reconciler-canonical breaks otherwise) |
+| S1 | Hardcoded `#f0abfc` color | — | — | Fix-now | **Fix-now** (token system) |
+| S3 | `_sync_in_flight` global | Defer | Defer | — | **Defer-to-followup** |
+
+### Rationale (per reconciliation)
+
+**B1 — Fix-now (override Backend's Defer):**
+Backend argued "GitHub hasn't returned `endCursor=null` in years." Architect overrides: cost is 3 lines (`MAX_PAGES=500` + assert), the reconciler is 24/7 on M₁ — a hung pagination thread starves all subsequent heals. Backend agrees `MAX_PAGES` is a good defensive measure. Decision: 3-line cost beats theoretical future risk.
+
+**B4 — Fix-now (override Frontend's Defer, but with conservative implementation):**
+Frontend correctly noted `clip-path: inset(0 round 8px)` needs visual verification. Conservative alternative wins: keep `overflow: hidden` on `.graph-wrap` for the bg mask, add `overflow: visible` to `.graph-stage` (the absolute-positioned interior holding nodes). 1-line CSS change, no border-radius verification needed.
+
+**B11 — Fix-now (override Backend's Defer):**
+Backend argued "reconciler heals on next full cycle." Architect counter: `sync_prs` queries `states: OPEN` only → closed PRs are NEVER re-fetched, so stale `state='open'` rows persist forever. The "reconciler is canonical" invariant (spec Race & Precedence Rules) demands this fix. SQL `UPDATE pr_state SET state='closed' WHERE repo=? AND state='open' AND number NOT IN (...)` after pagination is 5 lines.
+
+### Trade-offs
+
+1. **B7 Document-only over Fix-now** — Adding `has_active_branch = excluded.has_active_branch` to ON CONFLICT SET would create a NEW bug (webhook implicitly passes `0`, would clobber legitimate `1` set by `sync_branches`). The current omission is structurally safer; comment captures intent.
+2. **B2 Document-only over Fix-now** — Full `pageInfo` on `closingIssuesReferences` adds nested pagination loop. Drive-by `first: 25` + comment "PRs closing >25 issues out of scope" is 1-line, covers 99.99% of realistic Roxabi PRs.
+3. **S3 Defer over Fix-now** — `_sync_in_flight: set[str]` refactor adds lock-scope complexity for a problem that doesn't trigger at 30-repo scale + solo-operator traffic. Capture in followup issue.
+
+## Implementation queue for /fix
+
+### Backend (sync.py + handlers.py + reconciler.py + graphql.py + mutations.py)
+
+| # | Action | File | LOC |
+|---|---|---|:---:|
+| B1 | Add `MAX_PAGES=500` + null-cursor guard in `sync_branches`, `sync_prs` paginators | `corpus/sync.py:573-588, 646-679` | ~6 |
+| B6 | Call `sync_branches(repo, conn) + sync_prs + commit` after `run_single_repo_sync` in `run_repo_once` | `reconciler.py:155-195` | ~5 |
+| B8 | Import `UPSERT_PR_STATE_SQL` from `mutations.py` in `sync_prs`; delete local string | `corpus/sync.py:631` | ~3 |
+| B9 | Add `rateLimit { cost remaining resetAt }` to REFS_QUERY + PRS_QUERY; `log_rate_limit` per page | `corpus/graphql.py:64,75` + `corpus/sync.py:574,647` | ~6 |
+| B10 | `if not number: log.warning(...); return` guard in `handle_pull_request` | `webhook/handlers.py:366` | ~3 |
+| B11 | `UPDATE pr_state SET state='closed' WHERE repo=? AND state='open' AND number NOT IN (seen)` after `sync_prs` pagination | `corpus/sync.py:679` | ~5 |
+
+### Frontend (graph.css + render_graph.js)
+
+| # | Action | File | LOC |
+|---|---|---|:---:|
+| B3 | Add `@media (prefers-reduced-motion: reduce) { animation: none }` block for `.pulse::before`, `.orbit-1::after`, `.orbit-2::after`, `.gg-orbit-2nd::before` | `frontend/graph.css` | ~7 |
+| B4 | Add `overflow: visible` to `.graph-stage` (keep `overflow: hidden` on `.graph-wrap` for bg mask) | `frontend/graph.css:75-81` | ~1 |
+| B5 | `document.createElement('span')` + `setAttribute('aria-hidden', 'true')` | `frontend/render_graph.js:57-59` | ~2 |
+| S1 | Define `--dev-orbit-2nd: #f0abfc;` token + replace hardcoded color in `.gg-orbit-2nd::before` background | `frontend/graph.css:9, 419` | ~2 |
+
+### Document-only (no code change beyond comments)
+
+- **B2** — Bump `closingIssuesReferences(first: 5)` → `first: 25` + comment in `corpus/graphql.py:83`
+- **B7** — Add comment to `UPSERT_ISSUE_FROM_WEBHOOK_SQL`: "has_active_branch managed exclusively by sync_branches/handle_ref_* — never from webhook issue payload"
+
+### Defer-to-followup
+
+- **S3** — `_sync_in_flight: set[str]` per-repo refactor → open separate issue after merge
+
+## Dissent
+
+- **Backend on B1**: Considers it a theoretical guard for non-existent GitHub behavior; accepts majority verdict given 3-line cost.
+- **Backend on B11**: Considers it deferrable since stale rows have limited blast radius; accepts majority given the spec-invariant argument.
+- **Frontend on B4**: Considers `clip-path` fix risky without visual QA; accepts conservative `overflow: visible` on `.graph-stage` compromise instead.
+
+## Next
+
+→ `/fix` (apply Fix-now queue above). After: rebase + label `reviewed` + watch CI.
+→ Followup ticket: S3 (`_sync_in_flight` per-repo refactor).
