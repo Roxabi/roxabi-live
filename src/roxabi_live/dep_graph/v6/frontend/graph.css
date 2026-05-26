@@ -371,3 +371,55 @@
 #graph-panel .gg-node.dim  { opacity: 0.12; }
 #graph-panel .gg-ilabel.dim { opacity: 0.12; }
 #graph-panel .gg-edge.dim  { opacity: 0.06; }
+
+/* ── Dev-state animations (issue #82) ───────────────────────────── */
+/* Halo pulse (::before) — dev / pr_open / pr_reviewed */
+#graph-panel .gg-node.pulse::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  animation: gg-pulse 1.6s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  pointer-events: none;
+}
+#graph-panel .gg-node.parent.pulse::before {
+  border-radius: 5px;
+}
+@keyframes gg-pulse {
+  0%   { transform: scale(0.85); opacity: 0.9; }
+  80%  { opacity: 0; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+/* First orbit dot (::after) — pr_open (orbit-1) or pr_reviewed (orbit-2) */
+#graph-panel .gg-node.orbit-1::after,
+#graph-panel .gg-node.orbit-2::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 0%, currentColor 0 2.2px, transparent 2.6px);
+  animation: gg-orbit 1.8s linear infinite;
+  pointer-events: none;
+}
+
+/* Second orbit dot (child element) — pr_reviewed only */
+#graph-panel .gg-node.orbit-2 .gg-orbit-2nd {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+#graph-panel .gg-node.orbit-2 .gg-orbit-2nd::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 0%, #f0abfc 0 2.2px, transparent 2.6px);
+  animation: gg-orbit 1.8s linear infinite;
+  animation-delay: -0.9s;
+  pointer-events: none;
+}
+
+@keyframes gg-orbit { to { transform: rotate(360deg); } }
