@@ -21,4 +21,4 @@ def reset_reconciler_auth_state() -> None:
     if hasattr(reconciler, "_halted"):
         reconciler._halted.clear()  # type: ignore[attr-defined]
     if hasattr(reconciler, "_sync_in_flight"):
-        reconciler._sync_in_flight = False  # type: ignore[attr-defined]
+        reconciler._sync_in_flight.clear()  # type: ignore[attr-defined]
