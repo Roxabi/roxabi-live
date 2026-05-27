@@ -251,9 +251,9 @@ async def handle_sub_issues(
         return 0
 
     parent_issue = payload.get("parent_issue")
-    parent_repo = payload.get("parent_issue_repo")
+    parent_repo = payload.get("parent_issue_repo") or payload.get("repository")
     sub_issue = payload.get("sub_issue")
-    sub_repo = payload.get("sub_issue_repo")
+    sub_repo = payload.get("sub_issue_repo") or payload.get("repository")
 
     if not (parent_issue and parent_repo and sub_issue and sub_repo):
         log.warning(

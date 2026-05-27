@@ -649,6 +649,27 @@ class TestSubIssuesWebhookHandler:
         assert row == ("Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
         assert delta == 1, f"Expected delta=1 for new edge insert, got {delta}"
 
+    async def test_sub_issues_added_fallback_to_repository(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """sub_issue_added inserts edge when GitHub omits *_issue_repo keys."""
+        payload = _make_sub_issues_payload(
+            action="sub_issue_added",
+            parent_repo="Roxabi/lyra",
+            parent_number=1,
+            child_repo="Roxabi/lyra",
+            child_number=2,
+        )
+        # Strip the *_issue_repo keys to mirror the real GitHub payload shape.
+        del payload["parent_issue_repo"]
+        del payload["sub_issue_repo"]
+
+        await handle_sub_issues(payload, db)
+
+        row = await _fetch_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+        assert row is not None, "Expected edge (parent→child, parent) to be inserted"
+        assert row == ("Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+
     async def test_sub_issues_removed_deletes_edge(
         self, db: aiosqlite.Connection
     ) -> None:
