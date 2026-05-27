@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Node Animation Proposals — In-Progress / Paired States</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ── Design tokens (aligned with dep-graph v6) ─────────────────── */
+:root {
+  --bg:           #0d1117;
+  --bg-panel:     #13191f;
+  --bg-card:      #161b22;
+  --border:       #21262d;
+  --border-hi:    #30363d;
+  --text:         #fafafa;
+  --text-muted:   #8b93a1;
+  --text-dim:     #6b7280;
+  --accent:       #7dd3fc;   /* cyan — in-progress primary */
+  --pair:         #f0abfc;   /* magenta — paired secondary */
+  --tone-cyan:    #22d3ee;
+  --tone-amber:   #f59e0b;
+  --tone-plum:    #a855f7;
+  --tone-pink:    #ec4899;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 32px 40px 60px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 22px; font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+h1 .accent { color: var(--accent); }
+.sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: var(--text-muted);
+  margin-bottom: 32px;
+}
+
+/* ── Grid layout: 3 proposals side by side ─────────────────────── */
+.proposals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+@media (max-width: 1100px) {
+  .proposals { grid-template-columns: 1fr; }
+}
+
+.proposal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 22px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.proposal h2 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.proposal h2 .num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.proposal .desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+/* ── Sample row: 4 nodes per proposal ──────────────────────────── */
+.samples {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 8px 14px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.sample {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 4px;
+  min-height: 92px;
+  justify-content: space-between;
+}
+.sample .stage {
+  /* Padding around node so animations (halo, orbit) don't clip */
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.sample label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+}
+
+/* ── Base node (matches dep-graph v6 .gg-node) ─────────────────── */
+.node {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: currentColor;
+  color: var(--tone-cyan);
+  box-shadow: 0 0 0 2px var(--bg-panel), 0 0 8px currentColor;
+}
+.node.parent {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+/* Per-stage tone variation for visual variety */
+.stage:nth-of-type(1) .node { color: var(--tone-cyan); }
+.stage:nth-of-type(2) .node { color: var(--tone-amber); }
+.stage:nth-of-type(3) .node { color: var(--tone-plum); }
+.stage:nth-of-type(4) .node { color: var(--tone-pink); }
+
+/* ═══════════════════════════════════════════════════════════════
+   PROPOSITION 1 — HALO PULSE
+   ═══════════════════════════════════════════════════════════════ */
+.p1 .node.in-progress::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  animation: p1-halo 1.6s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  pointer-events: none;
+}
+.p1 .node.paired::before,
+.p1 .node.paired::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  animation: p1-halo 1.6s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  pointer-events: none;
+}
+.p1 .node.paired::after {
+  border-color: var(--pair);
+  animation-delay: 0.8s;
+}
+.p1 .node.parent.in-progress::before {
+  border-radius: 5px;
+}
+@keyframes p1-halo {
+  0%   { transform: scale(0.85); opacity: 0.9; }
+  80%  { opacity: 0; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PROPOSITION 2 — ROTATING DASHED RING
+   ═══════════════════════════════════════════════════════════════ */
+.p2 .node.in-progress::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 1.25px dashed var(--accent);
+  animation: p2-spin-cw 2.2s linear infinite;
+  pointer-events: none;
+}
+.p2 .node.paired::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 1.25px dashed var(--accent);
+  animation: p2-spin-cw 2.4s linear infinite;
+  pointer-events: none;
+}
+.p2 .node.paired::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+  border: 1.25px dashed var(--pair);
+  animation: p2-spin-ccw 2.8s linear infinite;
+  pointer-events: none;
+}
+.p2 .node.parent.in-progress::before {
+  border-radius: 5px;
+}
+@keyframes p2-spin-cw  { to { transform: rotate(360deg);  } }
+@keyframes p2-spin-ccw { to { transform: rotate(-360deg); } }
+
+/* ═══════════════════════════════════════════════════════════════
+   PROPOSITION 3 — ORBITING DOT
+   ═══════════════════════════════════════════════════════════════ */
+.p3 .node.in-progress::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 0%, var(--accent) 0 2.2px, transparent 2.6px);
+  animation: p3-orbit 1.8s linear infinite;
+  pointer-events: none;
+}
+.p3 .node.paired::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 0%, var(--accent) 0 2.2px, transparent 2.6px);
+  animation: p3-orbit 1.8s linear infinite;
+  pointer-events: none;
+}
+.p3 .node.paired::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 0%, var(--pair) 0 2.2px, transparent 2.6px);
+  animation: p3-orbit 1.8s linear infinite;
+  animation-delay: -0.9s;
+  pointer-events: none;
+}
+@keyframes p3-orbit { to { transform: rotate(360deg); } }
+
+/* ── Code snippet ──────────────────────────────────────────────── */
+.code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  overflow-x: auto;
+  white-space: pre;
+  margin-top: auto;
+}
+.code .k { color: #c084fc; }
+.code .p { color: #7dd3fc; }
+.code .v { color: #fde68a; }
+.code .c { color: var(--text-dim); }
+
+/* ── Footer ────────────────────────────────────────────────────── */
+footer {
+  margin-top: 36px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ── Legend (top-right) ────────────────────────────────────────── */
+.legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.legend .dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.legend .dot.cyan { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.legend .dot.pair { background: var(--pair);   box-shadow: 0 0 6px var(--pair); }
+</style>
+</head>
+<body>
+
+<h1>Node Animation Proposals — <span class="accent">In-Progress / Paired</span> States</h1>
+<p class="sub">dep-graph v6 · 3 options to pick from · animations visible but non-distracting</p>
+
+<div class="legend">
+  <span><span class="dot cyan"></span>in-progress (solo) — cyan accent</span>
+  <span><span class="dot pair"></span>paired (à 2)        — magenta secondary</span>
+</div>
+
+<main class="proposals">
+
+  <!-- ─────────────────────────────────────────────────────────────
+       PROPOSITION 1
+       ───────────────────────────────────────────────────────────── -->
+  <article class="proposal p1">
+    <h2><span class="num">01</span> Halo Pulse</h2>
+    <p class="desc">
+      A single ring expands outward from the node and fades. Calm, breathing rhythm
+      (1.6s). For paired tasks, a second magenta halo is staggered by 0.8s — reads as
+      two heartbeats overlapping.
+    </p>
+
+    <div class="samples">
+      <div class="sample"><div class="stage"><span class="node"></span></div><label>Idle</label></div>
+      <div class="sample"><div class="stage"><span class="node in-progress"></span></div><label>In-progress</label></div>
+      <div class="sample"><div class="stage"><span class="node paired"></span></div><label>Paired</label></div>
+      <div class="sample"><div class="stage"><span class="node parent in-progress"></span></div><label>Parent · en cours</label></div>
+    </div>
+
+    <pre class="code"><span class="c">/* in-progress */</span>
+.gg-node.in-progress::before {
+  <span class="k">content</span>: '';
+  <span class="k">position</span>: absolute;
+  <span class="k">inset</span>: -2px;
+  <span class="k">border-radius</span>: 50%;
+  <span class="k">border</span>: 1.5px solid <span class="p">var(--accent)</span>;
+  <span class="k">animation</span>: <span class="v">halo</span> 1.6s ease-out infinite;
+}
+<span class="c">/* paired: add ::after with --pair color
+   and animation-delay: 0.8s */</span>
+
+@keyframes halo {
+  0%   { transform: scale(.85); opacity: .9; }
+  80%  {                         opacity: 0;  }
+  100% { transform: scale(2.6); opacity: 0;  }
+}</pre>
+  </article>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       PROPOSITION 2
+       ───────────────────────────────────────────────────────────── -->
+  <article class="proposal p2">
+    <h2><span class="num">02</span> Rotating Dashed Ring</h2>
+    <p class="desc">
+      A dashed ring rotates around the node (2.2s). Distinct silhouette versus the
+      static <code style="font-size:10.5px;color:#fde68a">.blocked</code> dashed border. Paired = two concentric
+      rings spinning in opposite directions, different colors.
+    </p>
+
+    <div class="samples">
+      <div class="sample"><div class="stage"><span class="node"></span></div><label>Idle</label></div>
+      <div class="sample"><div class="stage"><span class="node in-progress"></span></div><label>In-progress</label></div>
+      <div class="sample"><div class="stage"><span class="node paired"></span></div><label>Paired</label></div>
+      <div class="sample"><div class="stage"><span class="node parent in-progress"></span></div><label>Parent · en cours</label></div>
+    </div>
+
+    <pre class="code"><span class="c">/* in-progress */</span>
+.gg-node.in-progress::before {
+  <span class="k">content</span>: '';
+  <span class="k">position</span>: absolute;
+  <span class="k">inset</span>: -5px;
+  <span class="k">border-radius</span>: 50%;
+  <span class="k">border</span>: 1.25px dashed <span class="p">var(--accent)</span>;
+  <span class="k">animation</span>: <span class="v">spin-cw</span> 2.2s linear infinite;
+}
+<span class="c">/* paired: ::before (cw, cyan) + ::after
+   (ccw, --pair) at inset:-9px */</span>
+
+@keyframes spin-cw  { to { transform: rotate(360deg);  } }
+@keyframes spin-ccw { to { transform: rotate(-360deg); } }</pre>
+  </article>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       PROPOSITION 3
+       ───────────────────────────────────────────────────────────── -->
+  <article class="proposal p3">
+    <h2><span class="num">03</span> Orbiting Dot</h2>
+    <p class="desc">
+      A small satellite dot orbits the node (1.8s). Suggests "active work circling".
+      For paired, two dots orbit at 180° apart with different colors — visually
+      reads as "two people in motion around the issue".
+    </p>
+
+    <div class="samples">
+      <div class="sample"><div class="stage"><span class="node"></span></div><label>Idle</label></div>
+      <div class="sample"><div class="stage"><span class="node in-progress"></span></div><label>In-progress</label></div>
+      <div class="sample"><div class="stage"><span class="node paired"></span></div><label>Paired</label></div>
+      <div class="sample"><div class="stage"><span class="node parent in-progress"></span></div><label>Parent · en cours</label></div>
+    </div>
+
+    <pre class="code"><span class="c">/* in-progress: 1 orbiting satellite */</span>
+.gg-node.in-progress::before {
+  <span class="k">content</span>: '';
+  <span class="k">position</span>: absolute;
+  <span class="k">inset</span>: -6px;
+  <span class="k">border-radius</span>: 50%;
+  <span class="k">background</span>: radial-gradient(
+    circle at 50% 0%,
+    <span class="p">var(--accent)</span> 0 2.2px,
+    transparent 2.6px);
+  <span class="k">animation</span>: <span class="v">orbit</span> 1.8s linear infinite;
+}
+<span class="c">/* paired: ::after with --pair gradient
+   + animation-delay: -0.9s (180° offset) */</span>
+
+@keyframes orbit { to { transform: rotate(360deg); } }</pre>
+  </article>
+
+</main>
+
+<footer>
+  <span>2026-05-26 · roxabi-live · artifacts/frames/node-animation-proposals.html</span>
+  <span>open with: <code style="color:var(--accent)">xdg-open</code> or browser <code style="color:var(--accent)">file://</code></span>
+</footer>
+
+</body>
+</html>
