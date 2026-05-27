@@ -1,0 +1,54 @@
+---
+title: pulse + satellite animations for dev/PR state
+issue: 82
+status: approved
+tier: F-lite
+date: 2026-05-26
+---
+
+## Problem
+
+The dep-graph (v6) renders every issue as a colored dot, encoding state via `done` (grey) and `blocked` (dashed border). It does **not** surface the live state of work in flight: there is no glance-able signal for "someone is actively working on this", "a PR is open", or "this is reviewed and waiting for CI". The operator has to click through to GitHub for each candidate node to figure out what is moving and what is stalled.
+
+We have an artifact-validated visual vocabulary (pulse halo + orbiting dot) ready to deploy (see `artifacts/frames/node-animation-proposals.html` shipped at `forge.roxabi.dev`). What is missing is the data plumbing to drive those animations: branch existence per issue + PR state + `reviewed` label.
+
+## Who
+
+- **Primary:** Mickael (operator) — uses the dep-graph dashboard to scan what's in flight across all allowlisted repos (lyra, llmCLI, voiceCLI, imageCLI, roxabi-*).
+- **Secondary:** none for v1. Read-only dashboard, no team-wide consumers yet.
+
+## Constraints
+
+- **Multi-repo**: signal logic must work uniformly across all repos in `repo_allowlist`. ¬hardcode per-repo workflow names or label conventions.
+- **Branch as canonical signal** (¬status/labels): empirically validated — 0/1460 issues have `issues.status` populated; `status:*` labels inconsistent. `/implement` and `gh issue develop` both create branches → reliable.
+- **Detection regex**: `^(?:[a-z]+/)?(\d+)-` — covers both `feat/123-foo` (from `/implement`) and `123-foo` (from `gh issue develop`); filters dependabot/release-please.
+- **Webhook-first** plumbing per existing roxabi-live pattern; reconciler heals hourly as safety net.
+- **No new arch** — extends existing `corpus.db` schema, existing webhook router, existing `/api/graph` response.
+
+## Out of Scope
+
+- Phase B (post-merge `publish.yml` container image build) — orbit during merge-to-publish window. Deferred to v2.
+- CI status overlay (pending / failure tints on nodes).
+- Multi-PR per issue beyond a max-state count (one PR's max state wins).
+- Frontend animations on the **list/matrix** tabs — v6 graph tab only.
+- Backporting animations to v1/v5 (frozen renderers).
+
+## Premise Validity
+
+**Success in 6 months:** Opening the dep-graph dashboard, I identify in <5s which issues are being worked on, have an open PR, or are reviewed and waiting for CI — without clicking through to GitHub for each candidate.
+
+**Failure in 6 months (falsifiable):** Animation state is wrong on >20% of randomly-sampled active issues. Falsifiable check: sample 10 active issues at any point in time, count correctly-animated ones — abort/revisit if <8/10.
+
+**Simplest alternative:** Toggle GitHub `status:*` labels manually.
+**Why not simplest:** Empirically measured 0/1460 issues with populated status; the discipline does not hold. Branch existence is auto-created by `/implement` — zero human discipline required, and it self-clears on merge (branch deleted).
+
+## Complexity
+
+**Tier: F-lite** — clear scope (slices already drafted in issue body), multi-domain (corpus + webhook + api + frontend + reconciler + forge), but no new architecture or unknowns.
+
+Signals observed:
+- 6 source files + tests + frontend artifact (upper edge of F-lite range)
+- Multi-domain coordination needed (backend-dev + frontend-dev agents in parallel after schema)
+- Extends existing patterns: webhook handler chain, `/api/graph` response shape, graph.css node states
+- All "unknowns" already resolved during pre-spec conversation (branch regex, GraphQL fields, animation visual approved)
+- No new external dependencies, no new infrastructure

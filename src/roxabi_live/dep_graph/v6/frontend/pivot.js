@@ -23,7 +23,8 @@ const epicCollapsed = new Set();
 function buildCard(node, edgeLookup, opts = {}) {
   const a = document.createElement('a');
   const tone = getTone(node);
-  a.className = `issue-card state-${node.state}${tone ? ` tone-${tone}` : ''}`;
+  const statusCls = node._status === 'blocked' ? ' status-blocked' : '';
+  a.className = `issue-card state-${node.state}${statusCls}${tone ? ` tone-${tone}` : ''}`;
   if (tone) a.dataset.tone = tone;
 
   // Hover-chain attrs

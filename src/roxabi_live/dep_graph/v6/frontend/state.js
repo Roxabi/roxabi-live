@@ -35,15 +35,16 @@ export const state = {
   repo:      migrateRepo(),
   milestone: LS.getJSON('v6:milestone', []),
   priority:  LS.getJSON('v6:priority', []),
-  status:    LS.getJSON('v6:status', []),
+  status:    LS.getJSON('v6:status', ['ready', 'blocked']),
   search:    LS.get('v6:search', ''),
   pivotRow:  LS.get('v6:pivotRow', 'milestone'),
   pivotCol:  LS.get('v6:pivotCol', 'lane'),
   listGroup: LS.get('v6:listGroup', 'milestone'),
   listGroup2: LS.get('v6:listGroup2', 'none'),
-  tableGroup: LS.get('v6:tableGroup', 'lane'),
+  tableGroup: LS.get('v6:tableGroup', 'parent'),
   // graph options
-  showParents: LS.get('v6:showParents', 'true') === 'true',
+  showParents: LS.get('v6:showParents', 'false') === 'true',
+  showClosedUnderOpenEpic: LS.get('v6:showClosedUnderOpenEpic', 'false') === 'true',
   nodes:     [],
   edges:     [],
   // built once after load
@@ -65,6 +66,7 @@ const LS_KEYS = {
   listGroup2:  { key: 'v6:listGroup2',  json: false },
   tableGroup:  { key: 'v6:tableGroup',  json: false },
   showParents: { key: 'v6:showParents', json: false },
+  showClosedUnderOpenEpic: { key: 'v6:showClosedUnderOpenEpic', json: false },
 };
 
 export function setState(patch) {
@@ -103,12 +105,15 @@ export function computeStatus(node, blockingEdgesByDst, nodesByKey) {
 
 // Attach _status, _blockers, _parent to every node after payload load
 // _blockers: all edges where this node is dst (for layout positioning)
-// _status: computed only from 'blocks' kind edges
+// _status: computed from 'blocks' kind edges, then propagated through 'parent'
+//          edges so any descendant of a blocked node is also rendered blocked
+//          (unless the descendant itself is already closed → kept as 'done').
 // _parent: parent issue key (from 'parent' edges where dst=this, src=parent)
 export function annotateNodes(nodes, edges) {
   const blockingByDst = new Map();  // kind='blocks' only, for status
   const allByDst = new Map();       // all edges, for _blockers
   const parentByDst = new Map();    // kind='parent', dst=child → src=parent
+  const childrenBySrc = new Map();  // kind='parent', src=parent → [child nodes]
   const byKey = new Map();
 
   for (const n of nodes) byKey.set(n.key, n);
@@ -124,14 +129,41 @@ export function annotateNodes(nodes, edges) {
     if (e.kind === 'parent') {
       if (!parentByDst.has(e.dst)) parentByDst.set(e.dst, []);
       parentByDst.get(e.dst).push(e.src);  // src is the parent
+      if (!childrenBySrc.has(e.src)) childrenBySrc.set(e.src, []);
+      childrenBySrc.get(e.src).push(e.dst);  // dst is the child
     }
   }
 
+  // Pass 1: direct status from blocks-edges + closed-state
   for (const n of nodes) {
-    n._blockers = allByDst.get(n.key) || [];  // all edges for layout
-    n._status = computeStatus(n, blockingByDst, byKey);  // blocks-only for status
+    n._blockers = allByDst.get(n.key) || [];
+    n._status = computeStatus(n, blockingByDst, byKey);
     const parents = parentByDst.get(n.key);
-    n._parent = parents?.length ? parents[0] : null;  // first parent for grouping
+    n._parent = parents?.length ? parents[0] : null;
+  }
+
+  // Stamp _isParent on nodes that have at least one child edge
+  for (const n of nodes) {
+    n._isParent = childrenBySrc.has(n.key);
+  }
+
+  // Pass 2: propagate 'blocked' through parent → child edges (BFS).
+  // A descendant of a blocked parent is itself rendered blocked, unless it
+  // is already 'done' (closed) — closed always wins.  Visited guard handles
+  // any pathological parent cycles.
+  const queue = nodes.filter(n => n._status === 'blocked').map(n => n.key);
+  const visited = new Set(queue);
+  while (queue.length) {
+    const parentKey = queue.shift();
+    const childKeys = childrenBySrc.get(parentKey) || [];
+    for (const childKey of childKeys) {
+      if (visited.has(childKey)) continue;
+      visited.add(childKey);
+      const child = byKey.get(childKey);
+      if (!child || child._status === 'done') continue;
+      child._status = 'blocked';
+      queue.push(childKey);
+    }
   }
 }
 
@@ -218,15 +250,36 @@ export function filteredNodes() {
   });
 }
 
-// For graph view: filter by all except search (search uses highlight)
+// For graph view: filter by all except search (search uses highlight).
+// When `showClosedUnderOpenEpic` is enabled, a closed (`done`) issue whose
+// parent epic is still open is kept visible even when the status filter
+// excludes `done`. The node keeps its `_status='done'` so the rest of the
+// rendering logic is unchanged.
 export function filteredNodesForGraph() {
-  return applyFilters(state.nodes, {
+  const base = applyFilters(state.nodes, {
     repo:      state.repo,
     milestone: state.milestone,
     priority:  state.priority,
-    status:    state.status,
-    search:    '',  // exclude search from filtering
+    status:    [],   // bypass status here, re-apply with override below
+    search:    '',
   });
+  if (state.status.length === 0) return base;
+  return base.filter(n => {
+    if (state.status.includes(n._status)) return true;
+    if (state.showClosedUnderOpenEpic && n._status === 'done' && n._parent) {
+      const parent = state.nodesByKey.get(n._parent);
+      if (parent && parent.state === 'open') return true;
+    }
+    return false;
+  });
+}
+
+// ─── Dev-state → animation class mapping (issue #82) ─────────────────────
+export function mapDevStateToClass(devState) {
+  if (devState === 'pr_reviewed') return 'pulse orbit-2';
+  if (devState === 'pr_open')     return 'pulse orbit-1';
+  if (devState === 'dev')         return 'pulse';
+  return '';
 }
 
 // ─── Build edge lookup (legacy helper, kept for pivot.js) ─────────────────

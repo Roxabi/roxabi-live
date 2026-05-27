@@ -14,8 +14,8 @@ import pytest
 
 from roxabi_live.corpus.schema import bootstrap, connect
 from roxabi_live.corpus.sync import (
-    _extract_from_labels,
     canonical_key,
+    extract_from_labels,
     log_rate_limit,
     upsert_edges,
     upsert_issue,
@@ -86,64 +86,64 @@ def _base_node(extra: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# _extract_from_labels — derive lane/priority/size from label vocab (#54)
+# extract_from_labels — derive lane/priority/size from label vocab (#54)
 # ---------------------------------------------------------------------------
 
 
-def test_extract_from_labels_canonical_size() -> None:
-    assert _extract_from_labels(["size:S"]) == {
+def testextract_from_labels_canonical_size() -> None:
+    assert extract_from_labels(["size:S"]) == {
         "lane": None,
         "priority": None,
         "size": "S",
     }
-    assert _extract_from_labels(["size:F-lite"])["size"] == "F-lite"
-    assert _extract_from_labels(["size:F-full"])["size"] == "F-full"
+    assert extract_from_labels(["size:F-lite"])["size"] == "F-lite"
+    assert extract_from_labels(["size:F-full"])["size"] == "F-full"
 
 
-def test_extract_from_labels_canonical_priority() -> None:
-    assert _extract_from_labels(["priority:P0"])["priority"] == "P0"
-    assert _extract_from_labels(["priority:P1"])["priority"] == "P1"
-    assert _extract_from_labels(["priority:P2"])["priority"] == "P2"
-    assert _extract_from_labels(["priority:P3"])["priority"] == "P3"
-    assert _extract_from_labels(["P0"])["priority"] == "P0"
+def testextract_from_labels_canonical_priority() -> None:
+    assert extract_from_labels(["priority:P0"])["priority"] == "P0"
+    assert extract_from_labels(["priority:P1"])["priority"] == "P1"
+    assert extract_from_labels(["priority:P2"])["priority"] == "P2"
+    assert extract_from_labels(["priority:P3"])["priority"] == "P3"
+    assert extract_from_labels(["P0"])["priority"] == "P0"
 
 
-def test_extract_from_labels_legacy_priority() -> None:
-    assert _extract_from_labels(["P1-high"])["priority"] == "P1"
-    assert _extract_from_labels(["priority:high"])["priority"] == "P1"
-    assert _extract_from_labels(["P2-medium"])["priority"] == "P2"
-    assert _extract_from_labels(["priority:medium"])["priority"] == "P2"
-    assert _extract_from_labels(["P3-low"])["priority"] == "P3"
-    assert _extract_from_labels(["priority:low"])["priority"] == "P3"
-    assert _extract_from_labels(["priority: low"])["priority"] == "P3"
+def testextract_from_labels_legacy_priority() -> None:
+    assert extract_from_labels(["P1-high"])["priority"] == "P1"
+    assert extract_from_labels(["priority:high"])["priority"] == "P1"
+    assert extract_from_labels(["P2-medium"])["priority"] == "P2"
+    assert extract_from_labels(["priority:medium"])["priority"] == "P2"
+    assert extract_from_labels(["P3-low"])["priority"] == "P3"
+    assert extract_from_labels(["priority:low"])["priority"] == "P3"
+    assert extract_from_labels(["priority: low"])["priority"] == "P3"
 
 
-def test_extract_from_labels_legacy_size_m_maps_to_flite() -> None:
+def testextract_from_labels_legacy_size_m_maps_to_flite() -> None:
     """Legacy drift: `size:M` (seen only on closed issues) → canonical F-lite."""
-    assert _extract_from_labels(["size:M"])["size"] == "F-lite"
+    assert extract_from_labels(["size:M"])["size"] == "F-lite"
 
 
-def test_extract_from_labels_lane() -> None:
-    assert _extract_from_labels(["graph:lane/a1"])["lane"] == "a1"
-    assert _extract_from_labels(["graph:lane/standalone"])["lane"] == "standalone"
+def testextract_from_labels_lane() -> None:
+    assert extract_from_labels(["graph:lane/a1"])["lane"] == "a1"
+    assert extract_from_labels(["graph:lane/standalone"])["lane"] == "standalone"
 
 
-def test_extract_from_labels_all_fields() -> None:
-    result = _extract_from_labels(
+def testextract_from_labels_all_fields() -> None:
+    result = extract_from_labels(
         ["size:F-lite", "priority:P2", "graph:lane/a1", "random-label"]
     )
     assert result == {"lane": "a1", "priority": "P2", "size": "F-lite"}
 
 
-def test_extract_from_labels_empty() -> None:
-    assert _extract_from_labels([]) == {"lane": None, "priority": None, "size": None}
+def testextract_from_labels_empty() -> None:
+    assert extract_from_labels([]) == {"lane": None, "priority": None, "size": None}
 
 
-def test_extract_from_labels_first_match_wins() -> None:
+def testextract_from_labels_first_match_wins() -> None:
     """First matching label wins per field — mirrors dep_graph/v6/parse.py semantics."""
-    result = _extract_from_labels(["size:S", "size:F-full"])
+    result = extract_from_labels(["size:S", "size:F-full"])
     assert result["size"] == "S"
-    result = _extract_from_labels(["priority:P1", "priority:P3"])
+    result = extract_from_labels(["priority:P1", "priority:P3"])
     assert result["priority"] == "P1"
 
 
@@ -384,3 +384,223 @@ def test_upsert_edges_delete_one_kind_preserves_other(
         ("A", "K", surviving_kind),
         ("K", "Z", surviving_kind),
     }
+
+
+# ---------------------------------------------------------------------------
+# run_single_repo_sync
+# ---------------------------------------------------------------------------
+
+
+def test_run_single_repo_sync_calls_run_repo_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_single_repo_sync delegates to run_repo_sync with owner/name/since."""
+    from roxabi_live.corpus.sync import run_single_repo_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+
+    calls: list[tuple[Any, ...]] = []
+
+    def fake_run_repo_sync(
+        c: Any, owner: str, name: str, since: str | None = None
+    ) -> dict[str, int]:
+        calls.append((owner, name, since))
+        return {"pages": 1, "issues": 2}
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.run_repo_sync", fake_run_repo_sync)
+
+    result = run_single_repo_sync(conn, "Roxabi/lyra")
+    conn.close()
+
+    assert result == {"pages": 1, "issues": 2}
+    assert len(calls) == 1
+    assert calls[0][0] == "Roxabi"
+    assert calls[0][1] == "lyra"
+    assert calls[0][2] is None  # no sync_state row → since=None
+
+
+def test_run_single_repo_sync_uses_since_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_single_repo_sync reads since from sync_state when a row exists."""
+    from roxabi_live.corpus.sync import run_single_repo_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_state(repo, last_cursor, last_synced_at)"
+        " VALUES (?, ?, ?)",
+        ("Roxabi/lyra", None, "2026-01-01T00:00:00+00:00"),
+    )
+    conn.commit()
+
+    captured_since: list[str | None] = []
+
+    def fake_run_repo_sync(
+        c: Any, owner: str, name: str, since: str | None = None
+    ) -> dict[str, int]:
+        captured_since.append(since)
+        return {"pages": 0, "issues": 0}
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.run_repo_sync", fake_run_repo_sync)
+
+    run_single_repo_sync(conn, "Roxabi/lyra")
+    conn.close()
+
+    assert captured_since == ["2026-01-01T00:00:00+00:00"]
+
+
+def test_run_single_repo_sync_does_not_call_enumerate_or_hop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_single_repo_sync must NOT call enumerate_org_repos or closed_hop_pass."""
+    from roxabi_live.corpus import sync as sync_mod  # noqa: PLC0415
+    from roxabi_live.corpus.sync import run_single_repo_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+
+    enumerate_called = False
+    hop_called = False
+
+    def fake_enumerate(org: str) -> list[Any]:
+        nonlocal enumerate_called
+        enumerate_called = True
+        return []
+
+    def fake_hop(c: Any) -> int:
+        nonlocal hop_called
+        hop_called = True
+        return 0
+
+    def fake_run_repo_sync(
+        c: Any, owner: str, name: str, since: str | None = None
+    ) -> dict[str, int]:
+        return {"pages": 0, "issues": 0}
+
+    monkeypatch.setattr(sync_mod, "enumerate_org_repos", fake_enumerate)
+    monkeypatch.setattr(sync_mod, "closed_hop_pass", fake_hop)
+    monkeypatch.setattr(sync_mod, "run_repo_sync", fake_run_repo_sync)
+
+    run_single_repo_sync(conn, "Roxabi/lyra")
+    conn.close()
+
+    assert not enumerate_called, "enumerate_org_repos must NOT be called"
+    assert not hop_called, "closed_hop_pass must NOT be called"
+
+
+def test_run_single_repo_sync_malformed_repo_raises(tmp_path: Path) -> None:
+    """run_single_repo_sync raises ValueError for repos without a slash."""
+    from roxabi_live.corpus.sync import run_single_repo_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+    try:
+        with pytest.raises(ValueError, match="owner/name"):
+            run_single_repo_sync(conn, "no-slash-here")
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# run_sync allowlist filtering
+# ---------------------------------------------------------------------------
+
+
+def _make_repos_response(repos: list[tuple[str, str]]) -> dict[str, Any]:
+    """Wrap repo list in the GraphQL org repositories envelope."""
+    return {
+        "data": {
+            "organization": {
+                "repositories": {
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    "nodes": [{"owner": {"login": o}, "name": n} for o, n in repos],
+                }
+            },
+            "rateLimit": {
+                "cost": 1,
+                "remaining": 4999,
+                "resetAt": "2026-04-21T10:00:00Z",
+            },
+        }
+    }
+
+
+def test_run_sync_empty_allowlist_returns_zeros(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """run_sync with an empty allowlist returns zero counts and prints a warning."""
+    from roxabi_live.corpus.sync import run_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+
+    # enumerate_org_repos returns something but allowlist is empty
+    def fake_enum_empty(_org: str) -> list[tuple[str, str]]:
+        return [("Roxabi", "lyra"), ("Roxabi", "voiceCLI")]
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.enumerate_org_repos", fake_enum_empty)
+
+    result = run_sync(conn, "Roxabi")
+    conn.close()
+
+    assert result == {
+        "repos": 0,
+        "pages": 0,
+        "issues": 0,
+        "stubs": 0,
+        "errors": 0,
+        "pruned": 0,
+    }
+    err = capsys.readouterr().err
+    assert "repo_allowlist is empty" in err
+    assert "corpus repo add" in err
+
+
+def test_run_sync_filters_by_allowlist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_sync with allowlist=[lyra] only calls run_repo_sync for lyra, not others."""
+    from roxabi_live.corpus.sync import run_sync  # noqa: PLC0415
+
+    db_path = tmp_path / "corpus.db"
+    bootstrap(db_path)
+    conn = connect(db_path)
+
+    # Seed allowlist with only lyra
+    conn.execute("INSERT INTO repo_allowlist(repo) VALUES('Roxabi/lyra')")
+    conn.commit()
+
+    def fake_enum_three(_org: str) -> list[tuple[str, str]]:
+        return [("Roxabi", "lyra"), ("Roxabi", "voiceCLI"), ("Roxabi", "noise")]
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.enumerate_org_repos", fake_enum_three)
+
+    synced: list[str] = []
+
+    def fake_run_repo_sync(
+        c: Any, owner: str, name: str, since: str | None = None
+    ) -> dict[str, int]:
+        synced.append(f"{owner}/{name}")
+        return {"pages": 1, "issues": 2}
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.run_repo_sync", fake_run_repo_sync)
+
+    # closed_hop_pass also needs mocking to avoid DB issues
+    def fake_closed_hop(_c: Any) -> int:
+        return 0
+
+    monkeypatch.setattr("roxabi_live.corpus.sync.closed_hop_pass", fake_closed_hop)
+
+    result = run_sync(conn, "Roxabi")
+    conn.close()
+
+    assert synced == ["Roxabi/lyra"], f"Expected only lyra to be synced, got {synced}"
+    assert result["repos"] == 1
+    assert result["issues"] == 2

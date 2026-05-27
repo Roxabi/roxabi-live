@@ -3,7 +3,14 @@ title: Cloudflared Tunnel Setup
 description: One-time provisioning of the Cloudflare Tunnel that exposes dashboard.roxabi.dev, and migration from M₂ to M₁.
 ---
 
-## Overview
+> [!NOTE]
+> **Status (2026-04-24):** this cloudflared setup is **not currently deployed**. The `roxabi.dev` zone remains on OVH, so Cloudflare Tunnel + Access cannot front it without a zone migration. Production ingress is instead served by **Tailscale Funnel** on M₁ at `https://roxabituwer.goose-logarithm.ts.net/` (see "Current deployment" below). This document is kept for reference and for the eventual migration to Cloudflare once the zone moves.
+
+## Current deployment (Tailscale Funnel)
+
+GitHub org webhooks POST to `https://roxabituwer.goose-logarithm.ts.net/webhook/github`. HMAC (`GITHUB_WEBHOOK_SECRET`) is the sole auth gate — Cloudflare Access is not in front of it. Funnel is started via `sudo tailscale funnel --bg 8000` on M₁ and survives `tailscaled` restarts. To rotate: update the GitHub webhook URL and the Funnel binding (`tailscale funnel --https=443 off` removes all bindings; re-add with `tailscale funnel --bg 8000`).
+
+## Overview (cloudflared — deferred)
 
 `cloudflared` runs as a supervised daemon that creates an outbound-only Cloudflare Tunnel from the host machine to the public domain `dashboard.roxabi.dev`. All HTTP traffic arriving at that domain is forwarded to the local FastAPI process on port 8000. No inbound firewall ports are opened; the tunnel is the sole ingress path.
 
@@ -146,15 +153,16 @@ rsync -r ~/.cloudflared/ roxabituwer:~/.cloudflared/
 
 Option B — re-authenticate on M₁ (`cloudflared tunnel login`) and reuse the same tunnel name; the tunnel ID and DNS record do not change.
 
-**Step 3 — Start the supervisord stack on M₁**
+**Step 3 — Start the stack on M₁**
 
-On M₁, ensure the supervisord configuration is deployed, then start both programs:
+On M₁, start both services:
 
 ```bash
-supervisorctl start live cloudflared
+systemctl --user start live.service
+supervisorctl start cloudflared
 ```
 
-Set `autostart=true` in both `.conf` files on M₁ so they survive reboots.
+`live` is managed by systemd (`live.service`, enabled at boot via linger). `cloudflared` would use supervisord if deployed.
 
 **Step 4 — Flip tunnel ingress target (if using a new tunnel)**
 
@@ -177,16 +185,16 @@ curl https://dashboard.roxabi.dev/health
 
 Confirm `db_reachable: true` and that `issue_count` reflects current corpus state.
 
-**Step 6 — Stop cloudflared and FastAPI on M₂**
+**Step 6 — Stop cloudflared on M₂**
 
 Once M₁ is confirmed serving traffic:
 
 ```bash
 # On M₂
-supervisorctl stop cloudflared live
+supervisorctl stop cloudflared
 ```
 
-Set `autostart=false` for both programs on M₂ to prevent them from restarting after reboot.
+Set `autostart=false` for cloudflared on M₂ to prevent it from restarting after reboot.
 
 ## Cloudflare Access (zero-trust gate)
 
@@ -251,4 +259,4 @@ Webhook delivery:
 
 - Rotate the service token: Zero Trust → Service Tokens → `github-webhook` → **Refresh**. Update the worker secret. Redeliver a test webhook to confirm.
 - Rotate the identity-provider allowlist: edit the `Allow owner` policy (Step A.5).
-- After a `_halted` reconciler event (CRITICAL log emitted due to repeated auth failures): rotate the GitHub token, then restart the `live` supervisor program to clear the sticky halt state: `supervisorctl restart live`. The reconciler will resume on the next hourly tick.
+- After a `_halted` reconciler event (CRITICAL log emitted due to repeated auth failures): rotate the GitHub token, then restart the live service to clear the sticky halt state: `systemctl --user restart live.service`. The reconciler will resume on the next hourly tick.
