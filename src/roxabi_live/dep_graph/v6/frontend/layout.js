@@ -139,18 +139,29 @@ export function layoutV5(nodes, edges) {
     byMsDepth.get(ms).get(depth).push(n);
   }
 
-  function computeDepth(node, visited = new Set()) {
-    if (visited.has(node.key)) return 0;
-    visited.add(node.key);
-    const blockers = node._blockers || [];
-    if (blockers.length === 0) return 0;
+  // Depth = longest chain of blockers (blocks-edges) AND parents (parent-edges)
+  // ending at this node.  Both kinds contribute; we take the max so a node sits
+  // strictly below both its deepest blocker and its parent.
+  //
+  // Memoize across calls (DAG traversal must not collapse to 0 when reached via
+  // a second path) and use an in-flight `stack` set strictly for cycle break
+  // (returns 0 on detected cycle, mirroring the previous behaviour).
+  const nodesByKey = new Map(nodes.map(n => [n.key, n]));
+  const depthCache = new Map();
+  function computeDepth(node, stack = new Set()) {
+    const cached = depthCache.get(node.key);
+    if (cached !== undefined) return cached;
+    if (stack.has(node.key)) return 0;  // cycle break
+    stack.add(node.key);
     let maxDepth = 0;
-    for (const e of blockers) {
-      const blocker = nodes.find(n => n.key === e.src);
+    for (const e of node._blockers || []) {
+      const blocker = nodesByKey.get(e.src);
       if (blocker) {
-        maxDepth = Math.max(maxDepth, computeDepth(blocker, visited) + 1);
+        maxDepth = Math.max(maxDepth, computeDepth(blocker, stack) + 1);
       }
     }
+    stack.delete(node.key);
+    depthCache.set(node.key, maxDepth);
     return maxDepth;
   }
   for (const n of nodes) {

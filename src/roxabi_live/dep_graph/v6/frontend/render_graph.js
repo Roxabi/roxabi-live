@@ -3,6 +3,7 @@
 
 import { edgePath } from './layout.js';
 import { repoTone } from './tone.js';
+import { mapDevStateToClass } from './state.js';
 
 function getTone(node) {
   return repoTone(node.repo) || 'accent';
@@ -20,6 +21,7 @@ function renderNodes(container, nodes, positions, usePercentage) {
     const tone = getTone(node);
     const isDone = node.state === 'closed';
     const isBlocked = node._status === 'blocked';
+    const isParent = node._isParent === true;
 
     // Determine blockers/unblockers for data attrs
     const blockers = (node._blockers || []).map(e => e.src).join(',');
@@ -34,7 +36,7 @@ function renderNodes(container, nodes, positions, usePercentage) {
 
     // ── Dot (.gg-node) ──────────────────────────────────────────────────────
     const dot = document.createElement('a');
-    dot.className = 'gg-node' + (isDone ? ' done' : '') + (isBlocked ? ' blocked' : '');
+    dot.className = 'gg-node' + (isParent ? ' parent' : '') + (isDone ? ' done' : '') + (isBlocked ? ' blocked' : '');
     dot.dataset.tone = tone;
     dot.dataset.iss = key;
     dot.dataset.blockedby = blockers;
@@ -44,11 +46,27 @@ function renderNodes(container, nodes, positions, usePercentage) {
     dot.rel = 'noopener';
     dot.style.cssText = style;
     dot.title = `#${node.number} — ${node.title || ''}`;
+
+    // Dev-state animation classes — skip for closed nodes (done wins)
+    if (!isDone) {
+      const devClass = mapDevStateToClass(node.dev_state);
+      if (devClass) {
+        dot.className += ' ' + devClass;
+        // Inject second orbit dot host element for pr_reviewed (orbit-2)
+        if (devClass.includes('orbit-2')) {
+          const orbitChild = document.createElement('span');
+          orbitChild.className = 'gg-orbit-2nd';
+          orbitChild.setAttribute('aria-hidden', 'true');
+          dot.appendChild(orbitChild);
+        }
+      }
+    }
+
     container.appendChild(dot);
 
     // ── Label (.gg-ilabel) ──────────────────────────────────────────────────
     const label = document.createElement('a');
-    label.className = 'gg-ilabel' + (isDone ? ' done' : '') + (isBlocked ? ' blocked' : '');
+    label.className = 'gg-ilabel' + (isParent ? ' parent' : '') + (isDone ? ' done' : '') + (isBlocked ? ' blocked' : '');
     label.dataset.tone = tone;
     label.dataset.iss = key;
     label.dataset.blockedby = blockers;
@@ -59,17 +77,19 @@ function renderNodes(container, nodes, positions, usePercentage) {
     label.style.cssText = style;
     label.title = `#${node.number} — ${node.title || ''}`;
 
-    // Dot indicator inside label
-    const ldot = document.createElement('span');
-    ldot.className = 'gg-ldot';
-    ldot.setAttribute('aria-hidden', 'true');
-    label.appendChild(ldot);
-
     // Issue number
     const num = document.createElement('span');
     num.className = 'gg-ilabel-num';
     num.textContent = `#${node.number}`;
     label.appendChild(num);
+
+    // Size
+    if (node.size) {
+      const size = document.createElement('span');
+      size.className = 'gg-ilabel-size';
+      size.textContent = node.size;
+      label.appendChild(size);
+    }
 
     // Title (truncated)
     const title = document.createElement('span');

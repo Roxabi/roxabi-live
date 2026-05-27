@@ -23,6 +23,7 @@ from roxabi_live.corpus.mutations import (
     delete_issue_async,
     remove_edge_async,
     replace_labels_async,
+    upsert_edges_async,
     upsert_issue_async,
 )
 from roxabi_live.corpus.schema import bootstrap, connect
@@ -48,7 +49,8 @@ CREATE TABLE IF NOT EXISTS issues (
     lane        TEXT,
     priority    TEXT,
     size        TEXT,
-    status      TEXT
+    status      TEXT,
+    has_active_branch INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS labels (
@@ -141,15 +143,17 @@ class TestUpsertIssueAsync:
         assert row[1] == "New issue"
         assert row[2] == "open"
 
-    async def test_preserves_non_payload_columns(
+    async def test_propagates_milestone_and_label_derived_fields(
         self, db: aiosqlite.Connection
     ) -> None:
-        """Second call preserves milestone/lane/priority/size/status from first.
+        """Webhook upsert writes milestone, lane, priority, size from the partial.
 
-        SC13: non-payload columns must not be NULL'd by a webhook upsert.
+        The `issues` event payload is always complete for these columns, so the
+        webhook upsert propagates them through.  Only `status` (sourced from a
+        GitHub Project v2 board, never present in the `issues` payload) is
+        preserved on conflict.
         """
-        # First call: full sync upsert (sets milestone, lane, priority, size)
-        # We simulate this by directly inserting a row with all columns set
+        # First call: full sync upsert (sets all columns including status)
         await db.execute(
             """
             INSERT INTO issues
@@ -172,12 +176,13 @@ class TestUpsertIssueAsync:
                 "a1",  # lane
                 "P1",  # priority
                 "F-lite",  # size
-                "In Progress",  # status
+                "In Progress",  # status (project board)
             ),
         )
         await db.commit()
 
-        # Second call: webhook upsert (without milestone/lane/priority/size)
+        # Second call: webhook upsert with updated milestone/lane/priority/size
+        # (e.g. user demilestoned + relabeled the issue)
         partial = {
             "key": "Roxabi/lyra#1",
             "repo": "Roxabi/lyra",
@@ -188,6 +193,10 @@ class TestUpsertIssueAsync:
             "created_at": "2026-01-01T00:00:00Z",
             "updated_at": "2026-04-24T00:00:00Z",
             "closed_at": "2026-04-24T00:00:00Z",
+            "milestone": None,  # demilestoned
+            "lane": "b",  # relabeled into lane b
+            "priority": "P2",
+            "size": "S",
         }
         await upsert_issue_async(db, partial)
         await db.commit()
@@ -200,15 +209,15 @@ class TestUpsertIssueAsync:
         row = await cur.fetchone()
         assert row is not None
         title, state, milestone, lane, priority, size, status = row
-        # Updated fields
+        # Updated by webhook
         assert title == "Updated title"
         assert state == "closed"
-        # Preserved non-payload fields (SC13)
-        assert milestone == "v1.0", f"milestone was NULLed: {milestone!r}"
-        assert lane == "a1", f"lane was NULLed: {lane!r}"
-        assert priority == "P1", f"priority was NULLed: {priority!r}"
-        assert size == "F-lite", f"size was NULLed: {size!r}"
-        assert status == "In Progress", f"status was NULLed: {status!r}"
+        assert milestone is None, f"milestone not demilestoned: {milestone!r}"
+        assert lane == "b", f"lane not updated: {lane!r}"
+        assert priority == "P2", f"priority not updated: {priority!r}"
+        assert size == "S", f"size not updated: {size!r}"
+        # Preserved: status comes from GitHub Project board, not webhook payload
+        assert status == "In Progress", f"status was overwritten: {status!r}"
 
     async def test_sync_and_async_produce_identical_rows(self, tmp_path: Path) -> None:
         """Async + sync upserts on the same key produce identical rows.
@@ -266,7 +275,9 @@ class TestUpsertIssueAsync:
             )
             await aconn.commit()
 
-            # Update via async path
+            # Update via async path — feed the same payload columns as the
+            # sync path so the two rows can be compared 1:1.  status stays
+            # NULL through the async path (it comes from a Project board).
             partial = {
                 "key": issue["key"],
                 "repo": issue["repo"],
@@ -277,6 +288,10 @@ class TestUpsertIssueAsync:
                 "created_at": issue["created_at"],
                 "updated_at": issue["updated_at"],
                 "closed_at": issue["closed_at"],
+                "milestone": issue["milestone"],
+                "lane": issue["lane"],
+                "priority": issue["priority"],
+                "size": issue["size"],
             }
             await upsert_issue_async(aconn, partial)
             await aconn.commit()
@@ -327,8 +342,8 @@ class TestEdgeAsync:
     """add_edge_async and remove_edge_async."""
 
     async def test_add_edge_inserts(self, db: aiosqlite.Connection) -> None:
-        """add_edge_async inserts an edge row."""
-        await add_edge_async(db, "A#1", "B#2", "blocks")
+        """add_edge_async inserts an edge row and returns delta=1."""
+        delta = await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
 
         cur = await db.execute(
@@ -338,30 +353,34 @@ class TestEdgeAsync:
         )
         row = await cur.fetchone()
         assert row == ("A#1", "B#2", "blocks")
+        assert delta == 1, f"Expected delta=1 for new edge insert, got {delta}"
 
     async def test_add_edge_is_idempotent(self, db: aiosqlite.Connection) -> None:
         """Calling add_edge_async twice on same (src, dst, kind) is idempotent."""
-        await add_edge_async(db, "A#1", "B#2", "blocks")
+        delta1 = await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
-        await add_edge_async(db, "A#1", "B#2", "blocks")
+        delta2 = await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
 
         cur = await db.execute("SELECT COUNT(*) FROM edges")
         row = await cur.fetchone()
         assert row is not None
         assert row[0] == 1
+        assert delta1 == 1, f"Expected delta1=1 for first insert, got {delta1}"
+        assert delta2 == 0, f"Expected delta2=0 for idempotent insert, got {delta2}"
 
     async def test_remove_edge_deletes(self, db: aiosqlite.Connection) -> None:
-        """remove_edge_async removes the specified edge."""
+        """remove_edge_async removes the specified edge and returns delta=1."""
         await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
-        await remove_edge_async(db, "A#1", "B#2", "blocks")
+        delta = await remove_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
 
         cur = await db.execute("SELECT COUNT(*) FROM edges")
         row = await cur.fetchone()
         assert row is not None
         assert row[0] == 0
+        assert delta == 1, f"Expected delta=1 for edge delete, got {delta}"
 
     async def test_remove_edge_only_removes_matching_kind(
         self, db: aiosqlite.Connection
@@ -371,13 +390,71 @@ class TestEdgeAsync:
         await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
 
-        await remove_edge_async(db, "A#1", "B#2", "parent")
+        delta = await remove_edge_async(db, "A#1", "B#2", "parent")
         await db.commit()
 
         cur = await db.execute("SELECT src_key, dst_key, kind FROM edges")
         rows = list(await cur.fetchall())
         assert len(rows) == 1
         assert rows[0] == ("A#1", "B#2", "blocks")
+        assert delta == 1, f"Expected delta=1 for single-kind delete, got {delta}"
+
+
+# ---------------------------------------------------------------------------
+# Tests — upsert_edges_async
+# ---------------------------------------------------------------------------
+
+
+class TestUpsertEdgesAsync:
+    """upsert_edges_async() — batch rewrite of edges for an issue."""
+
+    async def test_insert_only(self, db: aiosqlite.Connection) -> None:
+        """No pre-seeded edges: delta equals number of rows inserted."""
+        delta = await upsert_edges_async(
+            db, "A#1", blocked_by=["B#2"], blocking=["C#3"], kind="blocks"
+        )
+        await db.commit()
+
+        assert delta == 2, f"Expected delta=2 (2 inserts), got {delta}"
+        cur = await db.execute("SELECT COUNT(*) FROM edges")
+        row = await cur.fetchone()
+        assert row is not None and row[0] == 2
+
+    async def test_delete_and_rewrite(self, db: aiosqlite.Connection) -> None:
+        """Pre-seeded edges replaced: delta = deleted + inserted."""
+        await add_edge_async(db, "B#2", "A#1", "blocks")
+        await add_edge_async(db, "A#1", "C#3", "blocks")
+        await db.commit()
+
+        delta = await upsert_edges_async(
+            db, "A#1", blocked_by=["D#4"], blocking=["E#5"], kind="blocks"
+        )
+        await db.commit()
+
+        assert delta == 4, f"Expected delta=4 (2 deletes + 2 inserts), got {delta}"
+        cur = await db.execute(
+            "SELECT src_key, dst_key, kind FROM edges ORDER BY src_key"
+        )
+        rows = list(await cur.fetchall())
+        assert len(rows) == 2
+        assert rows[0] == ("A#1", "E#5", "blocks")
+        assert rows[1] == ("D#4", "A#1", "blocks")
+
+    async def test_empty_lists(self, db: aiosqlite.Connection) -> None:
+        """Pre-seeded edges cleared: delta equals number of deleted rows."""
+        await add_edge_async(db, "B#2", "A#1", "blocks")
+        await add_edge_async(db, "A#1", "C#3", "blocks")
+        await db.commit()
+
+        delta = await upsert_edges_async(
+            db, "A#1", blocked_by=[], blocking=[], kind="blocks"
+        )
+        await db.commit()
+
+        assert delta == 2, f"Expected delta=2 (2 deletes), got {delta}"
+        cur = await db.execute("SELECT COUNT(*) FROM edges")
+        row = await cur.fetchone()
+        assert row is not None and row[0] == 0
 
 
 # ---------------------------------------------------------------------------

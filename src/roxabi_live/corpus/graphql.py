@@ -50,7 +50,6 @@ query($org: String!, $cursor: String) {
       first: 100
       after: $cursor
       isArchived: false
-      privacy: PUBLIC
       orderBy: { field: NAME, direction: ASC }
     ) {
       pageInfo { hasNextPage endCursor }
@@ -62,6 +61,39 @@ query($org: String!, $cursor: String) {
 """
 
 
+REFS_QUERY = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    refs(refPrefix: "refs/heads/", first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { name }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
+PRS_QUERY = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 50, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        state
+        # first: 25 — PRs closing more issues are out of scope for this tool
+        # (Roxabi convention: 1 PR ≈ 1 epic)
+        closingIssuesReferences(first: 25) {
+          nodes { number repository { nameWithOwner } }
+        }
+        labels(first: 20) { nodes { name } }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
 STUB_ISSUE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
@@ -72,6 +104,45 @@ query($owner: String!, $name: String!, $number: Int!) {
   rateLimit { cost remaining resetAt }
 }
 """
+
+SINGLE_ISSUE_DEPS_QUERY = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) {
+      number
+      blockedBy(first: 50) { nodes { number repository { nameWithOwner } } }
+      blocking(first: 50) { nodes { number repository { nameWithOwner } } }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
+
+def fetch_issue_deps(owner: str, name: str, number: int) -> dict[str, list[str]]:
+    """Fetch blockedBy + blocking lists for a single issue via GraphQL.
+
+    Returns a dict with keys ``blocked_by`` and ``blocking``, each a list of
+    canonical 'owner/repo#N' keys.  Uses canonical_key logic inline to avoid
+    a circular import (sync.py imports graphql.py).
+
+    Raises GraphQLError on network / auth failure (caller caps retries).
+    """
+    response = gh_graphql(
+        SINGLE_ISSUE_DEPS_QUERY,
+        {"owner": owner, "name": name, "number": number},
+    )
+    issue_node = response["data"]["repository"]["issue"]
+    if issue_node is None:
+        return {"blocked_by": [], "blocking": []}
+
+    def _nodes_to_keys(nodes: list[dict[str, Any]]) -> list[str]:
+        return [f"{n['repository']['nameWithOwner']}#{n['number']}" for n in nodes]
+
+    return {
+        "blocked_by": _nodes_to_keys(issue_node.get("blockedBy", {}).get("nodes", [])),
+        "blocking": _nodes_to_keys(issue_node.get("blocking", {}).get("nodes", [])),
+    }
 
 
 def _build_variable_flags(variables: dict[str, Any]) -> list[str]:

@@ -19,6 +19,9 @@
   --amber: #f59e0b;
   --cyan:  #22d3ee;
 
+  /* Dev-state animation tokens */
+  --dev-orbit-2nd: #f0abfc;
+
   /* Lane → color mapping (v4.8 style) */
   --lane-a1: #22c55e;  /* green - NATS maturity */
   --lane-a2: #a855f7;  /* plum - roxabi-nats */
@@ -50,6 +53,12 @@
   --repo-green:  #22c55e;
   --repo-gray:   #94a3b8;
   --repo-cyan:   #22d3ee;
+  --repo-indigo:  #6366f1;
+  --repo-rose:    #f43f5e;
+  --repo-violet:  #8b5cf6;
+  --repo-brown:   #b45309;
+  --repo-fuchsia: #d946ef;
+  --repo-yellow:  #eab308;
 }
 
 /* ── Panel chrome ───────────────────────────────────────────────── */
@@ -72,6 +81,7 @@
   right: 0;
   top: 0;
   bottom: 0;
+  overflow: visible;
 }
 
 /* ── Milestone row-headers (left gutter) ────────────────────────── */
@@ -134,6 +144,12 @@
   transform: translate(-50%, -50%) scale(1.25);
   z-index: 11;
 }
+/* Parent nodes: rounded square to distinguish epics from leaf issues */
+#graph-panel .gg-node.parent {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
 #graph-panel .gg-node.blocked {
   background: transparent;
   border: 2px dashed currentColor;
@@ -169,7 +185,13 @@
 #graph-panel .gg-node[data-tone="green"]  { color: var(--repo-green); }
 #graph-panel .gg-node[data-tone="gray"]   { color: var(--repo-gray); }
 #graph-panel .gg-node[data-tone="cyan"]   { color: var(--repo-cyan); }
-#graph-panel .gg-node[data-tone="accent"] { color: var(--accent); }
+#graph-panel .gg-node[data-tone="indigo"]  { color: var(--repo-indigo); }
+#graph-panel .gg-node[data-tone="rose"]    { color: var(--repo-rose); }
+#graph-panel .gg-node[data-tone="violet"]  { color: var(--repo-violet); }
+#graph-panel .gg-node[data-tone="brown"]   { color: var(--repo-brown); }
+#graph-panel .gg-node[data-tone="fuchsia"] { color: var(--repo-fuchsia); }
+#graph-panel .gg-node[data-tone="yellow"]  { color: var(--repo-yellow); }
+#graph-panel .gg-node[data-tone="accent"]  { color: var(--accent); }
 
 /* ── Inline pill label ───────────────────────────────────────────── */
 #graph-panel .gg-ilabel {
@@ -207,19 +229,20 @@
   box-shadow: 0 6px 18px rgba(0,0,0,0.45), 0 0 0 1px currentColor;
   z-index: 12;
 }
-#graph-panel .gg-ilabel .gg-ldot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: currentColor;
-}
 #graph-panel .gg-ilabel-num {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
   font-size: 10px;
   color: currentColor;
   flex-shrink: 0;
+}
+#graph-panel .gg-ilabel-size {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: 2px;
 }
 #graph-panel .gg-ilabel-title {
   color: var(--text);
@@ -264,7 +287,13 @@
 #graph-panel .gg-ilabel[data-tone="green"]  { color: var(--repo-green); }
 #graph-panel .gg-ilabel[data-tone="gray"]   { color: var(--repo-gray); }
 #graph-panel .gg-ilabel[data-tone="cyan"]   { color: var(--repo-cyan); }
-#graph-panel .gg-ilabel[data-tone="accent"] { color: var(--accent); }
+#graph-panel .gg-ilabel[data-tone="indigo"]  { color: var(--repo-indigo); }
+#graph-panel .gg-ilabel[data-tone="rose"]    { color: var(--repo-rose); }
+#graph-panel .gg-ilabel[data-tone="violet"]  { color: var(--repo-violet); }
+#graph-panel .gg-ilabel[data-tone="brown"]   { color: var(--repo-brown); }
+#graph-panel .gg-ilabel[data-tone="fuchsia"] { color: var(--repo-fuchsia); }
+#graph-panel .gg-ilabel[data-tone="yellow"]  { color: var(--repo-yellow); }
+#graph-panel .gg-ilabel[data-tone="accent"]  { color: var(--accent); }
 
 /* ── SVG edges ───────────────────────────────────────────────────── */
 #graph-panel .graph-svg {
@@ -282,7 +311,9 @@
   opacity: 0.45;
   transition: opacity 0.18s, stroke-width 0.18s, stroke 0.18s;
 }
-#graph-panel .gg-edge.blocked { stroke-dasharray: 4 3; }
+/* blocks edges stay solid; active blockers (dst still open) get an opacity
+   boost so the live blocking link reads stronger than the historic one. */
+#graph-panel .gg-edge.blocked { opacity: 0.9; }
 #graph-panel .gg-edge.parent-edge {
   stroke-width: 1;
   stroke-dasharray: 2 2;
@@ -344,3 +375,64 @@
 #graph-panel .gg-node.dim  { opacity: 0.12; }
 #graph-panel .gg-ilabel.dim { opacity: 0.12; }
 #graph-panel .gg-edge.dim  { opacity: 0.06; }
+
+/* ── Dev-state animations (issue #82) ───────────────────────────── */
+/* Halo pulse (::before) — dev / pr_open / pr_reviewed */
+#graph-panel .gg-node.pulse::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  animation: gg-pulse 1.6s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  pointer-events: none;
+}
+#graph-panel .gg-node.parent.pulse::before {
+  border-radius: 5px;
+}
+@keyframes gg-pulse {
+  0%   { transform: scale(0.85); opacity: 0.9; }
+  80%  { opacity: 0; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+/* First orbit dot (::after) — pr_open (orbit-1) or pr_reviewed (orbit-2) */
+#graph-panel .gg-node.orbit-1::after,
+#graph-panel .gg-node.orbit-2::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 0%, currentColor 0 2.2px, transparent 2.6px);
+  animation: gg-orbit 1.8s linear infinite;
+  pointer-events: none;
+}
+
+/* Second orbit dot (child element) — pr_reviewed only */
+#graph-panel .gg-node.orbit-2 .gg-orbit-2nd {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+#graph-panel .gg-node.orbit-2 .gg-orbit-2nd::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 0%, var(--dev-orbit-2nd) 0 2.2px, transparent 2.6px);
+  animation: gg-orbit 1.8s linear infinite;
+  animation-delay: -0.9s;
+  pointer-events: none;
+}
+
+@keyframes gg-orbit { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  #graph-panel .gg-node.pulse::before,
+  #graph-panel .gg-node.orbit-1::after,
+  #graph-panel .gg-node.orbit-2::after,
+  #graph-panel .gg-node.orbit-2 .gg-orbit-2nd::before {
+    animation: none;
+  }
+}

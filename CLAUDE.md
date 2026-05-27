@@ -109,5 +109,6 @@ Rules: add/delete/move → update P | new `src/roxabi_live/` subdir → nearest 
 ## Deploy pattern
 
 M₁ (prod): `deploy/systemd/live.service` — systemd user unit, installed to `~/.config/systemd/user/live.service`, enabled via linger.
+Service control on M₁: `systemctl --user {start,stop,status,restart} live.service` (no `make live` wrapper — supervisor no longer manages this service).
 M₂ (dev): start manually with `uv run roxabi-live`.
 Log dir: `~/.local/state/roxabi-live/logs/`
