@@ -36,7 +36,7 @@ _AUTH_FAILURE_THRESHOLD = 2
 _auth_failures: int = 0
 _halted: asyncio.Event = asyncio.Event()
 _state_lock: asyncio.Lock = asyncio.Lock()
-_sync_in_flight: bool = False
+_sync_in_flight: set[str] = set()
 
 
 class TriggerHeal(Protocol):
@@ -274,7 +274,7 @@ def _reset_state_for_tests() -> None:
     """Reset all module-level sync state. Call from test fixtures only."""
     global _auth_failures, _sync_in_flight
     _auth_failures = 0
-    _sync_in_flight = False
+    _sync_in_flight.clear()
     _halted.clear()
 
 
@@ -285,10 +285,12 @@ def make_trigger_heal(
     """Factory: build a TriggerHeal closure capturing settings + the WeakSet.
 
     The returned callable:
-    1. Acquires _state_lock and checks _sync_in_flight; returns if already running.
+    1. Acquires _state_lock and checks _sync_in_flight; returns if this repo is
+       already running.
     2. Checks sync_state staleness (>1h or missing) for the repo.
-    3. If stale, sets _sync_in_flight = True and schedules a task calling
-       run_repo_once(settings, repo).  The task clears _sync_in_flight on finish.
+    3. If stale, adds repo to _sync_in_flight and schedules a task calling
+       run_repo_once(settings, repo).  The task removes repo from
+       _sync_in_flight on finish.
     4. Registers the task in background_tasks WeakSet.
     5. Attaches _log_exc as a done-callback to surface exceptions in logs.
 
@@ -304,9 +306,8 @@ def make_trigger_heal(
     async def _trigger_heal(
         repo: str, conn: aiosqlite.Connection, *, force: bool = False
     ) -> None:
-        global _sync_in_flight
         async with _state_lock:
-            if _sync_in_flight:
+            if repo in _sync_in_flight:
                 return
             if not force:
                 cur = await conn.execute(
@@ -325,15 +326,14 @@ def make_trigger_heal(
                     ).total_seconds() > settings.corpus_sync_interval_seconds
                 if not stale:
                     return
-            _sync_in_flight = True
+            _sync_in_flight.add(repo)
 
         async def _run_and_clear() -> None:
-            global _sync_in_flight
             try:
                 await run_repo_once(settings, repo)
             finally:
                 async with _state_lock:
-                    _sync_in_flight = False
+                    _sync_in_flight.discard(repo)
 
         task: asyncio.Task[None] = asyncio.create_task(_run_and_clear())
         background_tasks.add(task)

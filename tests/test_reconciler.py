@@ -558,8 +558,8 @@ class TestTriggerHealForce:
         tasks: WeakSet[asyncio.Task[None]] = WeakSet()
         trigger_heal = reconciler.make_trigger_heal(s, tasks)
 
-        # Set _sync_in_flight = True
-        reconciler._sync_in_flight = True  # type: ignore[attr-defined]
+        # Mark repo as in-flight
+        reconciler._sync_in_flight.add("Roxabi/lyra")  # type: ignore[attr-defined]
 
         async with aiosqlite.connect(db_path) as conn:
             await trigger_heal("Roxabi/lyra", conn, force=True)
@@ -571,4 +571,43 @@ class TestTriggerHealForce:
         )
 
         # Cleanup
-        reconciler._sync_in_flight = False  # type: ignore[attr-defined]
+        reconciler._sync_in_flight.clear()  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_per_repo_isolation_allows_concurrent_heals(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A heal in-flight for repo A must NOT block a heal for repo B."""
+        import sqlite3
+
+        db_path = tmp_path / "corpus.db"
+        conn = sqlite3.connect(db_path)
+        conn.executescript(
+            "CREATE TABLE IF NOT EXISTS sync_state"
+            " (repo TEXT PRIMARY KEY, last_synced_at TEXT);"
+        )
+        conn.commit()
+        conn.close()
+
+        mock_run_repo_once = AsyncMock(return_value=None)
+        monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+
+        s = _settings(tmp_path)
+        tasks: WeakSet[asyncio.Task[None]] = WeakSet()
+        trigger_heal = reconciler.make_trigger_heal(s, tasks)
+
+        # Mark repo A as in-flight (simulating an active heal)
+        reconciler._sync_in_flight.add("Roxabi/lyra")  # type: ignore[attr-defined]
+
+        async with aiosqlite.connect(db_path) as conn:
+            # Repo B should still be allowed to heal
+            await trigger_heal("Roxabi/llmCLI", conn, force=True)
+
+        await asyncio.sleep(0)
+
+        assert mock_run_repo_once.call_count == 1, (
+            "Per-repo isolation: repo B heal must not be blocked by repo A in-flight"
+        )
+
+        # Cleanup
+        reconciler._sync_in_flight.clear()  # type: ignore[attr-defined]
