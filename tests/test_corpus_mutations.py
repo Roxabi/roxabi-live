@@ -23,6 +23,7 @@ from roxabi_live.corpus.mutations import (
     delete_issue_async,
     remove_edge_async,
     replace_labels_async,
+    upsert_edges_async,
     upsert_issue_async,
 )
 from roxabi_live.corpus.schema import bootstrap, connect
@@ -341,8 +342,8 @@ class TestEdgeAsync:
     """add_edge_async and remove_edge_async."""
 
     async def test_add_edge_inserts(self, db: aiosqlite.Connection) -> None:
-        """add_edge_async inserts an edge row."""
-        await add_edge_async(db, "A#1", "B#2", "blocks")
+        """add_edge_async inserts an edge row and returns delta=1."""
+        delta = await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
 
         cur = await db.execute(
@@ -352,30 +353,34 @@ class TestEdgeAsync:
         )
         row = await cur.fetchone()
         assert row == ("A#1", "B#2", "blocks")
+        assert delta == 1, f"Expected delta=1 for new edge insert, got {delta}"
 
     async def test_add_edge_is_idempotent(self, db: aiosqlite.Connection) -> None:
         """Calling add_edge_async twice on same (src, dst, kind) is idempotent."""
-        await add_edge_async(db, "A#1", "B#2", "blocks")
+        delta1 = await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
-        await add_edge_async(db, "A#1", "B#2", "blocks")
+        delta2 = await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
 
         cur = await db.execute("SELECT COUNT(*) FROM edges")
         row = await cur.fetchone()
         assert row is not None
         assert row[0] == 1
+        assert delta1 == 1, f"Expected delta1=1 for first insert, got {delta1}"
+        assert delta2 == 0, f"Expected delta2=0 for idempotent insert, got {delta2}"
 
     async def test_remove_edge_deletes(self, db: aiosqlite.Connection) -> None:
-        """remove_edge_async removes the specified edge."""
+        """remove_edge_async removes the specified edge and returns delta=1."""
         await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
-        await remove_edge_async(db, "A#1", "B#2", "blocks")
+        delta = await remove_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
 
         cur = await db.execute("SELECT COUNT(*) FROM edges")
         row = await cur.fetchone()
         assert row is not None
         assert row[0] == 0
+        assert delta == 1, f"Expected delta=1 for edge delete, got {delta}"
 
     async def test_remove_edge_only_removes_matching_kind(
         self, db: aiosqlite.Connection
@@ -385,13 +390,71 @@ class TestEdgeAsync:
         await add_edge_async(db, "A#1", "B#2", "blocks")
         await db.commit()
 
-        await remove_edge_async(db, "A#1", "B#2", "parent")
+        delta = await remove_edge_async(db, "A#1", "B#2", "parent")
         await db.commit()
 
         cur = await db.execute("SELECT src_key, dst_key, kind FROM edges")
         rows = list(await cur.fetchall())
         assert len(rows) == 1
         assert rows[0] == ("A#1", "B#2", "blocks")
+        assert delta == 1, f"Expected delta=1 for single-kind delete, got {delta}"
+
+
+# ---------------------------------------------------------------------------
+# Tests — upsert_edges_async
+# ---------------------------------------------------------------------------
+
+
+class TestUpsertEdgesAsync:
+    """upsert_edges_async() — batch rewrite of edges for an issue."""
+
+    async def test_insert_only(self, db: aiosqlite.Connection) -> None:
+        """No pre-seeded edges: delta equals number of rows inserted."""
+        delta = await upsert_edges_async(
+            db, "A#1", blocked_by=["B#2"], blocking=["C#3"], kind="blocks"
+        )
+        await db.commit()
+
+        assert delta == 2, f"Expected delta=2 (2 inserts), got {delta}"
+        cur = await db.execute("SELECT COUNT(*) FROM edges")
+        row = await cur.fetchone()
+        assert row is not None and row[0] == 2
+
+    async def test_delete_and_rewrite(self, db: aiosqlite.Connection) -> None:
+        """Pre-seeded edges replaced: delta = deleted + inserted."""
+        await add_edge_async(db, "B#2", "A#1", "blocks")
+        await add_edge_async(db, "A#1", "C#3", "blocks")
+        await db.commit()
+
+        delta = await upsert_edges_async(
+            db, "A#1", blocked_by=["D#4"], blocking=["E#5"], kind="blocks"
+        )
+        await db.commit()
+
+        assert delta == 4, f"Expected delta=4 (2 deletes + 2 inserts), got {delta}"
+        cur = await db.execute(
+            "SELECT src_key, dst_key, kind FROM edges ORDER BY src_key"
+        )
+        rows = list(await cur.fetchall())
+        assert len(rows) == 2
+        assert rows[0] == ("A#1", "E#5", "blocks")
+        assert rows[1] == ("D#4", "A#1", "blocks")
+
+    async def test_empty_lists(self, db: aiosqlite.Connection) -> None:
+        """Pre-seeded edges cleared: delta equals number of deleted rows."""
+        await add_edge_async(db, "B#2", "A#1", "blocks")
+        await add_edge_async(db, "A#1", "C#3", "blocks")
+        await db.commit()
+
+        delta = await upsert_edges_async(
+            db, "A#1", blocked_by=[], blocking=[], kind="blocks"
+        )
+        await db.commit()
+
+        assert delta == 2, f"Expected delta=2 (2 deletes), got {delta}"
+        cur = await db.execute("SELECT COUNT(*) FROM edges")
+        row = await cur.fetchone()
+        assert row is not None and row[0] == 0
 
 
 # ---------------------------------------------------------------------------

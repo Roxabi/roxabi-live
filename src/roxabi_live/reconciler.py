@@ -42,8 +42,10 @@ _sync_in_flight: bool = False
 class TriggerHeal(Protocol):
     """Protocol for the heal-trigger callable injected into the webhook router.
 
-    Implementations check sync_state staleness for the given repo and, if
-    stale, schedule a background corpus sync task.
+    Normal path: implementations check sync_state staleness for the given repo
+    and, if stale, schedule a background corpus sync task.
+    Force path: when force=True, the staleness check is bypassed and the sync
+    task is scheduled unconditionally.
     """
 
     async def __call__(

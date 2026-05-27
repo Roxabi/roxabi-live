@@ -263,6 +263,19 @@ def _seed_sync_state(db_path: Path, repo: str, last_synced_at: str) -> None:
     conn.close()
 
 
+def _seed_edge(db_path: Path, src: str, dst: str, kind: str) -> None:
+    """Synchronously insert an edge row into the test DB."""
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT OR IGNORE INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)",
+        (src, dst, kind),
+    )
+    conn.commit()
+    conn.close()
+
+
 def test_stale_sync_triggers_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -396,6 +409,11 @@ def _deps_payload(
             "created_at": "2026-01-01T00:00:00Z",
             "updated_at": "2026-04-24T12:00:00Z",
             "closed_at": None,
+            "repository": {
+                "full_name": issue_repo,
+                "name": issue_repo.split("/", 1)[-1],
+                "owner": {"login": issue_repo.split("/", 1)[0]},
+            },
         },
         "blocking_issue": {
             "number": blocking_number,
@@ -406,6 +424,11 @@ def _deps_payload(
             "created_at": "2026-01-01T00:00:00Z",
             "updated_at": "2026-04-24T12:00:00Z",
             "closed_at": None,
+            "repository": {
+                "full_name": blocking_repo,
+                "name": blocking_repo.split("/", 1)[-1],
+                "owner": {"login": blocking_repo.split("/", 1)[0]},
+            },
         },
         "repository": {
             "full_name": issue_repo,
@@ -532,6 +555,82 @@ def test_sub_issues_event_force_triggers_reconcile_despite_fresh_sync(
 
     assert mock_run_repo_once.call_count >= 1, (
         "Expected force=True to bypass stale check and schedule run_repo_once"
+    )
+
+
+def test_deps_event_noop_does_not_force_on_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Duplicate blocked_by_added with edge already present:
+    delta=0, no force trigger."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+    _seed_edge(db_path, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _deps_payload(action="blocked_by_added")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_dependencies",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count == 0, (
+        "Expected delta=0 noop NOT to force trigger heal on fresh sync"
+    )
+
+
+def test_sub_issues_event_noop_does_not_force_on_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Duplicate sub_issue_added with edge already present:
+    delta=0, no force trigger."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+    _seed_edge(db_path, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _sub_issues_payload(action="sub_issue_added")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "sub_issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count == 0, (
+        "Expected delta=0 noop NOT to force trigger heal on fresh sync"
     )
 
 

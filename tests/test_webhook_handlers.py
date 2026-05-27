@@ -905,7 +905,7 @@ class TestDepsWebhookHandlerCrossRepo:
             blocked_number=64,
             event_repo="Roxabi/llmCLI",
         )
-        await handle_deps(payload, db)
+        delta = await handle_deps(payload, db)
 
         row = await _fetch_edge(db, "Roxabi/lyra#1063", "Roxabi/llmCLI#64", "blocks")
         assert row is not None, (
@@ -913,6 +913,7 @@ class TestDepsWebhookHandlerCrossRepo:
             " cross-repo blocked_by_added"
         )
         assert row == ("Roxabi/lyra#1063", "Roxabi/llmCLI#64", "blocks")
+        assert delta == 1, f"Expected delta=1 for cross-repo edge insert, got {delta}"
 
     async def test_cross_repo_blocked_by_removed_removes_edge(
         self,
@@ -939,12 +940,13 @@ class TestDepsWebhookHandlerCrossRepo:
             blocked_number=64,
             event_repo="Roxabi/llmCLI",
         )
-        await handle_deps(payload, db)
+        delta = await handle_deps(payload, db)
 
         row = await _fetch_edge(db, "Roxabi/lyra#1063", "Roxabi/llmCLI#64", "blocks")
         assert row is None, (
             "Expected edge to be removed after cross-repo blocked_by_removed"
         )
+        assert delta == 1, f"Expected delta=1 for cross-repo edge delete, got {delta}"
 
     async def test_same_repo_blocked_by_added_regression(
         self,

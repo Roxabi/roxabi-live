@@ -8,6 +8,13 @@ Design contract:
 - No commit() inside helpers — the caller controls the transaction boundary.
 - All write helpers accept an aiosqlite.Connection and call execute/executemany.
 - SQL constants are imported from corpus.sync to guarantee a single source.
+
+Row-counting strategy:
+- Single-statement helpers (add_edge_async, remove_edge_async) use
+  cursor.rowcount — precise for one execute() call.
+- Multi-statement batch helpers (upsert_edges_async) use
+  conn.total_changes delta because rowcount only reflects the last
+  statement and would under-count deletes + inserts.
 """
 
 from __future__ import annotations
