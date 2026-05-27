@@ -116,7 +116,7 @@ async def _point_fetch_and_upsert_deps(
     conn: aiosqlite.Connection,
     blocked_issue: dict[str, Any],
     repo: dict[str, Any],
-) -> None:
+) -> int:
     """Point-fetch the current blockedBy/blocking state for a single issue and
     upsert edges into corpus.db.
 
@@ -124,6 +124,8 @@ async def _point_fetch_and_upsert_deps(
     payloads.  Fetches via GraphQL (1 attempt — no retry loop so auth failures
     surface quickly) and rewrites all ``blocks`` edges for the issue via
     ``upsert_edges_async``.
+
+    Returns the number of rows changed (0 on error or no-change).
     """
     number = blocked_issue.get("number")
     if number is None:
@@ -131,7 +133,7 @@ async def _point_fetch_and_upsert_deps(
             "handle_deps: missing number in blocked_issue — keys=%s",
             list(blocked_issue.keys()),
         )
-        return
+        return 0
     full_name: str = repo.get("full_name", "")
     owner, _, name = full_name.partition("/")
     if not owner or not name:
@@ -139,13 +141,13 @@ async def _point_fetch_and_upsert_deps(
             "handle_deps: cannot point-fetch — malformed repository.full_name=%r",
             full_name,
         )
-        return
+        return 0
 
     issue_key = canonical_key(number, full_name)
 
     try:
         deps = await asyncio.to_thread(fetch_issue_deps, owner, name, number)
-        await upsert_edges_async(
+        return await upsert_edges_async(
             conn,
             issue_key,
             deps["blocked_by"],
@@ -154,13 +156,15 @@ async def _point_fetch_and_upsert_deps(
         )
     except GraphQLError as exc:
         log.warning("handle_deps: point-fetch failed for %s — %s", issue_key, exc)
-        return
+        return 0
     except Exception:
         log.error("handle_deps: unexpected error for %s", issue_key, exc_info=True)
-        return
+        return 0
 
 
-async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> None:
+async def handle_deps(
+    payload: dict[str, Any], conn: aiosqlite.Connection
+) -> int:
     """Process a GitHub `issue_dependencies` webhook event.
 
     Acted upon: blocked_by_added, blocked_by_removed.
@@ -170,14 +174,16 @@ async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> No
     blocker is in a different repo.  When that field is absent we fall back to a
     point-fetch of the affected issue's current dependency lists and rewrite all
     its ``blocks`` edges via ``upsert_edges``.
+
+    Returns the number of rows changed (0 for ignored events or no-ops).
     """
     action = payload.get("action")
 
     if action in ("blocking_added", "blocking_removed"):
-        return
+        return 0
 
     if action not in ("blocked_by_added", "blocked_by_removed"):
-        return
+        return 0
 
     # GitHub docs list `blocking_issue` + `blocked_issue`; log keys on mismatch to
     # capture the real schema if it ever differs.
@@ -194,32 +200,36 @@ async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> No
             list(payload.keys()),
             payload,
         )
-        return
+        return 0
 
     # Cross-repo case: blocking_issue absent — point-fetch the downstream issue's
     # current dep graph and derive edges from the authoritative GitHub state.
     if blocking_issue is None:
         repo_obj: dict[str, Any] = payload.get("repository") or {}
-        await _point_fetch_and_upsert_deps(conn, blocked_issue, repo_obj)
+        delta = await _point_fetch_and_upsert_deps(conn, blocked_issue, repo_obj)
         await conn.commit()
-        return
+        return delta
 
     # Same-repo fast path: both sides are in the payload — use them directly.
     blocker_key = _issue_key(blocking_issue, blocking_repo)
     blocked_key = _issue_key(blocked_issue, payload.get("repository"))  # type: ignore[arg-type]
 
     if action == "blocked_by_added":
-        await add_edge_async(conn, blocker_key, blocked_key, "blocks")
+        delta = await add_edge_async(conn, blocker_key, blocked_key, "blocks")
         await conn.commit()
+        return delta
 
     elif action == "blocked_by_removed":
-        await remove_edge_async(conn, blocker_key, blocked_key, "blocks")
+        delta = await remove_edge_async(conn, blocker_key, blocked_key, "blocks")
         await conn.commit()
+        return delta
+
+    return 0
 
 
 async def handle_sub_issues(
     payload: dict[str, Any], conn: aiosqlite.Connection
-) -> None:
+) -> int:
     """Process a GitHub `sub_issues` webhook event.
 
     Acted upon: sub_issue_added, sub_issue_removed.
@@ -229,14 +239,16 @@ async def handle_sub_issues(
     ``parent_issue_repo`` / ``sub_issue`` / ``sub_issue_repo`` keys.  Repo info
     is NOT nested under the issue objects.  Malformed payloads are logged and
     skipped rather than raising — webhooks must always return 200.
+
+    Returns the number of rows changed (0 for ignored events or no-ops).
     """
     action = payload.get("action")
 
     if action in ("parent_issue_added", "parent_issue_removed"):
-        return
+        return 0
 
     if action not in ("sub_issue_added", "sub_issue_removed"):
-        return
+        return 0
 
     parent_issue = payload.get("parent_issue")
     parent_repo = payload.get("parent_issue_repo")
@@ -249,7 +261,7 @@ async def handle_sub_issues(
             action,
             sorted(payload.keys()),
         )
-        return
+        return 0
 
     try:
         parent_key = f"{parent_repo['full_name']}#{parent_issue['number']}"
@@ -261,13 +273,14 @@ async def handle_sub_issues(
             exc.args[0] if exc.args else "?",
             sorted(payload.keys()),
         )
-        return
+        return 0
 
     if action == "sub_issue_added":
-        await add_edge_async(conn, parent_key, child_key, "parent")
+        delta = await add_edge_async(conn, parent_key, child_key, "parent")
     else:  # sub_issue_removed
-        await remove_edge_async(conn, parent_key, child_key, "parent")
+        delta = await remove_edge_async(conn, parent_key, child_key, "parent")
     await conn.commit()
+    return delta
 
 
 async def handle_ref_create(

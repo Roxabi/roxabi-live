@@ -46,7 +46,9 @@ class TriggerHeal(Protocol):
     stale, schedule a background corpus sync task.
     """
 
-    async def __call__(self, repo: str, conn: aiosqlite.Connection) -> None: ...
+    async def __call__(
+        self, repo: str, conn: aiosqlite.Connection, *, force: bool = False
+    ) -> None: ...
 
 
 def _log_exc(task: asyncio.Task[None]) -> None:
@@ -297,27 +299,30 @@ def make_trigger_heal(
         An async callable matching the TriggerHeal protocol.
     """
 
-    async def _trigger_heal(repo: str, conn: aiosqlite.Connection) -> None:
+    async def _trigger_heal(
+        repo: str, conn: aiosqlite.Connection, *, force: bool = False
+    ) -> None:
         global _sync_in_flight
         async with _state_lock:
             if _sync_in_flight:
                 return
-            cur = await conn.execute(
-                "SELECT last_synced_at FROM sync_state WHERE repo = ?", (repo,)
-            )
-            row = await cur.fetchone()
-            now = datetime.now(timezone.utc)
-            stale = True
-            if row is not None:
-                raw = row[0]
-                last = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
-                if last.tzinfo is None:
-                    last = last.replace(tzinfo=timezone.utc)
-                stale = (
-                    now - last
-                ).total_seconds() > settings.corpus_sync_interval_seconds
-            if not stale:
-                return
+            if not force:
+                cur = await conn.execute(
+                    "SELECT last_synced_at FROM sync_state WHERE repo = ?", (repo,)
+                )
+                row = await cur.fetchone()
+                now = datetime.now(timezone.utc)
+                stale = True
+                if row is not None:
+                    raw = row[0]
+                    last = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                    stale = (
+                        now - last
+                    ).total_seconds() > settings.corpus_sync_interval_seconds
+                if not stale:
+                    return
             _sync_in_flight = True
 
         async def _run_and_clear() -> None:

@@ -524,11 +524,12 @@ class TestDepsWebhookHandler:
             blocking_number=5,
         )
 
-        await handle_deps(payload, db)
+        delta = await handle_deps(payload, db)
 
         row = await _fetch_edge(db, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
         assert row is not None, "Expected edge (blocker→blocked, blocks) to be inserted"
         assert row == ("Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
+        assert delta == 1, f"Expected delta=1 for new edge insert, got {delta}"
 
     async def test_deps_blocked_by_removed_deletes_edge(
         self, db: aiosqlite.Connection
@@ -544,10 +545,27 @@ class TestDepsWebhookHandler:
             blocking_number=5,
         )
 
-        await handle_deps(payload, db)
+        delta = await handle_deps(payload, db)
 
         row = await _fetch_edge(db, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
         assert row is None, "Expected edge to be deleted after blocked_by_removed"
+        assert delta == 1, f"Expected delta=1 for edge delete, got {delta}"
+
+    async def test_deps_blocked_by_removed_idempotent_returns_zero(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """blocked_by_removed when edge does not exist returns delta=0."""
+        payload = _make_deps_payload(
+            action="blocked_by_removed",
+            issue_repo="Roxabi/lyra",
+            issue_number=10,
+            blocking_repo="Roxabi/lyra",
+            blocking_number=5,
+        )
+
+        delta = await handle_deps(payload, db)
+
+        assert delta == 0, f"Expected delta=0 for no-op remove, got {delta}"
 
     async def test_deps_blocking_added_is_noop(self, db: aiosqlite.Connection) -> None:
         """blocking_added (duplicate-direction) is ignored — no edge inserted."""
@@ -559,7 +577,7 @@ class TestDepsWebhookHandler:
             blocking_number=10,
         )
 
-        await handle_deps(payload, db)
+        delta = await handle_deps(payload, db)
 
         # Neither direction should exist
         row_a = await _fetch_edge(db, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
@@ -567,6 +585,7 @@ class TestDepsWebhookHandler:
         assert row_a is None and row_b is None, (
             "Expected no edge for blocking_added noop"
         )
+        assert delta == 0, f"Expected delta=0 for ignored event, got {delta}"
 
     async def test_blocked_by_added_malformed_payload_logged_not_raised(
         self,
@@ -587,7 +606,7 @@ class TestDepsWebhookHandler:
         }
 
         with caplog.at_level(logging.WARNING, logger="roxabi_live.webhook.handlers"):
-            await handle_deps(payload, db)
+            delta = await handle_deps(payload, db)
 
         assert any(
             "unexpected payload shape" in rec.message for rec in caplog.records
@@ -600,6 +619,7 @@ class TestDepsWebhookHandler:
         assert row[0] == 0, (
             f"Expected no edges written for malformed payload, got {row[0]}"
         )
+        assert delta == 0, f"Expected delta=0 for malformed payload, got {delta}"
 
 
 # ---------------------------------------------------------------------------
@@ -622,11 +642,12 @@ class TestSubIssuesWebhookHandler:
             child_number=2,
         )
 
-        await handle_sub_issues(payload, db)
+        delta = await handle_sub_issues(payload, db)
 
         row = await _fetch_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
         assert row is not None, "Expected edge (parent→child, parent) to be inserted"
         assert row == ("Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+        assert delta == 1, f"Expected delta=1 for new edge insert, got {delta}"
 
     async def test_sub_issues_removed_deletes_edge(
         self, db: aiosqlite.Connection
@@ -642,10 +663,29 @@ class TestSubIssuesWebhookHandler:
             child_number=2,
         )
 
-        await handle_sub_issues(payload, db)
+        delta = await handle_sub_issues(payload, db)
 
         row = await _fetch_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
         assert row is None, "Expected edge to be deleted after sub_issue_removed"
+        assert delta == 1, f"Expected delta=1 for edge delete, got {delta}"
+
+    async def test_sub_issues_added_idempotent_returns_zero(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """sub_issue_added when edge already exists returns delta=0."""
+        await _seed_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+
+        payload = _make_sub_issues_payload(
+            action="sub_issue_added",
+            parent_repo="Roxabi/lyra",
+            parent_number=1,
+            child_repo="Roxabi/lyra",
+            child_number=2,
+        )
+
+        delta = await handle_sub_issues(payload, db)
+
+        assert delta == 0, f"Expected delta=0 for idempotent insert, got {delta}"
 
     async def test_sub_issues_parent_added_is_noop(
         self, db: aiosqlite.Connection
@@ -659,13 +699,14 @@ class TestSubIssuesWebhookHandler:
             child_number=2,
         )
 
-        await handle_sub_issues(payload, db)
+        delta = await handle_sub_issues(payload, db)
 
         row_a = await _fetch_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
         row_b = await _fetch_edge(db, "Roxabi/lyra#2", "Roxabi/lyra#1", "parent")
         assert row_a is None and row_b is None, (
             "Expected no edge for parent_issue_added noop"
         )
+        assert delta == 0, f"Expected delta=0 for ignored event, got {delta}"
 
     async def test_sub_issues_malformed_payload_is_logged_not_raised(
         self,
@@ -679,13 +720,14 @@ class TestSubIssuesWebhookHandler:
         payload: dict[str, Any] = {"action": "sub_issue_added"}
 
         with caplog.at_level(logging.WARNING, logger="roxabi_live.webhook.handlers"):
-            await handle_sub_issues(payload, db)
+            delta = await handle_sub_issues(payload, db)
 
         assert any(
             "unexpected payload shape" in rec.message for rec in caplog.records
         ), "Expected a warning log for malformed payload"
         row = await _fetch_edge(db, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
         assert row is None, "No edge should be inserted for malformed payload"
+        assert delta == 0, f"Expected delta=0 for malformed payload, got {delta}"
 
 
 # ---------------------------------------------------------------------------
