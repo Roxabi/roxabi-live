@@ -13,7 +13,14 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from roxabi_live.config import get_settings
 from roxabi_live.webhook import hmac_auth
-from roxabi_live.webhook.handlers import handle_deps, handle_issues, handle_sub_issues
+from roxabi_live.webhook.handlers import (
+    handle_deps,
+    handle_issues,
+    handle_pull_request,
+    handle_ref_create,
+    handle_ref_delete,
+    handle_sub_issues,
+)
 
 if TYPE_CHECKING:
     from roxabi_live.reconciler import TriggerHeal
@@ -75,7 +82,7 @@ async def _read_capped_body(request: Request) -> bytes:
 
 
 @router.post("/webhook/github")
-async def github_webhook(  # noqa: PLR0913 — FastAPI deps + headers, not domain args
+async def github_webhook(  # noqa: PLR0913 C901 — FastAPI deps + branching dispatcher
     request: Request,
     x_github_event: str | None = Header(default=None),
     x_hub_signature_256: str | None = Header(default=None),
@@ -98,7 +105,8 @@ async def github_webhook(  # noqa: PLR0913 — FastAPI deps + headers, not domai
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="invalid JSON payload") from None
 
-    async with aiosqlite.connect(_get_db_path(request)) as conn:
+    db_path = _get_db_path(request)
+    async with aiosqlite.connect(db_path) as conn:
         if x_github_event == "issues":
             await handle_issues(payload, conn)
             repo: str = str(payload["repository"]["full_name"])  # type: ignore[index]
@@ -111,6 +119,12 @@ async def github_webhook(  # noqa: PLR0913 — FastAPI deps + headers, not domai
             await handle_sub_issues(payload, conn)
             repo = str(payload["repository"]["full_name"])  # type: ignore[index]
             await trigger_heal(repo, conn)
+        elif x_github_event == "create":
+            await handle_ref_create(payload, conn)
+        elif x_github_event == "delete":
+            await handle_ref_delete(payload, conn, db_path=db_path)
+        elif x_github_event == "pull_request":
+            await handle_pull_request(payload, conn)
         else:
             return {"ok": True, "ignored": x_github_event}
 

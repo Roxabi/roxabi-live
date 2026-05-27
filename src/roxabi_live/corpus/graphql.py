@@ -61,6 +61,39 @@ query($org: String!, $cursor: String) {
 """
 
 
+REFS_QUERY = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    refs(refPrefix: "refs/heads/", first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { name }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
+PRS_QUERY = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 50, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        state
+        # first: 25 — PRs closing more issues are out of scope for this tool
+        # (Roxabi convention: 1 PR ≈ 1 epic)
+        closingIssuesReferences(first: 25) {
+          nodes { number repository { nameWithOwner } }
+        }
+        labels(first: 20) { nodes { name } }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
 STUB_ISSUE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {

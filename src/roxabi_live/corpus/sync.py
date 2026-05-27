@@ -7,6 +7,7 @@ in roxabi_live.corpus.graphql.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import sys
@@ -15,6 +16,8 @@ from typing import Any
 
 from roxabi_live.corpus.graphql import (
     ISSUES_QUERY,
+    PRS_QUERY,
+    REFS_QUERY,
     REPOS_QUERY,
     STUB_ISSUE_QUERY,
     GraphQLError,
@@ -25,6 +28,13 @@ _BARE_INT = re.compile(r"^\d+$")
 _SHORT_FORM = re.compile(r"^#(\d+)$")
 _FULL_KEY = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 
+# Matches branch names that reference an issue number.
+# Accepts: feat/123-slug, fix/456-x, 789-bare, chore/101-...
+# Rejects: dependabot/..., release-please--..., main, staging
+BRANCH_ISSUE_RE = re.compile(r"^(?:[a-z]+/)?(\d+)-")
+
+MAX_PAGES = 500
+
 # ---------------------------------------------------------------------------
 # SQL constants — shared by corpus.sync (sync path) and corpus.mutations (async path)
 # ---------------------------------------------------------------------------
@@ -34,24 +44,26 @@ _FULL_KEY = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 UPSERT_ISSUE_SQL = """
     INSERT INTO issues
         (key, repo, number, title, state, url, created_at, updated_at,
-         closed_at, milestone, is_stub, lane, priority, size, status)
+         closed_at, milestone, is_stub, lane, priority, size, status,
+         has_active_branch)
     VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET
-        repo       = excluded.repo,
-        number     = excluded.number,
-        title      = excluded.title,
-        state      = excluded.state,
-        url        = excluded.url,
-        created_at = excluded.created_at,
-        updated_at = excluded.updated_at,
-        closed_at  = excluded.closed_at,
-        milestone  = excluded.milestone,
-        is_stub    = excluded.is_stub,
-        lane       = excluded.lane,
-        priority   = excluded.priority,
-        size       = excluded.size,
-        status     = excluded.status
+        repo              = excluded.repo,
+        number            = excluded.number,
+        title             = excluded.title,
+        state             = excluded.state,
+        url               = excluded.url,
+        created_at        = excluded.created_at,
+        updated_at        = excluded.updated_at,
+        closed_at         = excluded.closed_at,
+        milestone         = excluded.milestone,
+        is_stub           = excluded.is_stub,
+        lane              = excluded.lane,
+        priority          = excluded.priority,
+        size              = excluded.size,
+        status            = excluded.status,
+        has_active_branch = excluded.has_active_branch
 """
 
 # Webhook upsert: used by corpus.mutations for webhook payload data.
@@ -64,10 +76,14 @@ UPSERT_ISSUE_SQL = """
 UPSERT_ISSUE_FROM_WEBHOOK_SQL = """
     INSERT INTO issues
         (key, repo, number, title, state, url, created_at, updated_at, closed_at,
-         milestone, is_stub, lane, priority, size, status)
+         milestone, is_stub, lane, priority, size, status, has_active_branch)
     VALUES
         (?, ?, ?, ?, ?, ?, ?, ?, ?,
-         ?, 0, ?, ?, ?, NULL)
+         ?, 0, ?, ?, ?, NULL, 0)
+    -- has_active_branch is intentionally NOT in ON CONFLICT SET:
+    -- the column is managed exclusively by sync_branches() / handle_ref_*
+    -- and must never be overwritten by webhook issue payloads (which carry 0
+    -- by default).
     ON CONFLICT(key) DO UPDATE SET
         repo       = excluded.repo,
         number     = excluded.number,
@@ -86,6 +102,20 @@ UPSERT_ISSUE_FROM_WEBHOOK_SQL = """
 
 DELETE_LABELS_SQL = "DELETE FROM labels WHERE issue_key = ?"
 INSERT_LABEL_SQL = "INSERT OR IGNORE INTO labels (issue_key, name) VALUES (?, ?)"
+
+# PR state upsert — SSoT shared with corpus.mutations (imported there to guarantee
+# byte-identical SQL on both the sync and webhook paths).
+UPSERT_PR_STATE_SQL = """
+    INSERT INTO pr_state
+        (repo, number, state, has_reviewed_label, closing_issue_keys, updated_at)
+    VALUES
+        (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(repo, number) DO UPDATE SET
+        state               = excluded.state,
+        has_reviewed_label  = excluded.has_reviewed_label,
+        closing_issue_keys  = excluded.closing_issue_keys,
+        updated_at          = excluded.updated_at
+"""
 
 DELETE_EDGES_BY_KIND_SQL = (
     "DELETE FROM edges WHERE (src_key = ? OR dst_key = ?) AND kind = ?"
@@ -208,6 +238,7 @@ def upsert_issue(conn: sqlite3.Connection, issue: dict[str, Any]) -> None:
             issue["priority"],
             issue["size"],
             issue["status"],
+            issue.get("has_active_branch", 0),
         ),
     )
 
@@ -351,7 +382,19 @@ def run_repo_sync(
 
         page_info = issues_page["pageInfo"]
         if page_info["hasNextPage"]:
-            cursor = page_info["endCursor"]
+            if pages >= MAX_PAGES:
+                raise GraphQLError(
+                    f"run_repo_sync exceeded MAX_PAGES={MAX_PAGES} for repo {repo}"
+                )
+            next_cursor = page_info["endCursor"]
+            if next_cursor is None:
+                print(
+                    f"[corpus] run_repo_sync: hasNextPage=true but endCursor is None"
+                    f" for repo {repo} at page {pages} — stopping pagination",
+                    file=sys.stderr,
+                )
+                break
+            cursor = next_cursor
         else:
             break
 
@@ -534,3 +577,170 @@ def run_sync(conn: sqlite3.Connection, org: str, full: bool = False) -> dict[str
         total["issues"] += counts["issues"]
     total["stubs"] = closed_hop_pass(conn)
     return total
+
+
+def sync_branches(repo: str, conn: sqlite3.Connection) -> None:
+    """Compute has_active_branch flag for all issues in `repo` based on live refs.
+
+    Paginates repository.refs(refPrefix: "refs/heads/") via GraphQL, applies
+    BRANCH_ISSUE_RE to each branch name, then writes:
+    - has_active_branch=1 for issues whose number appears in any matched branch
+    - has_active_branch=0 for all other issues in this repo
+
+    Args:
+        repo: Repository in 'owner/name' form (e.g. 'Roxabi/lyra').
+        conn: SQLite connection (caller controls the transaction).
+
+    Raises:
+        ValueError: If repo is not in 'owner/name' form.
+        GraphQLError: On network or auth failure.
+    """
+    owner, sep, name = repo.partition("/")
+    if not owner or not sep or not name:
+        raise ValueError(f"repo must be in 'owner/name' form, got: {repo!r}")
+
+    matched_numbers: set[int] = set()
+    cursor: str | None = None
+    page_count = 0
+
+    while True:
+        response = gh_graphql(
+            REFS_QUERY,
+            {"owner": owner, "name": name, "cursor": cursor},
+        )
+        log_rate_limit(response["data"]["rateLimit"])
+        refs_page = response["data"]["repository"]["refs"]
+        for node in refs_page["nodes"]:
+            m = BRANCH_ISSUE_RE.match(node["name"])
+            if m:
+                matched_numbers.add(int(m.group(1)))
+
+        page_count += 1
+        page_info = refs_page["pageInfo"]
+        if page_info["hasNextPage"]:
+            if page_count >= MAX_PAGES:
+                raise GraphQLError(
+                    f"sync_branches exceeded MAX_PAGES={MAX_PAGES} for repo {repo}"
+                )
+            next_cursor = page_info["endCursor"]
+            if next_cursor is None:
+                print(
+                    f"[corpus] sync_branches: hasNextPage=true but endCursor is None"
+                    f" for repo {repo} at page {page_count} — stopping pagination",
+                    file=sys.stderr,
+                )
+                break
+            cursor = next_cursor
+        else:
+            break
+
+    if matched_numbers:
+        placeholders = ",".join("?" * len(matched_numbers))
+        conn.execute(
+            f"UPDATE issues SET has_active_branch=1"
+            f" WHERE repo=? AND number IN ({placeholders})",
+            (repo, *matched_numbers),
+        )
+        conn.execute(
+            f"UPDATE issues SET has_active_branch=0"
+            f" WHERE repo=? AND number NOT IN ({placeholders})",
+            (repo, *matched_numbers),
+        )
+    else:
+        conn.execute(
+            "UPDATE issues SET has_active_branch=0 WHERE repo=?",
+            (repo,),
+        )
+
+
+def sync_prs(repo: str, conn: sqlite3.Connection) -> None:
+    """Sync pr_state table with open PRs for `repo`.
+
+    Paginates repository.pullRequests(states: OPEN) via GraphQL and upserts
+    each PR into pr_state. Computes:
+    - has_reviewed_label: 1 if any label name is exactly 'reviewed', else 0
+    - closing_issue_keys: JSON array of 'owner/repo#N' strings from
+      closingIssuesReferences nodes
+    - updated_at: current UTC timestamp
+
+    Args:
+        repo: Repository in 'owner/name' form (e.g. 'Roxabi/lyra').
+        conn: SQLite connection (caller controls the transaction).
+
+    Raises:
+        ValueError: If repo is not in 'owner/name' form.
+        GraphQLError: On network or auth failure.
+    """
+    owner, sep, name = repo.partition("/")
+    if not owner or not sep or not name:
+        raise ValueError(f"repo must be in 'owner/name' form, got: {repo!r}")
+
+    cursor: str | None = None
+    now_iso = datetime.now(timezone.utc).isoformat()
+    seen_pr_numbers: list[int] = []
+    page_count = 0
+
+    while True:
+        response = gh_graphql(
+            PRS_QUERY,
+            {"owner": owner, "name": name, "cursor": cursor},
+        )
+        log_rate_limit(response["data"]["rateLimit"])
+        prs_page = response["data"]["repository"]["pullRequests"]
+
+        for pr in prs_page["nodes"]:
+            label_names = [lbl["name"] for lbl in pr["labels"]["nodes"]]
+            has_reviewed_label = 1 if "reviewed" in label_names else 0
+
+            closing_refs = pr.get("closingIssuesReferences", {}).get("nodes", [])
+            closing_issue_keys: list[str] = [
+                f"{ref['repository']['nameWithOwner']}#{ref['number']}"
+                for ref in closing_refs
+            ]
+
+            seen_pr_numbers.append(pr["number"])
+            conn.execute(
+                UPSERT_PR_STATE_SQL,
+                (
+                    repo,
+                    pr["number"],
+                    pr["state"].lower(),
+                    has_reviewed_label,
+                    json.dumps(closing_issue_keys),
+                    now_iso,
+                ),
+            )
+
+        page_count += 1
+        page_info = prs_page["pageInfo"]
+        if page_info["hasNextPage"]:
+            if page_count >= MAX_PAGES:
+                raise GraphQLError(
+                    f"sync_prs exceeded MAX_PAGES={MAX_PAGES} for repo {repo}"
+                )
+            next_cursor = page_info["endCursor"]
+            if next_cursor is None:
+                print(
+                    f"[corpus] sync_prs: hasNextPage=true but endCursor is None"
+                    f" for repo {repo} at page {page_count} — stopping pagination",
+                    file=sys.stderr,
+                )
+                break
+            cursor = next_cursor
+        else:
+            break
+
+    # Mark stale open rows closed (PRs that closed between syncs)
+    if seen_pr_numbers:
+        placeholders = ",".join("?" * len(seen_pr_numbers))
+        conn.execute(
+            f"UPDATE pr_state SET state='closed' "
+            f"WHERE repo=? AND state='open' AND number NOT IN ({placeholders})",
+            (repo, *seen_pr_numbers),
+        )
+    else:
+        # No open PRs at all — close any orphaned 'open' rows for this repo
+        conn.execute(
+            "UPDATE pr_state SET state='closed' WHERE repo=? AND state='open'",
+            (repo,),
+        )

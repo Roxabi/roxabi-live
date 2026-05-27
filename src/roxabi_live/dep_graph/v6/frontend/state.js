@@ -274,6 +274,14 @@ export function filteredNodesForGraph() {
   });
 }
 
+// ─── Dev-state → animation class mapping (issue #82) ─────────────────────
+export function mapDevStateToClass(devState) {
+  if (devState === 'pr_reviewed') return 'pulse orbit-2';
+  if (devState === 'pr_open')     return 'pulse orbit-1';
+  if (devState === 'dev')         return 'pulse';
+  return '';
+}
+
 // ─── Build edge lookup (legacy helper, kept for pivot.js) ─────────────────
 export function buildEdgeLookup(edges) {
   const blocks = {};
