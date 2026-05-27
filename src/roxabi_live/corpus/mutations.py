@@ -8,6 +8,13 @@ Design contract:
 - No commit() inside helpers — the caller controls the transaction boundary.
 - All write helpers accept an aiosqlite.Connection and call execute/executemany.
 - SQL constants are imported from corpus.sync to guarantee a single source.
+
+Row-counting strategy:
+- Single-statement helpers (add_edge_async, remove_edge_async) use
+  cursor.rowcount — precise for one execute() call.
+- Multi-statement batch helpers (upsert_edges_async) use
+  conn.total_changes delta because rowcount only reflects the last
+  statement and would under-count deletes + inserts.
 """
 
 from __future__ import annotations
@@ -86,22 +93,28 @@ async def replace_labels_async(
 
 async def add_edge_async(
     conn: aiosqlite.Connection, src: str, dst: str, kind: str
-) -> None:
+) -> int:
     """Insert an edge (src, dst, kind) ignoring conflicts (idempotent).
+
+    Returns the number of rows inserted (0 if the edge already existed).
 
     Runs inside the caller's transaction — no commit() here.
     """
-    await conn.execute(INSERT_EDGE_SQL, (src, dst, kind))
+    cur = await conn.execute(INSERT_EDGE_SQL, (src, dst, kind))
+    return cur.rowcount
 
 
 async def remove_edge_async(
     conn: aiosqlite.Connection, src: str, dst: str, kind: str
-) -> None:
+) -> int:
     """Delete the edge (src, dst, kind) if it exists.
+
+    Returns the number of rows deleted (0 if the edge did not exist).
 
     Runs inside the caller's transaction — no commit() here.
     """
-    await conn.execute(DELETE_EDGE_SQL, (src, dst, kind))
+    cur = await conn.execute(DELETE_EDGE_SQL, (src, dst, kind))
+    return cur.rowcount
 
 
 async def delete_issue_async(conn: aiosqlite.Connection, key: str) -> None:
@@ -118,7 +131,7 @@ async def upsert_edges_async(
     blocked_by: list[str],
     blocking: list[str],
     kind: str = "parent",
-) -> None:
+) -> int:
     """Async mirror of corpus.sync.upsert_edges for use in the webhook layer.
 
     Wipes all edges touching issue_key (as src OR dst) of the given kind, then
@@ -128,8 +141,11 @@ async def upsert_edges_async(
     - Every blocker b in blocked_by -> row (src=b, dst=issue_key).
     - Every blockee b in blocking  -> row (src=issue_key, dst=b).
 
+    Returns the total number of rows changed (deleted + inserted).
+
     Runs inside the caller's transaction — no commit() here.
     """
+    before = conn.total_changes
     await conn.execute(DELETE_EDGES_BY_KIND_SQL, (issue_key, issue_key, kind))
     rows: list[tuple[str, str, str]] = []
     for blocker in blocked_by:
@@ -138,6 +154,7 @@ async def upsert_edges_async(
         rows.append((issue_key, blockee, kind))
     if rows:
         await conn.executemany(INSERT_EDGE_SQL, rows)
+    return conn.total_changes - before
 
 
 async def set_active_branch_async(

@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+from weakref import WeakSet
 
+import aiosqlite
 import pytest
 import requests.exceptions
 
@@ -451,3 +454,121 @@ class TestRunRepoOnce:
 
         assert reconciler._auth_failures == 0  # type: ignore[attr-defined]
         assert not reconciler._halted.is_set()  # type: ignore[attr-defined]
+
+
+class TestTriggerHealForce:
+    """make_trigger_heal — force=True bypasses the stale check."""
+
+    @pytest.mark.asyncio
+    async def test_force_true_bypasses_stale_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """force=True must schedule run_repo_once even when sync_state is fresh."""
+        import sqlite3
+
+        db_path = tmp_path / "corpus.db"
+        conn = sqlite3.connect(db_path)
+        conn.executescript(
+            "CREATE TABLE IF NOT EXISTS sync_state"
+            " (repo TEXT PRIMARY KEY, last_synced_at TEXT);"
+        )
+        # Fresh sync (1 minute ago)
+        fresh = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        conn.execute(
+            "INSERT INTO sync_state (repo, last_synced_at) VALUES (?, ?)",
+            ("Roxabi/lyra", fresh),
+        )
+        conn.commit()
+        conn.close()
+
+        mock_run_repo_once = AsyncMock(return_value=None)
+        monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+
+        s = _settings(tmp_path)
+        tasks: WeakSet[asyncio.Task[None]] = WeakSet()
+        trigger_heal = reconciler.make_trigger_heal(s, tasks)
+
+        async with aiosqlite.connect(db_path) as conn:
+            await trigger_heal("Roxabi/lyra", conn, force=True)
+
+        # Drain the event loop so the background task executes
+        await asyncio.sleep(0)
+
+        assert mock_run_repo_once.call_count == 1, (
+            "force=True must bypass stale check and schedule run_repo_once"
+        )
+
+    @pytest.mark.asyncio
+    async def test_force_false_respects_stale_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """force=False (default) must skip scheduling when sync_state is fresh."""
+        import sqlite3
+
+        db_path = tmp_path / "corpus.db"
+        conn = sqlite3.connect(db_path)
+        conn.executescript(
+            "CREATE TABLE IF NOT EXISTS sync_state"
+            " (repo TEXT PRIMARY KEY, last_synced_at TEXT);"
+        )
+        fresh = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        conn.execute(
+            "INSERT INTO sync_state (repo, last_synced_at) VALUES (?, ?)",
+            ("Roxabi/lyra", fresh),
+        )
+        conn.commit()
+        conn.close()
+
+        mock_run_repo_once = AsyncMock(return_value=None)
+        monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+
+        s = _settings(tmp_path)
+        tasks: WeakSet[asyncio.Task[None]] = WeakSet()
+        trigger_heal = reconciler.make_trigger_heal(s, tasks)
+
+        async with aiosqlite.connect(db_path) as conn:
+            await trigger_heal("Roxabi/lyra", conn, force=False)
+
+        await asyncio.sleep(0)
+
+        assert mock_run_repo_once.call_count == 0, (
+            "force=False must respect stale check and skip scheduling"
+        )
+
+    @pytest.mark.asyncio
+    async def test_sync_in_flight_blocks_even_with_force_true(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_sync_in_flight=True must block scheduling even when force=True."""
+        import sqlite3
+
+        db_path = tmp_path / "corpus.db"
+        conn = sqlite3.connect(db_path)
+        conn.executescript(
+            "CREATE TABLE IF NOT EXISTS sync_state"
+            " (repo TEXT PRIMARY KEY, last_synced_at TEXT);"
+        )
+        conn.commit()
+        conn.close()
+
+        mock_run_repo_once = AsyncMock(return_value=None)
+        monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+
+        s = _settings(tmp_path)
+        tasks: WeakSet[asyncio.Task[None]] = WeakSet()
+        trigger_heal = reconciler.make_trigger_heal(s, tasks)
+
+        # Set _sync_in_flight = True
+        reconciler._sync_in_flight = True  # type: ignore[attr-defined]
+
+        async with aiosqlite.connect(db_path) as conn:
+            await trigger_heal("Roxabi/lyra", conn, force=True)
+
+        await asyncio.sleep(0)
+
+        assert mock_run_repo_once.call_count == 0, (
+            "_sync_in_flight must block scheduling even with force=True"
+        )
+
+        # Cleanup
+        reconciler._sync_in_flight = False  # type: ignore[attr-defined]

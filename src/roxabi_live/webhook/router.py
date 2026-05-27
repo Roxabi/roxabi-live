@@ -112,13 +112,13 @@ async def github_webhook(  # noqa: PLR0913 C901 — FastAPI deps + branching dis
             repo: str = str(payload["repository"]["full_name"])  # type: ignore[index]
             await trigger_heal(repo, conn)
         elif x_github_event == "issue_dependencies":
-            await handle_deps(payload, conn)
+            delta = await handle_deps(payload, conn)
             repo = str(payload["repository"]["full_name"])  # type: ignore[index]
-            await trigger_heal(repo, conn)
+            await trigger_heal(repo, conn, force=delta > 0)
         elif x_github_event == "sub_issues":
-            await handle_sub_issues(payload, conn)
+            delta = await handle_sub_issues(payload, conn)
             repo = str(payload["repository"]["full_name"])  # type: ignore[index]
-            await trigger_heal(repo, conn)
+            await trigger_heal(repo, conn, force=delta > 0)
         elif x_github_event == "create":
             await handle_ref_create(payload, conn)
         elif x_github_event == "delete":

@@ -263,6 +263,19 @@ def _seed_sync_state(db_path: Path, repo: str, last_synced_at: str) -> None:
     conn.close()
 
 
+def _seed_edge(db_path: Path, src: str, dst: str, kind: str) -> None:
+    """Synchronously insert an edge row into the test DB."""
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT OR IGNORE INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)",
+        (src, dst, kind),
+    )
+    conn.commit()
+    conn.close()
+
+
 def test_stale_sync_triggers_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -369,6 +382,291 @@ def test_missing_sync_state_triggers_reconcile(
 
     assert mock_run_repo_once.call_count >= 1, (
         "Expected trigger_heal to schedule run_repo_once when sync_state is missing"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Force trigger tests — dep/sub_issue events bypass stale check (#79)
+# ---------------------------------------------------------------------------
+
+
+def _deps_payload(
+    action: str = "blocked_by_added",
+    issue_repo: str = "Roxabi/lyra",
+    issue_number: int = 10,
+    blocking_repo: str = "Roxabi/lyra",
+    blocking_number: int = 5,
+) -> dict[str, Any]:
+    """Minimal issue_dependencies webhook payload."""
+    return {
+        "action": action,
+        "issue": {
+            "number": issue_number,
+            "title": f"Issue {issue_number}",
+            "state": "open",
+            "html_url": f"https://github.com/{issue_repo}/issues/{issue_number}",
+            "labels": [],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-04-24T12:00:00Z",
+            "closed_at": None,
+            "repository": {
+                "full_name": issue_repo,
+                "name": issue_repo.split("/", 1)[-1],
+                "owner": {"login": issue_repo.split("/", 1)[0]},
+            },
+        },
+        "blocking_issue": {
+            "number": blocking_number,
+            "title": f"Issue {blocking_number}",
+            "state": "open",
+            "html_url": f"https://github.com/{blocking_repo}/issues/{blocking_number}",
+            "labels": [],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-04-24T12:00:00Z",
+            "closed_at": None,
+            "repository": {
+                "full_name": blocking_repo,
+                "name": blocking_repo.split("/", 1)[-1],
+                "owner": {"login": blocking_repo.split("/", 1)[0]},
+            },
+        },
+        "repository": {
+            "full_name": issue_repo,
+            "name": issue_repo.split("/", 1)[-1],
+            "owner": {"login": issue_repo.split("/", 1)[0]},
+        },
+    }
+
+
+def _sub_issues_payload(
+    action: str = "sub_issue_added",
+    parent_repo: str = "Roxabi/lyra",
+    parent_number: int = 1,
+    child_repo: str = "Roxabi/lyra",
+    child_number: int = 2,
+) -> dict[str, Any]:
+    """Minimal sub_issues webhook payload."""
+    return {
+        "action": action,
+        "parent_issue": {
+            "number": parent_number,
+            "title": f"Parent {parent_number}",
+            "state": "open",
+            "html_url": f"https://github.com/{parent_repo}/issues/{parent_number}",
+            "labels": [],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-04-24T12:00:00Z",
+            "closed_at": None,
+        },
+        "parent_issue_repo": {
+            "full_name": parent_repo,
+            "name": parent_repo.split("/", 1)[-1],
+            "owner": {"login": parent_repo.split("/", 1)[0]},
+        },
+        "sub_issue": {
+            "number": child_number,
+            "title": f"Child {child_number}",
+            "state": "open",
+            "html_url": f"https://github.com/{child_repo}/issues/{child_number}",
+            "labels": [],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-04-24T12:00:00Z",
+            "closed_at": None,
+        },
+        "sub_issue_repo": {
+            "full_name": child_repo,
+            "name": child_repo.split("/", 1)[-1],
+            "owner": {"login": child_repo.split("/", 1)[0]},
+        },
+        "repository": {
+            "full_name": parent_repo,
+            "name": parent_repo.split("/", 1)[-1],
+            "owner": {"login": parent_repo.split("/", 1)[0]},
+        },
+    }
+
+
+def test_deps_event_force_triggers_reconcile_despite_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """issue_dependencies with a fresh sync_state still triggers heal via force=True."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _deps_payload(action="blocked_by_added")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_dependencies",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count >= 1, (
+        "Expected force=True to bypass stale check and schedule run_repo_once"
+    )
+
+
+def test_sub_issues_event_force_triggers_reconcile_despite_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """sub_issues with a fresh sync_state still triggers heal via force=True."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _sub_issues_payload(action="sub_issue_added")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "sub_issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count >= 1, (
+        "Expected force=True to bypass stale check and schedule run_repo_once"
+    )
+
+
+def test_deps_event_noop_does_not_force_on_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Duplicate blocked_by_added with edge already present:
+    delta=0, no force trigger."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+    _seed_edge(db_path, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _deps_payload(action="blocked_by_added")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_dependencies",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count == 0, (
+        "Expected delta=0 noop NOT to force trigger heal on fresh sync"
+    )
+
+
+def test_sub_issues_event_noop_does_not_force_on_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Duplicate sub_issue_added with edge already present:
+    delta=0, no force trigger."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+    _seed_edge(db_path, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _sub_issues_payload(action="sub_issue_added")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "sub_issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count == 0, (
+        "Expected delta=0 noop NOT to force trigger heal on fresh sync"
+    )
+
+
+def test_issues_event_without_force_does_not_trigger_on_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """issues event with a fresh sync_state does NOT trigger heal (no force)."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _issues_payload(repo="Roxabi/lyra")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count == 0, (
+        "Expected issues event NOT to force trigger heal on fresh sync"
     )
 
 
