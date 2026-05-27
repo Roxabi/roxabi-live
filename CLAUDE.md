@@ -8,11 +8,11 @@ Let:
 
 ## Project
 
-**Roxabi Live** — operations cockpit (FastAPI + aiosqlite + cloudflared)
+**Roxabi Live** — operations cockpit (FastAPI + aiosqlite + Tailscale Funnel)
 - Exposes `~/.roxabi/corpus.db` via live HTTP API (`GET /api/*`)
-- Receives GitHub org webhooks for near-real-time updates
+- Receives GitHub org webhooks at `POST /webhook/github` (HMAC-gated)
 - Frontend: static HTML/JS (dep-graph tab first, see spec #866)
-- Public via cloudflared tunnel at `dashboard.roxabi.dev`
+- Public via Tailscale Funnel on M₁ at `https://roxabituwer.goose-logarithm.ts.net/` (cloudflared setup deferred pending `roxabi.dev` zone migration from OVH)
 
 → `docs/ARCHITECTURE.md` (to be created)
 
@@ -35,8 +35,7 @@ Let:
 | `src/roxabi_live/reconciler.py` | Hourly corpus sync heal loop + startup one-shot |
 | `src/roxabi_live/api/issues.py` | `GET /api/issues`, `GET /api/issues/:key` |
 | `src/roxabi_live/webhook/` | GitHub webhook handlers (HMAC verify + issues/deps/sub_issues dispatch) |
-| `deploy/supervisor/supervisord.conf` | supervisord config |
-| `deploy/supervisor/conf.d/` | per-program supervisor units |
+| `deploy/systemd/live.service` | systemd user unit (M₁ boot) |
 | `frontend/` | Static HTML/JS/CSS (dep-graph tab + future tabs) |
 | `artifacts/` | Frames, specs, plans (dev-core) |
 | `.env.example` | Env var reference (CORPUS_DB_PATH, GITHUB_WEBHOOK_SECRET, …) |
@@ -107,12 +106,9 @@ File/rename → update P immediately
 
 Rules: add/delete/move → update P | new `src/roxabi_live/` subdir → nearest P (¬nested)
 
-## Supervisor pattern
+## Deploy pattern
 
-`deploy/supervisor/conf.d/` — one `.conf` file per program.
-`autostart=false` on M₂ (dev); `autorestart=true` on M₁ (prod).
+M₁ (prod): `deploy/systemd/live.service` — systemd user unit, installed to `~/.config/systemd/user/live.service`, enabled via linger.
+Service control on M₁: `systemctl --user {start,stop,status,restart} live.service` (no `make live` wrapper — supervisor no longer manages this service).
+M₂ (dev): start manually with `uv run roxabi-live`.
 Log dir: `~/.local/state/roxabi-live/logs/`
-
-Programs added per spec slice:
-- Slice 3: `dashboard.conf` (FastAPI + uvicorn)
-- Slice 2: `cloudflared.conf` (tunnel daemon)

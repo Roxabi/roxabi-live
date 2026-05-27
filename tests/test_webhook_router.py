@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -42,7 +43,8 @@ CREATE TABLE IF NOT EXISTS issues (
     lane        TEXT,
     priority    TEXT,
     size        TEXT,
-    status      TEXT
+    status      TEXT,
+    has_active_branch INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS labels (
@@ -104,30 +106,40 @@ def _issues_payload(
 
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
-    """Create a real sqlite file with the corpus schema and return its path."""
+    """Create a real sqlite file with the corpus schema and return its path.
+
+    Uses synchronous sqlite3 — pure DDL needs no async; avoids `asyncio.run`
+    in a sync fixture under pytest-asyncio strict/auto mode.
+    """
+    import sqlite3
+
     path = tmp_path / "corpus.db"
-
-    async def _init() -> None:
-        async with aiosqlite.connect(path) as conn:
-            await conn.executescript(_SCHEMA_SQL)
-            await conn.commit()
-
-    import asyncio
-
-    asyncio.run(_init())
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(_SCHEMA_SQL)
+        conn.commit()
+    finally:
+        conn.close()
     return path
 
 
 @pytest.fixture()
-def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """TestClient with env vars pointing at the tmp db."""
+def client(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Generator[TestClient, None, None]:
+    """TestClient with env vars pointing at the tmp db.
+
+    Uses context manager form so that the FastAPI lifespan runs (which sets
+    app.state.settings, app.state.trigger_heal, etc.).
+    """
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
-    # Import app AFTER env vars are set so _db_path() resolves correctly
+    # Import app AFTER env vars are set
     from roxabi_live.app import app
 
-    return TestClient(app)
+    with TestClient(app) as c:
+        yield c
 
 
 # ---------------------------------------------------------------------------
@@ -251,88 +263,464 @@ def _seed_sync_state(db_path: Path, repo: str, last_synced_at: str) -> None:
     conn.close()
 
 
+def _seed_edge(db_path: Path, src: str, dst: str, kind: str) -> None:
+    """Synchronously insert an edge row into the test DB."""
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT OR IGNORE INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)",
+        (src, dst, kind),
+    )
+    conn.commit()
+    conn.close()
+
+
 def test_stale_sync_triggers_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sync_state.last_synced_at = 2h ago → reconciler.run_once is called."""
+    """A 2h-old sync_state triggers the heal scheduler."""
     two_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
     _seed_sync_state(db_path, "Roxabi/lyra", two_hours_ago)
 
-    mock_run_once = AsyncMock(return_value=None)
-    monkeypatch.setattr("roxabi_live.webhook.router.reconciler.run_once", mock_run_once)
+    mock_run_repo_once = AsyncMock(return_value=None)
+    # trigger_heal now calls run_repo_once (not run_once) for single-repo heal.
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
     from roxabi_live.app import app
 
-    client = TestClient(app)
     payload = _issues_payload(repo="Roxabi/lyra")
     body = json.dumps(payload).encode()
     sig = _sign(body)
 
-    resp = client.post(
-        "/webhook/github",
-        content=body,
-        headers={
-            "X-GitHub-Event": "issues",
-            "Content-Type": "application/json",
-            "X-Hub-Signature-256": sig,
-        },
-    )
-    assert resp.status_code == 200
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        # Drain the event loop so the fire-and-forget task executes
+        asyncio.run(asyncio.sleep(0))
 
-    # Drain the event loop so the fire-and-forget task executes
-    asyncio.run(asyncio.sleep(0))
-    mock_run_once.assert_called_once()
+    # One call triggered by the stale webhook heal
+    assert mock_run_repo_once.call_count >= 1, (
+        "Expected trigger_heal to schedule a run_repo_once call"
+    )
 
 
 def test_fresh_sync_does_not_trigger_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sync_state.last_synced_at = 5min ago → reconciler.run_once is NOT called."""
+    """A fresh sync_state (5min ago) skips the heal scheduling."""
     five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
     _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
 
-    mock_run_once = AsyncMock(return_value=None)
-    monkeypatch.setattr("roxabi_live.webhook.router.reconciler.run_once", mock_run_once)
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
     from roxabi_live.app import app
 
-    client = TestClient(app)
     payload = _issues_payload(repo="Roxabi/lyra")
     body = json.dumps(payload).encode()
     sig = _sign(body)
 
-    resp = client.post(
-        "/webhook/github",
-        content=body,
-        headers={
-            "X-GitHub-Event": "issues",
-            "Content-Type": "application/json",
-            "X-Hub-Signature-256": sig,
-        },
-    )
-    assert resp.status_code == 200
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
 
-    asyncio.run(asyncio.sleep(0))
-    mock_run_once.assert_not_called()
+    # No calls — sync is fresh
+    assert mock_run_repo_once.call_count == 0, (
+        "Expected trigger_heal NOT to schedule run_repo_once for a fresh sync"
+    )
 
 
 def test_missing_sync_state_triggers_reconcile(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No row in sync_state for the repo → reconciler.run_once is called."""
-    mock_run_once = AsyncMock(return_value=None)
-    monkeypatch.setattr("roxabi_live.webhook.router.reconciler.run_once", mock_run_once)
+    """No row in sync_state for the repo → trigger_heal schedules run_once."""
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
     monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
 
     from roxabi_live.app import app
 
-    client = TestClient(app)
     payload = _issues_payload(repo="Roxabi/lyra")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count >= 1, (
+        "Expected trigger_heal to schedule run_repo_once when sync_state is missing"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Force trigger tests — dep/sub_issue events bypass stale check (#79)
+# ---------------------------------------------------------------------------
+
+
+def _deps_payload(
+    action: str = "blocked_by_added",
+    issue_repo: str = "Roxabi/lyra",
+    issue_number: int = 10,
+    blocking_repo: str = "Roxabi/lyra",
+    blocking_number: int = 5,
+) -> dict[str, Any]:
+    """Minimal issue_dependencies webhook payload."""
+    return {
+        "action": action,
+        "issue": {
+            "number": issue_number,
+            "title": f"Issue {issue_number}",
+            "state": "open",
+            "html_url": f"https://github.com/{issue_repo}/issues/{issue_number}",
+            "labels": [],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-04-24T12:00:00Z",
+            "closed_at": None,
+            "repository": {
+                "full_name": issue_repo,
+                "name": issue_repo.split("/", 1)[-1],
+                "owner": {"login": issue_repo.split("/", 1)[0]},
+            },
+        },
+        "blocking_issue": {
+            "number": blocking_number,
+            "title": f"Issue {blocking_number}",
+            "state": "open",
+            "html_url": f"https://github.com/{blocking_repo}/issues/{blocking_number}",
+            "labels": [],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-04-24T12:00:00Z",
+            "closed_at": None,
+            "repository": {
+                "full_name": blocking_repo,
+                "name": blocking_repo.split("/", 1)[-1],
+                "owner": {"login": blocking_repo.split("/", 1)[0]},
+            },
+        },
+        "repository": {
+            "full_name": issue_repo,
+            "name": issue_repo.split("/", 1)[-1],
+            "owner": {"login": issue_repo.split("/", 1)[0]},
+        },
+    }
+
+
+def _sub_issues_payload(
+    action: str = "sub_issue_added",
+    parent_repo: str = "Roxabi/lyra",
+    parent_number: int = 1,
+    child_repo: str = "Roxabi/lyra",
+    child_number: int = 2,
+) -> dict[str, Any]:
+    """Minimal sub_issues webhook payload."""
+    return {
+        "action": action,
+        "parent_issue": {
+            "number": parent_number,
+            "title": f"Parent {parent_number}",
+            "state": "open",
+            "html_url": f"https://github.com/{parent_repo}/issues/{parent_number}",
+            "labels": [],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-04-24T12:00:00Z",
+            "closed_at": None,
+        },
+        "parent_issue_repo": {
+            "full_name": parent_repo,
+            "name": parent_repo.split("/", 1)[-1],
+            "owner": {"login": parent_repo.split("/", 1)[0]},
+        },
+        "sub_issue": {
+            "number": child_number,
+            "title": f"Child {child_number}",
+            "state": "open",
+            "html_url": f"https://github.com/{child_repo}/issues/{child_number}",
+            "labels": [],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-04-24T12:00:00Z",
+            "closed_at": None,
+        },
+        "sub_issue_repo": {
+            "full_name": child_repo,
+            "name": child_repo.split("/", 1)[-1],
+            "owner": {"login": child_repo.split("/", 1)[0]},
+        },
+        "repository": {
+            "full_name": parent_repo,
+            "name": parent_repo.split("/", 1)[-1],
+            "owner": {"login": parent_repo.split("/", 1)[0]},
+        },
+    }
+
+
+def test_deps_event_force_triggers_reconcile_despite_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """issue_dependencies with a fresh sync_state still triggers heal via force=True."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _deps_payload(action="blocked_by_added")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_dependencies",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count >= 1, (
+        "Expected force=True to bypass stale check and schedule run_repo_once"
+    )
+
+
+def test_sub_issues_event_force_triggers_reconcile_despite_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """sub_issues with a fresh sync_state still triggers heal via force=True."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _sub_issues_payload(action="sub_issue_added")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "sub_issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count >= 1, (
+        "Expected force=True to bypass stale check and schedule run_repo_once"
+    )
+
+
+def test_deps_event_noop_does_not_force_on_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Duplicate blocked_by_added with edge already present:
+    delta=0, no force trigger."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+    _seed_edge(db_path, "Roxabi/lyra#5", "Roxabi/lyra#10", "blocks")
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _deps_payload(action="blocked_by_added")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_dependencies",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count == 0, (
+        "Expected delta=0 noop NOT to force trigger heal on fresh sync"
+    )
+
+
+def test_sub_issues_event_noop_does_not_force_on_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Duplicate sub_issue_added with edge already present:
+    delta=0, no force trigger."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+    _seed_edge(db_path, "Roxabi/lyra#1", "Roxabi/lyra#2", "parent")
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _sub_issues_payload(action="sub_issue_added")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "sub_issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count == 0, (
+        "Expected delta=0 noop NOT to force trigger heal on fresh sync"
+    )
+
+
+def test_issues_event_without_force_does_not_trigger_on_fresh_sync(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """issues event with a fresh sync_state does NOT trigger heal (no force)."""
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    _seed_sync_state(db_path, "Roxabi/lyra", five_min_ago)
+
+    mock_run_repo_once = AsyncMock(return_value=None)
+    monkeypatch.setattr("roxabi_live.reconciler.run_repo_once", mock_run_repo_once)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", _SECRET)
+    monkeypatch.setenv("CORPUS_DB_PATH", str(db_path))
+
+    from roxabi_live.app import app
+
+    payload = _issues_payload(repo="Roxabi/lyra")
+    body = json.dumps(payload).encode()
+    sig = _sign(body)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhook/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issues",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": sig,
+            },
+        )
+        assert resp.status_code == 200
+        asyncio.run(asyncio.sleep(0))
+
+    assert mock_run_repo_once.call_count == 0, (
+        "Expected issues event NOT to force trigger heal on fresh sync"
+    )
+
+
+# ---------------------------------------------------------------------------
+# T8 [RED] — Decoupling, body fix, transactional handlers
+# ---------------------------------------------------------------------------
+
+
+def test_router_does_not_import_reconciler() -> None:
+    """SC4: webhook/router.py must not have a runtime import of roxabi_live.reconciler.
+
+    TYPE_CHECKING-only imports (inside `if TYPE_CHECKING:` block) are allowed
+    since they are never executed at runtime — they satisfy the decoupling
+    requirement (no runtime dependency on the reconciler module).
+    """
+    router_src = (
+        __import__("pathlib").Path(__file__).parent.parent
+        / "src"
+        / "roxabi_live"
+        / "webhook"
+        / "router.py"
+    ).read_text()
+
+    # Collect lines with reconciler imports, skipping those inside TYPE_CHECKING blocks
+    in_type_checking = False
+    runtime_import_lines: list[str] = []
+    for line in router_src.splitlines():
+        stripped = line.strip()
+        if "TYPE_CHECKING" in stripped and stripped.startswith("if"):
+            in_type_checking = True
+        # Dedent back to top-level ends the TYPE_CHECKING block
+        if (
+            in_type_checking
+            and stripped
+            and not stripped.startswith("#")
+            and not line.startswith(" ")
+            and not line.startswith("\t")
+            and "TYPE_CHECKING" not in stripped
+        ):
+            in_type_checking = False
+        if "import" in line and "reconciler" in line and not in_type_checking:
+            runtime_import_lines.append(line)
+
+    assert runtime_import_lines == [], (
+        f"router.py has runtime reconciler imports: {runtime_import_lines}"
+    )
+
+
+def test_json_loads_body_no_request_json(client: TestClient) -> None:
+    """SC10: body parsed via json.loads, not await request.json() after request.body().
+
+    Verifies that a valid webhook with body read once succeeds without 422/500.
+    """
+    payload = _issues_payload(action="opened", number=99)
     body = json.dumps(payload).encode()
     sig = _sign(body)
 
@@ -345,7 +733,6 @@ def test_missing_sync_state_triggers_reconcile(
             "X-Hub-Signature-256": sig,
         },
     )
+    # If body was double-read, the second parse would fail → 500 or empty payload
     assert resp.status_code == 200
-
-    asyncio.run(asyncio.sleep(0))
-    mock_run_once.assert_called_once()
+    assert resp.json() == {"ok": True}

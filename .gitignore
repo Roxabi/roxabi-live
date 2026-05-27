@@ -19,3 +19,5 @@ coverage.xml
 .ruff_cache/
 .claude/worktrees/
 reports/
+# CocoIndex Code (ccc)
+/.cocoindex_code/

@@ -5,9 +5,13 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 
 SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS repo_allowlist (
+    repo TEXT PRIMARY KEY  -- "owner/name"
+);
+
 CREATE TABLE IF NOT EXISTS issues (
     key         TEXT PRIMARY KEY,
     repo        TEXT NOT NULL,
@@ -23,7 +27,8 @@ CREATE TABLE IF NOT EXISTS issues (
     lane        TEXT,
     priority    TEXT,
     size        TEXT,
-    status      TEXT
+    status      TEXT,
+    has_active_branch INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS labels (
@@ -46,9 +51,20 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_synced_at  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS pr_state (
+    repo                 TEXT NOT NULL,
+    number               INTEGER NOT NULL,
+    state                TEXT NOT NULL,
+    has_reviewed_label   INTEGER NOT NULL DEFAULT 0,
+    closing_issue_keys   TEXT,
+    updated_at           TEXT NOT NULL,
+    PRIMARY KEY (repo, number)
+);
+
 CREATE INDEX IF NOT EXISTS ix_edges_dst ON edges(dst_key);
 CREATE INDEX IF NOT EXISTS ix_issues_repo_state ON issues(repo, state);
 CREATE INDEX IF NOT EXISTS ix_labels_name ON labels(name);
+CREATE INDEX IF NOT EXISTS ix_pr_state_state ON pr_state(state);
 """
 
 
@@ -120,6 +136,26 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Migration 3 — edges PK includes `kind` (SCHEMA_VERSION 3 -> 4).
     # CREATE TABLE IF NOT EXISTS above cannot alter an existing PK.
     _migrate_edges_pk(conn)
+
+    # Migration 4 — repo_allowlist (SCHEMA_VERSION 4 -> 5).
+    # Seed from existing issues only if the allowlist is currently empty,
+    # so existing DBs get their current repos on first upgrade (opt-in).
+    # Fresh DBs start empty (allowlist table created above via SCHEMA_SQL).
+    count = conn.execute("SELECT COUNT(*) FROM repo_allowlist").fetchone()[0]
+    if count == 0:
+        conn.execute(
+            "INSERT OR IGNORE INTO repo_allowlist(repo)"
+            " SELECT DISTINCT repo FROM issues"
+        )
+        conn.commit()
+
+    # Migration 5 — branch/PR animation state (SCHEMA_VERSION 5 -> 6).
+    # pr_state table is created above via SCHEMA_SQL (CREATE TABLE IF NOT EXISTS).
+    # Only the issues column needs an explicit ALTER because the table already exists.
+    _alter_column(
+        conn,
+        "ALTER TABLE issues ADD COLUMN has_active_branch INTEGER NOT NULL DEFAULT 0",
+    )
 
 
 def bootstrap(db_path: pathlib.Path) -> None:

@@ -5,16 +5,25 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
-from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiosqlite
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
-from roxabi_live import reconciler
+from roxabi_live.config import get_settings
 from roxabi_live.webhook import hmac_auth
-from roxabi_live.webhook.handlers import handle_deps, handle_issues, handle_sub_issues
+from roxabi_live.webhook.handlers import (
+    handle_deps,
+    handle_issues,
+    handle_pull_request,
+    handle_ref_create,
+    handle_ref_delete,
+    handle_sub_issues,
+)
+
+if TYPE_CHECKING:
+    from roxabi_live.reconciler import TriggerHeal
 
 log = logging.getLogger(__name__)
 
@@ -23,25 +32,25 @@ MAX_WEBHOOK_BODY_BYTES = 25 * 1024 * 1024  # 25 MB
 router = APIRouter(tags=["webhook"])
 
 
-def _db_path() -> Path:
-    return Path(os.environ.get("CORPUS_DB_PATH", Path.home() / ".roxabi" / "corpus.db"))
+def _get_db_path(request: Request) -> Path:
+    return get_settings(request).corpus_db_path
 
 
-async def _maybe_trigger_heal(repo: str, conn: aiosqlite.Connection) -> None:
-    """Fire-and-forget reconcile if sync_state for repo is stale (> 1h) or missing."""
-    cur = await conn.execute(
-        "SELECT last_synced_at FROM sync_state WHERE repo = ?", (repo,)
-    )
-    row = await cur.fetchone()
-    now = datetime.now(timezone.utc)
-    stale = True
-    if row is not None:
-        last = datetime.fromisoformat(row[0]) if isinstance(row[0], str) else row[0]
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        stale = (now - last).total_seconds() > 3600
-    if stale:
-        asyncio.create_task(reconciler.run_once())
+def _get_webhook_secret(request: Request) -> str:
+    return get_settings(request).github_webhook_secret
+
+
+def get_trigger_heal(request: Request) -> TriggerHeal:
+    """FastAPI dependency: retrieve the injected TriggerHeal from app.state.
+
+    Raises 503 when lifespan has not run (e.g. bare TestClient(app) without a
+    `with` block), mirroring the guard pattern used by `_get_db_path` and
+    `_get_webhook_secret`.
+    """
+    trigger_heal: TriggerHeal | None = getattr(request.app.state, "trigger_heal", None)
+    if trigger_heal is None:
+        raise HTTPException(status_code=503, detail="trigger_heal not configured")
+    return trigger_heal
 
 
 async def _read_capped_body(request: Request) -> bytes:
@@ -73,40 +82,49 @@ async def _read_capped_body(request: Request) -> bytes:
 
 
 @router.post("/webhook/github")
-async def github_webhook(
+async def github_webhook(  # noqa: PLR0913 C901 — FastAPI deps + branching dispatcher
     request: Request,
     x_github_event: str | None = Header(default=None),
     x_hub_signature_256: str | None = Header(default=None),
+    trigger_heal: TriggerHeal = Depends(get_trigger_heal),
 ) -> dict[str, object]:
     """Receive and dispatch GitHub webhook events."""
     try:
         body = await asyncio.wait_for(_read_capped_body(request), timeout=30.0)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=408, detail="request timeout") from None
-    secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    secret = _get_webhook_secret(request)
     if not secret:
         raise HTTPException(status_code=503, detail="webhook not configured")
     if not hmac_auth.verify(body, x_hub_signature_256, secret):
         raise HTTPException(status_code=401, detail="invalid signature")
 
+    # Body already read above — parse directly, do not call request.json() again.
     try:
-        payload = json.loads(body)
+        payload: dict[str, object] = json.loads(body or b"{}")
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="invalid JSON payload") from None
 
-    async with aiosqlite.connect(_db_path()) as conn:
+    db_path = _get_db_path(request)
+    async with aiosqlite.connect(db_path) as conn:
         if x_github_event == "issues":
             await handle_issues(payload, conn)
-            repo: str = payload["repository"]["full_name"]
-            await _maybe_trigger_heal(repo, conn)
+            repo: str = str(payload["repository"]["full_name"])  # type: ignore[index]
+            await trigger_heal(repo, conn)
         elif x_github_event == "issue_dependencies":
-            await handle_deps(payload, conn)
-            repo = payload["repository"]["full_name"]
-            await _maybe_trigger_heal(repo, conn)
+            delta = await handle_deps(payload, conn)
+            repo = str(payload["repository"]["full_name"])  # type: ignore[index]
+            await trigger_heal(repo, conn, force=delta > 0)
         elif x_github_event == "sub_issues":
-            await handle_sub_issues(payload, conn)
-            repo = payload["repository"]["full_name"]
-            await _maybe_trigger_heal(repo, conn)
+            delta = await handle_sub_issues(payload, conn)
+            repo = str(payload["repository"]["full_name"])  # type: ignore[index]
+            await trigger_heal(repo, conn, force=delta > 0)
+        elif x_github_event == "create":
+            await handle_ref_create(payload, conn)
+        elif x_github_event == "delete":
+            await handle_ref_delete(payload, conn, db_path=db_path)
+        elif x_github_event == "pull_request":
+            await handle_pull_request(payload, conn)
         else:
             return {"ok": True, "ignored": x_github_event}
 
