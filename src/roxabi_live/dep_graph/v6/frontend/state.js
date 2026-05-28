@@ -1,22 +1,22 @@
-// state.js — shared app state + localStorage persistence
-export const LS = {
+// state.js — shared app state + sessionStorage persistence (per-tab)
+export const SS = {
   get(key, def) {
-    try { const v = localStorage.getItem(key); return v === null ? def : v; } catch { return def; }
+    try { const v = sessionStorage.getItem(key); return v === null ? def : v; } catch { return def; }
   },
   getJSON(key, def) {
-    try { const v = localStorage.getItem(key); return v === null ? def : JSON.parse(v); } catch { return def; }
+    try { const v = sessionStorage.getItem(key); return v === null ? def : JSON.parse(v); } catch { return def; }
   },
   set(key, val) {
-    try { localStorage.setItem(key, val); } catch {}
+    try { sessionStorage.setItem(key, val); } catch {}
   },
   setJSON(key, val) {
-    try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+    try { sessionStorage.setItem(key, JSON.stringify(val)); } catch {}
   },
 };
 
 // Migration: old repo was a string. Convert to array.
 function migrateRepo() {
-  const raw = localStorage.getItem('v6:repo');
+  const raw = sessionStorage.getItem('v6:repo');
   if (raw === null) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -30,21 +30,21 @@ function migrateRepo() {
 }
 
 export const state = {
-  view:      LS.get('v6:view', 'table'),
+  view:      SS.get('v6:view', 'table'),
   // multi-select arrays (empty = all)
   repo:      migrateRepo(),
-  milestone: LS.getJSON('v6:milestone', []),
-  priority:  LS.getJSON('v6:priority', []),
-  status:    LS.getJSON('v6:status', ['ready', 'blocked']),
-  search:    LS.get('v6:search', ''),
-  pivotRow:  LS.get('v6:pivotRow', 'milestone'),
-  pivotCol:  LS.get('v6:pivotCol', 'lane'),
-  listGroup: LS.get('v6:listGroup', 'milestone'),
-  listGroup2: LS.get('v6:listGroup2', 'none'),
-  tableGroup: LS.get('v6:tableGroup', 'parent'),
+  milestone: SS.getJSON('v6:milestone', []),
+  priority:  SS.getJSON('v6:priority', []),
+  status:    SS.getJSON('v6:status', ['ready', 'blocked']),
+  search:    SS.get('v6:search', ''),
+  pivotRow:  SS.get('v6:pivotRow', 'milestone'),
+  pivotCol:  SS.get('v6:pivotCol', 'lane'),
+  listGroup: SS.get('v6:listGroup', 'milestone'),
+  listGroup2: SS.get('v6:listGroup2', 'none'),
+  tableGroup: SS.get('v6:tableGroup', 'parent'),
   // graph options
-  showParents: LS.get('v6:showParents', 'false') === 'true',
-  showClosedUnderOpenEpic: LS.get('v6:showClosedUnderOpenEpic', 'false') === 'true',
+  showParents: SS.get('v6:showParents', 'false') === 'true',
+  showClosedUnderOpenEpic: SS.get('v6:showClosedUnderOpenEpic', 'false') === 'true',
   nodes:     [],
   edges:     [],
   // built once after load
@@ -53,7 +53,7 @@ export const state = {
   nodesByKey: new Map(),
 };
 
-const LS_KEYS = {
+const SS_KEYS = {
   view:        { key: 'v6:view',        json: false },
   repo:        { key: 'v6:repo',        json: true  },
   milestone:   { key: 'v6:milestone',   json: true  },
@@ -72,9 +72,9 @@ const LS_KEYS = {
 export function setState(patch) {
   Object.assign(state, patch);
   for (const [k, v] of Object.entries(patch)) {
-    const meta = LS_KEYS[k];
+    const meta = SS_KEYS[k];
     if (!meta) continue;
-    meta.json ? LS.setJSON(meta.key, v) : LS.set(meta.key, v);
+    meta.json ? SS.setJSON(meta.key, v) : SS.set(meta.key, v);
   }
 }
 
