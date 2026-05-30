@@ -224,17 +224,45 @@ async function loadRepos() {
   }
 }
 
+// Re-fetch graph data + repos and re-render, preserving view/filters (held in state).
+async function loadAndRender() {
+  const [data, repos] = await Promise.all([loadGraphData(), loadRepos()]);
+  const nodes = data.nodes || [];
+  const edges = data.edges || [];
+  annotateNodes(nodes, edges);
+  setState({ nodes, edges });
+  state.nodesByKey = new Map(nodes.map(n => [n.key, n]));
+  populateFilters(repos);
+  render();
+}
+
+// ─── Live refresh: poll /api/version, reload when corpus.db changes ─────────
+const POLL_MS = 15000;
+let lastVersion = null;
+
+async function fetchVersion() {
+  const resp = await fetch('/api/version');
+  if (!resp.ok) throw new Error(`/api/version ${resp.status}`);
+  return (await resp.json()).version;
+}
+
+function startPolling() {
+  setInterval(async () => {
+    if (document.hidden) return;  // skip while tab is backgrounded
+    try {
+      const v = await fetchVersion();
+      if (lastVersion !== null && v !== lastVersion) await loadAndRender();
+      lastVersion = v;
+    } catch { /* transient — retry next tick */ }
+  }, POLL_MS);
+}
+
 async function init() {
   restoreControls();
   try {
-    const [data, repos] = await Promise.all([loadGraphData(), loadRepos()]);
-    const nodes = data.nodes || [];
-    const edges = data.edges || [];
-    annotateNodes(nodes, edges);
-    setState({ nodes, edges });
-    state.nodesByKey = new Map(nodes.map(n => [n.key, n]));
-    populateFilters(repos);
-    render();
+    await loadAndRender();
+    try { lastVersion = await fetchVersion(); } catch { /* poller will retry */ }
+    startPolling();
   } catch (e) {
     errorMsg.hidden = false;
     errorMsg.textContent = `Failed to load graph: ${e.message}`;

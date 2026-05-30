@@ -76,6 +76,30 @@ async def _root() -> RedirectResponse:
     return RedirectResponse(url="/v6/")
 
 
+@app.get("/api/version")
+async def api_version(request: Request) -> dict[str, str]:
+    """Cheap change-detection token for the frontend poller.
+
+    Returns the max mtime (ns) across corpus.db and its WAL/SHM sidecars.
+    In WAL mode writes land in `-wal` first and only reach the main file on
+    checkpoint, so polling all three catches every mutation — webhook AND
+    reconciler — without touching SQLite.
+    """
+    db = get_settings(request).corpus_db_path
+    latest = 0
+    for path in (
+        db,
+        db.with_suffix(db.suffix + "-wal"),
+        db.with_suffix(db.suffix + "-shm"),
+    ):
+        try:
+            mtime = path.stat().st_mtime_ns
+        except OSError:
+            continue
+        latest = max(latest, mtime)
+    return {"version": str(latest)}
+
+
 @app.get("/health")
 async def health(request: Request) -> dict[str, Any]:
     """Health check — returns db path, reachability, and issue count."""
