@@ -45,6 +45,7 @@ artifacts:
 quality_gates:
   file_length:
     enabled: true
+    metric: sloc
     max_lines: 300
     globs: ["src/**/*.py"]
     exemptions_file: tools/file_exemptions.txt
