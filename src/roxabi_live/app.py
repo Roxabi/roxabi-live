@@ -11,6 +11,7 @@ from weakref import WeakSet
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from roxabi_live import reconciler
 from roxabi_live.api.issues import router as issues_router
@@ -60,6 +61,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="Roxabi Live", version="0.1.0", lifespan=lifespan)
+
+# Compress large JSON responses (e.g. /api/graph ~1.3 MB). compresslevel
+# pinned explicitly so the intent survives any future Starlette default change.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=9)
 
 app.include_router(issues_router)
 app.include_router(dep_graph_v6_router)
