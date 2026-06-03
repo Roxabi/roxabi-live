@@ -62,8 +62,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="Roxabi Live", version="0.1.0", lifespan=lifespan)
 
-# Compress large JSON responses (e.g. /api/graph ~1.3 MB) at gzip level 9.
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+# Compress large JSON responses (e.g. /api/graph ~1.3 MB). compresslevel
+# pinned explicitly so the intent survives any future Starlette default change.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=9)
 
 app.include_router(issues_router)
 app.include_router(dep_graph_v6_router)

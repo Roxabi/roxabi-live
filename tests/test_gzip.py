@@ -62,6 +62,7 @@ def graph_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return db_path
 
 
+@pytest.mark.asyncio
 async def test_api_graph_gzip_compressed(graph_db: Path) -> None:
     """/api/graph with Accept-Encoding: gzip must return Content-Encoding: gzip."""
     async with AsyncClient(
