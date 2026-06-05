@@ -14,6 +14,7 @@ import {
   ISSUES_QUERY,
   PRS_QUERY,
   REFS_QUERY,
+  REPO_BUNDLE_QUERY,
   REPOS_QUERY,
   STUB_ISSUE_QUERY,
 } from "./queries";
@@ -521,6 +522,39 @@ interface RefsData {
 }
 
 /**
+ * Pure D1 write: reset has_active_branch=0 for all issues in repo, then set=1
+ * for each matched issue number.  Reset-then-set as ONE atomic db.batch (no
+ * transient all-zero window).  Chunked at 90 to stay under D1 param limit.
+ *
+ * Extracted so both syncBranches (standalone REFS_QUERY fetch) and
+ * syncRepoBundle (bundled fetch) can reuse the same write logic.
+ */
+export async function applyActiveBranches(
+  db: D1Database,
+  repo: string,
+  matchedNumbers: number[],
+): Promise<void> {
+  if (matchedNumbers.length > 0) {
+    const matched = [...new Set(matchedNumbers)];
+    const stmts: D1PreparedStatement[] = [
+      db.prepare("UPDATE issues SET has_active_branch=0 WHERE repo=?").bind(repo),
+    ];
+    for (let i = 0; i < matched.length; i += 90) {
+      const chunk = matched.slice(i, i + 90);
+      const ph = chunk.map(() => "?").join(",");
+      stmts.push(
+        db
+          .prepare(`UPDATE issues SET has_active_branch=1 WHERE repo=? AND number IN (${ph})`)
+          .bind(repo, ...chunk),
+      );
+    }
+    await db.batch(stmts);
+  } else {
+    await db.prepare("UPDATE issues SET has_active_branch=0 WHERE repo=?").bind(repo).run();
+  }
+}
+
+/**
  * Compute has_active_branch for all issues in repo.
  * Uses reset-then-set (not NOT IN) chunked at <=90 to stay under D1 param limit.
  */
@@ -557,28 +591,7 @@ export async function syncBranches(
     if (!cursor) break;
   }
 
-  if (matchedNumbers.length > 0) {
-    // Reset-all-to-0 then set matched=1, as ONE atomic db.batch (D1 runs a batch
-    // in a single in-order transaction) → same end-state as Python's
-    // set-IN-then-zero-NOT-IN, but with no transient all-zero window AND no
-    // unbounded NOT IN. D1 caps ~100 bound params/stmt, so set is chunked at 90.
-    const matched = [...new Set(matchedNumbers)];
-    const stmts: D1PreparedStatement[] = [
-      db.prepare("UPDATE issues SET has_active_branch=0 WHERE repo=?").bind(repo),
-    ];
-    for (let i = 0; i < matched.length; i += 90) {
-      const chunk = matched.slice(i, i + 90);
-      const ph = chunk.map(() => "?").join(",");
-      stmts.push(
-        db
-          .prepare(`UPDATE issues SET has_active_branch=1 WHERE repo=? AND number IN (${ph})`)
-          .bind(repo, ...chunk),
-      );
-    }
-    await db.batch(stmts);
-  } else {
-    await db.prepare("UPDATE issues SET has_active_branch=0 WHERE repo=?").bind(repo).run();
-  }
+  await applyActiveBranches(db, repo, matchedNumbers);
 }
 
 // ---------------------------------------------------------------------------
@@ -614,6 +627,45 @@ const UPSERT_PR_STATE_SQL = `
       closing_issue_keys  = excluded.closing_issue_keys,
       updated_at          = excluded.updated_at
 `;
+
+/**
+ * Pure D1 write: flush PR upserts then close stale open PRs (diff in JS,
+ * chunk <=90).  Extracted so both syncPRs (standalone PRS_QUERY fetch) and
+ * syncRepoBundle (bundled fetch) can reuse the same write logic.
+ */
+export async function applyPrState(
+  db: D1Database,
+  repo: string,
+  upsertStmts: D1PreparedStatement[],
+  seenPrNumbers: number[],
+): Promise<void> {
+  await batchChunked(db, upsertStmts);
+
+  if (seenPrNumbers.length > 0) {
+    const openRows = await db
+      .prepare(`SELECT number FROM pr_state WHERE repo=? AND state='open'`)
+      .bind(repo)
+      .all<{ number: number }>();
+    const openNums = (openRows.results ?? []).map((r) => r.number);
+    const stale = openNums.filter((n) => !seenPrNumbers.includes(n));
+
+    for (let i = 0; i < stale.length; i += 90) {
+      const chunk = stale.slice(i, i + 90);
+      const ph = chunk.map(() => "?").join(",");
+      await db
+        .prepare(
+          `UPDATE pr_state SET state='closed' WHERE repo=? AND state='open' AND number IN (${ph})`,
+        )
+        .bind(repo, ...chunk)
+        .run();
+    }
+  } else {
+    await db
+      .prepare(`UPDATE pr_state SET state='closed' WHERE repo=? AND state='open'`)
+      .bind(repo)
+      .run();
+  }
+}
 
 /**
  * Sync pr_state for open PRs.
@@ -670,36 +722,203 @@ export async function syncPRs(
     if (!cursor) break;
   }
 
-  // Flush upserts
-  await batchChunked(db, upsertStmts);
+  await applyPrState(db, repo, upsertStmts, seenPrNumbers);
+}
 
-  // Close stale open PRs (diff in JS, chunk <=90)
-  if (seenPrNumbers.length > 0) {
-    // Get current open PR numbers for this repo
-    const openRows = await db
-      .prepare(`SELECT number FROM pr_state WHERE repo=? AND state='open'`)
-      .bind(repo)
-      .all<{ number: number }>();
-    const openNums = (openRows.results ?? []).map((r) => r.number);
-    const stale = openNums.filter((n) => !seenPrNumbers.includes(n));
+// ---------------------------------------------------------------------------
+// syncRepoBundle — bundled per-repo fetch (issues + refs + PRs in 1 subreq)
+// ---------------------------------------------------------------------------
 
-    for (let i = 0; i < stale.length; i += 90) {
-      const chunk = stale.slice(i, i + 90);
-      const ph = chunk.map(() => "?").join(",");
-      await db
-        .prepare(
-          `UPDATE pr_state SET state='closed' WHERE repo=? AND state='open' AND number IN (${ph})`,
-        )
-        .bind(repo, ...chunk)
-        .run();
+interface BundleData {
+  repository: {
+    issues: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: IssueNodeFull[];
+    };
+    refs: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: Array<{ name: string }>;
+    };
+    pullRequests: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: PRNode[];
+    };
+  };
+  rateLimit: { cost: number; remaining: number; resetAt: string };
+}
+
+/**
+ * Bundled per-repo sync — replaces three separate calls (syncRepoIssues +
+ * syncBranches + syncPRs) with a single REPO_BUNDLE_QUERY subrequest per loop
+ * iteration.  Three connections (issues / refs / pullRequests) share one HTTP
+ * round-trip; each has its own cursor and "done" flag.  The loop continues as
+ * long as any connection still has pages.
+ *
+ * Invariants preserved:
+ *   - sync_state written ONCE after the full loop (no partial watermark)
+ *   - reset-then-set has_active_branch via applyActiveBranches (atomic batch)
+ *   - PR stale-close via applyPrState
+ *   - edges collected into collectedEdges (flushed by caller in pass 2)
+ */
+export async function syncRepoBundle(
+  db: D1Database,
+  token: string,
+  owner: string,
+  name: string,
+  collectedEdges: Map<string, EdgeData>,
+): Promise<void> {
+  const repo = `${owner}/${name}`;
+
+  // Read watermark (null on first run → full fetch)
+  const syncStateRow = await db
+    .prepare("SELECT last_synced_at FROM sync_state WHERE repo=?")
+    .bind(repo)
+    .first<{ last_synced_at: string | null }>();
+  const since: string | null = syncStateRow?.last_synced_at ?? null;
+
+  // Per-connection cursor state
+  let issuesCursor: string | null = null;
+  let refsCursor: string | null = null;
+  let prsCursor: string | null = null;
+  let issuesDone = false;
+  let refsDone = false;
+  let prsDone = false;
+
+  // Accumulate branch matches + PR upserts across pages
+  const matchedBranchNumbers: number[] = [];
+  const prUpsertStmts: D1PreparedStatement[] = [];
+  const seenPrNumbers: number[] = [];
+  const nowIso = new Date().toISOString();
+
+  let pages = 0;
+
+  while (!(issuesDone && refsDone && prsDone)) {
+    if (pages >= MAX_PAGES) break;
+
+    const response: { data: BundleData } & Record<string, unknown> =
+      await ghGraphql<BundleData>(
+        REPO_BUNDLE_QUERY,
+        {
+          owner,
+          name,
+          issuesCursor: issuesDone ? null : issuesCursor,
+          refsCursor: issuesDone && refsDone ? null : refsCursor,
+          prsCursor: issuesDone && refsDone && prsDone ? null : prsCursor,
+          since,
+        },
+        token,
+      );
+    const data: BundleData = response.data;
+    const rl = data.rateLimit;
+    console.log(
+      `[sync] bundle ${repo} p${pages + 1} cost=${rl.cost} remaining=${rl.remaining}`,
+    );
+    pages++;
+
+    // --- issues ---
+    if (!issuesDone) {
+      const issuesPage = data.repository.issues;
+      const pageStmts: D1PreparedStatement[] = [];
+
+      for (const node of issuesPage.nodes) {
+        const key = canonicalKey(node.number, repo);
+        const labels = node.labels.nodes.map((l: { name: string }) => l.name);
+        const derived = extractFromLabels(labels);
+
+        pageStmts.push(
+          db.prepare(UPSERT_ISSUE_SQL).bind(
+            key,
+            repo,
+            node.number,
+            node.title,
+            node.state.toLowerCase(),
+            node.url,
+            node.createdAt,
+            node.updatedAt,
+            node.closedAt ?? null,
+            node.milestone?.title ?? null,
+            0, // is_stub
+            derived.lane,
+            derived.priority,
+            derived.size,
+            null, // status
+            0, // has_active_branch — set by applyActiveBranches after loop
+          ),
+        );
+        pageStmts.push(db.prepare("DELETE FROM labels WHERE issue_key=?").bind(key));
+        for (const lbl of labels) {
+          pageStmts.push(
+            db.prepare("INSERT OR IGNORE INTO labels VALUES (?,?)").bind(key, lbl),
+          );
+        }
+        collectEdges(node, repo, key, collectedEdges);
+      }
+
+      await batchChunked(db, pageStmts);
+
+      if (!issuesPage.pageInfo.hasNextPage || !issuesPage.pageInfo.endCursor) {
+        issuesDone = true;
+      } else {
+        issuesCursor = issuesPage.pageInfo.endCursor;
+      }
     }
-  } else {
-    // No open PRs at all — close any orphaned 'open' rows
-    await db
-      .prepare(`UPDATE pr_state SET state='closed' WHERE repo=? AND state='open'`)
-      .bind(repo)
-      .run();
+
+    // --- refs ---
+    if (!refsDone) {
+      const refsPage = data.repository.refs;
+      for (const node of refsPage.nodes) {
+        const m = BRANCH_ISSUE_RE.exec(node.name);
+        if (m) matchedBranchNumbers.push(parseInt(m[1], 10));
+      }
+      if (!refsPage.pageInfo.hasNextPage || !refsPage.pageInfo.endCursor) {
+        refsDone = true;
+      } else {
+        refsCursor = refsPage.pageInfo.endCursor;
+      }
+    }
+
+    // --- pullRequests ---
+    if (!prsDone) {
+      const prsPage = data.repository.pullRequests;
+      for (const pr of prsPage.nodes) {
+        const labelNames = pr.labels.nodes.map((l: { name: string }) => l.name);
+        const hasReviewedLabel = labelNames.includes("reviewed") ? 1 : 0;
+        const closingRefs = pr.closingIssuesReferences?.nodes ?? [];
+        const closingIssueKeys = closingRefs.map(
+          (ref: { number: number; repository: { nameWithOwner: string } }) =>
+            `${ref.repository.nameWithOwner}#${ref.number}`,
+        );
+        seenPrNumbers.push(pr.number);
+        prUpsertStmts.push(
+          db.prepare(UPSERT_PR_STATE_SQL).bind(
+            repo,
+            pr.number,
+            pr.state.toLowerCase(),
+            hasReviewedLabel,
+            JSON.stringify(closingIssueKeys),
+            nowIso,
+          ),
+        );
+      }
+      if (!prsPage.pageInfo.hasNextPage || !prsPage.pageInfo.endCursor) {
+        prsDone = true;
+      } else {
+        prsCursor = prsPage.pageInfo.endCursor;
+      }
+    }
   }
+
+  // Write sync_state ONCE after full loop
+  await db
+    .prepare(
+      "INSERT OR REPLACE INTO sync_state(repo,last_cursor,last_synced_at) VALUES(?,NULL,?)",
+    )
+    .bind(repo, nowIso)
+    .run();
+
+  // Apply branch + PR state (deferred so all pages are fetched first)
+  await applyActiveBranches(db, repo, matchedBranchNumbers);
+  await applyPrState(db, repo, prUpsertStmts, seenPrNumbers);
 }
 
 // ---------------------------------------------------------------------------
@@ -861,30 +1080,19 @@ export async function runSync(env: Env): Promise<void> {
       console.log(`[sync] pruned ${staleRepos.length} stale sync_state row(s)`);
     }
 
-    // Pass 1: issues + labels (edges collected but not flushed)
+    // Pass 1: bundled issues + refs + PRs per repo (1 subreq/repo instead of 3)
     const collectedEdges = new Map<string, EdgeData>();
     for (const { owner, name } of active) {
       try {
-        await syncRepoIssues(db, env.GITHUB_TOKEN, owner, name, collectedEdges);
+        await syncRepoBundle(db, env.GITHUB_TOKEN, owner, name, collectedEdges);
       } catch (err) {
         if (err instanceof GraphQLError && err.isAuth) throw err;
         console.error(`[sync] skipping ${owner}/${name}:`, err);
       }
     }
 
-    // Pass 2: flush all edges
+    // Pass 2: flush all edges (deferred to avoid cross-repo FK hazard)
     await flushEdges(db, collectedEdges);
-
-    // Branch + PR state (per repo)
-    for (const { owner, name } of active) {
-      try {
-        await syncBranches(db, env.GITHUB_TOKEN, owner, name);
-        await syncPRs(db, env.GITHUB_TOKEN, owner, name);
-      } catch (err) {
-        if (err instanceof GraphQLError && err.isAuth) throw err;
-        console.error(`[sync] branch/PR error for ${owner}/${name}:`, err);
-      }
-    }
 
     // Closed-hop pass
     const stubs = await closedHopPass(db, env.GITHUB_TOKEN);

@@ -86,6 +86,67 @@ query($owner: String!, $name: String!, $cursor: String) {
 }
 `;
 
+/**
+ * Bundled per-repo query — collapses ISSUES_QUERY + REFS_QUERY + PRS_QUERY into
+ * one subrequest per repo (3 independent GraphQL connections, each with its own
+ * cursor).  Reduces subreq count from 3×N+1 to N+1, staying under the Workers
+ * Free 50-subrequest cap for any org with ≤49 repos.
+ */
+export const REPO_BUNDLE_QUERY = `
+query(
+  $owner: String!
+  $name: String!
+  $issuesCursor: String
+  $refsCursor: String
+  $prsCursor: String
+  $since: DateTime
+) {
+  repository(owner: $owner, name: $name) {
+    issues(
+      first: 100
+      after: $issuesCursor
+      filterBy: { since: $since }
+      orderBy: { field: UPDATED_AT, direction: ASC }
+    ) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        title
+        state
+        url
+        createdAt
+        updatedAt
+        closedAt
+        milestone { title }
+        labels(first: 30) { nodes { name } }
+        subIssues(first: 50) { nodes { number repository { nameWithOwner } } }
+        parent { number repository { nameWithOwner } }
+        blockedBy(first: 50) { nodes { number repository { nameWithOwner } } }
+        blocking(first: 50) { nodes { number repository { nameWithOwner } } }
+      }
+    }
+    refs(refPrefix: "refs/heads/", first: 100, after: $refsCursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { name }
+    }
+    pullRequests(states: OPEN, first: 50, after: $prsCursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        state
+        # first: 25 — PRs closing more issues are out of scope for this tool
+        # (Roxabi convention: 1 PR ≈ 1 epic)
+        closingIssuesReferences(first: 25) {
+          nodes { number repository { nameWithOwner } }
+        }
+        labels(first: 20) { nodes { name } }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+`;
+
 export const STUB_ISSUE_QUERY = `
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {

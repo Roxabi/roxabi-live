@@ -14,6 +14,8 @@ import {
   resetAuthFailures,
   syncRepoIssues,
   syncBranches,
+  syncPRs,
+  syncRepoBundle,
   runSync,
 } from "./sync";
 import type { EdgeData } from "./sync";
@@ -607,6 +609,7 @@ vi.mock("./queries", () => ({
   ISSUES_QUERY: "ISSUES_QUERY",
   PRS_QUERY: "PRS_QUERY",
   REFS_QUERY: "REFS_QUERY",
+  REPO_BUNDLE_QUERY: "REPO_BUNDLE_QUERY",
   REPOS_QUERY: "REPOS_QUERY",
   STUB_ISSUE_QUERY: "STUB_ISSUE_QUERY",
 }));
@@ -772,6 +775,101 @@ describe("syncBranches", () => {
     const resetStmt = capturedStmts.find((s) => s.sql.includes("has_active_branch=0"));
     expect(resetStmt).toBeDefined();
     expect(resetStmt!.args).toEqual(["Roxabi/lyra"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// syncRepoBundle — bundled per-repo fetch (issues + refs + PRs in 1 subreq)
+// ---------------------------------------------------------------------------
+
+describe("syncRepoBundle", () => {
+  it("processes issues, applies branch flags, applies PR state, writes sync_state, collects edges — 1 ghGraphql call", async () => {
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+
+    // Single-page bundled response
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        rateLimit: { cost: 3, remaining: 4997 },
+        repository: {
+          issues: {
+            nodes: [
+              {
+                number: 10,
+                title: "Bundle test issue",
+                state: "OPEN",
+                url: "https://github.com/Roxabi/lyra/issues/10",
+                createdAt: "2024-01-01T00:00:00Z",
+                updatedAt: "2024-01-02T00:00:00Z",
+                closedAt: null,
+                milestone: null,
+                labels: { nodes: [{ name: "P2-medium" }] },
+                subIssues: { nodes: [] },
+                parent: null,
+                blockedBy: { nodes: [] },
+                blocking: { nodes: [] },
+              },
+            ],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+          refs: {
+            nodes: [{ name: "feat/10-bundle-test" }, { name: "main" }],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+          pullRequests: {
+            nodes: [
+              {
+                number: 5,
+                state: "OPEN",
+                closingIssuesReferences: {
+                  nodes: [{ number: 10, repository: { nameWithOwner: "Roxabi/lyra" } }],
+                },
+                labels: { nodes: [] },
+              },
+            ],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      },
+    });
+
+    const capturedStmts: FakeStmt[] = [];
+    const db = makeFakeDb((sql, args) => {
+      // sync_state SELECT → null (first run)
+      if (sql.includes("SELECT last_synced_at")) {
+        return makeFakeStmt(sql, args, []);
+      }
+      // applyPrState: SELECT open PRs → PR #5 open
+      if (sql.includes("SELECT number FROM pull_requests") && sql.includes("state='open'")) {
+        return makeFakeStmt(sql, args, [{ number: 5 }]);
+      }
+      const stmt = makeFakeStmt(sql, args, [], 1);
+      capturedStmts.push(stmt);
+      return stmt;
+    });
+
+    const edges = new Map<string, EdgeData>();
+    await syncRepoBundle(db, "fake-token", "Roxabi", "lyra", edges);
+
+    // Exactly 1 ghGraphql call with REPO_BUNDLE_QUERY
+    expect(mockGhGraphql).toHaveBeenCalledTimes(1);
+    expect(mockGhGraphql).toHaveBeenCalledWith(
+      "REPO_BUNDLE_QUERY",
+      expect.objectContaining({ owner: "Roxabi", name: "lyra", since: null }),
+      "fake-token",
+    );
+
+    // sync_state written
+    const syncStateStmt = capturedStmts.find((s) => s.sql.includes("sync_state"));
+    expect(syncStateStmt).toBeDefined();
+    expect(syncStateStmt!.args[0]).toBe("Roxabi/lyra");
+
+    // Edge collected for issue 10
+    expect(edges.has("Roxabi/lyra#10")).toBe(true);
+
+    // Branch apply: batch called (reset+set for issue 10)
+    const batchMock = (db as unknown as { batch: ReturnType<typeof vi.fn> }).batch;
+    expect(batchMock).toHaveBeenCalled();
   });
 });
 
