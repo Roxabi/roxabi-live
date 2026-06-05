@@ -66,7 +66,8 @@
 -- migration: 0001_initial.sql
 -- Applied via: wrangler d1 migrations apply DB [--env staging|production]
 
-PRAGMA journal_mode = WAL;
+-- NB: no `PRAGMA journal_mode = WAL` — D1 runs WAL natively and rejects the
+-- directive at migration-apply time.
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS repo_allowlist (
@@ -790,7 +791,7 @@ curl https://roxabi-live.<account>.workers.dev/api/graph | jq '.nodes | length' 
 [ ] Worker /api/graph node count ≥ M1 node count (compare vs Tailscale Funnel URL)
 [ ] Worker /api/version returns ISO timestamp within last 2h
 [ ] Worker /health (or /api/version) returns 200
-[ ] Cron trigger fired at least once: sync_control.last_synced_at updated in D1
+[ ] Cron trigger fired at least once: `SELECT MAX(last_synced_at) FROM sync_state` returns a timestamp within last 2h
 [ ] Webhook HMAC verify passes: test delivery from GitHub → staging endpoint OK
 [ ] Cloudflare Logpush configured → R2 bucket (persistent log storage for audit)
 [ ] CF Access OTP tested: mickael@bouly.io receives code, dashboard loads
