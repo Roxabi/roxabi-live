@@ -12,7 +12,7 @@ Let:
 - Exposes `~/.roxabi/corpus.db` via live HTTP API (`GET /api/*`)
 - Receives GitHub org webhooks at `POST /webhook/github` (HMAC-gated)
 - Frontend: static HTML/JS (dep-graph tab first, see spec #866)
-- Public via Tailscale Funnel on M₁ at `https://roxabituwer.goose-logarithm.ts.net/` (cloudflared setup deferred pending `roxabi.dev` zone migration from OVH)
+- Public via Tailscale Funnel on M₁ at `https://roxabituwer.goose-logarithm.ts.net/` (`roxabi.dev` zone migrated to Cloudflare as of 2026-06-05 → Cloudflare Tunnel now unblocked but not yet deployed; Funnel remains the live ingress)
 
 → `docs/ARCHITECTURE.md` (to be created)
 
