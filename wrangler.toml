@@ -13,7 +13,7 @@ crons = ["0 * * * *"]
 [[d1_databases]]
 binding        = "DB"
 database_name  = "roxabi-live-production"
-database_id    = "<PROD_D1_ID>"     # fill after: wrangler d1 create roxabi-live-production
+database_id    = "c3951107-146c-4a7d-a8a5-86d09e4570e9"
 migrations_dir = "worker/migrations"
 
 # ── Staging environment ──────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ name = "roxabi-live-staging"
 [[env.staging.d1_databases]]
 binding        = "DB"
 database_name  = "roxabi-live-staging"
-database_id    = "<STAGING_D1_ID>"  # fill after: wrangler d1 create roxabi-live-staging
+database_id    = "dd96d8cd-db6b-49ed-8218-53c88773aff4"
 migrations_dir = "worker/migrations"
 
 [env.staging.triggers]
