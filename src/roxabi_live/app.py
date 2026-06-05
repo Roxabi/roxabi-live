@@ -42,8 +42,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # never observe a half-migrated DB.
     corpus_schema.bootstrap(settings.corpus_db_path)
 
-    log.info("reconciler startup sync scheduled")
-    await reconciler.run_once(settings)
+    # Schedule startup sync as a background task so lifespan returns immediately.
+    # corpus.db is persistent — endpoints serve existing data while the sync
+    # refreshes it in the background. No HTTP 502 window on restart.
+    startup_sync: asyncio.Task[None] = asyncio.create_task(
+        reconciler.run_once(settings)
+    )
+    # _log_exc is a no-op while run_once swallows its own exceptions, but kept
+    # for parity with the heal tasks and to stay correct if that ever changes.
+    startup_sync.add_done_callback(reconciler._log_exc)
+    # WeakSet is safe here: the event loop holds a strong ref for the task's
+    # lifetime; the finally block cancels + gathers it on shutdown.
+    bg_tasks.add(startup_sync)
+    log.info("reconciler startup sync scheduled (background)")
     loop_task = reconciler.hourly_loop(settings)
     try:
         yield
