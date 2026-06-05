@@ -119,4 +119,4 @@ Logs also written to `~/.local/state/roxabi-live/logs/`:
 
 ### Tailscale Funnel
 
-On M1, the server is exposed publicly via Tailscale Funnel. No additional config is required beyond the standard Tailscale setup.
+On M1, the server is exposed publicly via Tailscale Funnel. Start it once with `tailscale funnel --bg 8000` (no `sudo` — the Tailscale operator is set to the host user); the binding survives `tailscaled` restarts. Verify with `tailscale funnel status`. Disable all bindings with `tailscale funnel --https=443 off`.
