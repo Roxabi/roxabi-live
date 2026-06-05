@@ -21,3 +21,8 @@ coverage.xml
 reports/
 # CocoIndex Code (ccc)
 /.cocoindex_code/
+
+# wrangler local secrets — never commit
+.dev.vars
+.dev.vars.*
+.wrangler/
