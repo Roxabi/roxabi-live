@@ -19,6 +19,7 @@ from roxabi_live.corpus.mutations import (
     add_edge_async,
     delete_issue_async,
     remove_edge_async,
+    rename_milestone_async,
     replace_labels_async,
     set_active_branch_async,
     upsert_edges_async,
@@ -162,9 +163,7 @@ async def _point_fetch_and_upsert_deps(
         return 0
 
 
-async def handle_deps(
-    payload: dict[str, Any], conn: aiosqlite.Connection
-) -> int:
+async def handle_deps(payload: dict[str, Any], conn: aiosqlite.Connection) -> int:
     """Process a GitHub `issue_dependencies` webhook event.
 
     Acted upon: blocked_by_added, blocked_by_removed.
@@ -227,9 +226,7 @@ async def handle_deps(
     return 0
 
 
-async def handle_sub_issues(
-    payload: dict[str, Any], conn: aiosqlite.Connection
-) -> int:
+async def handle_sub_issues(payload: dict[str, Any], conn: aiosqlite.Connection) -> int:
     """Process a GitHub `sub_issues` webhook event.
 
     Acted upon: sub_issue_added, sub_issue_removed.
@@ -419,3 +416,25 @@ async def handle_pull_request(
     except Exception:
         await conn.rollback()
         raise
+
+
+async def handle_milestone(payload: dict[str, Any], conn: aiosqlite.Connection) -> None:
+    """Process a GitHub `milestone` webhook event.
+
+    Only `edited` + title change is handled — renames the milestone in-place
+    without re-fetching all issues from GitHub.
+    """
+    action = payload.get("action")
+    if action != "edited":
+        return
+    changes: dict[str, Any] = cast(dict[str, Any], payload.get("changes") or {})
+    title_change: dict[str, Any] | None = cast(
+        "dict[str, Any] | None", changes.get("title")
+    )
+    if not title_change:
+        return
+    old_title: str = str(title_change["from"])
+    new_title: str = str(payload["milestone"]["title"])  # type: ignore[index]
+    repo: str = str(payload["repository"]["full_name"])  # type: ignore[index]
+    await rename_milestone_async(conn, repo, old_title, new_title)
+    await conn.commit()
