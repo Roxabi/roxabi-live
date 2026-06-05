@@ -16,6 +16,7 @@ from roxabi_live.webhook import hmac_auth
 from roxabi_live.webhook.handlers import (
     handle_deps,
     handle_issues,
+    handle_milestone,
     handle_pull_request,
     handle_ref_create,
     handle_ref_delete,
@@ -125,6 +126,8 @@ async def github_webhook(  # noqa: PLR0913 C901 — FastAPI deps + branching dis
             await handle_ref_delete(payload, conn, db_path=db_path)
         elif x_github_event == "pull_request":
             await handle_pull_request(payload, conn)
+        elif x_github_event == "milestone":
+            await handle_milestone(payload, conn)
         else:
             return {"ok": True, "ignored": x_github_event}
 

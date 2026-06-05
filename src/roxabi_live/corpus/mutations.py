@@ -40,6 +40,9 @@ SET_ACTIVE_BRANCH_ON_SQL = (
 SET_ACTIVE_BRANCH_OFF_SQL = (
     "UPDATE issues SET has_active_branch=0 WHERE repo=? AND number=?"
 )
+RENAME_MILESTONE_SQL = (
+    "UPDATE issues SET milestone = ? WHERE repo = ? AND milestone = ?"
+)
 
 
 async def upsert_issue_async(
@@ -186,3 +189,13 @@ async def upsert_pr_state_async(  # noqa: PLR0913
         UPSERT_PR_STATE_SQL,
         (repo, number, state, has_reviewed_label, closing_issue_keys_json, updated_at),
     )
+
+
+async def rename_milestone_async(
+    conn: aiosqlite.Connection, repo: str, old_title: str, new_title: str
+) -> None:
+    """Rename a milestone across all issues in a repo.
+
+    Runs inside the caller's transaction — no commit() here.
+    """
+    await conn.execute(RENAME_MILESTONE_SQL, (new_title, repo, old_title))
