@@ -1,13 +1,17 @@
 import { Hono } from "hono";
 import type { Env } from "./types";
 import { versionRoute } from "./api/version";
+import { webhookRoute } from "./webhook/handlers";
 
 const app = new Hono<{ Bindings: Env }>();
 
 // ── API routes — evaluated BEFORE the ASSETS fallback ───────────────────────
-// S1 scaffold wires only /health + /api/version. The issues / graph / webhook /
-// admin routes are added in their slices: S6 (#98), S5 (#97), S8 (#100).
+// S1 scaffold wires /health + /api/version. S5 (#97) adds POST /webhook/github.
+// Remaining slices: S6 (#98) issues/graph, S8 (#100) admin.
 app.get("/api/version", versionRoute);
+
+// POST /webhook/github — HMAC-verified GitHub org webhooks (S5, #97).
+app.post("/webhook/github", webhookRoute);
 
 // GET /health — db reachability + issue count (mirrors Python app.py::health).
 app.get("/health", async (c) => {
