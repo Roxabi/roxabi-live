@@ -6,8 +6,8 @@
  *   - D1 db.batch([...stmts]) replaces aiosqlite interactive transactions.
  *   - trigger_heal() calls are DROPPED (no in-process reconciler in CF Worker).
  *   - handleRefDelete uses env.DB directly (no fresh sqlite3.connect).
- *   - MAX_WEBHOOK_BODY_BYTES enforced via Content-Length header only (CF Workers
- *     buffer the body before the handler runs; streaming guard not needed).
+ *   - MAX_WEBHOOK_BODY_BYTES enforced via bodyBuffer.byteLength after arrayBuffer()
+ *     (authoritative check; Content-Length is spoofable and saves nothing).
  */
 
 import type { Context } from "hono";
@@ -33,10 +33,6 @@ import { fetchIssueDeps, GraphQLError } from "../sync/graphql";
 // ---------------------------------------------------------------------------
 
 const MAX_WEBHOOK_BODY_BYTES = 25 * 1024 * 1024; // 25 MB
-
-// Regex ported from .github/workflows/auto-merge.yml close-linked-issues job:
-// /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi
-const _CLOSING_KEYWORD_RE = /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi;
 
 // ---------------------------------------------------------------------------
 // Local helpers
@@ -69,7 +65,7 @@ function issueKey(
 export async function handleIssues(payload: Record<string, unknown>, db: D1Database): Promise<void> {
   const action = payload["action"] as string | undefined;
   const issue = payload["issue"] as Record<string, unknown>;
-  const repo = (payload["repository"] as Record<string, unknown>)["full_name"] as string;
+  const repo = ((payload["repository"] as Record<string, unknown> | undefined) ?? {})["full_name"] as string | undefined ?? "";
   const key = `${repo}#${issue["number"]}`;
 
   if (action === "deleted" || action === "transferred") {
@@ -100,7 +96,7 @@ export async function handleIssues(payload: Record<string, unknown>, db: D1Datab
     number: issue["number"] as number,
     title: issue["title"] as string,
     state: issue["state"] as string,
-    url: (issue["html_url"] as string | undefined) ?? "",
+    url: (issue["html_url"] as string | undefined) ?? null,
     created_at: (issue["created_at"] as string | null | undefined) ?? null,
     updated_at: (issue["updated_at"] as string | null | undefined) ?? null,
     closed_at: (issue["closed_at"] as string | null | undefined) ?? null,
@@ -419,10 +415,8 @@ export async function handlePullRequest(
 
   const body = String(pr["body"] ?? "");
   const issueNumbers: string[] = [];
-  // Reset lastIndex since the regex has the `g` flag — always start from 0.
-  _CLOSING_KEYWORD_RE.lastIndex = 0;
-  for (const match of body.matchAll(_CLOSING_KEYWORD_RE)) {
-    issueNumbers.push(match[1]);
+  for (const m of body.matchAll(/(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi)) {
+    issueNumbers.push(m[1]);
   }
   const closingIssueKeys: string[] = issueNumbers.map((n) => `${repoStr}#${n}`);
   const closingIssueKeysJson = JSON.stringify(closingIssueKeys);
@@ -453,10 +447,10 @@ export async function handleMilestone(
   }
   const oldTitle = String(titleChange["from"]);
   const newTitle = String(
-    ((payload["milestone"] as Record<string, unknown>)["title"] as string | undefined) ?? "",
+    ((payload["milestone"] as Record<string, unknown> | undefined ?? {})["title"] as string | undefined) ?? "",
   );
   const repo = String(
-    ((payload["repository"] as Record<string, unknown>)["full_name"] as string | undefined) ?? "",
+    ((payload["repository"] as Record<string, unknown> | undefined ?? {})["full_name"] as string | undefined) ?? "",
   );
   await renameMilestone(db, repo, oldTitle, newTitle).run();
 }
@@ -477,16 +471,6 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
   const secret = c.env.GITHUB_WEBHOOK_SECRET;
   if (!secret) {
     return c.json({ error: "webhook not configured" }, 503);
-  }
-
-  // Enforce body size cap via Content-Length header (CF Workers buffer the
-  // full body before the handler runs, so streaming guard is not needed).
-  const declaredLength = c.req.header("content-length");
-  if (declaredLength != null) {
-    const len = parseInt(declaredLength, 10);
-    if (!isNaN(len) && len > MAX_WEBHOOK_BODY_BYTES) {
-      return c.json({ error: "payload too large" }, 413);
-    }
   }
 
   const bodyBuffer = await c.req.arrayBuffer();
@@ -510,22 +494,27 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
   const event = c.req.header("x-github-event") ?? null;
   const db = c.env.DB;
 
-  if (event === "issues") {
-    await handleIssues(payload, db);
-  } else if (event === "issue_dependencies") {
-    await handleDeps(payload, db, c.env);
-  } else if (event === "sub_issues") {
-    await handleSubIssues(payload, db);
-  } else if (event === "create") {
-    await handleRefCreate(payload, db);
-  } else if (event === "delete") {
-    await handleRefDelete(payload, db, c.env);
-  } else if (event === "pull_request") {
-    await handlePullRequest(payload, db);
-  } else if (event === "milestone") {
-    await handleMilestone(payload, db);
-  } else {
-    return c.json({ ok: true, ignored: event });
+  try {
+    if (event === "issues") {
+      await handleIssues(payload, db);
+    } else if (event === "issue_dependencies") {
+      await handleDeps(payload, db, c.env);
+    } else if (event === "sub_issues") {
+      await handleSubIssues(payload, db);
+    } else if (event === "create") {
+      await handleRefCreate(payload, db);
+    } else if (event === "delete") {
+      await handleRefDelete(payload, db, c.env);
+    } else if (event === "pull_request") {
+      await handlePullRequest(payload, db);
+    } else if (event === "milestone") {
+      await handleMilestone(payload, db);
+    } else {
+      return c.json({ ok: true, ignored: event });
+    }
+  } catch (err) {
+    console.error("[webhook] unhandled handler error", err);
+    return c.json({ ok: true, error: "internal" });
   }
 
   return c.json({ ok: true });

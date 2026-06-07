@@ -78,7 +78,7 @@ export interface WebhookIssue {
   number: number;
   title: string;
   state: string;
-  url: string;
+  url: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   closed_at?: string | null;

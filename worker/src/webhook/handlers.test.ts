@@ -231,7 +231,7 @@ function makeIssuePayload(action: string, issueOverrides: Record<string, unknown
 // ---------------------------------------------------------------------------
 
 describe("handleIssues", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.clearAllMocks());
 
   describe("opened / edited (upsert path)", () => {
     it("calls db.batch (not loose .run) with issue upsert + label statements", async () => {
@@ -329,7 +329,7 @@ describe("handleIssues", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleDeps", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.clearAllMocks());
 
   const baseEnv: Env = makeEnv();
 
@@ -440,19 +440,22 @@ describe("handleDeps", () => {
       expect(result).toBe(0);
     });
 
-    it("guard: GraphQLError swallow — if catch is removed, this test would fail (evidence)", async () => {
-      // This tests the same path as above but verifies the negative:
-      // if the catch were bypassed, the promise would reject.
+    it("swallows non-GraphQLError — catch-all returns 0 for any error type", async () => {
+      // Arrange — generic Error (not GraphQLError); source catch returns 0 for all errors,
+      // only the log level differs (warn for GraphQLError, error for everything else).
       const { db } = captureDb();
-      const { GraphQLError } = await import("../sync/graphql");
-      vi.mocked(fetchIssueDeps).mockRejectedValue(new GraphQLError("auth failure", true));
+      vi.mocked(fetchIssueDeps).mockRejectedValue(new Error("boom"));
       const payload = {
         action: "blocked_by_added",
         blocked_issue: { number: 42 },
         repository: { full_name: REPO },
       };
-      // Must resolve (not throw) — proves catch is active
-      await expect(handleDeps(payload, db, { ...baseEnv, DB: db })).resolves.toBe(0);
+
+      // Act — must NOT throw
+      const result = await handleDeps(payload, db, { ...baseEnv, DB: db });
+
+      // Assert — catch swallows all errors, not just GraphQLError
+      expect(result).toBe(0);
     });
   });
 });
@@ -462,7 +465,7 @@ describe("handleDeps", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleSubIssues", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.clearAllMocks());
 
   describe("sub_issue_added", () => {
     it("calls addEdge with kind=parent (src=parent, dst=child)", async () => {
@@ -536,7 +539,7 @@ describe("handleSubIssues", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleRefCreate", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.clearAllMocks());
 
   it("calls setActiveBranch(db, repo, issueNumber, 1) for matching branch", async () => {
     // Arrange
@@ -606,7 +609,7 @@ describe("handleRefCreate", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleRefDelete", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.clearAllMocks());
 
   const baseEnv: Env = makeEnv();
 
@@ -665,7 +668,7 @@ describe("handleRefDelete", () => {
 // ---------------------------------------------------------------------------
 
 describe("handlePullRequest", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.clearAllMocks());
 
   function makePrPayload(prOverrides: Record<string, unknown> = {}) {
     return {
@@ -775,7 +778,7 @@ describe("handlePullRequest", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleMilestone", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.clearAllMocks());
 
   it("calls renameMilestone when action=edited with changes.title", async () => {
     // Arrange
@@ -854,7 +857,7 @@ describe("handleMilestone", () => {
 describe("webhookRoute", () => {
   const SECRET = "test-secret";
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.clearAllMocks());
 
   async function dispatchRequest(
     body: string,
@@ -947,21 +950,32 @@ describe("webhookRoute", () => {
   });
 
   describe("body exceeding 25 MB cap", () => {
-    it("returns 413 via Content-Length header guard", async () => {
-      // Arrange — declare large Content-Length without sending that many bytes
-      const body = JSON.stringify({ action: "opened" });
-      const bodyBytes = new TextEncoder().encode(body).buffer as ArrayBuffer;
-      const sig = await computeHmac(bodyBytes, SECRET);
-      const req = makeRequest(body, sig, "issues", {
-        "content-length": String(26 * 1024 * 1024), // 26 MB declared
-      });
-      const env = makeEnv();
-      const { c } = makeContext(req, env);
+    it("returns 413 when actual body byteLength exceeds 25 MB", async () => {
+      // Arrange — build a real oversized body (26 MB + 1 byte)
+      const huge = new Uint8Array(26 * 1024 * 1024 + 1);
+      const bodyBuffer = huge.buffer as ArrayBuffer;
+      // Valid secret in env so the 503 gate passes; no valid signature needed —
+      // the byteLength guard fires before HMAC verification.
+      const env = makeEnv({ GITHUB_WEBHOOK_SECRET: SECRET });
+
+      const headers: Record<string, string> = {};
+      const c = {
+        env: { ...env, DB: captureDb().db },
+        req: {
+          header: (name: string) => headers[name.toLowerCase()] ?? undefined,
+          arrayBuffer: () => Promise.resolve(bodyBuffer),
+        },
+        json: (data: unknown, status?: number) =>
+          new Response(JSON.stringify(data), {
+            status: status ?? 200,
+            headers: { "content-type": "application/json" },
+          }),
+      } as unknown as Parameters<typeof webhookRoute>[0];
 
       // Act
       const res = await webhookRoute(c);
 
-      // Assert
+      // Assert — byteLength guard fires, no Content-Length header needed
       expect(res.status).toBe(413);
     });
   });
