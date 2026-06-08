@@ -199,5 +199,18 @@ export const graphRoute = async (c: Context<{ Bindings: Env }>) => {
     kind: row.kind,
   }));
 
-  return c.json({ nodes, edges });
+  // (e) repos — live first (archived=0), then archived (archived=1), both alpha
+  interface RepoRow {
+    repo: string;
+    archived: number;
+  }
+  const repoRows = await c.env.DB.prepare(
+    "SELECT repo, archived FROM repos ORDER BY archived ASC, repo ASC",
+  ).all<RepoRow>();
+  const repos = (repoRows.results ?? []).map((r) => ({
+    repo: r.repo,
+    archived: Boolean(r.archived),
+  }));
+
+  return c.json({ nodes, edges, repos });
 };

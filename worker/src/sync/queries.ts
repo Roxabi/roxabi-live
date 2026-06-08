@@ -53,6 +53,23 @@ query($org: String!, $cursor: String) {
 }
 `;
 
+export const ARCHIVED_REPOS_QUERY = `
+query($org: String!, $cursor: String) {
+  organization(login: $org) {
+    repositories(
+      first: 100
+      after: $cursor
+      isArchived: true
+      orderBy: { field: NAME, direction: ASC }
+    ) {
+      pageInfo { hasNextPage endCursor }
+      nodes { nameWithOwner }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+`;
+
 export const REFS_QUERY = `
 query($owner: String!, $name: String!, $cursor: String) {
   repository(owner: $owner, name: $name) {

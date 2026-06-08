@@ -54,7 +54,7 @@ function makeFakeStmt(
 /** Simple in-memory FakeD1 builder. */
 function makeFakeDb(
   stmtFactory: (sql: string, args: unknown[]) => FakeStmt,
-): D1Database {
+): D1Database & { _recorded: FakeStmt[] } {
   const recorded: FakeStmt[] = [];
 
   const db = {
@@ -607,6 +607,7 @@ vi.mock("./graphql", () => ({
 }));
 
 vi.mock("./queries", () => ({
+  ARCHIVED_REPOS_QUERY: "ARCHIVED_REPOS_QUERY",
   ISSUES_QUERY: "ISSUES_QUERY",
   PRS_QUERY: "PRS_QUERY",
   REFS_QUERY: "REFS_QUERY",
@@ -1065,6 +1066,297 @@ describe("runSync", () => {
     const [key, body] = put.mock.calls[0];
     expect(key).toMatch(/^runs\/\d{4}-\d{2}-\d{2}\/.+\.json$/);
     expect(JSON.parse(body as string).outcome).toBe("halted");
+  });
+
+  // Prune + archived-repo tracking (#N) -------------------------------------
+
+  /**
+   * Builds a FakeD1 that drives runSync through the prune path:
+   *   isHalted=0 → lock acquired → allowlist=[Roxabi/roxabi-factory] →
+   *   ghGraphql returns live=[roxabi-factory] + archived=[roxabi-vault] →
+   *   DB SELECT DISTINCT queries return stale=[Roxabi/lyra] in issues/edges/pr_state/sync_state →
+   *   batchChunked invoked with DELETE stmts for Roxabi/lyra
+   *
+   * Callers replace ghGraphql mocks before calling makeFullSyncDb.
+   */
+  function makeFullSyncDb(opts: {
+    issueRepos?: string[];
+    edgeSrcRepos?: string[];
+    edgeDstRepos?: string[];
+    prStateRepos?: string[];
+    syncStateRepos?: string[];
+  } = {}) {
+    const {
+      issueRepos = ["Roxabi/lyra", "Roxabi/roxabi-factory"],
+      edgeSrcRepos = ["Roxabi/lyra"],
+      edgeDstRepos = [],
+      prStateRepos = ["Roxabi/lyra"],
+      syncStateRepos = ["Roxabi/lyra", "Roxabi/roxabi-factory"],
+    } = opts;
+
+    return makeFakeDb((sql, args) => {
+      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
+        return makeFakeStmt(sql, args, [{ key: "Roxabi/roxabi-factory" }]);
+      }
+      // Prune SELECT DISTINCT queries
+      if (sql.includes("SELECT DISTINCT repo FROM issues")) {
+        return makeFakeStmt(sql, args, issueRepos.map((r) => ({ repo: r })));
+      }
+      if (sql.includes("SELECT DISTINCT substr(src_key")) {
+        return makeFakeStmt(sql, args, edgeSrcRepos.map((r) => ({ repo: r })));
+      }
+      if (sql.includes("SELECT DISTINCT substr(dst_key")) {
+        return makeFakeStmt(sql, args, edgeDstRepos.map((r) => ({ repo: r })));
+      }
+      if (sql.includes("SELECT DISTINCT repo FROM pr_state")) {
+        return makeFakeStmt(sql, args, prStateRepos.map((r) => ({ repo: r })));
+      }
+      if (sql.includes("SELECT repo FROM sync_state")) {
+        return makeFakeStmt(sql, args, syncStateRepos.map((r) => ({ repo: r })));
+      }
+      // releaseSyncLock, writeRunAudit queries
+      return makeFakeStmt(sql, args, [], 1);
+    });
+  }
+
+  it("prunes issues/edges/pr_state/sync_state for a deleted repo (Roxabi/lyra)", async () => {
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+
+    // REPOS_QUERY → live: only roxabi-factory (lyra is gone)
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        organization: {
+          repositories: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [{ name: "roxabi-factory", owner: { login: "Roxabi" }, isArchived: false, isPrivate: false }],
+          },
+        },
+        rateLimit: { cost: 1, remaining: 5000, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+    // ARCHIVED_REPOS_QUERY → archived: roxabi-vault
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        organization: {
+          repositories: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [{ nameWithOwner: "Roxabi/roxabi-vault" }],
+          },
+        },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+    // syncRepoBundle calls (REPO_BUNDLE_QUERY) for roxabi-factory — empty result
+    mockGhGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        rateLimit: { cost: 1, remaining: 4998, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+
+    const db = makeFullSyncDb();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const env = makeEnv({ DB: db });
+    await expect(runSync(env)).resolves.toBeUndefined();
+
+    // Verify DELETE FROM issues was issued for Roxabi/lyra
+    const deletedIssueStmts = db._recorded.filter(
+      (s) => s.sql.includes("DELETE FROM issues") && s.args.includes("Roxabi/lyra"),
+    );
+    expect(deletedIssueStmts.length).toBeGreaterThan(0);
+
+    // Verify DELETE FROM edges was issued for Roxabi/lyra
+    const deletedEdgeStmts = db._recorded.filter(
+      (s) => s.sql.includes("DELETE FROM edges") && s.args.includes("Roxabi/lyra"),
+    );
+    expect(deletedEdgeStmts.length).toBeGreaterThan(0);
+  });
+
+  it("does NOT prune rows for an archived repo (roxabi-vault stays)", async () => {
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+
+    // REPOS_QUERY → live: only roxabi-factory
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        organization: {
+          repositories: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [{ name: "roxabi-factory", owner: { login: "Roxabi" }, isArchived: false, isPrivate: false }],
+          },
+        },
+        rateLimit: { cost: 1, remaining: 5000, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+    // ARCHIVED_REPOS_QUERY → archived: roxabi-vault (it IS in archived, not stale)
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        organization: {
+          repositories: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [{ nameWithOwner: "Roxabi/roxabi-vault" }],
+          },
+        },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+    // syncRepoBundle empty result for roxabi-factory
+    mockGhGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        rateLimit: { cost: 1, remaining: 4998, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+
+    // DB returns roxabi-vault as present in issues — but it's archived, so NOT stale
+    const db = makeFullSyncDb({
+      issueRepos: ["Roxabi/roxabi-vault", "Roxabi/roxabi-factory"],
+      edgeSrcRepos: [],
+      edgeDstRepos: [],
+      prStateRepos: [],
+      syncStateRepos: ["Roxabi/roxabi-vault", "Roxabi/roxabi-factory"],
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const env = makeEnv({ DB: db });
+    await expect(runSync(env)).resolves.toBeUndefined();
+
+    // No DELETE statements should target roxabi-vault
+    const deletedVaultStmts = db._recorded.filter(
+      (s) => s.sql.includes("DELETE") && s.args.includes("Roxabi/roxabi-vault"),
+    );
+    expect(deletedVaultStmts).toHaveLength(0);
+  });
+
+  it("skips all prune logic (warn) when live repo enumeration returns 0 repos", async () => {
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+
+    // REPOS_QUERY → live: empty (transient error)
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        organization: {
+          repositories: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [],
+          },
+        },
+        rateLimit: { cost: 1, remaining: 5000, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+    // ARCHIVED_REPOS_QUERY
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        organization: {
+          repositories: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [{ nameWithOwner: "Roxabi/roxabi-vault" }],
+          },
+        },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+
+    const db = makeFakeDb((sql, args) => {
+      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
+        return makeFakeStmt(sql, args, [{ key: "Roxabi/roxabi-factory" }]);
+      }
+      return makeFakeStmt(sql, args, [], 1);
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const env = makeEnv({ DB: db });
+    await expect(runSync(env)).resolves.toBeUndefined();
+
+    // Safety guard must have warned
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("live repo enumeration returned 0 repos"),
+    );
+
+    // No DELETE statements should have been issued
+    const deleteStmts = db._recorded.filter((s) => s.sql.includes("DELETE"));
+    expect(deleteStmts).toHaveLength(0);
+  });
+
+  it("upserts repos table with archived=1 when a repo moves live→archived", async () => {
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+
+    // REPOS_QUERY → roxabi-factory live (roxabi-vault is now archived, not in live list)
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        organization: {
+          repositories: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [{ name: "roxabi-factory", owner: { login: "Roxabi" }, isArchived: false, isPrivate: false }],
+          },
+        },
+        rateLimit: { cost: 1, remaining: 5000, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+    // ARCHIVED_REPOS_QUERY → roxabi-vault is now archived
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        organization: {
+          repositories: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [{ nameWithOwner: "Roxabi/roxabi-vault" }],
+          },
+        },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+    // syncRepoBundle empty result
+    mockGhGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        rateLimit: { cost: 1, remaining: 4998, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+
+    const db = makeFullSyncDb({
+      issueRepos: ["Roxabi/roxabi-vault", "Roxabi/roxabi-factory"],
+      edgeSrcRepos: [],
+      edgeDstRepos: [],
+      prStateRepos: [],
+      syncStateRepos: ["Roxabi/roxabi-vault", "Roxabi/roxabi-factory"],
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const env = makeEnv({ DB: db });
+    await expect(runSync(env)).resolves.toBeUndefined();
+
+    // The upsert INSERT stmt for Roxabi/roxabi-vault must use the archived=1 SQL variant
+    // (literal `1` is in the SQL text, not in bind args — only the repo name is bound)
+    const archivedUpsertStmts = db._recorded.filter(
+      (s) =>
+        s.sql.includes("INSERT INTO repos") &&
+        s.sql.includes("VALUES (?, 1)") &&
+        s.args.includes("Roxabi/roxabi-vault"),
+    );
+    expect(archivedUpsertStmts.length).toBeGreaterThan(0);
   });
 });
 
