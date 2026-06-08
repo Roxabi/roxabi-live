@@ -7,17 +7,19 @@ afterEach(() => {
 });
 
 /**
- * graph.ts fires 4 prepare().all() calls — dispatched by SQL content:
+ * graph.ts fires 5 prepare().all() calls — dispatched by SQL content:
  *   "FROM labels"   → labels fixture
  *   "FROM pr_state" → pr_state fixture
  *   "FROM issues"   → issues fixture
  *   "FROM edges"    → edges fixture
+ *   "FROM repos"    → repos fixture
  */
 function makeGraphEnv(
   labels: unknown[],
   prState: unknown[],
   issues: unknown[],
   edges: unknown[],
+  repos: unknown[] = [],
 ): Env {
   return {
     DB: {
@@ -27,6 +29,7 @@ function makeGraphEnv(
           if (sql.includes("FROM pr_state")) return { results: prState };
           if (sql.includes("FROM issues")) return { results: issues };
           if (sql.includes("FROM edges")) return { results: edges };
+          if (sql.includes("FROM repos")) return { results: repos };
           return { results: [] };
         },
       }),
@@ -409,11 +412,30 @@ describe("GET /api/graph", () => {
   });
 
   describe("empty database", () => {
-    it("returns {nodes:[], edges:[]} when all tables empty", async () => {
+    it("returns {nodes:[], edges:[], repos:[]} when all tables empty", async () => {
       const res = await app.request("/api/graph", {}, makeGraphEnv([], [], [], []));
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body).toEqual({ nodes: [], edges: [] });
+      expect(body).toEqual({ nodes: [], edges: [], repos: [] });
+    });
+  });
+
+  describe("repos field", () => {
+    it("returns live repos before archived repos, both alpha within group", async () => {
+      const repoRows = [
+        { repo: "Roxabi/roxabi-factory", archived: 0 },
+        { repo: "Roxabi/roxabi-live", archived: 0 },
+        { repo: "Roxabi/roxabi-vault", archived: 1 },
+      ];
+      // SQL ORDER BY archived ASC, repo ASC — fixture already sorted correctly
+      const res = await app.request("/api/graph", {}, makeGraphEnv([], [], [], [], repoRows));
+      expect(res.status).toBe(200);
+      const body = await res.json<{ repos: { repo: string; archived: boolean }[] }>();
+      expect(body.repos).toEqual([
+        { repo: "Roxabi/roxabi-factory", archived: false },
+        { repo: "Roxabi/roxabi-live", archived: false },
+        { repo: "Roxabi/roxabi-vault", archived: true },
+      ]);
     });
   });
 });

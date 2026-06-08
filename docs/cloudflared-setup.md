@@ -3,8 +3,20 @@ title: Cloudflared Tunnel Setup
 description: One-time provisioning of the Cloudflare Tunnel that exposes dashboard.roxabi.dev, and migration from M₂ to M₁.
 ---
 
+> [!WARNING]
+> **ARCHIVED — historical reference only (as of 2026-06-08)**
+>
+> This document describes infrastructure that was **never deployed** and is now superseded.
+> The production ingress is **Cloudflare Access + Worker** at `https://live.roxabi.dev`.
+> Tailscale Funnel on M₁ has been **retired** (`tailscale funnel --https=443 off`).
+> M₁ `live.service` is **stopped and disabled**. The `cloudflared` Tunnel approach
+> described below was deferred and ultimately skipped — the S9 cutover went directly
+> to the CF Worker + Access model (Email-OTP, no `cloudflared` daemon needed).
+>
+> See `docs/s9-cutover.md` for the completed cutover runbook.
+
 > [!NOTE]
-> **Status (updated 2026-06-05):** the `roxabi.dev` zone has **migrated to Cloudflare** (NS: `donald`/`mia.ns.cloudflare.com`), so the previous blocker is gone — Cloudflare Tunnel + Access **can** now front it. This setup is, however, **still not deployed**: production ingress remains **Tailscale Funnel** on M₁ at `https://roxabituwer.goose-logarithm.ts.net/` (see "Current deployment" below). This document is the runbook for the eventual migration to Cloudflare Tunnel.
+> **Status (updated 2026-06-05, superseded 2026-06-08):** the `roxabi.dev` zone has **migrated to Cloudflare** (NS: `donald`/`mia.ns.cloudflare.com`), so the previous blocker is gone — Cloudflare Tunnel + Access **can** now front it. This setup is, however, **still not deployed**: production ingress remains **Tailscale Funnel** on M₁ at `https://roxabituwer.goose-logarithm.ts.net/` (see "Current deployment" below). This document is the runbook for the eventual migration to Cloudflare Tunnel.
 
 ## Current deployment (Tailscale Funnel)
 
@@ -263,3 +275,5 @@ Webhook delivery:
 - Rotate the service token: Zero Trust → Service Tokens → `github-webhook` → **Refresh**. Update the worker secret. Redeliver a test webhook to confirm.
 - Rotate the identity-provider allowlist: edit the `Allow owner` policy (Step A.5).
 - After a `_halted` reconciler event (CRITICAL log emitted due to repeated auth failures): rotate the GitHub token, then restart the live service to clear the sticky halt state: `systemctl --user restart live.service`. The reconciler will resume on the next hourly tick.
+
+> **Note (2026-06-08 — decommissioned):** `live.service` no longer runs on M₁. The CF Worker handles sync via `ADMIN_TOKEN`-gated `/admin/sync` (manual) or hourly Cron Trigger. To clear a halted sync on the Worker: rotate `GITHUB_TOKEN` via `wrangler secret put`, then trigger `POST /admin/sync` with `Authorization: Bearer <ADMIN_TOKEN>`.
