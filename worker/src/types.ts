@@ -12,4 +12,10 @@ export interface Env {
   GITHUB_ORG: string;
   /** HMAC secret for webhook verification (S5, #97) — differs per env. */
   GITHUB_WEBHOOK_SECRET: string;
+  /**
+   * Halt-alert webhook (S8, #100) — optional. When the auth-halt breaker trips
+   * (2 consecutive auth failures), runSync POSTs a `sync_halted` event here.
+   * Set via `wrangler secret put NOTIFY_URL`; unset = alerts disabled.
+   */
+  NOTIFY_URL?: string;
 }
