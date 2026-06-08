@@ -8,7 +8,13 @@ handler, and the auth-halt → `NOTIFY_URL` alert all exist. This slice adds the
 two code hardening changes (typed `Env.NOTIFY_URL`, halt-alert test).
 
 This is the **hard go/no-go gate** before S9 cutover (#101): do **not** decommission M₁
-until Logpush → R2 is delivering prod logs, because M₁'s local logs vanish with it.
+until a **persistent prod audit trail** exists, because M₁'s local logs vanish with it.
+
+> **Update (#120):** Logpush was abandoned — it requires the Workers **Paid** plan and
+> this account is on **Free**. The persistent audit is instead written by the Worker
+> itself: `runSync` puts a per-run JSON summary to R2 bucket `roxabi-live-logs`
+> (`runs/<date>/<ts>.json`). The Logpush ops below are kept for reference only; the
+> live gate is now "a recent prod `runs/…json` exists in R2" — see `docs/s9-cutover.md`.
 
 ---
 
