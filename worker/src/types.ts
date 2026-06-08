@@ -18,4 +18,11 @@ export interface Env {
    * Set via `wrangler secret put NOTIFY_URL`; unset = alerts disabled.
    */
   NOTIFY_URL?: string;
+  /**
+   * R2 audit bucket (#120) — optional. After each sync run, runSync writes a
+   * compact JSON summary (counts, watermark, outcome) to `roxabi-live-logs` as a
+   * persistent audit trail. Free-plan alternative to Logpush (which needs Workers
+   * Paid). Unset = audit disabled (no-op); never blocks the sync.
+   */
+  LOGS?: R2Bucket;
 }

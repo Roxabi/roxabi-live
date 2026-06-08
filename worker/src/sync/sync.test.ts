@@ -17,6 +17,7 @@ import {
   syncPRs,
   syncRepoBundle,
   runSync,
+  writeRunAudit,
 } from "./sync";
 import type { EdgeData } from "./sync";
 import type { Env } from "../types";
@@ -1046,6 +1047,91 @@ describe("runSync", () => {
     await expect(runSync(env)).resolves.toBeUndefined();
 
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // R2 run-audit (#120) -----------------------------------------------------
+
+  it("writes a run-audit object to R2 (outcome=halted) on the halt path", async () => {
+    const { ghGraphql, GraphQLError } = await import("./graphql");
+    vi.mocked(ghGraphql).mockRejectedValue(new GraphQLError("auth", true));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const put = vi.fn().mockResolvedValue(undefined);
+
+    const env = makeEnv({ DB: makeHaltDb(), LOGS: { put } as unknown as R2Bucket });
+    await expect(runSync(env)).resolves.toBeUndefined();
+
+    expect(put).toHaveBeenCalledTimes(1);
+    const [key, body] = put.mock.calls[0];
+    expect(key).toMatch(/^runs\/\d{4}-\d{2}-\d{2}\/.+\.json$/);
+    expect(JSON.parse(body as string).outcome).toBe("halted");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// writeRunAudit (#120)
+// ---------------------------------------------------------------------------
+
+describe("writeRunAudit", () => {
+  function auditDb() {
+    return makeFakeDb((sql, args) => {
+      if (sql.includes("FROM issues")) return makeFakeStmt(sql, args, [{ c: 2650 }]);
+      if (sql.includes("FROM edges")) return makeFakeStmt(sql, args, [{ c: 2432 }]);
+      if (sql.includes("FROM pr_state")) return makeFakeStmt(sql, args, [{ c: 373 }]);
+      if (sql.includes("MAX(last_synced_at)"))
+        return makeFakeStmt(sql, args, [{ w: "2026-06-08T09:00:00Z" }]);
+      if (sql.includes("sync_control"))
+        return makeFakeStmt(sql, args, [
+          { key: "halted", value: "0" },
+          { key: "auth_failures", value: "0" },
+        ]);
+      return makeFakeStmt(sql, args, []);
+    });
+  }
+
+  it("no-ops when LOGS is unbound (never throws)", async () => {
+    const env = { DB: auditDb() } as unknown as Env;
+    await expect(
+      writeRunAudit(env, env.DB, { outcome: "success", stubs: 0, durationMs: 1 }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("puts a JSON snapshot with counts + watermark when LOGS is bound", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const put = vi.fn().mockResolvedValue(undefined);
+    const db = auditDb();
+    const env = { DB: db, LOGS: { put } } as unknown as Env;
+
+    await writeRunAudit(env, db, { outcome: "success", stubs: 4, durationMs: 1234 });
+
+    expect(put).toHaveBeenCalledTimes(1);
+    const [key, body, opts] = put.mock.calls[0];
+    expect(key).toMatch(/^runs\/\d{4}-\d{2}-\d{2}\/.+\.json$/);
+    expect(opts).toMatchObject({ httpMetadata: { contentType: "application/json" } });
+    const snap = JSON.parse(body as string);
+    expect(snap).toMatchObject({
+      outcome: "success",
+      stubs: 4,
+      durationMs: 1234,
+      issues: 2650,
+      edges: 2432,
+      prs: 373,
+      watermark: "2026-06-08T09:00:00Z",
+      halted: false,
+      authFailures: 0,
+    });
+  });
+
+  it("swallows R2 put failures (audit must not fail the sync)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const put = vi.fn().mockRejectedValue(new Error("R2 down"));
+    const db = auditDb();
+    const env = { DB: db, LOGS: { put } } as unknown as Env;
+
+    await expect(
+      writeRunAudit(env, db, { outcome: "error", stubs: 0, durationMs: 5 }),
+    ).resolves.toBeUndefined();
+    expect(put).toHaveBeenCalledTimes(1);
   });
 });
 
