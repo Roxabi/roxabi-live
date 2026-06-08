@@ -7,8 +7,11 @@ handler, and the auth-halt → `NOTIFY_URL` alert all exist. This slice adds the
 **observability config** and the **operational steps** that can't live in the repo, plus
 two code hardening changes (typed `Env.NOTIFY_URL`, halt-alert test).
 
-This is the **hard go/no-go gate** before S9 cutover (#101): do **not** decommission M₁
+This was the **hard go/no-go gate** before S9 cutover (#101): do **not** decommission M₁
 until a **persistent prod audit trail** exists, because M₁'s local logs vanish with it.
+
+> **Update (2026-06-08):** S9 cutover is **DONE**. The gate passed — prod R2 audit confirmed
+> before M₁ decommission. See `docs/s9-cutover.md` for the completed cutover record.
 
 > **Update (#120):** Logpush was abandoned — it requires the Workers **Paid** plan and
 > this account is on **Free**. The persistent audit is instead written by the Worker
