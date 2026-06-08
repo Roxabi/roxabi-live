@@ -11,6 +11,7 @@
 
 import { ghGraphql, GraphQLError } from "./graphql";
 import {
+  ARCHIVED_REPOS_QUERY,
   ISSUES_QUERY,
   PRS_QUERY,
   REFS_QUERY,
@@ -317,6 +318,43 @@ export async function enumerateOrgRepos(
     }
 
     const pageInfo: { hasNextPage: boolean; endCursor: string | null } = data.organization.repositories.pageInfo;
+    if (!pageInfo.hasNextPage) break;
+    cursor = pageInfo.endCursor;
+    if (!cursor) break;
+  }
+
+  return repos;
+}
+
+interface ArchivedReposData {
+  organization: {
+    repositories: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: Array<{ nameWithOwner: string }>;
+    };
+  };
+  rateLimit: { cost: number; remaining: number; resetAt: string };
+}
+
+export async function enumerateArchivedOrgRepos(
+  org: string,
+  token: string,
+): Promise<string[]> {
+  const repos: string[] = [];
+  let cursor: string | null = null;
+
+  while (true) {
+    const response: { data: ArchivedReposData } & Record<string, unknown> =
+      await ghGraphql<ArchivedReposData>(ARCHIVED_REPOS_QUERY, { org, cursor }, token);
+    const data: ArchivedReposData = response.data;
+    const rl = data.rateLimit;
+    console.log(`[sync] archived-repos cost=${rl.cost} remaining=${rl.remaining}`);
+
+    for (const node of data.organization.repositories.nodes) {
+      repos.push(node.nameWithOwner);
+    }
+
+    const pageInfo = data.organization.repositories.pageInfo;
     if (!pageInfo.hasNextPage) break;
     cursor = pageInfo.endCursor;
     if (!cursor) break;
@@ -1122,23 +1160,113 @@ export async function runSync(env: Env): Promise<void> {
     const orgRepos = await enumerateOrgRepos(env.GITHUB_ORG, env.GITHUB_TOKEN);
     const active = orgRepos.filter((r) => allowlist.includes(`${r.owner}/${r.name}`));
 
-    // Prune stale sync_state rows for repos removed from the allowlist (faithful
-    // to sync.py run_sync: diff sync_state against the active allowlist∩org set).
-    const activeKeys = new Set(active.map((r) => `${r.owner}/${r.name}`));
-    const syncStateRows = await db
-      .prepare("SELECT repo FROM sync_state")
-      .all<{ repo: string }>();
-    const staleRepos = (syncStateRows.results ?? [])
-      .map((r) => r.repo)
-      .filter((repo) => !activeKeys.has(repo));
-    if (staleRepos.length > 0) {
-      await batchChunked(
-        db,
-        staleRepos.map((repo) =>
-          db.prepare("DELETE FROM sync_state WHERE repo=?").bind(repo),
+    // Enumerate archived repos for tracking + prune safety.
+    const archivedRepoNames = await enumerateArchivedOrgRepos(
+      env.GITHUB_ORG,
+      env.GITHUB_TOKEN,
+    );
+    const liveRepoNames = orgRepos.map((r) => `${r.owner}/${r.name}`);
+
+    // SAFETY GUARD: if live enumeration returned 0 repos (transient API error),
+    // skip all prune logic to prevent wiping the entire DB. This is NOT a halt —
+    // sync continues with the (empty) active set, which means no issues are synced
+    // this run, but existing DB rows are preserved.
+    if (liveRepoNames.length === 0) {
+      console.warn("[sync] live repo enumeration returned 0 repos — skipping prune");
+    } else {
+      // Upsert repos table: live repos with archived=0, archived repos with archived=1.
+      const repoUpsertStmts: D1PreparedStatement[] = [
+        ...liveRepoNames.map((repo) =>
+          db
+            .prepare(
+              "INSERT INTO repos (repo, archived) VALUES (?, 0) ON CONFLICT(repo) DO UPDATE SET archived=excluded.archived",
+            )
+            .bind(repo),
         ),
-      );
-      console.log(`[sync] pruned ${staleRepos.length} stale sync_state row(s)`);
+        ...archivedRepoNames.map((repo) =>
+          db
+            .prepare(
+              "INSERT INTO repos (repo, archived) VALUES (?, 1) ON CONFLICT(repo) DO UPDATE SET archived=excluded.archived",
+            )
+            .bind(repo),
+        ),
+      ];
+      if (repoUpsertStmts.length > 0) {
+        await batchChunked(db, repoUpsertStmts);
+        console.log(
+          `[sync] upserted ${liveRepoNames.length} live + ${archivedRepoNames.length} archived repo(s)`,
+        );
+      }
+
+      // Full prune: delete issues (+ cascaded labels), edges, pr_state, sync_state
+      // for repos absent from live ∪ archived. Chunk at ≤90 to stay under D1 limits.
+      const knownRepos = new Set([...liveRepoNames, ...archivedRepoNames]);
+      const CHUNK = 90;
+
+      // Collect all repos currently in DB tables.
+      const [issueRepos, edgeSrcRepos, edgeDstRepos, prStateRepos, syncStateRepos] =
+        await Promise.all([
+          db.prepare("SELECT DISTINCT repo FROM issues").all<{ repo: string }>(),
+          db.prepare("SELECT DISTINCT substr(src_key, 1, instr(src_key,'#')-1) AS repo FROM edges").all<{ repo: string }>(),
+          db.prepare("SELECT DISTINCT substr(dst_key, 1, instr(dst_key,'#')-1) AS repo FROM edges").all<{ repo: string }>(),
+          db.prepare("SELECT DISTINCT repo FROM pr_state").all<{ repo: string }>(),
+          db.prepare("SELECT repo FROM sync_state").all<{ repo: string }>(),
+        ]);
+
+      const staleIssueRepos = (issueRepos.results ?? [])
+        .map((r) => r.repo)
+        .filter((r) => !knownRepos.has(r));
+      const staleEdgeRepos = [
+        ...(edgeSrcRepos.results ?? []).map((r) => r.repo),
+        ...(edgeDstRepos.results ?? []).map((r) => r.repo),
+      ].filter((r) => !knownRepos.has(r));
+      const stalePrStateRepos = (prStateRepos.results ?? [])
+        .map((r) => r.repo)
+        .filter((r) => !knownRepos.has(r));
+      const staleSyncStateRepos = (syncStateRepos.results ?? [])
+        .map((r) => r.repo)
+        .filter((r) => !knownRepos.has(r));
+
+      const pruneStmts: D1PreparedStatement[] = [];
+      for (let i = 0; i < staleIssueRepos.length; i += CHUNK) {
+        for (const repo of staleIssueRepos.slice(i, i + CHUNK)) {
+          pruneStmts.push(db.prepare("DELETE FROM issues WHERE repo=?").bind(repo));
+        }
+      }
+      // Deduplicate stale edge repos before chunking
+      const staleEdgeReposUniq = [...new Set(staleEdgeRepos)];
+      for (let i = 0; i < staleEdgeReposUniq.length; i += CHUNK) {
+        for (const repo of staleEdgeReposUniq.slice(i, i + CHUNK)) {
+          pruneStmts.push(
+            db
+              .prepare(
+                "DELETE FROM edges WHERE substr(src_key,1,instr(src_key,'#')-1)=? OR substr(dst_key,1,instr(dst_key,'#')-1)=?",
+              )
+              .bind(repo, repo),
+          );
+        }
+      }
+      for (let i = 0; i < stalePrStateRepos.length; i += CHUNK) {
+        for (const repo of stalePrStateRepos.slice(i, i + CHUNK)) {
+          pruneStmts.push(db.prepare("DELETE FROM pr_state WHERE repo=?").bind(repo));
+        }
+      }
+      for (let i = 0; i < staleSyncStateRepos.length; i += CHUNK) {
+        for (const repo of staleSyncStateRepos.slice(i, i + CHUNK)) {
+          pruneStmts.push(db.prepare("DELETE FROM sync_state WHERE repo=?").bind(repo));
+        }
+      }
+
+      if (pruneStmts.length > 0) {
+        await batchChunked(db, pruneStmts);
+        const totalStale = new Set([
+          ...staleIssueRepos,
+          ...staleEdgeReposUniq,
+          ...stalePrStateRepos,
+          ...staleSyncStateRepos,
+        ]).size;
+        console.log(`[sync] pruned data for ${totalStale} stale repo(s)`);
+      }
     }
 
     // Pass 1: bundled issues + refs + PRs per repo (1 subreq/repo instead of 3)
