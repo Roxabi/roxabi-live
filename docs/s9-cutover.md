@@ -18,10 +18,12 @@ Phase 4/5 until every go/no-go item is green.
 |---|---|---|
 | Prod custom domain | `wrangler.toml` top-level `routes` (`custom_domain = true`) | next **production** deploy provisions DNS + TLS for `live.roxabi.dev` → this Worker |
 
-`routes` is top-level, so it binds the **production** env only — a `--env staging`
-deploy never touches it (named envs don't inherit top-level keys, same as
-`[observability]` / `[[r2_buckets]]`). Merging this PR to **staging** is therefore
-inert for the domain; the route activates only on a deliberate prod deploy (Phase 4).
+`routes` is an **inheritable** wrangler key (unlike the *bindings* `[[d1_databases]]` /
+`[[r2_buckets]]`, which are not). So `[env.staging]` must explicitly set `routes = []`
+to break the inheritance — otherwise a `--env staging` deploy would inherit this entry
+and bind `live.roxabi.dev` to the **staging** Worker. With that override in place,
+merging this PR to **staging** is inert for the domain; the route activates only on a
+deliberate prod deploy (Phase 4). Ref: cloudflare/workers-sdk#13925.
 
 > ⚠️ **Security ordering gate.** The first production deploy after this merge creates
 > `live.roxabi.dev`. CF Access **App 1 (Email OTP)** must exist *before* that deploy,
@@ -35,7 +37,7 @@ Phases 1–3 of the epic runbook are already done — S9 is the cutover + decomm
 
 | Item | State | Evidence |
 |---|---|---|
-| Prod D1 `roxabi-live-production` | ✅ created + populated (~2647 issues) | `wrangler d1 execute DB --command "SELECT COUNT(*)…" --remote` |
+| Prod D1 `roxabi-live-production` | ✅ created + populated (~2647 issues) | `wrangler d1 execute roxabi-live-production --command "SELECT COUNT(*)…" --remote` |
 | Prod Worker `roxabi-live` | ✅ deployed (2026-06-08 09:24), secrets set | `wrangler deployments list` |
 | Staging Worker | ✅ healthy (200 on `/health`, `/api/version`, `/api/graph`) | `curl …roxabi-live-staging.mickael-b5e.workers.dev` |
 | M₁ baseline node count | **2658** | `curl …roxabituwer.goose-logarithm.ts.net/api/graph` |
@@ -62,21 +64,29 @@ it means the prod smoke test below **cannot** use the workers.dev URL. Resolve o
 [ ] Webhook HMAC verify passes: test delivery → endpoint returns 2xx
 [ ] PERSISTENT AUDIT (supersedes the old "Logpush configured" item):
       #120 Worker self-write audit confirmed in PROD —
-      a recent runs/<date>/<ts>.json exists in R2 bucket `roxabi-live-logs`
-      written by a prod run. (Logpush was abandoned — it needs Workers Paid;
-      the account is on Free. See docs/s8-cron-observability.md note + #120.)
+      a recent runs/<date>/<ts>.json exists in R2 bucket `roxabi-live-logs`,
+      written by a PROD tick. ⚠️ staging shares this bucket (same bucket_name),
+      so do NOT accept a bare "an object exists" — confirm the writer was prod:
+      capture the key via `wrangler tail roxabi-live` during a prod cron run, or
+      match the object's `watermark` to prod D1. (Logpush was abandoned — it
+      needs Workers Paid; account is Free. See docs/s8-cron-observability.md + #120.)
 [ ] CF Access OTP tested: mickael@bouly.io receives a code, dashboard loads
 [ ] CF Access Bypass on /webhook/* confirmed: no OTP prompt on the webhook URL
-[ ] Admin /admin/sync tested (manual trigger works behind OTP / service token)
+[ ] Admin /admin/sync tested (manual trigger works behind OTP / service token).
+      NB: edge Access is the ONLY gate today — Worker-side JWT verification is
+      deferred (#123, spec #92 open-Q7). Close #123 before Phase 5 decommission.
 [ ] sync_control.halted = '0' (not halted) on prod
 ```
 
 Verify the audit gate (prod):
 
 ```bash
-# most recent prod audit object (should be < 2h old)
+# NOTE: staging writes to this same bucket — list shows both. To attribute a
+# write to PROD, tail the prod Worker while a cron tick (or /admin/sync) runs:
+wrangler tail roxabi-live --format pretty   # watch for: [sync] audit written → runs/…
+# most recent audit object overall (staging+prod mixed; <2h old expected):
 wrangler r2 object list roxabi-live-logs --remote --prefix "runs/" 2>/dev/null | tail -5
-# inspect one:
+# inspect one (its `watermark` should match prod D1's MAX(last_synced_at)):
 wrangler r2 object get "roxabi-live-logs/runs/<date>/<ts>.json" --remote --pipe | jq .
 ```
 
@@ -120,6 +130,22 @@ curl -I https://live.roxabi.dev/api/version
 
 A browser hitting `live.roxabi.dev` should now be redirected to the Email-OTP login.
 
+**Verify Access policy precedence (App 2 Bypass must win over App 1 OTP) — do this
+BEFORE repointing the webhook in 4.3:**
+
+```bash
+# Webhook path = BYPASS (App 2): expect a Worker response (2xx/4xx), NOT a redirect
+# to the Access login (no Location → *.cloudflareaccess.com, no cf-access-* headers):
+curl -sS -D - -o /dev/null https://live.roxabi.dev/webhook/github | grep -iE 'HTTP/|^location|cf-access'
+# Dashboard path = OTP (App 1): expect a redirect to the Access login:
+curl -sS -D - -o /dev/null https://live.roxabi.dev/api/graph | grep -iE 'HTTP/|^location'
+```
+
+If `/webhook/github` bounces to the OTP login, App 2's precedence is wrong — fix the app
+order / path scope before 4.3 (otherwise GitHub deliveries will be challenged and fail).
+Path traversal (`/webhook/../admin`) cannot leak the Bypass: CF normalizes the path at
+the edge before policy eval, so it matches `/admin` (App 1 OTP), not App 2.
+
 ### 4.3 — Repoint the GitHub org webhook
 
 GitHub → Org **Roxabi** → Settings → Webhooks → the roxabi-live hook:
@@ -139,8 +165,11 @@ Only after `live.roxabi.dev` has served stably (webhook + a cron cycle) for a sa
 systemctl --user stop live.service
 systemctl --user disable live.service
 
-# Archive the local corpus (no longer the source of truth — D1 is):
+# Archive the local corpus (no longer the source of truth — D1 is). The glob
+# also grabs any -wal/-shm sidecars in case the last shutdown wasn't clean:
 cp ~/.roxabi/corpus.db ~/.roxabi/corpus.db.bak.$(date +%Y%m%d)
+cp ~/.roxabi/corpus.db-wal ~/.roxabi/corpus.db-wal.bak.$(date +%Y%m%d) 2>/dev/null || true
+cp ~/.roxabi/corpus.db-shm ~/.roxabi/corpus.db-shm.bak.$(date +%Y%m%d) 2>/dev/null || true
 
 # Retire the Tailscale Funnel that fronted live.service:
 tailscale funnel --https=443 off    # (or `tailscale serve reset` if it was the only serve)
@@ -168,6 +197,7 @@ systemctl --user start live.service
 # Remove the Worker custom domain:
 #   CF dashboard: Workers & Pages → roxabi-live → Domains & Routes → remove live.roxabi.dev
 #   (or revert the wrangler.toml `routes` block and redeploy prod)
+#   The [env.staging] `routes = []` override is inert during rollback — leave it.
 ```
 
 After Phase 5 (M₁ stopped, Funnel retired): rollback means redeploy-from-git + a fresh
