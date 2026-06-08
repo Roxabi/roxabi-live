@@ -10,10 +10,10 @@ binding   = "ASSETS"
 [triggers]
 crons = ["0 * * * *"]
 
-# Workers Logs (S8, #100) — emits invocation logs that Logpush ships to the
-# roxabi-live-logs R2 bucket for a persistent audit trail (go/no-go gate for S9
-# cutover, since M₁'s local logs disappear at decommission). head_sampling_rate=1
-# keeps every cron invocation (1/hour — volume is trivial).
+# Workers Logs (S8, #100) — in-dashboard invocation logs (~3-day retention on the
+# Free plan). NOTE: persistent export via Logpush→R2 needs Workers Paid; on Free the
+# persistent audit trail is instead written by the Worker itself (#120, see [[r2_buckets]]
+# below). head_sampling_rate=1 keeps every cron invocation (1/hour — volume is trivial).
 [observability]
 enabled = true
 head_sampling_rate = 1
@@ -23,6 +23,12 @@ binding        = "DB"
 database_name  = "roxabi-live-production"
 database_id    = "c3951107-146c-4a7d-a8a5-86d09e4570e9"
 migrations_dir = "worker/migrations"
+
+# R2 audit bucket (#120) — runSync writes a per-run JSON summary here (Free-plan
+# alternative to Logpush). Bucket created via `wrangler r2 bucket create roxabi-live-logs`.
+[[r2_buckets]]
+binding     = "LOGS"
+bucket_name = "roxabi-live-logs"
 
 # ── Staging environment ──────────────────────────────────────────────────────
 
@@ -42,3 +48,8 @@ crons = ["0 * * * *"]
 [env.staging.observability]
 enabled = true
 head_sampling_rate = 1
+
+# Named envs don't inherit top-level [[r2_buckets]] either — repeat for staging.
+[[env.staging.r2_buckets]]
+binding     = "LOGS"
+bucket_name = "roxabi-live-logs"

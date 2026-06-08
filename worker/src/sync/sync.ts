@@ -1030,6 +1030,61 @@ export async function closedHopPass(db: D1Database, token: string): Promise<numb
  * Org-wide sync: check halt → acquire lock → enumerate repos → two-pass issue
  * sync → branch/PR sync → closed-hop pass → release lock.
  */
+/** Outcome of a single runSync invocation, recorded in the R2 audit summary. */
+export type RunOutcome = "success" | "empty" | "halted" | "auth_error" | "error";
+
+/**
+ * Write a compact per-run audit summary to the R2 `LOGS` bucket (#120).
+ * Best-effort: no-op when LOGS is unbound, and never throws into runSync — a
+ * failed audit must not fail the sync. Free-plan alternative to Logpush→R2.
+ */
+export async function writeRunAudit(
+  env: Env,
+  db: D1Database,
+  info: { outcome: RunOutcome; stubs: number; durationMs: number },
+): Promise<void> {
+  const bucket = env.LOGS;
+  if (!bucket) return;
+  try {
+    const [issues, edges, prs, wm, ctrl] = await Promise.all([
+      db.prepare("SELECT COUNT(*) AS c FROM issues").first<{ c: number }>(),
+      db.prepare("SELECT COUNT(*) AS c FROM edges").first<{ c: number }>(),
+      db.prepare("SELECT COUNT(*) AS c FROM pr_state").first<{ c: number }>(),
+      db
+        .prepare("SELECT MAX(last_synced_at) AS w FROM sync_state")
+        .first<{ w: string | null }>(),
+      db
+        .prepare(
+          "SELECT key, value FROM sync_control WHERE key IN ('halted','auth_failures')",
+        )
+        .all<{ key: string; value: string }>(),
+    ]);
+    const ctrlMap = new Map(
+      (ctrl.results ?? []).map((r) => [r.key, r.value] as const),
+    );
+    const ts = new Date().toISOString();
+    const summary = {
+      ts,
+      outcome: info.outcome,
+      durationMs: info.durationMs,
+      stubs: info.stubs,
+      issues: issues?.c ?? 0,
+      edges: edges?.c ?? 0,
+      prs: prs?.c ?? 0,
+      watermark: wm?.w ?? null,
+      halted: ctrlMap.get("halted") === "1",
+      authFailures: Number(ctrlMap.get("auth_failures") ?? 0),
+    };
+    const key = `runs/${ts.slice(0, 10)}/${ts}.json`;
+    await bucket.put(key, JSON.stringify(summary), {
+      httpMetadata: { contentType: "application/json" },
+    });
+    console.log(`[sync] audit written → ${key} (${info.outcome})`);
+  } catch (err) {
+    console.error("[sync] audit write failed (non-fatal):", err);
+  }
+}
+
 export async function runSync(env: Env): Promise<void> {
   const db = env.DB;
 
@@ -1043,6 +1098,11 @@ export async function runSync(env: Env): Promise<void> {
     return;
   }
 
+  // Audit tracking (#120) — recorded to R2 in the finally block.
+  const t0 = Date.now();
+  let outcome: RunOutcome = "error";
+  let stubsCount = 0;
+
   try {
     const startedAt = new Date().toISOString();
     await db
@@ -1055,6 +1115,7 @@ export async function runSync(env: Env): Promise<void> {
     const allowlist = await getRepoAllowlist(db);
     if (allowlist.length === 0) {
       console.warn("[sync] repo_allowlist empty — nothing to sync");
+      outcome = "empty";
       return;
     }
 
@@ -1095,15 +1156,17 @@ export async function runSync(env: Env): Promise<void> {
     await flushEdges(db, collectedEdges);
 
     // Closed-hop pass
-    const stubs = await closedHopPass(db, env.GITHUB_TOKEN);
-    console.log(`[sync] completed — stubs=${stubs}`);
+    stubsCount = await closedHopPass(db, env.GITHUB_TOKEN);
+    console.log(`[sync] completed — stubs=${stubsCount}`);
 
     await resetAuthFailures(db);
+    outcome = "success";
   } catch (err) {
     const isAuth = err instanceof GraphQLError && err.isAuth;
     if (isAuth) {
       const failures = await incrementAuthFailures(db);
       console.error(`[sync] auth failure ${failures}/2`);
+      outcome = failures >= 2 ? "halted" : "auth_error";
       if (failures >= 2) {
         await haltSync(db);
         console.error("[sync] HALTED: 2 consecutive auth failures");
@@ -1117,9 +1180,15 @@ export async function runSync(env: Env): Promise<void> {
         }
       }
     } else {
+      outcome = "error";
       console.error("[sync] error:", err);
     }
   } finally {
     await releaseSyncLock(db);
+    await writeRunAudit(env, db, {
+      outcome,
+      stubs: stubsCount,
+      durationMs: Date.now() - t0,
+    });
   }
 }
