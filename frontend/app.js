@@ -257,11 +257,12 @@ async function loadAndRender() {
   annotateNodes(nodes, edges);
   setState({ nodes, edges });
   state.nodesByKey = new Map(nodes.map(n => [n.key, n]));
+  const reposWithIssues = new Set(nodes.map(n => n.repo));
   let repoData;
   if (data.repos && data.repos.length) {
-    repoData = data.repos;
+    repoData = data.repos.filter(r => reposWithIssues.has(r.repo)); // preserves server order (live→archived, alpha) + archived flag
   } else {
-    const derived = [...new Set(nodes.map(n => n.repo))].sort();
+    const derived = [...reposWithIssues].sort();
     repoData = derived.map(repo => ({ repo, archived: false }));
   }
   populateFilters(repoData);
