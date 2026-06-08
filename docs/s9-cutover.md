@@ -2,6 +2,27 @@
 
 Issue [#101](https://github.com/Roxabi/roxabi-live/issues/101) · epic [#92](https://github.com/Roxabi/roxabi-live/issues/92).
 
+## Status: DONE (2026-06-08)
+
+All go/no-go items confirmed green. Cutover and decommission completed.
+
+| Item | Result |
+|---|---|
+| CF Access Email-OTP app live (`live.roxabi.dev`) | ✅ confirmed |
+| Bypass policy on `/webhook/*` | ✅ confirmed — no OTP challenge |
+| `live.roxabi.dev` bound to prod Worker | ✅ DNS + TLS live, CF-Ray present |
+| GitHub org webhook repointed → `https://live.roxabi.dev/webhook/github` | ✅ 200 OK on redeliver |
+| R2 audit object present (prod cron confirmed via `wrangler tail`) | ✅ confirmed |
+| `ADMIN_TOKEN` set on prod + staging (PR #124) | ✅ set |
+| M₁ `live.service` stopped + disabled | ✅ done |
+| Tailscale Funnel retired (`tailscale funnel --https=443 off`) | ✅ done |
+| `~/.roxabi/corpus.db` archived as `.bak` on M₁ | ✅ done |
+| `~/projects/CLAUDE.md` updated (M₁ roles) | handled separately |
+
+The runbook below is preserved as historical reference.
+
+---
+
 Final slice of the Cloudflare serverless migration. Goes live on `live.roxabi.dev`
 and retires M₁. **No bridge** — the Tailscale Funnel
 (`https://roxabituwer.goose-logarithm.ts.net`) served as the interim public ingress

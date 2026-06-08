@@ -36,6 +36,7 @@ export const state = {
   milestone: SS.getJSON('v6:milestone', []),
   priority:  SS.getJSON('v6:priority', []),
   status:    SS.getJSON('v6:status', ['ready', 'blocked']),
+  label:     SS.getJSON('v6:label', []),
   search:    SS.get('v6:search', ''),
   pivotRow:  SS.get('v6:pivotRow', 'milestone'),
   pivotCol:  SS.get('v6:pivotCol', 'lane'),
@@ -59,6 +60,7 @@ const SS_KEYS = {
   milestone:   { key: 'v6:milestone',   json: true  },
   priority:    { key: 'v6:priority',    json: true  },
   status:      { key: 'v6:status',      json: true  },
+  label:       { key: 'v6:label',       json: true  },
   search:      { key: 'v6:search',      json: false },
   pivotRow:    { key: 'v6:pivotRow',    json: false },
   pivotCol:    { key: 'v6:pivotCol',    json: false },
@@ -231,6 +233,7 @@ export function applyFilters(nodes, filters) {
     const pri = n.priority ?? '(None)';
     if (filters.priority.length && !filters.priority.includes(pri)) return false;
     if (filters.status.length && !filters.status.includes(n._status)) return false;
+    if (filters.label?.length && !filters.label.some(l => (n.labels ?? []).includes(l))) return false;
     if (q) {
       const hay = `${n.key} ${n.title ?? ''} ${(n.labels ?? []).join(' ')}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -246,6 +249,7 @@ export function filteredNodes() {
     milestone: state.milestone,
     priority:  state.priority,
     status:    state.status,
+    label:     state.label,
     search:    state.search,
   });
 }
@@ -261,6 +265,7 @@ export function filteredNodesForGraph() {
     milestone: state.milestone,
     priority:  state.priority,
     status:    [],   // bypass status here, re-apply with override below
+    label:     state.label,
     search:    '',
   });
   if (state.status.length === 0) return base;
