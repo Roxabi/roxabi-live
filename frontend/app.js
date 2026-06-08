@@ -189,10 +189,17 @@ function isStructuredLabel(lbl) {
   return false;
 }
 
-function populateFilters(repos) {
+// repoData: Array<{ repo: string, archived: boolean }>
+function populateFilters(repoData) {
   const nodes = state.nodes;
 
-  const repoItems = repos.map(r => ({ value: r, label: r.split('/')[1] || r, tone: repoTone(r) }));
+  const live     = repoData.filter(r => !r.archived);
+  const archived = repoData.filter(r => r.archived);
+  const liveItems = live.map(r => ({ value: r.repo, label: r.repo.split('/')[1] || r.repo, tone: repoTone(r.repo) }));
+  const archItems = archived.map(r => ({ value: r.repo, label: r.repo.split('/')[1] || r.repo, tone: repoTone(r.repo), archived: true }));
+  const repoItems = archItems.length
+    ? [...liveItems, { separator: true, label: 'Archived' }, ...archItems]
+    : liveItems;
   msRepo.setItems(repoItems, state.repo);
 
   const msMap = new Map();
@@ -242,15 +249,22 @@ async function loadGraphData() {
 }
 
 // Re-fetch graph data and re-render, preserving view/filters (held in state).
+// Uses data.repos (Array<{repo,archived}>) from /api/graph; falls back to nodes-derived if absent.
 async function loadAndRender() {
-  const data = await loadGraphData();
+  const data  = await loadGraphData();
   const nodes = data.nodes || [];
   const edges = data.edges || [];
   annotateNodes(nodes, edges);
   setState({ nodes, edges });
   state.nodesByKey = new Map(nodes.map(n => [n.key, n]));
-  const repos = [...new Set(nodes.map(n => n.repo))].sort();
-  populateFilters(repos);
+  let repoData;
+  if (data.repos && data.repos.length) {
+    repoData = data.repos;
+  } else {
+    const derived = [...new Set(nodes.map(n => n.repo))].sort();
+    repoData = derived.map(repo => ({ repo, archived: false }));
+  }
+  populateFilters(repoData);
   render();
 }
 

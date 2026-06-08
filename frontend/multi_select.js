@@ -92,12 +92,27 @@ export class MultiSelect {
     ul.setAttribute('aria-multiselectable', 'true');
 
     for (const item of this.items) {
+      // Separator item — non-interactive divider
+      if (item.separator) {
+        const li = document.createElement('li');
+        li.className = 'ms-sep';
+        li.setAttribute('role', 'separator');
+        li.setAttribute('aria-hidden', 'true');
+        if (item.label) {
+          const span = document.createElement('span');
+          span.textContent = item.label;
+          li.appendChild(span);
+        }
+        ul.appendChild(li);
+        continue;
+      }
+
       const li = document.createElement('li');
       li.setAttribute('role', 'option');
       li.setAttribute('aria-selected', this.selected.has(item.value) ? 'true' : 'false');
 
       const lbl = document.createElement('label');
-      lbl.className = 'ms-item';
+      lbl.className = 'ms-item' + (item.archived ? ' ms-item-archived' : '');
 
       const cb = document.createElement('input');
       cb.type    = 'checkbox';
@@ -122,6 +137,14 @@ export class MultiSelect {
       } else {
         lbl.append(cb, span);
       }
+
+      if (item.archived) {
+        const sub = document.createElement('span');
+        sub.className = 'ms-sub';
+        sub.textContent = 'archived';
+        lbl.appendChild(sub);
+      }
+
       li.appendChild(lbl);
       ul.appendChild(li);
     }
