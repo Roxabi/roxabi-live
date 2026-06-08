@@ -172,10 +172,17 @@ msPriority.onChange  = vals => { clearPinned(); setState({ priority:  vals }); r
 msStatus.onChange    = vals => { clearPinned(); setState({ status:    vals }); render(); };
 
 // ─── Populate filter options after data load ──────────────────────────────
-function populateFilters(repos) {
+// repoData: Array<{ repo: string, archived: boolean }>
+function populateFilters(repoData) {
   const nodes = state.nodes;
 
-  const repoItems = repos.map(r => ({ value: r, label: r.split('/')[1] || r, tone: repoTone(r) }));
+  const live     = repoData.filter(r => !r.archived);
+  const archived = repoData.filter(r => r.archived);
+  const liveItems = live.map(r => ({ value: r.repo, label: r.repo.split('/')[1] || r.repo, tone: repoTone(r.repo) }));
+  const archItems = archived.map(r => ({ value: r.repo, label: r.repo.split('/')[1] || r.repo, tone: repoTone(r.repo), archived: true }));
+  const repoItems = archItems.length
+    ? [...liveItems, { separator: true, label: 'Archived' }, ...archItems]
+    : liveItems;
   msRepo.setItems(repoItems, state.repo);
 
   const msMap = new Map();
@@ -213,26 +220,23 @@ async function loadGraphData() {
   return resp.json();
 }
 
-async function loadRepos() {
-  try {
-    const resp = await fetch('/api/repos');
-    if (!resp.ok) throw new Error(`/api/repos ${resp.status}`);
-    const j = await resp.json();
-    return (j.repos ?? []).map(r => r.repo);
-  } catch {
-    return [...new Set(state.nodes.map(n => n.repo))].sort();
-  }
-}
-
-// Re-fetch graph data + repos and re-render, preserving view/filters (held in state).
+// Re-fetch graph data and re-render, preserving view/filters (held in state).
+// Uses data.repos (Array<{repo,archived}>) from /api/graph; falls back to nodes-derived if absent.
 async function loadAndRender() {
-  const [data, repos] = await Promise.all([loadGraphData(), loadRepos()]);
+  const data  = await loadGraphData();
   const nodes = data.nodes || [];
   const edges = data.edges || [];
   annotateNodes(nodes, edges);
   setState({ nodes, edges });
   state.nodesByKey = new Map(nodes.map(n => [n.key, n]));
-  populateFilters(repos);
+  let repoData;
+  if (data.repos && data.repos.length) {
+    repoData = data.repos;
+  } else {
+    const derived = [...new Set(nodes.map(n => n.repo))].sort();
+    repoData = derived.map(repo => ({ repo, archived: false }));
+  }
+  populateFilters(repoData);
   render();
 }
 
