@@ -360,6 +360,11 @@ main { padding-bottom: 24px; }
   font-family: 'Inter', sans-serif; font-size: 12px;
   color: var(--text-muted); transition: background 0.08s;
 }
+.ms-sub {
+  color: var(--text-dim);
+  font-size: 10px;
+  margin-left: 6px;
+}
 .ms-item:hover { background: var(--bg-card); color: var(--text); }
 .ms-item input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
 

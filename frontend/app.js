@@ -56,6 +56,7 @@ const msRepo      = new MultiSelect($('ms-repo-btn'),      $('ms-repo-panel'),  
 const msMilestone = new MultiSelect($('ms-milestone-btn'), $('ms-milestone-panel'), { placeholder: 'All milestones', clearBtn: $('ms-milestone-clear') });
 const msPriority  = new MultiSelect($('ms-priority-btn'),  $('ms-priority-panel'),  { placeholder: 'All priorities', clearBtn: $('ms-priority-clear') });
 const msStatus    = new MultiSelect($('ms-status-btn'),    $('ms-status-panel'),    { placeholder: 'All statuses',   clearBtn: $('ms-status-clear') });
+const msLabel     = new MultiSelect($('ms-label-btn'),     $('ms-label-panel'),     { placeholder: 'All labels',     clearBtn: $('ms-label-clear') });
 
 // ─── Render ───────────────────────────────────────────────────────────────
 function render() {
@@ -170,8 +171,24 @@ msRepo.onChange      = vals => { clearPinned(); setState({ repo:      vals }); r
 msMilestone.onChange = vals => { clearPinned(); setState({ milestone: vals }); render(); };
 msPriority.onChange  = vals => { clearPinned(); setState({ priority:  vals }); render(); };
 msStatus.onChange    = vals => { clearPinned(); setState({ status:    vals }); render(); };
+msLabel.onChange     = vals => { clearPinned(); setState({ label:     vals }); render(); };
 
 // ─── Populate filter options after data load ──────────────────────────────
+const PRIORITY_NAMES = { P0: 'Critical', P1: 'High', P2: 'Medium', P3: 'Low' };
+
+const LABEL_EXCLUDES = new Set([
+  'graph:lane/', 'size:', 'XS', 'S', 'M', 'L', 'XL',
+  'P0', 'priority:P0', 'P1-high', 'priority:high', 'priority:P1',
+  'P2-medium', 'priority:medium', 'priority:P2',
+  'P3-low', 'priority:low', 'priority: low', 'priority:P3',
+]);
+
+function isStructuredLabel(lbl) {
+  if (LABEL_EXCLUDES.has(lbl)) return true;
+  if (lbl.startsWith('graph:lane/') || lbl.startsWith('size:')) return true;
+  return false;
+}
+
 function populateFilters(repos) {
   const nodes = state.nodes;
 
@@ -186,11 +203,17 @@ function populateFilters(repos) {
   }
   const msItems = [...msMap.entries()]
     .sort((a, b) => a[1] - b[1])
-    .map(([v]) => ({ value: v, label: v }));
+    .map(([v]) => {
+      const node = nodes.find(n => (n.milestone_code ?? '(None)') === v);
+      const name = node?.milestone_name ?? null;
+      return { value: v, label: v, sublabel: (name && name !== v) ? name : undefined };
+    });
   msMilestone.setItems(msItems, state.milestone);
 
   msPriority.setItems(
-    ['P0', 'P1', 'P2', 'P3', '(None)'].map(v => ({ value: v, label: v })),
+    ['P0', 'P1', 'P2', 'P3', '(None)'].map(v => ({
+      value: v, label: v, sublabel: PRIORITY_NAMES[v],
+    })),
     state.priority
   );
 
@@ -198,6 +221,11 @@ function populateFilters(repos) {
     ['ready', 'blocked', 'done'].map(v => ({ value: v, label: v })),
     state.status
   );
+
+  const allLabels = [...new Set(nodes.flatMap(n => n.labels ?? []))]
+    .filter(l => !isStructuredLabel(l))
+    .sort();
+  msLabel.setItems(allLabels.map(l => ({ value: l, label: l })), state.label);
 }
 
 function restoreControls() {
@@ -213,25 +241,15 @@ async function loadGraphData() {
   return resp.json();
 }
 
-async function loadRepos() {
-  try {
-    const resp = await fetch('/api/repos');
-    if (!resp.ok) throw new Error(`/api/repos ${resp.status}`);
-    const j = await resp.json();
-    return (j.repos ?? []).map(r => r.repo);
-  } catch {
-    return [...new Set(state.nodes.map(n => n.repo))].sort();
-  }
-}
-
-// Re-fetch graph data + repos and re-render, preserving view/filters (held in state).
+// Re-fetch graph data and re-render, preserving view/filters (held in state).
 async function loadAndRender() {
-  const [data, repos] = await Promise.all([loadGraphData(), loadRepos()]);
+  const data = await loadGraphData();
   const nodes = data.nodes || [];
   const edges = data.edges || [];
   annotateNodes(nodes, edges);
   setState({ nodes, edges });
   state.nodesByKey = new Map(nodes.map(n => [n.key, n]));
+  const repos = [...new Set(nodes.map(n => n.repo))].sort();
   populateFilters(repos);
   render();
 }
