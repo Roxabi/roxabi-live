@@ -3,6 +3,21 @@ main = "worker/src/index.ts"
 compatibility_date = "2025-01-01"
 # NO nodejs_compat — Web Crypto is available natively in the Workers runtime.
 
+# Production custom domain (S9 cutover, #101). With `custom_domain = true`
+# Cloudflare provisions the DNS record + edge TLS cert for live.roxabi.dev and
+# binds it to this Worker on the next production deploy.
+# Top-level `routes` apply to the PRODUCTION env ONLY — named environments
+# ([env.staging]) do NOT inherit it, so a `--env staging` deploy never binds it
+# (same non-inheritance as [observability] / [[r2_buckets]] below).
+# ⚠️ SECURITY GATE: this route takes effect on the next *production* deploy
+# (push to `main`, or a manual `wrangler deploy`). CF Access App 1 (Email OTP,
+# all paths) MUST already exist BEFORE that deploy — otherwise the dashboard is
+# publicly reachable at https://live.roxabi.dev with no auth.
+# See docs/s9-cutover.md → Phase 4 (Access apps precede the custom domain).
+routes = [
+  { pattern = "live.roxabi.dev", custom_domain = true },
+]
+
 [assets]
 directory = "./frontend"
 binding   = "ASSETS"
