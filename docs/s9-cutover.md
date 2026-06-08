@@ -73,8 +73,13 @@ it means the prod smoke test below **cannot** use the workers.dev URL. Resolve o
 [ ] CF Access OTP tested: mickael@bouly.io receives a code, dashboard loads
 [ ] CF Access Bypass on /webhook/* confirmed: no OTP prompt on the webhook URL
 [ ] Admin /admin/sync tested (manual trigger works behind OTP / service token).
-      NB: edge Access is the ONLY gate today — Worker-side JWT verification is
-      deferred (#123, spec #92 open-Q7). Close #123 before Phase 5 decommission.
+      NB: #123 closed via the ADMIN_TOKEN variant (shared-secret Bearer gate on
+      /admin/*, constant-time compare; PR #124) — NOT the Access JWKS/JWT variant
+      (deferred to the multi-tenant rebuild). The gate is SAFE-WHEN-UNSET, so it is
+      inert until the secret is set. Before Phase 5, set it on prod (+ staging):
+        printf %s "<random>" | wrangler secret put ADMIN_TOKEN --config ../wrangler.toml
+        printf %s "<random>" | wrangler secret put ADMIN_TOKEN --env staging --config ../wrangler.toml
+      Then /admin/* also requires `Authorization: Bearer <ADMIN_TOKEN>` (edge Access stays).
 [ ] sync_control.halted = '0' (not halted) on prod
 ```
 

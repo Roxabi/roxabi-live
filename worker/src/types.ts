@@ -25,4 +25,11 @@ export interface Env {
    * Paid). Unset = audit disabled (no-op); never blocks the sync.
    */
   LOGS?: R2Bucket;
+  /**
+   * Defense-in-depth token for /admin/* endpoints (#123). When set, ALL /admin/*
+   * requests must supply `Authorization: Bearer <token>` matching this value.
+   * Unset = no Worker-side gate (edge Cloudflare Access / Email-OTP remains the
+   * only guard). Set via `wrangler secret put ADMIN_TOKEN` to enable the gate.
+   */
+  ADMIN_TOKEN?: string;
 }
