@@ -5,6 +5,7 @@ import { graphRoute } from "./api/graph";
 import { listIssuesRoute, getIssueRoute } from "./api/issues";
 import { adminSyncRoute } from "./api/admin";
 import { webhookRoute } from "./webhook/handlers";
+import { checkAdminAuth } from "./api/auth";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -25,7 +26,18 @@ app.get("/api/graph", graphRoute);
 app.get("/api/issues", listIssuesRoute);
 app.get("/api/issues/*", getIssueRoute);
 
-// POST /admin/sync — out-of-band sync trigger; Access edge enforces OTP (S6, #98).
+// ── /admin/* — defense-in-depth ADMIN_TOKEN gate (#123) ─────────────────────
+// When ADMIN_TOKEN is set, ALL /admin/* requests must carry
+// `Authorization: Bearer <token>`. Unset = gate disabled (edge Access only).
+// This middleware fires before any /admin route handler so future admin routes
+// are automatically covered without each handler needing its own auth check.
+app.use("/admin/*", async (c, next) => {
+  const deny = checkAdminAuth(c.req.raw, c.env.ADMIN_TOKEN);
+  if (deny) return deny;
+  await next();
+});
+
+// POST /admin/sync — out-of-band sync trigger (#123: token-gated above).
 app.post("/admin/sync", adminSyncRoute);
 
 // GET /health — db reachability + issue count (mirrors Python app.py::health).
