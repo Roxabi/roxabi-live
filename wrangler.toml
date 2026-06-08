@@ -10,6 +10,14 @@ binding   = "ASSETS"
 [triggers]
 crons = ["0 * * * *"]
 
+# Workers Logs (S8, #100) — emits invocation logs that Logpush ships to the
+# roxabi-live-logs R2 bucket for a persistent audit trail (go/no-go gate for S9
+# cutover, since M₁'s local logs disappear at decommission). head_sampling_rate=1
+# keeps every cron invocation (1/hour — volume is trivial).
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [[d1_databases]]
 binding        = "DB"
 database_name  = "roxabi-live-production"
@@ -29,3 +37,8 @@ migrations_dir = "worker/migrations"
 
 [env.staging.triggers]
 crons = ["0 * * * *"]
+
+# Named environments do not inherit top-level [observability] — repeat per env.
+[env.staging.observability]
+enabled = true
+head_sampling_rate = 1

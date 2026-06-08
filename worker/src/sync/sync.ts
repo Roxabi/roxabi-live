@@ -1107,7 +1107,7 @@ export async function runSync(env: Env): Promise<void> {
       if (failures >= 2) {
         await haltSync(db);
         console.error("[sync] HALTED: 2 consecutive auth failures");
-        const notifyUrl = (env as { NOTIFY_URL?: string }).NOTIFY_URL;
+        const notifyUrl = env.NOTIFY_URL;
         if (notifyUrl) {
           await fetch(notifyUrl, {
             method: "POST",

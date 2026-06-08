@@ -998,6 +998,55 @@ describe("runSync", () => {
     );
     errorSpy.mockRestore();
   });
+
+  // Halt-alert POST path (S8, #100) ----------------------------------------
+
+  // Builds a FakeD1 that drives runSync straight to the auth-halt branch
+  // (isHalted=0 → lock acquired → one allowlist repo → ghGraphql throws auth →
+  // auth_failures=2 → haltSync). Shared by the two NOTIFY_URL tests below.
+  function makeHaltDb() {
+    return makeFakeDb((sql, args) => {
+      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
+        return makeFakeStmt(sql, args, [{ key: "Roxabi/lyra" }]);
+      }
+      if (sql.includes("auth_failures") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("auth_failures") && sql.includes("SELECT")) return makeFakeStmt(sql, args, [{ value: "2" }], 0);
+      return makeFakeStmt(sql, args, [], 1);
+    });
+  }
+
+  it("POSTs a sync_halted alert to NOTIFY_URL when the breaker trips", async () => {
+    const { ghGraphql, GraphQLError } = await import("./graphql");
+    vi.mocked(ghGraphql).mockRejectedValue(new GraphQLError("auth", true));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 200 }));
+
+    const env = makeEnv({ DB: makeHaltDb(), NOTIFY_URL: "https://ntfy.example/roxabi" });
+    await expect(runSync(env)).resolves.toBeUndefined();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("https://ntfy.example/roxabi");
+    expect(init).toMatchObject({ method: "POST" });
+    expect(String((init as RequestInit).body)).toContain("sync_halted");
+  });
+
+  it("does not POST when NOTIFY_URL is unset", async () => {
+    const { ghGraphql, GraphQLError } = await import("./graphql");
+    vi.mocked(ghGraphql).mockRejectedValue(new GraphQLError("auth", true));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const env = makeEnv({ DB: makeHaltDb() }); // no NOTIFY_URL
+    await expect(runSync(env)).resolves.toBeUndefined();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
