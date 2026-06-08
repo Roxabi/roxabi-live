@@ -114,7 +114,14 @@ export class MultiSelect {
       const span = document.createElement('span');
       span.textContent = item.label;
 
-      lbl.append(cb, span);
+      if (item.sublabel) {
+        const sub = document.createElement('span');
+        sub.className = 'ms-sub';
+        sub.textContent = item.sublabel;
+        lbl.append(cb, span, sub);
+      } else {
+        lbl.append(cb, span);
+      }
       li.appendChild(lbl);
       ul.appendChild(li);
     }
