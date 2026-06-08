@@ -7,11 +7,11 @@ afterEach(() => {
 });
 
 /**
- * graph.ts fires 4 sequential prepare().all() calls in this order:
- *   0 — labels
- *   1 — pr_state (open)
- *   2 — issues
- *   3 — edges
+ * graph.ts fires 4 prepare().all() calls — dispatched by SQL content:
+ *   "FROM labels"   → labels fixture
+ *   "FROM pr_state" → pr_state fixture
+ *   "FROM issues"   → issues fixture
+ *   "FROM edges"    → edges fixture
  */
 function makeGraphEnv(
   labels: unknown[],
@@ -19,18 +19,16 @@ function makeGraphEnv(
   issues: unknown[],
   edges: unknown[],
 ): Env {
-  const responses = [
-    { results: labels },
-    { results: prState },
-    { results: issues },
-    { results: edges },
-  ];
-  let callCount = 0;
-
   return {
     DB: {
-      prepare: () => ({
-        all: async () => responses[callCount++],
+      prepare: (sql: string) => ({
+        all: async () => {
+          if (sql.includes("FROM labels")) return { results: labels };
+          if (sql.includes("FROM pr_state")) return { results: prState };
+          if (sql.includes("FROM issues")) return { results: issues };
+          if (sql.includes("FROM edges")) return { results: edges };
+          return { results: [] };
+        },
       }),
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },

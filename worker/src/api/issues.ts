@@ -59,8 +59,11 @@ export const listIssuesRoute = async (c: Context<{ Bindings: Env }>) => {
 
   const rawLimit = url.searchParams.get("limit");
   const rawOffset = url.searchParams.get("offset");
-  const limit = rawLimit !== null && !isNaN(parseInt(rawLimit, 10)) ? parseInt(rawLimit, 10) : 100;
-  const offset = rawOffset !== null && !isNaN(parseInt(rawOffset, 10)) ? parseInt(rawOffset, 10) : 0;
+  const rawLimitParsed = rawLimit !== null && !isNaN(parseInt(rawLimit, 10)) ? parseInt(rawLimit, 10) : 100;
+  const rawOffsetParsed = rawOffset !== null && !isNaN(parseInt(rawOffset, 10)) ? parseInt(rawOffset, 10) : 0;
+  // clamp: public endpoint — bound result-set size (Worker 128MB budget) and reject negative offset
+  const limit = Math.max(1, Math.min(rawLimitParsed, 500));
+  const offset = Math.max(0, rawOffsetParsed);
 
   const conditions: string[] = [];
   const params: (string | number)[] = [];

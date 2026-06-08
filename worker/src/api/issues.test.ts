@@ -10,14 +10,16 @@ afterEach(() => {
 
 /**
  * listIssuesRoute uses:
- *   1. DB.batch([countStmt.bind(...), dataStmt.bind(...)]) → [countResult, dataResult]
- *   2. DB.prepare(labelSql).bind(...keys).all() → label rows
+ *   1. DB.batch([countStmt, dataStmt]) — dispatched by SQL content:
+ *      "SELECT COUNT" → count result
+ *      "FROM issues"  → data rows
+ *   2. DB.prepare("FROM labels WHERE issue_key IN").bind(...keys).all() → label rows
  *
- * getIssueRoute uses 4 sequential prepare().bind().first()/all():
- *   1. .bind(key).first()         → issue row
- *   2. .bind(key).all()           → label rows
- *   3. .bind(key).all()           → blocking edge rows
- *   4. .bind(key).all()           → blocked_by edge rows
+ * getIssueRoute uses prepare().bind() dispatched by SQL content:
+ *   "FROM issues WHERE key"    → .first() → issue row
+ *   "FROM labels WHERE issue_key = ?" (single) → .all() → label rows
+ *   "e.src_key = ?"            → .all() → blocking edge rows
+ *   "e.dst_key = ?"            → .all() → blocked_by edge rows
  */
 
 interface ListEnvOptions {
@@ -26,15 +28,61 @@ interface ListEnvOptions {
   labels?: unknown[];
 }
 
+interface CapturedCall {
+  sql: string;
+  args: unknown[];
+}
+
+/**
+ * Returns {env, captured}. captured accumulates {sql, args} for every
+ * prepare(sql).bind(...args) call (including stmts passed to batch),
+ * enabling FIX 4 filter assertions.
+ *
+ * The .bind() return value is what gets passed to DB.batch([...]), so
+ * we embed _sql/_args on the bound object and read them back in batch().
+ */
+function makeListEnvWithCapture(
+  opts: ListEnvOptions,
+): { env: Env; captured: CapturedCall[] } {
+  const { countN, rows, labels = [] } = opts;
+  const captured: CapturedCall[] = [];
+
+  const env = {
+    DB: {
+      prepare: (sql: string) => ({
+        bind: (...args: unknown[]) => {
+          // Capture immediately for direct .bind().all() calls (e.g. labels query)
+          captured.push({ sql, args });
+          return {
+            _sql: sql,
+            _args: args,
+            first: async () => null,
+            all: async () => {
+              if (sql.includes("FROM labels")) return { results: labels };
+              return { results: [] };
+            },
+          };
+        },
+      }),
+      batch: async (_stmts: unknown[]) => {
+        // sql/args already captured in bind() above
+        return [
+          { results: [{ n: countN }] },
+          { results: rows },
+        ];
+      },
+    },
+    ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
+    GITHUB_TOKEN: "",
+    GITHUB_ORG: "",
+    GITHUB_WEBHOOK_SECRET: "",
+  } as unknown as Env;
+
+  return { env, captured };
+}
+
 function makeListEnv(opts: ListEnvOptions): Env {
   const { countN, rows, labels = [] } = opts;
-
-  // After batch(), there is one more prepare().bind().all() for labels.
-  // We use a call counter on `.all()` to distinguish the label call from batch internals.
-  // The batch returns a mocked result directly.
-
-  // Track how many times .all() is called on a bound stmt OUTSIDE batch
-  let labelCallCount = 0;
 
   return {
     DB: {
@@ -42,11 +90,7 @@ function makeListEnv(opts: ListEnvOptions): Env {
         bind: (..._args: unknown[]) => ({
           first: async () => null,
           all: async () => {
-            // labels query is the only .bind().all() called after batch
-            labelCallCount++;
-            if (labelCallCount === 1) {
-              return { results: labels };
-            }
+            if (sql.includes("FROM labels")) return { results: labels };
             return { results: [] };
           },
         }),
@@ -78,31 +122,27 @@ function makeGetEnv(opts: GetEnvOptions): Env {
     blockedBy = [],
   } = opts;
 
-  // getIssueRoute calls prepare().bind() 4 times in this order:
-  //   0 → .first() → issue row
-  //   1 → .all()   → label rows
-  //   2 → .all()   → blocking
-  //   3 → .all()   → blocked_by
-  let bindCallCount = 0;
+  // Dispatch by SQL content — robust to query reordering:
+  //   "FROM issues WHERE key"  → .first() → issue row
+  //   "FROM labels WHERE issue_key" → .all() → label rows (single-issue variant)
+  //   "e.src_key = ?"          → .all() → blocking edges
+  //   "e.dst_key = ?"          → .all() → blocked_by edges
 
   return {
     DB: {
-      prepare: (_sql: string) => ({
-        bind: (..._args: unknown[]) => {
-          const callIndex = bindCallCount++;
-          return {
-            first: async () => {
-              if (callIndex === 0) return issueRow;
-              return null;
-            },
-            all: async () => {
-              if (callIndex === 1) return { results: labels };
-              if (callIndex === 2) return { results: blocking };
-              if (callIndex === 3) return { results: blockedBy };
-              return { results: [] };
-            },
-          };
-        },
+      prepare: (sql: string) => ({
+        bind: (..._args: unknown[]) => ({
+          first: async () => {
+            if (sql.includes("FROM issues WHERE key")) return issueRow;
+            return null;
+          },
+          all: async () => {
+            if (sql.includes("FROM labels WHERE issue_key")) return { results: labels };
+            if (sql.includes("e.src_key = ?")) return { results: blocking };
+            if (sql.includes("e.dst_key = ?")) return { results: blockedBy };
+            return { results: [] };
+          },
+        }),
         // fallback — should not be called for getIssue
         first: async () => null,
         all: async () => ({ results: [] }),
@@ -433,6 +473,92 @@ describe("GET /api/issues/:key", () => {
       expect(body.blocking[0].key).toBe("Roxabi/roxabi-live#5");
       expect(body.blocking[0].number).toBe(5);
       expect(body.blocking[0].repo).toBe("Roxabi/roxabi-live");
+    });
+  });
+});
+
+// ── FIX 4: filter params + limit/offset clamping ─────────────────────────────
+
+describe("GET /api/issues — filter SQL params and clamping (FIX 4)", () => {
+  describe("filter SQL dispatch", () => {
+    it("?repo=foo binds repo param in WHERE clause", async () => {
+      const { env, captured } = makeListEnvWithCapture({ countN: 0, rows: [] });
+      await app.request("/api/issues?repo=foo", {}, env);
+
+      const batchSqls = captured.map((c) => c.sql);
+      const countCall = captured.find((c) => c.sql.includes("SELECT COUNT"));
+      const dataCall = captured.find(
+        (c) => c.sql.includes("FROM issues") && !c.sql.includes("SELECT COUNT"),
+      );
+
+      expect(batchSqls.some((s) => s.includes("issues.repo = ?"))).toBe(true);
+      expect(countCall?.args).toContain("foo");
+      expect(dataCall?.args).toContain("foo");
+    });
+
+    it("?state=open binds state param in WHERE clause", async () => {
+      const { env, captured } = makeListEnvWithCapture({ countN: 0, rows: [] });
+      await app.request("/api/issues?state=open", {}, env);
+
+      expect(captured.some((c) => c.sql.includes("issues.state = ?"))).toBe(true);
+      expect(captured.some((c) => c.args.includes("open"))).toBe(true);
+    });
+
+    it("?label=bug inserts EXISTS subquery and binds label param", async () => {
+      const { env, captured } = makeListEnvWithCapture({ countN: 0, rows: [] });
+      await app.request("/api/issues?label=bug", {}, env);
+
+      expect(
+        captured.some((c) => c.sql.includes("EXISTS") && c.sql.includes("labels")),
+      ).toBe(true);
+      expect(captured.some((c) => c.args.includes("bug"))).toBe(true);
+    });
+
+    it("combined ?repo=x&state=open&label=y includes all three conditions", async () => {
+      const { env, captured } = makeListEnvWithCapture({ countN: 0, rows: [] });
+      await app.request("/api/issues?repo=x&state=open&label=y", {}, env);
+
+      const allSqls = captured.map((c) => c.sql).join(" ");
+      expect(allSqls).toMatch(/issues\.repo = \?/);
+      expect(allSqls).toMatch(/issues\.state = \?/);
+      expect(allSqls).toMatch(/EXISTS/);
+      // All three params present in at least one call
+      const allArgs = captured.flatMap((c) => c.args);
+      expect(allArgs).toContain("x");
+      expect(allArgs).toContain("open");
+      expect(allArgs).toContain("y");
+    });
+  });
+
+  describe("limit/offset clamping", () => {
+    it("?limit=abc falls back to default 100", async () => {
+      const res = await app.request(
+        "/api/issues?limit=abc",
+        {},
+        makeListEnv({ countN: 0, rows: [] }),
+      );
+      const body = await res.json<{ limit: number }>();
+      expect(body.limit).toBe(100);
+    });
+
+    it("?limit=999999999 is clamped to 500", async () => {
+      const res = await app.request(
+        "/api/issues?limit=999999999",
+        {},
+        makeListEnv({ countN: 0, rows: [] }),
+      );
+      const body = await res.json<{ limit: number }>();
+      expect(body.limit).toBe(500);
+    });
+
+    it("?offset=-5 is clamped to 0", async () => {
+      const res = await app.request(
+        "/api/issues?offset=-5",
+        {},
+        makeListEnv({ countN: 0, rows: [] }),
+      );
+      const body = await res.json<{ offset: number }>();
+      expect(body.offset).toBe(0);
     });
   });
 });

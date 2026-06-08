@@ -181,7 +181,7 @@ export const graphRoute = async (c: Context<{ Bindings: Env }>) => {
       milestone_sort_key: sortKey,
       labels: issueLabels,
       priority: row.priority,
-      lane: row.lane ?? laneFromLabels(issueLabels),
+      lane: row.lane || laneFromLabels(issueLabels),
       size: row.size,
       status: row.status,
       is_stub: Boolean(row.is_stub),
