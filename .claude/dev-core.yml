@@ -1,0 +1,10 @@
+# Roxabi Hub project board (PVT_kwDOB8J6DM4BVWlE)
+gh_project_id: 'PVT_kwDOB8J6DM4BVWlE'
+status_field_id: 'PVTSSF_lADOB8J6DM4BVWlEzhQy83E'
+size_field_id: 'PVTSSF_lADOB8J6DM4BVWlEzhQy838'
+priority_field_id: 'PVTSSF_lADOB8J6DM4BVWlEzhQy834'
+lane_field_id: 'PVTSSF_lADOB8J6DM4BVWlEzhQy830'
+status_options_json: '{"Todo":"fb4666b4","Ready":"9a1e7011","In Progress":"f972685d","Blocked":"93ed3508","Done":"833e5ce2","Backlog":"fb4666b4","Analysis":"fb4666b4","Specs":"fb4666b4","Review":"f972685d"}'
+size_options_json: '{"S":"0e7a5f75","F-lite":"33ba8e50","F-full":"c67a71e0","XS":"0e7a5f75","M":"33ba8e50","L":"c67a71e0","XL":"c67a71e0"}'
+priority_options_json: '{"P0 - Urgent":"1869a39d","P1 - High":"8ce35f78","P2 - Medium":"c54358fe","P3 - Low":"f5160185"}'
+lane_options_json: '{"a1":"37e922a5","a2":"4adaf605","a3":"439b1e49","b":"405ef672","c1":"2dc55a75","c2":"7cadbf6e","c3":"13dc3bfb","d":"53688630","e":"3b91e2a2","f":"47d23510","g":"da0857d9","h":"cf0e69b7","i":"44b4f2c8","j":"290d193f","k":"369edbea","l":"10431d4a","m":"6e85f6b8","n":"acb15dcd","o":"3fa48df2","standalone":"f8fcc5f9"}'

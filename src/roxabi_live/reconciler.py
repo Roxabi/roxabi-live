@@ -1,0 +1,342 @@
+"""Corpus reconciler — periodic sync loop for roxabi_live.
+
+Wraps the synchronous corpus.sync.run_sync in an async-friendly interface and
+provides a long-running hourly loop suitable for background task execution.
+
+Auth-halt behaviour: two consecutive GitHub 401/403 errors cause the loop to
+exit permanently and emit a CRITICAL log.  Transient errors (OSError, non-auth
+HTTP errors) do not increment the auth-failure counter.  A successful sync
+resets the counter to zero.
+
+Also exposes TriggerHeal protocol and make_trigger_heal factory for DI into
+the webhook router (decoupling the router from this module directly).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import sqlite3
+from collections.abc import Iterable
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Protocol, cast
+from weakref import WeakSet
+
+import aiosqlite
+
+from roxabi_live.config import Settings
+from roxabi_live.corpus import schema as corpus_schema
+from roxabi_live.corpus import sync as corpus_sync
+
+log = logging.getLogger(__name__)
+
+
+_AUTH_FAILURE_THRESHOLD = 2
+_auth_failures: int = 0
+_halted: asyncio.Event = asyncio.Event()
+_state_lock: asyncio.Lock = asyncio.Lock()
+_sync_in_flight: set[str] = set()
+
+
+class TriggerHeal(Protocol):
+    """Protocol for the heal-trigger callable injected into the webhook router.
+
+    Normal path: implementations check sync_state staleness for the given repo
+    and, if stale, schedule a background corpus sync task.
+    Force path: when force=True, the staleness check is bypassed and the sync
+    task is scheduled unconditionally.
+    """
+
+    async def __call__(
+        self, repo: str, conn: aiosqlite.Connection, *, force: bool = False
+    ) -> None: ...
+
+
+def _log_exc(task: asyncio.Task[None]) -> None:
+    """Done-callback: log any exception raised by a background task.
+
+    The cancelled-guard is required because `Task.exception()` *raises*
+    `CancelledError` on cancelled tasks (not returns it); without the
+    guard, normal shutdown would propagate CancelledError into the
+    callback and crash silently.
+    """
+    exc = task.exception() if not task.cancelled() else None
+    if exc is not None:
+        log.error("background heal task raised an exception", exc_info=exc)
+
+
+def _is_auth_error(exc: BaseException) -> bool:
+    """True when exc looks like a GitHub 401/403 credential failure.
+
+    Excludes GitHub secondary rate-limit 403s (self-resolving, not an auth
+    problem) by inspecting the response body / PyGithub exception data.
+    """
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if status is None:
+        status = getattr(exc, "status", None)
+    if status not in (401, 403):
+        return False
+    # 403 may be rate limit — check body
+    if status == 403:
+        text = ""
+        if response is not None:
+            text = getattr(response, "text", "") or ""
+        data: object = getattr(exc, "data", None)
+        if isinstance(data, dict):
+            typed_data = cast("dict[str, object]", data)
+            msg = typed_data.get("message", "")
+            text += " " + (str(msg) if msg is not None else "")
+        if "secondary rate limit" in text.lower() or "rate limit" in text.lower():
+            return False
+    return True
+
+
+async def run_once(settings: Settings) -> None:
+    """Run a single corpus sync cycle.
+
+    Opens a fresh DB connection, calls corpus_sync.run_sync, then closes the
+    connection.  All exceptions are caught and logged — this function never
+    raises so that callers (e.g. hourly_loop) remain alive through transient
+    failures.
+
+    Auth-halt: two consecutive 401/403 errors set _halted and emit a
+    CRITICAL log.  Transient errors (OSError, non-auth HTTP errors) do not
+    increment the auth-failure counter.  A successful sync resets the counter.
+    """
+    global _auth_failures
+    if _halted.is_set():
+        return
+
+    def _sync() -> dict[str, int]:
+        # Apply any pending schema migrations before opening the sync connection
+        # so a redeploy at a new SCHEMA_VERSION doesn't crash with "no such table".
+        corpus_schema.bootstrap(settings.corpus_db_path)
+        conn = sqlite3.connect(settings.corpus_db_path)
+        try:
+            return corpus_sync.run_sync(conn, settings.github_org)
+        finally:
+            conn.close()
+
+    def _get_allowlist() -> list[str]:
+        conn = sqlite3.connect(settings.corpus_db_path)
+        try:
+            rows = conn.execute("SELECT repo FROM repo_allowlist").fetchall()
+            return [row[0] for row in rows]
+        finally:
+            conn.close()
+
+    try:
+        await asyncio.to_thread(_sync)
+        repos = await asyncio.to_thread(_get_allowlist)
+        if repos:
+            await heal_pr_branch_state(settings.corpus_db_path, repos)
+        async with _state_lock:
+            _auth_failures = 0
+    except Exception as exc:
+        if _is_auth_error(exc):
+            async with _state_lock:
+                _auth_failures += 1
+                should_halt = _auth_failures >= _AUTH_FAILURE_THRESHOLD
+                failures = _auth_failures
+            if should_halt and not _halted.is_set():
+                _halted.set()
+                log.critical(
+                    "reconciler halted: %d consecutive auth failures",
+                    failures,
+                )
+            else:
+                log.warning(
+                    "reconciler auth error %d/%d",
+                    failures,
+                    _AUTH_FAILURE_THRESHOLD,
+                )
+            return
+        log.exception("reconciler run_once failed")
+
+
+async def run_repo_once(settings: Settings, repo: str) -> None:
+    """Single-repo sync cycle for webhook-driven heal.
+
+    Mirrors run_once's auth-halt handling but calls run_single_repo_sync
+    instead of run_sync. Never raises.
+    """
+    global _auth_failures
+    if _halted.is_set():
+        return
+
+    def _sync() -> dict[str, int]:
+        conn = sqlite3.connect(settings.corpus_db_path)
+        try:
+            result = corpus_sync.run_single_repo_sync(conn, repo)
+            corpus_sync.sync_branches(repo, conn)
+            corpus_sync.sync_prs(repo, conn)
+            conn.commit()
+            return result
+        finally:
+            conn.close()
+
+    try:
+        await asyncio.to_thread(_sync)
+        async with _state_lock:
+            _auth_failures = 0
+    except Exception as exc:
+        if _is_auth_error(exc):
+            async with _state_lock:
+                _auth_failures += 1
+                should_halt = _auth_failures >= _AUTH_FAILURE_THRESHOLD
+                failures = _auth_failures
+            if should_halt and not _halted.is_set():
+                _halted.set()
+                log.critical(
+                    "reconciler halted: %d consecutive auth failures",
+                    failures,
+                )
+            else:
+                log.warning(
+                    "reconciler auth error %d/%d",
+                    failures,
+                    _AUTH_FAILURE_THRESHOLD,
+                )
+            return
+        log.exception("reconciler run_repo_once failed (repo=%s)", repo)
+
+
+async def heal_pr_branch_state(
+    db_path: Path,
+    repos: Iterable[str],
+) -> None:
+    """Re-sync branch flags and PR state for each repo in *repos*.
+
+    For every repository in the iterable this function:
+    1. Opens a fresh SQLite connection (thread-safe: one per call).
+    2. Calls ``corpus_sync.sync_branches(repo, conn)`` — refreshes
+       ``has_active_branch`` on every issue in the repo against live GitHub refs.
+    3. Calls ``corpus_sync.sync_prs(repo, conn)`` — upserts open PRs into
+       ``pr_state``.
+
+    This is the authoritative source for ``has_active_branch`` and ``pr_state``
+    when a conflict arises with webhook-driven updates (reconciler wins per the
+    Race & Precedence Rules in the spec).
+
+    Both underlying functions are synchronous (they call GitHub synchronously via
+    ``gh_graphql``).  All work is offloaded to a thread with ``asyncio.to_thread``
+    so the event loop is not blocked.
+
+    Args:
+        db_path: Path to the corpus SQLite database file.
+        repos:   Iterable of repository slugs in ``owner/name`` form.
+                 An empty iterable is a no-op.
+    """
+
+    def _heal_repo(repo: str) -> None:
+        # sync_branches and sync_prs document "caller controls the transaction",
+        # so we must commit before closing — otherwise SQLite rolls back the
+        # implicit transaction and the writes vanish.
+        conn = sqlite3.connect(db_path)
+        try:
+            corpus_sync.sync_branches(repo, conn)
+            corpus_sync.sync_prs(repo, conn)
+            conn.commit()
+        finally:
+            conn.close()
+
+    for repo in repos:
+        await asyncio.to_thread(_heal_repo, repo)
+
+
+def hourly_loop(settings: Settings) -> asyncio.Task[None]:
+    """Start a background task that calls run_once on a fixed interval.
+
+    Args:
+        settings: Application settings providing the sync interval.
+
+    Returns:
+        The running :class:`asyncio.Task`.  Cancel it to stop the loop; the
+        task will raise :exc:`asyncio.CancelledError` on await after
+        cancellation.  The task may also exit normally if the reconciler is
+        halted due to consecutive auth failures.
+    """
+    interval_seconds = settings.corpus_sync_interval_seconds
+
+    async def _loop() -> None:
+        while not _halted.is_set():
+            await asyncio.sleep(interval_seconds)
+            if _halted.is_set():
+                break
+            await run_once(settings)
+
+    return asyncio.create_task(_loop())
+
+
+def _reset_state_for_tests() -> None:
+    """Reset all module-level sync state. Call from test fixtures only."""
+    global _auth_failures, _sync_in_flight
+    _auth_failures = 0
+    _sync_in_flight.clear()
+    _halted.clear()
+
+
+def make_trigger_heal(
+    settings: Settings,
+    background_tasks: WeakSet[asyncio.Task[None]],
+) -> TriggerHeal:
+    """Factory: build a TriggerHeal closure capturing settings + the WeakSet.
+
+    The returned callable:
+    1. Acquires _state_lock and checks _sync_in_flight; returns if this repo is
+       already running.
+    2. Checks sync_state staleness (>1h or missing) for the repo.
+    3. If stale, adds repo to _sync_in_flight and schedules a task calling
+       run_repo_once(settings, repo).  The task removes repo from
+       _sync_in_flight on finish.
+    4. Registers the task in background_tasks WeakSet.
+    5. Attaches _log_exc as a done-callback to surface exceptions in logs.
+
+    Args:
+        settings: App settings (db path, org, interval).
+        background_tasks: WeakSet owned by app.state; populated so lifespan
+            can cancel all tracked tasks on shutdown.
+
+    Returns:
+        An async callable matching the TriggerHeal protocol.
+    """
+
+    async def _trigger_heal(
+        repo: str, conn: aiosqlite.Connection, *, force: bool = False
+    ) -> None:
+        async with _state_lock:
+            if repo in _sync_in_flight:
+                return
+            if not force:
+                cur = await conn.execute(
+                    "SELECT last_synced_at FROM sync_state WHERE repo = ?", (repo,)
+                )
+                row = await cur.fetchone()
+                now = datetime.now(timezone.utc)
+                stale = True
+                if row is not None:
+                    raw = row[0]
+                    last = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                    stale = (
+                        now - last
+                    ).total_seconds() > settings.corpus_sync_interval_seconds
+                if not stale:
+                    return
+            _sync_in_flight.add(repo)
+
+        async def _run_and_clear() -> None:
+            try:
+                await run_repo_once(settings, repo)
+            finally:
+                async with _state_lock:
+                    _sync_in_flight.discard(repo)
+
+        task: asyncio.Task[None] = asyncio.create_task(_run_and_clear())
+        background_tasks.add(task)
+        task.add_done_callback(_log_exc)
+
+    return _trigger_heal  # type: ignore[return-value]

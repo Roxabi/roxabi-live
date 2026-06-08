@@ -1,0 +1,28 @@
+.env
+.env.*
+!.env.example
+.env.bak*
+local/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+coverage.xml
+.coverage
+.venv/
+*.sqlite
+*.sqlite-journal
+*.db
+*.db-shm
+*.db-wal
+.ruff_cache/
+.claude/worktrees/
+reports/
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+
+# wrangler local secrets — never commit
+.dev.vars
+.dev.vars.*
+.wrangler/

@@ -1,0 +1,65 @@
+# .claude/stack.yml — dev-core stack configuration
+schema_version: "1.0"
+
+runtime: python
+package_manager: uv
+
+backend:
+  framework: fastapi
+  path: src/roxabi_live
+
+build:
+  formatter: ruff
+  formatter_config: pyproject.toml
+  formatter_fix_cmd: "uv run ruff format . && uv run ruff check --fix ."
+
+testing:
+  unit: pytest
+
+lsp:
+  enabled: true
+  server: pyright
+
+deploy:
+  platform: none
+
+docs:
+  framework: none
+  path: docs
+  format: md
+
+commands:
+  dev: uv run roxabi-live
+  test: uv run pytest
+  lint: uv run ruff check .
+  format: uv run ruff format .
+  typecheck: uv run pyright
+  install: uv sync
+
+artifacts:
+  analyses: artifacts/analyses
+  specs: artifacts/specs
+  frames: artifacts/frames
+  plans: artifacts/plans
+
+quality_gates:
+  file_length:
+    enabled: true
+    metric: sloc
+    max_lines: 300
+    globs: ["src/**/*.py"]
+    exemptions_file: tools/file_exemptions.txt
+
+  folder_size:
+    enabled: true
+    max_files: 12
+    globs: ["src/**"]
+    exemptions_file: tools/folder_exemptions.txt
+
+  duplicate_test_basenames:
+    enabled: true
+    script: tools/check_duplicate_test_basenames.sh
+    source: pyproject.toml [tool.pytest.ini_options].testpaths
+
+  import_layers:
+    enabled: false

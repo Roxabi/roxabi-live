@@ -1,0 +1,87 @@
+---
+title: CF S8 — Cron trigger + observability (Logpush→R2, halt alerts)
+issue: 100
+status: approved
+tier: S
+date: 2026-06-08
+---
+
+## Problem
+
+S8 is the **observability + go/no-go gate** before the S9 cutover (`live.roxabi.dev`,
+M₁ decommission). On investigation, the *code* for S8 was already shipped in S4 (#96):
+
+- Cron `0 * * * *` is configured for both prod (`wrangler.toml:11`) and staging
+  (`wrangler.toml:31`), and `scheduled()` calls `runSync(env)` (`index.ts:14`).
+- The auth-halt circuit breaker already POSTs to `NOTIFY_URL` on 2 consecutive auth
+  failures (`sync.ts:1110-1116`).
+
+What is genuinely missing is **operational**, not architectural:
+
+1. **No audit trail** — Logpush → R2 is not configured. The #92 spec flags this as a
+   **hard go/no-go gate**: M₁ must not be decommissioned (S9) before prod logs persist
+   to R2, else the prod sync runs blind with no forensic trail.
+2. **No prod Cron proof** — the hourly trigger has never been confirmed firing in
+   production (staging was verified live via `--test-scheduled`).
+3. **`NOTIFY_URL` unset** — the halt-alert code is dead until the secret holds a real
+   webhook/ntfy URL.
+
+Two thin code gaps remain: `NOTIFY_URL` is read via an inline `(env as …)` cast rather
+than a typed `Env` binding, and the halt-alert POST path has no test.
+
+## Who
+
+- **Primary:** Mickael (ops) — needs a persistent audit trail and a halt alarm before
+  trusting prod sync unattended post-cutover.
+- **Secondary:** future-self debugging a silent prod sync stall — Logpush→R2 is the only
+  forensic record once M₁ (and its local logs) are gone.
+
+## Constraints
+
+- Logpush job creation has **no `wrangler` subcommand** — it is a Cloudflare API / dashboard
+  operation (account-level Logpush + R2 bucket). Partly outside the repo.
+- `NOTIFY_URL` requires a real endpoint value from Mickael (ntfy topic / webhook).
+- Prod Cron verification requires the prod Worker deployed + waiting for ≥1 real hourly tick
+  (cannot be fully forced in CI).
+- Workers Free plan: confirm Logpush is available (Logpush to R2 is supported on Free for
+  Workers Trace Events / Workers logs — verify at config time).
+- Shared personal CF token (bouly.io account) — same as prior slices.
+
+## Out of Scope
+
+- S9 cutover (CF Access apps, DNS `live.roxabi.dev`, M₁ stop) — issue #101.
+- Re-architecting halt logic or the breaker threshold (S4 design is frozen).
+- Structured/JSON log reformatting — current `console.log/error` lines are captured by
+  Logpush as-is; reformat only if a later need surfaces (deferred).
+
+## Premise Validity
+
+**Success in 6 months:** Prod Worker syncs hourly unattended; every invocation's logs land
+in the `roxabi-live-logs` R2 bucket (queryable audit trail); a forced auth-halt fires a
+`sync_halted` POST to `NOTIFY_URL` that Mickael actually receives. `/api/version` timestamp
+is always ≤65 min old.
+
+**Failure in 6 months:** Prod sync silently stalls (watermark frozen >2h) and there is **no
+log in R2** to diagnose it, OR a halt fires with no alert delivered. Falsifiable: after 1
+prod hour, R2 object count for the Logpush dataset == 0, or `/api/version` age >65 min.
+
+**Simplest alternative:** Skip Logpush; rely on `wrangler tail` live logs + the existing
+`/api/version` endpoint for liveness.
+**Why not simplest:** `wrangler tail` is ephemeral (no retention) and requires an attended
+terminal — useless for a post-mortem of an overnight stall after M₁ is gone. The #92 spec
+makes persistent logs a hard gate precisely because the cutover removes the local fallback.
+
+## Complexity
+
+**Tier: S** — ≤2 files of code (`types.ts` typed `NOTIFY_URL` binding + a halt-alert vitest);
+the remaining work is Cloudflare ops (R2 bucket, Logpush job, `wrangler secret put`) captured
+as a runbook, plus a prod-Cron verification step. No new architecture — S4 already shipped the
+cron handler and the halt-alert path.
+
+Signals observed:
+- Code footprint ≤3 files, single domain (worker), no new pattern → S.
+- Bulk of effort is dashboard/API ops + verification, not implementation.
+- Original /dev tier guess (F-lite) predated reading the code; the halt-alert + cron already
+  existing collapses the code scope → downgrade recommended.
+- Go/no-go risk is real, but the #92 umbrella spec already documents the gate, so a fresh
+  S8 spec would largely duplicate it.
