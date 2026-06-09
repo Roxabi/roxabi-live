@@ -18,6 +18,10 @@ Let:
 
 → `docs/ARCHITECTURE.md` (to be created)
 
+## Plugins
+
+`plugins/roxabi-issues/` — Claude Code plugin (own `.claude-plugin/marketplace.json`), relocated from dev-core 2026-06-09. Skill `issue-triage` (invoked `roxabi-issues:issue-triage`): set labels (size/priority/lane/type) + manage blocked-by deps + parent/child sub-issues on GitHub issues. **Labels + native relations only — no ProjectV2 board** (board read is the cockpit's job). Self-contained bun project (`bun run typecheck|test`). Registered in `roxabi-plugins/.claude-plugin/external-registry.json`.
+
 ## TL;DR
 
 - Entry: `/dev #N` → tier (S/F-lite/F-full) → lifecycle

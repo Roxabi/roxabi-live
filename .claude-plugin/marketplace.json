@@ -1,0 +1,17 @@
+{
+  "name": "roxabi-live-marketplace",
+  "version": "1.0.0",
+  "description": "Roxabi Live — issue management plugin (relocated from dev-core, labels + native relations, no Projects V2).",
+  "owner": {
+    "name": "Roxabi",
+    "url": "https://github.com/Roxabi"
+  },
+  "plugins": [
+    {
+      "name": "roxabi-issues",
+      "description": "Issue triage — set labels (size/priority/lane/type), manage blocked-by dependencies and parent/child sub-issues on GitHub issues. Labels + native relations, no Projects V2 board.",
+      "source": "./plugins/roxabi-issues",
+      "category": "development"
+    }
+  ]
+}
