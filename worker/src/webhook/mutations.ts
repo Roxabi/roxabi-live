@@ -68,6 +68,15 @@ const SET_ACTIVE_BRANCH_OFF_SQL =
 const RENAME_MILESTONE_SQL =
   "UPDATE issues SET milestone = ? WHERE repo = ? AND milestone = ?";
 
+/** Upsert the data_version key in sync_control with the given ISO-8601 timestamp. */
+export const BUMP_DATA_VERSION_SQL = `
+  INSERT INTO sync_control (key, value, updated_at)
+  VALUES ('data_version', ?, ?)
+  ON CONFLICT(key) DO UPDATE SET
+      value      = excluded.value,
+      updated_at = excluded.updated_at
+`;
+
 // ---------------------------------------------------------------------------
 // WebhookIssue — partial issue shape expected by upsertIssue
 // ---------------------------------------------------------------------------
@@ -224,6 +233,15 @@ export function upsertPrState(
     closingIssueKeysJson,
     updatedAt,
   );
+}
+
+/**
+ * Prepare a statement that bumps the data_version key in sync_control.
+ * The iso parameter must be an ISO-8601 string (used as both value and updated_at).
+ * Returns a D1PreparedStatement — caller folds it into the batch; never calls .run() here.
+ */
+export function bumpDataVersion(db: D1Database, iso: string): D1PreparedStatement {
+  return db.prepare(BUMP_DATA_VERSION_SQL).bind(iso, iso);
 }
 
 /**
