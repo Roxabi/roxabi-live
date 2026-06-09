@@ -1,0 +1,163 @@
+---
+title: "Zero-knowledge encryption + multi-tenant GitHub auth — architecture spike"
+description: "Time-boxed spike: can roxabi-live become a multi-tenant tool where the operator provably cannot read user data? Decides between server-centric / client-centric / envelope-asymmetric, with the residual trust gap stated explicitly."
+status: proposed
+---
+
+## Source
+
+> "On sait que ça marche maintenant sur les workers et on voulait étendre ça avec une authentification GitHub […] permettre aux utilisateurs de relier leur compte GitHub à l'outil […] que ça devienne un outil pour tout le monde plutôt qu'un outil que pour moi. […] dans un second temps […] que les données soient cryptées directement dans les bases de données de manière à ce qu'on n'ait pas accès à cette donnée là via une clé qui serait stockée directement côté GitHub potentiellement et du coup seul l'utilisateur sur son navigateur local aurait accès à cette clé et moi j'aurais pas accès côté serveur — ça garantit une sécurité complète."
+
+## Problem
+
+`roxabi-live` is single-tenant: one CF Worker + one D1, behind CF Access for `mickael@bouly.io`. Server-side sync (cron + org webhook) reads plaintext issues via GraphQL and writes them to D1. Two extensions are wanted:
+
+1. **Multi-tenant** — any GitHub user links their account and sees *their* issues → "a tool for everyone."
+2. **Operator-blind data** ("sécurité complète") — D1 contents unreadable by the operator (me); key held only in the user's browser, possibly backed up on GitHub.
+
+These two goals **pull in opposite directions**: goal 1 (background sync, real-time, works-when-browser-closed) wants a *fat server*; goal 2 (operator can't read) wants a *thin server / fat client*. This spike resolves the tension and picks an auth primitive that doesn't have to be re-chosen later.
+
+## Outcome
+
+A decision (this ADR) that:
+- picks the storage/encryption archetype **honestly labelled** by the threat model it actually defends against;
+- picks a GitHub auth primitive that serves both the multi-tenant baseline *and* a future operator-blind mode without rework;
+- states the **residual trust gap** for the chosen option in plain language;
+- enumerates the issues to file.
+
+## Appetite
+
+Spike — research-only, no implementation. Informs issue creation for two epics (multi-tenant auth, encryption).
+
+---
+
+## Verified findings
+
+All claims below were verified against primary sources (Cloudflare docs, MDN, GitHub docs, OWASP) by two research agents; citations in the source notes at the bottom.
+
+### Crypto (workerd + browser) — envelope-asymmetric is cryptographically viable
+- workerd `crypto.subtle` supports AES-GCM, ECDH-P256, HKDF, PBKDF2, RSA-OAEP, `generateKey/importKey/exportKey/encrypt/decrypt/deriveKey/deriveBits`. Browser Web Crypto supports the full set incl. `wrapKey/unwrapKey`.
+- **ECIES (ephemeral ECDH-P256 → HKDF → AES-GCM) is preferred over RSA-OAEP** on workerd: it avoids the one unconfirmed primitive (`wrapKey` *with RSA-OAEP as the wrapping alg*) and uses only confirmed paths. Compact keys (P-256 pub ≈ 65 B).
+- KDF for any passphrase-wrapped key: native max is **PBKDF2-SHA256 @ ≥600k iters** (OWASP). **Argon2id is NOT in Web Crypto** — needs a WASM bundle. Implication: passphrase-derived protection is GPU-attackable at PBKDF2 strength unless WASM-Argon2 is added.
+
+### The hard tension — precisely characterized
+Envelope-asymmetric (Option C) makes **at-rest** D1 data unreadable, but the Worker **holds plaintext in memory** during each sync tick (GitHub fetch → encrypt). So:
+
+| Defends against | Does NOT defend against |
+|---|---|
+| D1 database breach / dump | The Worker **code author** (= me, today) |
+| CF account sub-user with D1 read-only | Anyone with CF Worker **deploy** access |
+| A *future* operator inheriting the DB | Cloudflare infra operator |
+| Accidental at-rest exposure | GitHub (source of plaintext) |
+
+→ **Option C is "operator-at-rest protection," NOT zero-knowledge.** It does **not** satisfy the literal ask ("moi j'aurais pas accès côté serveur"): because I control the Worker code, I *can* read plaintext during the sync tick. Only an architecture where **the server never sees plaintext** (client does the fetch + encrypt) delivers true operator-blindness.
+
+### GitHub auth — one primitive serves both modes
+- **A single GitHub App issues BOTH token types**: *installation tokens* (server-to-server: cron, webhooks, 1 h auto-rotated, `Issues:Read` covers `subIssues`/`parent`/`blockedBy`/`blocking` — all GA, no preview header) **and** *user-to-server tokens* (usable client-side). → Picking a GitHub App now does not lock out a future client-centric mode.
+- **GitHub PKCE does NOT remove `client_secret`.** Public-client PKCE is unsupported; the token-exchange `POST` always needs the secret. → Even a "browser-only / zero-knowledge" mode needs a **thin Worker endpoint** holding the secret to do `code → token`. The server can hand the token to the browser and **not persist it** — but the exchange touches the server. "Token never touches the server" is only *partially* achievable.
+
+### Key-on-GitHub idea — NOT operator-proof
+- The wrapped-key *blob* is cryptographically sound (useless without the passphrase).
+- But a **"secret" gist is not private** — it is URL-accessible without auth, forkable, and its **revision history persists** old key versions. Scope isolation stops the operator's *App token* from hitting the Gists API, **but** an operator-controlled Worker that sees the gist URL during the flow can fetch the blob out-of-band, no token needed.
+- → **Drop gist key storage.** Operator-blind key handling requires the key to stay in **browser-local storage** (IndexedDB/non-extractable CryptoKey), with any backup being a passphrase-wrapped export the **server never sees the location of** (e.g. user-downloaded file, or a store keyed by a secret the server never receives).
+
+### D1 multi-tenant ceiling
+- Single DB + `tenant_id` column viable to **10 GB / thousands of tenants** (Workers Paid). DB-per-tenant scales to **50,000 DBs** (hard isolation, provisioning overhead). Cron fan-out bounded by **10,000 subrequests/invocation + 15 min CPU** → hundreds of users per tick; beyond that → Cloudflare Queues / multi-tick batching.
+- **Server-side dep-graph survives encryption only if graph-relevant metadata (`state`, edges) stays plaintext** and only *content* (title/body) is encrypted. Full-field encryption forces graph computation **client-side** — which `frontend/state.js` **already does today**, so a client-decrypt model is compatible with the existing frontend.
+
+---
+
+## Shapes
+
+### Shape A — Server-centric (multi-tenant, NOT operator-blind)
+GitHub App · installation tokens · cron + per-install webhooks · single D1 + `tenant_id` · at-rest encryption optional. Operator **can** read.
+- **Pro:** simplest; best UX (works browser-closed, real-time); server computes graph; reuses ~all current code.
+- **Con:** does not meet the operator-blind goal at all.
+- **Scope:** M
+
+### Shape B — Client-centric (true zero-knowledge)
+GitHub App user-to-server token + thin exchange endpoint · browser fetches GitHub → encrypts → pushes ciphertext · server = opaque blob store · no content cron · graph computed client-side (already the case).
+- **Pro:** the only shape where the operator can't read **content**. Matches the literal ask — with one scope correction: **structural metadata still leaks** (see below).
+- **Con:** no background sync (browser must be open); no real-time webhook-driven content updates; GitHub token now lives in the browser (different threat model); more client complexity; loses server-side search/indexing. **Content-only privacy** — `state`/`edges`/counts/timing/sizes remain operator-visible (needed for the server-side graph); hiding those collapses back toward Shape A's UX. No forward secrecy with a static user key; XSS can still misuse an in-process key; multi-device bootstrap is unsolved (see residual gap).
+- **Scope:** L
+
+### Shape C — Envelope-asymmetric (operator-at-rest only)
+Server-centric like A, but sync encrypts each record to the user's **public** key (ECIES); only the browser's private key decrypts.
+- **Pro:** keeps cron/webhook/server-graph; protects against DB breach + future operator.
+- **Con:** **NOT zero-knowledge** (plaintext in Worker memory during sync); residual gap = me + CF + GitHub; extra complexity for a guarantee weaker than the ask implies.
+- **Scope:** L
+
+### Shape D — Hybrid, phased ← recommended
+- **Phase 1 (ship "tool for everyone"):** Shape A. GitHub App, single D1 + `tenant_id`, server-centric. No false privacy claims. GitHub issues are data the user already entrusts to GitHub; for public repos it isn't even secret.
+- **Phase 2 (opt-in operator-blind mode):** Shape B as an explicit per-user toggle. Same GitHub App (user-to-server token). Users who need "operator can't read" turn it on and accept the UX cost (browser-driven sync). Key stays browser-local; no gist.
+- **Pro:** unblocks the multi-tenant goal immediately; offers *real* zero-knowledge to those who want it, honestly, instead of baking a mislabeled weak guarantee into the default; **one** GitHub App covers both.
+- **Con:** two sync paths to maintain long-term.
+- **Scope:** XL (split across the two epics)
+
+## Fit Check
+
+| | A | B | C | **D (hybrid)** |
+|---|---|---|---|---|
+| "Tool for everyone" fast | ✓✓ | ✗ (UX cost) | ✓ | **✓✓ (Phase 1)** |
+| Operator truly can't read | ✗ | ✓✓ | ✗ (mislabeled) | **✓ (Phase 2 opt-in)** |
+| Works browser-closed / real-time | ✓✓ | ✗ | ✓✓ | **✓ default / ✗ ZK mode** |
+| Reuses current Worker/cron/graph | ✓✓ | ✗ | ✓ | **✓** |
+| Honest about its guarantee | ✓ | ✓ | ✗ | **✓✓** |
+
+**Eliminated: C as a standalone answer.** It costs L-effort for a guarantee that does not match the stated goal — its protection (anti-DB-breach) is better achieved by Phase-1 at-rest encryption inside Shape A/D without the client-key machinery. C only becomes interesting if the threat model is explicitly *narrowed* to "future DB breach," which is not what was asked.
+
+---
+
+## Decision (ADR)
+
+**Adopt Shape D (hybrid, phased), on a single GitHub App.**
+
+1. **Auth primitive: GitHub App** (not OAuth App). Reason: it issues installation tokens (Phase-1 server sync, webhooks, higher rate limits) *and* user-to-server tokens (Phase-2 client-side mode) — so the auth decision is **not** re-litigated when Phase 2 lands. `Issues:Read` covers all needed GraphQL fields. A thin Worker endpoint holds `client_secret` for the OAuth code-exchange (unavoidable — GitHub PKCE doesn't remove it).
+2. **Phase 1 — multi-tenant, server-centric (Shape A).** Single D1 + `tenant_id`; per-install webhooks; cron fan-out (move to Queues only past ~hundreds of users). At-rest encryption of *content* fields is a cheap optional add (anti-DB-breach) but **must not be advertised as operator-blind**.
+3. **Phase 2 — opt-in zero-knowledge (Shape B).** Per-user toggle: browser fetches GitHub with its user token, encrypts content client-side (ECIES via Web Crypto), pushes ciphertext; server stores blobs and serves them; graph computed client-side (already the case). Key stays browser-local (non-extractable CryptoKey / IndexedDB).
+4. **Reject gist key storage.** Not operator-proof (URL-accessible, history persists, Worker can intercept the URL). Backup = passphrase-wrapped export the server never locates; if a passphrase KDF is used, require WASM-Argon2id (PBKDF2-600k as floor).
+
+### Residual trust gap (stated explicitly)
+- **Phase 1 (default):** operator **can** read user data. This is acceptable *only* if communicated — it's the same trust users already place in GitHub for the same issues. At-rest encryption narrows it to "operator-with-code-access can read," nothing stronger.
+- **Phase 2 (ZK mode):** operator cannot read stored **content**. Irreducible residue:
+  - (a) the **OAuth code-exchange** touches a server endpoint holding `client_secret` (token can be returned to the browser unpersisted, but the exchange is server-side; `client_secret` leak = user impersonation → must be rotatable, never logged);
+  - (b) the user's GitHub token lives in the browser;
+  - (c) **served-JS integrity** — a malicious deploy can ship key-exfiltrating JS. *SRI does not help* when the operator controls the asset CDN (it can update hash + asset atomically); only external code-transparency would, and it's never fully closed for served JS;
+  - (d) **XSS = key theft** — a non-extractable CryptoKey blocks `exportKey()` but **not in-process misuse**: an XSS payload can call `decrypt()` directly. The ZK guarantee is therefore contingent on a strict CSP + XSS elimination;
+  - (e) **metadata leakage** — content is encrypted but `state`, `edges` (who-blocks-whom), per-tenant issue counts, sync timing, and record sizes stay plaintext (the server graph needs them). Significant org-structure leakage without decrypting a byte. The privacy claim must be scoped to *"content, not graph structure."*;
+  - (f) **no forward secrecy** — static user key ⇒ private-key compromise retroactively decrypts all historical D1 ciphertext. Mitigate with per-record ephemeral keys + key rotation if this matters;
+  - (g) **session tokens at rest in D1 are operator-readable** (Phase 1 too) → operator-level access to whatever the user's token reaches; sessions need short TTL + revocation.
+
+### How this constrains the multi-tenant auth epic
+- The auth epic **must register a GitHub App** (not an OAuth App) and provision a **server-side token-exchange endpoint** from day one, even though Phase 1 alone could run on installation tokens — otherwise Phase 2 forces an auth rewrite. `client_secret` must be rotatable and never logged.
+- D1 schema gets `tenant_id` **now** (Phase 1). The migration is **breaking** on the live DB (backfill existing rows to a seed tenant) and CF deploy+migration are **not transactional** → sequence: migration first, then code; define a rollback for orphaned rows.
+- Phase-1 schema must **already** separate the encryptable payload from structural metadata: store `title`/`body`/notes in a dedicated `payload` column (JSON), keep `state` + `edges` as plaintext structural columns. Phase 2 then swaps **one column** (`payload TEXT → encrypted BLOB`) instead of restructuring rows.
+- CF Access (current edge gate) is **replaced by app-level sessions** for the public app (Access stays only for `/admin/*`). Sessions need a **revocation/invalidation design from day one**: short TTL, server-side revocation, and a defined reaction to GitHub App un-installation — retrofitting this later is harder than the encryption work.
+- **Tenant isolation choice:** single D1 + `tenant_id` (chosen) over Durable-Object-per-tenant. DO-per-tenant would eliminate the cross-tenant `WHERE`-filter bug class but adds provisioning complexity not justified at expected scale; revisit only if a tenant-isolation incident or >10 GB pressure appears.
+- **Phase-2 lifecycle gate (avoid two forever-paths):** the ADR must set a graduation criterion up front — either ZK mode is time-boxed toward becoming the default, or it's an explicitly capped permanent minority path with a named maintenance budget. Otherwise the server cron path bitrots against the ciphertext schema.
+- **WASM-Argon2id is a Phase-2 go/no-go**, not a follow-up: if it can't run in workerd at target iterations, PBKDF2-600k is the floor for *every* exported/backed-up key blob → brute-force becomes realistic on weak passphrases.
+
+---
+
+## Files / surfaces impacted (for issue scoping)
+
+| Surface | Phase 1 | Phase 2 |
+|---|---|---|
+| `worker/src/auth/*` (new) | GitHub App install, OAuth exchange, sessions | user-token relay |
+| `worker/migrations/` | `tenant_id` on issues/edges; sessions table | `encrypted_payload` column shape |
+| `worker/src/sync/*` | per-install tokens, per-tenant scoping | (ZK: server stops fetching content) |
+| `worker/src/webhook/*` | per-install HMAC, tenant routing | — |
+| `worker/src/api/*` | tenant-filtered reads | serve ciphertext blobs |
+| `frontend/` | login, account-link UI | client crypto (ECIES), key mgmt, encrypt-on-push |
+
+## Open questions / not verified
+- **Multi-device key bootstrap (ZK mode)** — the most likely ZK-breaking user behavior, currently unsolved. Passphrase-wrapped export invites weak passphrases (defeats the KDF); a server-stored recovery key collapses ZK. Needs a real design before Phase 2 (candidates: device-to-device key transfer via QR/WebRTC, or accept "per-device, no sync" + re-link).
+- WASM-Argon2id inside workerd at target iteration count — **Phase-2 go/no-go** (see Decision), not a passive follow-up.
+- Live-token confirmation that `subIssues`/`parent` need no preview header post-GA (research said GA; recommend a smoke test).
+- D1 read-replica consistency lag (no published SLA).
+- Whether at-rest content encryption in Phase 1 is worth the complexity vs. plain D1 + "we can read your data" honesty — **product call**, not technical. Note: even encrypted, private-repo issue **bodies may contain pasted secrets** — Phase-1 honesty messaging should warn users not to treat the cockpit as a secret store.
+
+---
+
+## Source notes (citations)
+Crypto: Cloudflare Web Crypto docs + historical changelog; MDN SubtleCrypto/wrapKey/deriveKey; OWASP Password Storage; RSA-OAEP max-plaintext (Chilkat); ECIES-with-WebCrypto reference. Gist risk: TruffleSecurity, GitGuardian, GitHub 2025-11-25 changelog, GitHub "Creating gists" docs. Auth: GitHub "Differences between GitHub Apps and OAuth apps", "Rate limits for GitHub Apps", "Permissions required for GitHub Apps", "Dependencies on issues" GA changelog (2025-08-21), "Authorizing OAuth apps". D1: Cloudflare D1 Limits + Pricing, Workers Limits.
