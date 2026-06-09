@@ -1,0 +1,31 @@
+---
+title: "feat(auth): GitHub App + OAuth login + sessions (Phase 1 S2)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 145
+status: approved
+tier: M
+---
+
+## Scope
+
+Slice **S2** of #141. Identity layer.
+
+- Register the single **GitHub App**; provision per-env secrets `GITHUB_APP_{ID,CLIENT_ID,CLIENT_SECRET,PRIVATE_KEY,WEBHOOK_SECRET}` (rotatable, never logged).
+- **App-JWT (RS256) signer** util (`crypto.subtle` RSASSA-PKCS1-v1_5). **Pre-impl gate: RS256-in-workerd smoke-test** — if it fails, re-evaluate the App-JWT path.
+- `GET /login` (redirect to GitHub authorize + single-use `state`) and `GET /oauth/callback` (verify+delete `state`, `code`→token with `client_secret`, upsert `users`, mint **fresh** session).
+- **`sessions`** writes (token **hashed at rest**); fail-closed session middleware (Hono, mirrors `checkAdminAuth`).
+
+## Success Criteria
+
+- [ ] OAuth → fresh session; `GET /api/me` returns identity + installations; `POST /logout` deletes the session row (subsequent `/api/*` → 401).
+- [ ] `state` single-use (deleted on verify), TTL ≤ 10 min, `redirect_uri` Worker-hard-coded; replay rejected.
+- [ ] Session token freshly minted post-auth (no pre-auth value reused); `sessions.token_hash` = SHA-256 of token; cookie `HttpOnly; Secure; SameSite=Lax; Domain=<exact host>`.
+
+## Dependencies
+
+Blocked by **#144** (S1 — schema/auth tables).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx)
