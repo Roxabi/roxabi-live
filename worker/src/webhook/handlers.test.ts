@@ -992,4 +992,94 @@ describe("webhookRoute", () => {
       expect(json["ok"]).toBe(true);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // data_version bump (#133)
+  // -------------------------------------------------------------------------
+
+  describe("data_version bump", () => {
+    /** Build a context that exposes the db so we can inspect db.batch calls. */
+    async function dispatchWithDb(
+      body: string,
+      event: string,
+      envOverrides: Partial<Env> = {},
+    ): Promise<{ res: Response; db: D1Database & { _recorded: FakeStmt[] } }> {
+      const bodyBytes = new TextEncoder().encode(body).buffer as ArrayBuffer;
+      const sig = await computeHmac(bodyBytes, SECRET);
+      const req = makeRequest(body, sig, event);
+      const env = makeEnv({ ...envOverrides });
+      const { c, db } = makeContext(req, env);
+      const res = await webhookRoute(c);
+      return { res, db };
+    }
+
+    it("bumps data_version after a mutating issues event", async () => {
+      // Arrange
+      const payload = makeIssuePayload("opened");
+
+      // Act
+      const { res, db } = await dispatchWithDb(JSON.stringify(payload), "issues");
+
+      // Assert — response OK
+      expect(res.status).toBe(200);
+
+      // db.batch should have been called at least once; verify a sync_control
+      // statement (the data_version bump) was recorded among all prepared stmts.
+      expect(vi.mocked(db.batch)).toHaveBeenCalled();
+
+      const recorded = db._recorded;
+      const bumpStmt = recorded.find(
+        (s) => s.sql.includes("sync_control") && s.args.length >= 1,
+      );
+      expect(bumpStmt).toBeDefined();
+      // First arg is the ISO timestamp — must be a non-empty string.
+      expect(typeof bumpStmt!.args[0]).toBe("string");
+      expect((bumpStmt!.args[0] as string).length).toBeGreaterThan(0);
+    });
+
+    it("does NOT bump data_version for an unknown (ignored) event", async () => {
+      // Arrange — unknown event short-circuits before setting mutated=true
+      const body = JSON.stringify({ action: "something" });
+
+      // Act
+      const { res, db } = await dispatchWithDb(body, "unknown_event_xyz");
+
+      // Assert — response carries ignored flag
+      const json = (await res.json()) as Record<string, unknown>;
+      expect(json["ignored"]).toBe("unknown_event_xyz");
+
+      // db.batch must NOT have been called (no bump, no handler writes)
+      expect(vi.mocked(db.batch)).not.toHaveBeenCalled();
+    });
+
+    it("does NOT bump data_version for issue_dependencies blocking_added (returns 0 changes)", async () => {
+      // blocking_added is ignored by handleDeps (returns 0 immediately) →
+      // mutated stays false → no db.batch call for the bump.
+      const payload = {
+        action: "blocking_added",
+        issue: {
+          number: 10,
+          title: "Blocker",
+          state: "open",
+          html_url: "https://github.com/Roxabi/lyra/issues/10",
+          created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-01T00:00:00Z",
+          closed_at: null,
+          milestone: null,
+          labels: [],
+        },
+        repository: { full_name: REPO },
+      };
+
+      const { res, db } = await dispatchWithDb(
+        JSON.stringify(payload),
+        "issue_dependencies",
+      );
+
+      expect(res.status).toBe(200);
+
+      // db.batch must NOT have been called (no handler writes, no version bump)
+      expect(vi.mocked(db.batch)).not.toHaveBeenCalled();
+    });
+  });
 });

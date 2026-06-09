@@ -8,18 +8,21 @@ import type { Env } from "../types";
  * Response shape MUST stay `{ version: string }` — matches the Python
  * `app.py::api_version` contract consumed by `frontend/app.js::fetchVersion`.
  *
- * The Python impl returned the max mtime across corpus.db + WAL/SHM, catching
- * BOTH webhook and reconciler writes. D1 has no file mtime, so we use
- * `MAX(last_synced_at)` from sync_state (per spec #92 §2).
+ * Returns MAX across:
+ *   - sync_state.last_synced_at  (advances on hourly cron)
+ *   - sync_control['data_version'] (bumped on every mutating webhook dispatch)
  *
- * TODO(#97/#98, S5/S6): `last_synced_at` only advances on the hourly cron sync,
- * not on webhook-driven writes — so webhook board changes won't trigger a
- * live-refresh. Restore parity with a per-write mutation token (e.g. a
- * `sync_control` row bumped on every webhook upsert) when those paths land.
+ * Both columns are ISO-8601 strings and compare lexicographically, so MAX()
+ * over the UNION ALL correctly returns the most-recent write regardless of
+ * which path produced it. Resolves #133.
  */
 export const versionRoute = async (c: Context<{ Bindings: Env }>) => {
   const row = await c.env.DB.prepare(
-    "SELECT MAX(last_synced_at) AS ts FROM sync_state",
-  ).first<{ ts: string | null }>();
-  return c.json({ version: row?.ts ?? "" });
+    `SELECT MAX(v) AS version FROM (
+       SELECT COALESCE(MAX(last_synced_at), '') AS v FROM sync_state
+       UNION ALL
+       SELECT COALESCE(value, '') AS v FROM sync_control WHERE key = 'data_version'
+     )`,
+  ).first<{ version: string | null }>();
+  return c.json({ version: row?.version ?? "" });
 };

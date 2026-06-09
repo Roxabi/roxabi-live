@@ -23,6 +23,7 @@ import {
   setActiveBranch,
   upsertPrState,
   renameMilestone,
+  bumpDataVersion,
   type WebhookIssue,
 } from "./mutations";
 import { BRANCH_ISSUE_RE, canonicalKey, extractFromLabels, syncBranches } from "../sync/sync";
@@ -494,27 +495,52 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
   const event = c.req.header("x-github-event") ?? null;
   const db = c.env.DB;
 
+  // Unknown events short-circuit here — no data_version bump.
+  if (
+    event !== "issues" &&
+    event !== "issue_dependencies" &&
+    event !== "sub_issues" &&
+    event !== "create" &&
+    event !== "delete" &&
+    event !== "pull_request" &&
+    event !== "milestone"
+  ) {
+    return c.json({ ok: true, ignored: event });
+  }
+
+  let mutated = false;
+
   try {
     if (event === "issues") {
       await handleIssues(payload, db);
+      mutated = true;
     } else if (event === "issue_dependencies") {
-      await handleDeps(payload, db, c.env);
+      const changed = await handleDeps(payload, db, c.env);
+      mutated = changed > 0;
     } else if (event === "sub_issues") {
-      await handleSubIssues(payload, db);
+      const changed = await handleSubIssues(payload, db);
+      mutated = changed > 0;
     } else if (event === "create") {
       await handleRefCreate(payload, db);
+      mutated = true;
     } else if (event === "delete") {
       await handleRefDelete(payload, db, c.env);
+      mutated = true;
     } else if (event === "pull_request") {
       await handlePullRequest(payload, db);
+      mutated = true;
     } else if (event === "milestone") {
       await handleMilestone(payload, db);
-    } else {
-      return c.json({ ok: true, ignored: event });
+      mutated = true;
     }
   } catch (err) {
     console.error("[webhook] unhandled handler error", err);
     return c.json({ ok: true, error: "internal" });
+  }
+
+  if (mutated) {
+    const iso = new Date().toISOString();
+    await db.batch([bumpDataVersion(db, iso)]);
   }
 
   return c.json({ ok: true });
