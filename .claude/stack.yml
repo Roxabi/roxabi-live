@@ -1,27 +1,29 @@
 # .claude/stack.yml — dev-core stack configuration
 schema_version: "1.0"
 
-runtime: python
-package_manager: uv
+runtime: node
+package_manager: npm
 
 backend:
-  framework: fastapi
-  path: src/roxabi_live
+  framework: hono
+  path: worker/src
+
+frontend:
+  framework: none  # static HTML/JS/CSS; served via CF Worker ASSETS binding
+  path: frontend
 
 build:
-  formatter: ruff
-  formatter_config: pyproject.toml
-  formatter_fix_cmd: "uv run ruff format . && uv run ruff check --fix ."
+  formatter: none  # no formatter configured for the worker; no lint/format script in worker/package.json
 
 testing:
-  unit: pytest
+  unit: vitest
 
 lsp:
   enabled: true
-  server: pyright
+  server: typescript-language-server
 
 deploy:
-  platform: none
+  platform: cloudflare  # wrangler deploy via CI; push to staging → staging env, push to main → prod
 
 docs:
   framework: none
@@ -29,12 +31,13 @@ docs:
   format: md
 
 commands:
-  dev: uv run roxabi-live
-  test: uv run pytest
-  lint: uv run ruff check .
-  format: uv run ruff format .
-  typecheck: uv run pyright
-  install: uv sync
+  dev: cd worker && npm run dev
+  test: cd worker && npm test
+  typecheck: cd worker && npm run typecheck
+  install: cd worker && npm ci
+  # lint and format: no script defined in worker/package.json and no tool configured
+  # (.pre-commit-config.yaml still references legacy ruff/pyright for frozen Python src/)
+  # Add lint/format here once a TS linter (eslint/biome) is wired up — see #136 follow-up
 
 artifacts:
   analyses: artifacts/analyses
@@ -47,12 +50,18 @@ quality_gates:
     enabled: true
     metric: sloc
     max_lines: 300
+    # NOTE: tools/qg.conf (CI-authoritative) still scopes this gate to src/**/*.py (legacy Python,
+    # frozen for reference). Regenerating qg.conf for worker/ requires /release-setup and is
+    # deferred to a follow-up — see #136. CI stays green: src/ exists, Python files pass.
+    # Worker TS file length is governed by tsc + code review until qg.conf is regenerated.
     globs: ["src/**/*.py"]
     exemptions_file: tools/file_exemptions.txt
 
   folder_size:
     enabled: true
     max_files: 12
+    # Same note as file_length: qg.conf + check_folder_size.sh both target src/**/*.py.
+    # tools/qg.conf left unchanged to preserve CI green baseline — see #136 follow-up.
     globs: ["src/**"]
     exemptions_file: tools/folder_exemptions.txt
 
