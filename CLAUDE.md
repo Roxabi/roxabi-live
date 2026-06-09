@@ -95,6 +95,13 @@ wrangler.toml       # repo root — binds both envs
 frontend/           # served via ASSETS binding
 ```
 
+**Plugin (issue mgmt — relocated from dev-core)**
+
+```
+.claude-plugin/marketplace.json   # single-plugin marketplace
+plugins/roxabi-issues/            # roxabi-issues:issue-triage (bun; labels + native relations)
+```
+
 **Legacy Python app (decommissioned 2026-06-08)**
 
 ```

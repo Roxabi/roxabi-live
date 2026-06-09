@@ -92,6 +92,17 @@ Copy `.env.example` to `.env` and set values.
 | `GITHUB_WEBHOOK_SECRET` | — | HMAC secret for webhook verification |
 | `CORPUS_SYNC_INTERVAL_SECONDS` | `3600` | Reconciler interval in seconds |
 
+## Plugins
+
+This repo also hosts the **`roxabi-issues`** Claude Code plugin (`plugins/roxabi-issues/`), relocated from `dev-core` — issue triage that pairs with the cockpit.
+
+```bash
+claude plugin marketplace add Roxabi/roxabi-live
+claude plugin install roxabi-issues
+```
+
+The `issue-triage` skill (invoked `roxabi-issues:issue-triage`) sets labels (size / priority / lane / type) and manages blocked-by dependencies and parent/child sub-issues on GitHub issues — **labels + native relations only, no Projects V2 board** (the cockpit owns the read/dashboard side). Self-contained bun project.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
