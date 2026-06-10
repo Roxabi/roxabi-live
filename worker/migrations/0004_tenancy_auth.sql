@@ -3,6 +3,8 @@
 
 -- D1 runs in WAL mode natively; `PRAGMA journal_mode` is rejected at
 -- `wrangler d1 migrations apply` time, so it must not appear here.
+-- D1 accepts PRAGMA foreign_keys (verified against remote staging D1 2026-06-10) and
+-- enforces FK constraints by default; this line is belt-and-braces for local/vanilla SQLite runs.
 PRAGMA foreign_keys = ON;
 
 -- tenants: one row per GitHub App installation
@@ -42,18 +44,23 @@ CREATE TABLE IF NOT EXISTS sessions (
   revoked_at  TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- S2 revocation/expiry lookups
+CREATE INDEX IF NOT EXISTS ix_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS ix_sessions_expires_at ON sessions(expires_at);
 
 -- oauth_state: single-use PKCE-like state for OAuth flow
 CREATE TABLE IF NOT EXISTS oauth_state (
   state          TEXT PRIMARY KEY,
-  redirect_after TEXT,
+  -- same-origin relative paths only — S2 OAuth callback must still validate
+  redirect_after TEXT CHECK(redirect_after IS NULL OR (redirect_after LIKE '/%' AND redirect_after NOT LIKE '//%')),
   expires_at     TEXT NOT NULL,
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- install_tokens: AES-GCM-encrypted installation access tokens; DEK = INSTALL_TOKEN_KEY secret
--- Deviation: spec wrote `tenant_id INTEGER NOT NULL REFERENCES tenants(id) PRIMARY KEY` which is
--- invalid SQLite column-level PK syntax; reordered to `PRIMARY KEY NOT NULL REFERENCES tenants(id)`.
+-- Note: spec wrote `tenant_id INTEGER NOT NULL REFERENCES tenants(id) PRIMARY KEY`; SQLite
+-- column constraints are order-independent so that form is valid and equivalent — reordered here
+-- to `PRIMARY KEY NOT NULL REFERENCES tenants(id)` for readability only.
 CREATE TABLE IF NOT EXISTS install_tokens (
   tenant_id  INTEGER PRIMARY KEY NOT NULL REFERENCES tenants(id),
   token_enc  TEXT NOT NULL,
@@ -82,7 +89,9 @@ CREATE TABLE IF NOT EXISTS user_repo_permission_cache (
 -- Deviation D-2: NO foreign key on tenant_id — the existing 5 sentinel rows use tenant_id=0
 -- (a sentinel, not a real tenant), which would violate a FK constraint to tenants(id).
 -- Strategy: rename-rebuild to preserve existing data, seeding sentinel rows at tenant_id=0.
--- recovery guard — if a prior partial run failed between CREATE and RENAME, re-apply starts clean
+-- Three-step swap: data exists in at least one table at every crash point. A partial-failure
+-- re-run fails loudly (recoverable manually) rather than silently destroying data.
+-- recovery guard — if a prior partial run failed between CREATE and first RENAME, re-apply starts clean
 DROP TABLE IF EXISTS sync_control_new;
 CREATE TABLE sync_control_new (
   tenant_id  INTEGER NOT NULL DEFAULT 0,
@@ -93,8 +102,9 @@ CREATE TABLE sync_control_new (
 );
 INSERT INTO sync_control_new (tenant_id, key, value, updated_at)
   SELECT 0, key, value, updated_at FROM sync_control;
-DROP TABLE sync_control;
+ALTER TABLE sync_control RENAME TO sync_control_old;
 ALTER TABLE sync_control_new RENAME TO sync_control;
+DROP TABLE sync_control_old;
 
 -- zk_payloads: Phase-2 ZK seam; PK is per-user (browser keys, not per-tenant)
 CREATE TABLE IF NOT EXISTS zk_payloads (

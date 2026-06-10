@@ -114,7 +114,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - id: app-secrets-guard
+      # consumed by S2/#145 — gates GitHub App secret injection steps
+      - if: steps.guard.outputs.enabled == 'true'
+        id: app-secrets-guard
         name: Guard — GITHUB_APP_* secrets
         env:
           GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}

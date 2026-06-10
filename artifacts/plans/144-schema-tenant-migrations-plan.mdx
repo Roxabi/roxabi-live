@@ -19,8 +19,10 @@ staging R2 split + `workers_dev` + dormant `SYNC_QUEUE` placeholder.
 | # | Spec says | Plan does | Why |
 |---|-----------|-----------|-----|
 | D-1 | `ALTER TABLE repos ADD COLUMN repo_node_id TEXT UNIQUE` | `ADD COLUMN repo_node_id TEXT` + `CREATE UNIQUE INDEX ux_repos_node_id` | SQLite forbids adding a UNIQUE column via ADD COLUMN. UNIQUE index on nullable col allows multiple NULLs (existing rows safe). |
-| D-2 | `sync_control.tenant_id INTEGER NOT NULL REFERENCES tenants(id)` | Rebuild with `tenant_id INTEGER NOT NULL DEFAULT 0`, **no FK** | Table already exists with 5 live global rows (lock, circuit-breaker, data_version) used by runtime SQL in sync.ts/mutations.ts/version.ts. FK to `tenants` would fail on sentinel 0; DEFAULT 0 keeps current INSERTs working. FK semantics arrive when rows become per-tenant (S3). Composite PK `(tenant_id,key)` delivered as specced. |
+| D-2 | `sync_control.tenant_id INTEGER NOT NULL REFERENCES tenants(id)` | Rebuild with `tenant_id INTEGER NOT NULL DEFAULT 0`, **no FK** | Table already exists with 5 live global rows (lock, circuit-breaker, data_version) used by runtime SQL in sync.ts/mutations.ts/version.ts. FK to `tenants` would fail on sentinel 0; DEFAULT 0 keeps current INSERTs working. FK semantics arrive when rows become per-tenant (S3). Composite PK `(tenant_id,key)` delivered as specced. Rebuild finalized as rename-swap (old→sync_control_old, new→sync_control, drop old) so data survives any crash point — post-review refinement. |
 | D-3 | `SYNC_QUEUE` binding "declared DORMANT" | Commented-out TOML placeholder block | Active Queues producer binding requires queue existence + Workers Paid (plan unconfirmed) — an active binding could fail deploy. Commented block is plan-agnostic. |
+| D-4 | spec: `redirect_after TEXT` (no constraint) | `CHECK` same-origin relative path (`LIKE '/%' AND NOT LIKE '//%'`) | review hardening — open-redirect defense-in-depth for S2; S2 callback still validates |
+| D-5 | spec: `sessions` table DDL (no secondary indexes) | + `ix_sessions_user_id`, `ix_sessions_expires_at` | review hardening — S2 revocation (`WHERE user_id`) + expiry sweep need them |
 
 ## Architecture
 
