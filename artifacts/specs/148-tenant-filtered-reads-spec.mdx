@@ -1,30 +1,130 @@
 ---
-title: "feat(api): tenant-filtered reads + active-tenant + org-picker (Phase 1 S5)"
+title: "feat(api): tenant-filtered reads + repo-canonical auth + org-picker (Phase 1 S5)"
 parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
 parent_issue: 141
 issue: 148
 status: approved
 tier: M
+amended: 2026-06-10
 ---
+
+> **Pivot note (2026-06-10):** Title + scope rewritten. Original scope: `AND tenant_id=?`
+> filter injected into every read; no `user_repo_permission_cache`. **New scope:**
+> authorization via `JOIN tenant_repo_access` (repo-canonical model); private-repo reads add
+> `user_repo_permission_cache` check (24h TTL, live API fallback); session middleware includes
+> NOT-EXISTS suspended-tenant guard; no `tenant_id` in response shapes.
 
 ## Scope
 
 Slice **S5** of #141. **This slice satisfies the epic acceptance criterion.**
 
-- Fail-closed **session middleware on `/api/*`**: no/invalid session → **401 before any DB statement**.
-- Inject `tenant_id` (= session's active tenant) into every read: `listIssuesRoute`, all 5 `graphRoute` queries, and **`getIssueRoute`** (issue + labels + edges) with SQL-level **`AND tenant_id=?`** (closes the IDOR — keys are public GitHub URLs).
-- Session encodes **one active `tenant_id`**; user with >1 installation → **org-picker** (`POST /api/active-tenant`, membership-checked). **No cross-tenant UNION** queries.
+### Session middleware
+
+All `/api/*` routes go through a fail-closed session middleware:
+- No session cookie → **401** before any DB statement.
+- Invalid / expired / revoked session → **401**.
+- Suspended tenant → **401** (NOT-EXISTS guard in the SELECT itself).
+
+Session SELECT (authoritative):
+
+```sql
+SELECT s.*, u.github_id, u.github_login
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.token_hash = ?
+  AND s.expires_at > datetime('now')
+  AND s.revoked_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM tenants t
+    WHERE t.id = s.tenant_id AND t.suspended_at IS NOT NULL
+  )
+```
+
+The middleware injects `{ tenant_id, user_id, github_id, github_login }` into the request
+context. No downstream handler calls the DB before this context is populated.
+
+### Repo-canonical auth filter
+
+**Superseded (stale — do not use):**
+```sql
+WHERE i.tenant_id = ?
+```
+
+**Current (repo-canonical):**
+```sql
+JOIN tenant_repo_access tra
+  ON tra.repo = i.repo
+  AND tra.tenant_id = ?
+```
+
+This JOIN applies to:
+- `listIssuesRoute` — all issue rows visible to this tenant
+- `getIssueRoute` — single issue + labels + edges (IDOR closed: unknown repo → 0 rows → 404)
+- All 5 `graphRoute` queries (nodes, edges, labels, etc.)
+
+### Private-repo permission check (`user_repo_permission_cache`)
+
+When `tenant_repo_access.is_private = 1`:
+
+1. **Cache hit** (row in `user_repo_permission_cache` where `user_id=? AND repo=?` and
+   `cached_at > now - 24h`): use `has_access` value directly — **fail-closed** (if
+   `has_access=0`, 404, no data returned).
+2. **Cache miss** (no row, or row older than 24h): call GitHub API
+   `GET /repos/:owner/:repo/collaborators/:username` with the installation token.
+   - 204 → `has_access=1`; upsert cache.
+   - 404/403 → `has_access=0`; upsert cache.
+   - API error / timeout → **fail-closed** (treat as no access, 404); do not cache.
+3. **Cache error** (D1 read failure): fail-closed → 404.
+
+Public repos (`is_private = 0`) skip the permission check entirely.
+
+TTL: 24 hours from `cached_at`. Cache is invalidated by webhook events
+(`member.removed` / `membership.removed` / `repository.privatized` — see #147).
+
+### `GET /api/me`
+
+Returns authenticated user info and installation list:
+```json
+{
+  "github_login": "...",
+  "active_tenant_id": 42,
+  "installations": [
+    { "tenant_id": 42, "account_login": "Roxabi", "account_type": "Organization" }
+  ]
+}
+```
+
+No `tenant_id` column exposed from `issues`/`edges` rows. Response shapes are identical to
+single-tenant responses — authorization is fully backend-side.
+
+### Org-picker (`POST /api/active-tenant`)
+
+When a user has >1 installation: a picker UI (see #149) POSTs `{ tenant_id }`. The endpoint:
+1. Verifies the user has a row in `user_installations` for that `tenant_id`.
+2. Updates `sessions.tenant_id = ?` for the current session token.
+3. Returns 200 + updated session context.
+
+No cross-tenant UNION queries anywhere.
 
 ## Success Criteria
 
-- [ ] Every `/api/*` route gated by fail-closed middleware (no/invalid session → 401 before any DB statement).
-- [ ] `getIssueRoute` issue/label/edge queries include SQL-level `AND tenant_id=?` (code-review-verified); foreign-tenant key → 404; `listIssuesRoute` + 5 `graphRoute` queries tenant-filtered. [IDOR closed]
-- [ ] >1 installation → org-picker; session carries exactly one active `tenant_id`; no cross-tenant UNION.
-- [ ] **Acceptance:** a second GitHub account sees only its own issues + graph; operator sees only `Roxabi` — verified on staging.
+- [ ] Every `/api/*` route gated by fail-closed session middleware; no/invalid session →
+  401 before any DB statement; suspended tenant → 401 (NOT-EXISTS guard in session SELECT).
+- [ ] `getIssueRoute` issue/label/edge queries use `JOIN tenant_repo_access` (no
+  `AND tenant_id=?`); foreign-tenant or unknown repo key → 404. [IDOR closed]
+- [ ] `listIssuesRoute` + all 5 `graphRoute` queries use `JOIN tenant_repo_access`.
+- [ ] Private-repo reads check `user_repo_permission_cache` (24h TTL); cache miss → live API
+  fallback; any error path → fail-closed (404).
+- [ ] `GET /api/me` returns `installations` array; no `tenant_id` in issue/edge response shapes.
+- [ ] `POST /api/active-tenant` switches session tenant; membership verified before update.
+- [ ] >1 installation → org-picker flow works end-to-end.
+- [ ] **Acceptance:** a second GitHub account sees only its own repos' issues + graph;
+  operator sees only `Roxabi` — verified on staging.
 
 ## Dependencies
 
-Blocked by **#145** (S2 — sessions) and **#146** (S3 — tenant data).
+Blocked by **#147** (S4 — `tenant_repo_access` populated by webhook; `user_repo_permission_cache`
+invalidation wired) and **#145** (S2 — sessions + `user_installations` table).
 
 ## Reference
 

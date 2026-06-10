@@ -282,3 +282,86 @@ guards + staging URL + staging R2 (dec. 17–20), Access staging-gate (dec. 21),
 machine + honesty surface (dec. 22–23), payload/title/body product calls (dec. 24). RS256 +
 subIssues moved to pre-impl validation tasks. Mermaid corrected (install async; cron bidirectional);
 composite-PK duplication removed.
+
+---
+
+## Addendum (2026-06-10) — repo-canonical pivot
+
+### What changed and why
+
+Decisions 8, 9, and 10 in this analysis (lines above) specified the original **per-tenant**
+data model: composite PKs `(tenant_id, issue_key)` on `issues`/`edges`, a `tenant_id` column
+on data tables, a live-table PK recreation migration (M-a), and a backfill of `tenant_id` into
+existing rows. That model is **superseded** by the **repo-canonical** model ratified 2026-06-10.
+
+**The superseded decisions (preserved above as historical record):**
+- Dec. 8: composite PK `(tenant_id, key)` on `issues` — superseded
+- Dec. 9: live-table composite-PK recreation migration — superseded (eliminated)
+- Dec. 10: `COUNT(*) WHERE tenant_id IS NULL = 0` backfill gate — superseded (no backfill)
+
+### Repo-canonical model
+
+PKs on `issues` (`key = owner/repo#N`) and `edges` remain **unchanged** — globally unique,
+no `tenant_id` column added. Authorization is a JOIN at read time:
+
+```sql
+-- Superseded (stale):
+WHERE i.tenant_id = ?
+
+-- Current (repo-canonical):
+JOIN tenant_repo_access tra
+  ON tra.repo = i.repo
+  AND tra.tenant_id = ?
+```
+
+### Risk eliminated
+
+The riskiest migration step — recreating PKs on `issues`/`edges` live tables — is eliminated.
+No M-a migration. No M-b NOT NULL cutover on existing tables. S7 scope shrinks to: NOT NULL
+on **new tables only** + CF Access narrowed to `/admin/*`.
+
+### New tables (10 new + 2 ALTERs)
+
+New tables added by S1 migrations (#144): `tenants`, `users`, `user_installations`, `sessions`,
+`oauth_state`, `install_tokens`, `tenant_repo_access`, `user_repo_permission_cache`,
+`sync_control`, `zk_payloads`. Existing tables receive only:
+- `ALTER TABLE issues ADD COLUMN payload TEXT`
+- `ALTER TABLE repos ADD COLUMN repo_node_id TEXT UNIQUE`
+
+No `tenant_id` column on `issues`, `edges`, `labels`, or `pr_state`.
+
+### Corrections to prior synthesis
+
+| Item | Prior synthesis | Ratified (this addendum) |
+|---|---|---|
+| `zk_payloads` PK | `(tenant_id, issue_key)` | `(user_id, issue_key)` — ZK keys are per-user browser keys |
+| `installations` table | named `installations` | renamed `tenants` (has `installation_id` column) |
+| `sync_control` PK | `(tenant_id, key)` | confirmed `(tenant_id, key)` — unchanged |
+
+### Session SELECT (authoritative)
+
+```sql
+SELECT s.*, u.github_id, u.github_login
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.token_hash = ?
+  AND s.expires_at > datetime('now')
+  AND s.revoked_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM tenants t
+    WHERE t.id = s.tenant_id AND t.suspended_at IS NOT NULL
+  )
+```
+
+The NOT-EXISTS guard enforces suspended-tenant revocation without an immediate session flush.
+
+### Spec files updated (2026-06-10)
+
+All slice specs amended to reflect this pivot:
+- `141-multi-tenant-github-app-auth-spec.mdx` — pivot note + mermaid (repo-canonical)
+- `144-schema-tenant-migrations-spec.mdx` — full rewrite (10 tables + 2 ALTERs; no composite-PK recreation)
+- `145-github-app-oauth-sessions-spec.mdx` — `SameSite=Strict`; suspended-tenant guard; PKCS#8 contract; vitest RS256 CI guard
+- `146-installation-sync-backfill-spec.mdx` — per-repo fan-out; AES-GCM tokens; slot-rotation; SYNC_QUEUE DORMANT; PAT retirement; no backfill
+- `147-webhook-tenant-routing-spec.mdx` — lifecycle handlers; issue rows retained on `installation.deleted`; `user_repo_permission_cache` invalidation
+- `148-tenant-filtered-reads-spec.mdx` — JOIN `tenant_repo_access`; private-repo permission cache; no `tenant_id` in response shapes
+- `150-notnull-access-cutover-spec.mdx` — NOT NULL on new tables only; no backfill on old tables; CF Access → `/admin/*`
