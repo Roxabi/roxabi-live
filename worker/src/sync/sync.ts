@@ -30,15 +30,15 @@ export const MAX_PAGES = 500;
 /** Verbatim port of sync.py UPSERT_ISSUE_SQL — full sync path (sets status=null). */
 export const UPSERT_ISSUE_SQL = `
   INSERT INTO issues
-      (key, repo, number, title, state, url, created_at, updated_at,
+      (key, repo, number, payload, state, url, created_at, updated_at,
        closed_at, milestone, is_stub, lane, priority, size, status,
        has_active_branch)
   VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (?, ?, ?, json_object('title', ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(key) DO UPDATE SET
       repo              = excluded.repo,
       number            = excluded.number,
-      title             = excluded.title,
+      payload           = excluded.payload,
       state             = excluded.state,
       url               = excluded.url,
       created_at        = excluded.created_at,
@@ -216,6 +216,7 @@ export async function acquireSyncLock(db: D1Database): Promise<boolean> {
       `UPDATE sync_control
        SET value = '1', updated_at = ?
        WHERE key = 'sync_running'
+         AND tenant_id = 0
          AND (value = '0' OR (CAST(strftime('%s','now') AS INTEGER) - CAST(strftime('%s', updated_at) AS INTEGER)) > 900)`,
     )
     .bind(new Date().toISOString())
@@ -225,21 +226,21 @@ export async function acquireSyncLock(db: D1Database): Promise<boolean> {
 
 export async function releaseSyncLock(db: D1Database): Promise<void> {
   await db
-    .prepare(`UPDATE sync_control SET value='0', updated_at=? WHERE key='sync_running'`)
+    .prepare(`UPDATE sync_control SET value='0', updated_at=? WHERE key='sync_running' AND tenant_id = 0`)
     .bind(new Date().toISOString())
     .run();
 }
 
 export async function isHalted(db: D1Database): Promise<boolean> {
   const row = await db
-    .prepare(`SELECT value FROM sync_control WHERE key='halted'`)
+    .prepare(`SELECT value FROM sync_control WHERE key='halted' AND tenant_id = 0`)
     .first<{ value: string }>();
   return row?.value === "1";
 }
 
 export async function getAuthFailures(db: D1Database): Promise<number> {
   const row = await db
-    .prepare(`SELECT value FROM sync_control WHERE key='auth_failures'`)
+    .prepare(`SELECT value FROM sync_control WHERE key='auth_failures' AND tenant_id = 0`)
     .first<{ value: string }>();
   return parseInt(row?.value ?? "0", 10);
 }
@@ -248,7 +249,7 @@ export async function incrementAuthFailures(db: D1Database): Promise<number> {
   await db
     .prepare(
       `UPDATE sync_control SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT), updated_at=?
-       WHERE key='auth_failures'`,
+       WHERE key='auth_failures' AND tenant_id = 0`,
     )
     .bind(new Date().toISOString())
     .run();
@@ -257,7 +258,7 @@ export async function incrementAuthFailures(db: D1Database): Promise<number> {
 
 export async function haltSync(db: D1Database): Promise<void> {
   await db
-    .prepare(`UPDATE sync_control SET value='1', updated_at=? WHERE key='halted'`)
+    .prepare(`UPDATE sync_control SET value='1', updated_at=? WHERE key='halted' AND tenant_id = 0`)
     .bind(new Date().toISOString())
     .run();
 }
@@ -265,7 +266,7 @@ export async function haltSync(db: D1Database): Promise<void> {
 export async function resetAuthFailures(db: D1Database): Promise<void> {
   await db
     .prepare(
-      `UPDATE sync_control SET value='0', updated_at=? WHERE key='auth_failures'`,
+      `UPDATE sync_control SET value='0', updated_at=? WHERE key='auth_failures' AND tenant_id = 0`,
     )
     .bind(new Date().toISOString())
     .run();
@@ -1093,7 +1094,7 @@ export async function writeRunAudit(
         .first<{ w: string | null }>(),
       db
         .prepare(
-          "SELECT key, value FROM sync_control WHERE key IN ('halted','auth_failures')",
+          "SELECT key, value FROM sync_control WHERE key IN ('halted','auth_failures') AND tenant_id = 0",
         )
         .all<{ key: string; value: string }>(),
     ]);
@@ -1145,7 +1146,7 @@ export async function runSync(env: Env): Promise<void> {
     const startedAt = new Date().toISOString();
     await db
       .prepare(
-        `UPDATE sync_control SET value=?, updated_at=? WHERE key='sync_started_at'`,
+        `UPDATE sync_control SET value=?, updated_at=? WHERE key='sync_started_at' AND tenant_id = 0`,
       )
       .bind(startedAt, startedAt)
       .run();

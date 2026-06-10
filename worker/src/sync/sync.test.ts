@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BRANCH_ISSUE_RE,
+  UPSERT_ISSUE_SQL,
   batchChunked,
   canonicalKey,
   collectEdges,
@@ -449,6 +450,27 @@ describe("flushEdges", () => {
 });
 
 // ---------------------------------------------------------------------------
+// UPSERT_ISSUE_SQL shape (TF4)
+// ---------------------------------------------------------------------------
+
+describe("UPSERT_ISSUE_SQL", () => {
+  it("stores title inside json_object payload (not as a bare column)", () => {
+    // Assert the SQL uses json_object('title', ?) — not a raw title column
+    expect(UPSERT_ISSUE_SQL).toMatch(/json_object\('title', \?\)/);
+  });
+
+  it("updates payload via excluded.payload on conflict", () => {
+    // Match regardless of alignment whitespace between column name and = sign
+    expect(UPSERT_ISSUE_SQL).toMatch(/payload\s*=\s*excluded\.payload/);
+  });
+
+  it("does not expose title as a top-level excluded column", () => {
+    // title must not appear as `excluded.title` — it lives inside the JSON payload
+    expect(UPSERT_ISSUE_SQL).not.toMatch(/title\s*=\s*excluded\.title/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // acquireSyncLock
 // ---------------------------------------------------------------------------
 
@@ -467,6 +489,22 @@ describe("acquireSyncLock", () => {
     );
     const acquired = await acquireSyncLock(db);
     expect(acquired).toBe(false);
+  });
+
+  it("scopes UPDATE to tenant_id = 0 (TF3)", async () => {
+    // Arrange
+    const capturedStmts: FakeStmt[] = [];
+    const db = makeFakeDb((sql, args) => {
+      const stmt = makeFakeStmt(sql, args, [], 1);
+      capturedStmts.push(stmt);
+      return stmt;
+    });
+    // Act
+    await acquireSyncLock(db);
+    // Assert
+    expect(capturedStmts).toHaveLength(1);
+    expect(capturedStmts[0].sql).toContain("key = 'sync_running'");
+    expect(capturedStmts[0].sql).toContain("AND tenant_id = 0");
   });
 });
 
@@ -514,6 +552,8 @@ describe("haltSync", () => {
     // value='1' is a SQL literal, not a bound param — assert the SQL text
     expect(capturedStmts[0].sql).toContain("value='1'");
     expect(capturedStmts[0].sql).toContain("key='halted'");
+    // tenant isolation guard must be present (TF3)
+    expect(capturedStmts[0].sql).toContain("AND tenant_id = 0");
     // only the ISO timestamp is bound
     expect(capturedStmts[0].args).toHaveLength(1);
     expect(typeof capturedStmts[0].args[0]).toBe("string");
@@ -549,6 +589,8 @@ describe("auth failure helpers", () => {
     // value='0' is a SQL literal, not a bound param — assert the SQL text
     expect(capturedStmts[0].sql).toContain("value='0'");
     expect(capturedStmts[0].sql).toContain("key='auth_failures'");
+    // tenant isolation guard must be present (TF3)
+    expect(capturedStmts[0].sql).toContain("AND tenant_id = 0");
     // only the ISO timestamp is bound
     expect(capturedStmts[0].args).toHaveLength(1);
     expect(String(capturedStmts[0].args[0])).toMatch(/^\d{4}-\d{2}-\d{2}T/);

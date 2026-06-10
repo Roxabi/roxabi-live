@@ -156,6 +156,54 @@ function makeGetEnv(opts: GetEnvOptions): Env {
   } as unknown as Env;
 }
 
+/**
+ * Like makeGetEnv but captures every prepare(sql) call so tests can assert
+ * on the exact SQL issued for the single-issue path.
+ */
+function makeGetEnvWithCapture(opts: GetEnvOptions): {
+  env: Env;
+  capturedSqls: string[];
+} {
+  const {
+    issueRow,
+    labels = [],
+    blocking = [],
+    blockedBy = [],
+  } = opts;
+  const capturedSqls: string[] = [];
+
+  const env = {
+    DB: {
+      prepare: (sql: string) => {
+        capturedSqls.push(sql);
+        return {
+          bind: (..._args: unknown[]) => ({
+            first: async () => {
+              if (sql.includes("FROM issues WHERE key")) return issueRow;
+              return null;
+            },
+            all: async () => {
+              if (sql.includes("FROM labels WHERE issue_key")) return { results: labels };
+              if (sql.includes("e.src_key = ?")) return { results: blocking };
+              if (sql.includes("e.dst_key = ?")) return { results: blockedBy };
+              return { results: [] };
+            },
+          }),
+          first: async () => null,
+          all: async () => ({ results: [] }),
+        };
+      },
+      batch: async () => [],
+    },
+    ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
+    GITHUB_TOKEN: "",
+    GITHUB_ORG: "",
+    GITHUB_WEBHOOK_SECRET: "",
+  } as unknown as Env;
+
+  return { env, capturedSqls };
+}
+
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
 function makeIssueRow(overrides: Partial<Record<string, unknown>> = {}) {
@@ -391,6 +439,17 @@ describe("GET /api/issues/:key", () => {
       expect(Array.isArray(body.blocked_by)).toBe(true);
     });
 
+    it("issues SELECT uses JSON_EXTRACT(payload,'$.title') AS title", async () => {
+      // Arrange
+      const row = makeIssueRow();
+      const { env, capturedSqls } = makeGetEnvWithCapture({ issueRow: row });
+      // Act
+      await app.request("/api/issues/Roxabi/roxabi-live%231", {}, env);
+      // Assert — the single-issue SELECT must project title via JSON_EXTRACT
+      const issueSql = capturedSqls.find((s) => s.includes("FROM issues WHERE key"));
+      expect(issueSql).toContain("JSON_EXTRACT(payload,'$.title') AS title");
+    });
+
     it("attaches labels from DB", async () => {
       const row = makeIssueRow();
       const labels = [{ name: "bug" }, { name: "P1" }];
@@ -494,6 +553,7 @@ describe("GET /api/issues — filter SQL params and clamping (FIX 4)", () => {
       expect(batchSqls.some((s) => s.includes("issues.repo = ?"))).toBe(true);
       expect(countCall?.args).toContain("foo");
       expect(dataCall?.args).toContain("foo");
+      expect(dataCall?.sql).toContain("JSON_EXTRACT(issues.payload,'$.title') AS title");
     });
 
     it("?state=open binds state param in WHERE clause", async () => {

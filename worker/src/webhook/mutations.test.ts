@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  BUMP_DATA_VERSION_SQL,
   UPSERT_ISSUE_FROM_WEBHOOK_SQL,
   UPSERT_PR_STATE_SQL,
   addEdge,
+  bumpDataVersion,
   deleteIssue,
   removeEdge,
   renameMilestone,
@@ -173,6 +175,21 @@ describe("upsertIssueFromWebhook", () => {
     expect(args[10]).toBeNull(); // lane
     expect(args[11]).toBeNull(); // priority
     expect(args[12]).toBeNull(); // size
+  });
+
+  it("UPSERT_ISSUE_FROM_WEBHOOK_SQL uses json_object for title column", () => {
+    // Assert — SQL constant wraps title in json_object, not a bare column
+    expect(UPSERT_ISSUE_FROM_WEBHOOK_SQL).toMatch(/json_object\('title', \?\)/);
+  });
+
+  it("UPSERT_ISSUE_FROM_WEBHOOK_SQL sets payload = excluded.payload on conflict", () => {
+    // Assert — payload is updated via excluded alias on conflict
+    expect(UPSERT_ISSUE_FROM_WEBHOOK_SQL).toMatch(/payload\s*=\s*excluded\.payload/);
+  });
+
+  it("UPSERT_ISSUE_FROM_WEBHOOK_SQL does not set title = excluded.title on conflict", () => {
+    // Assert — title is not a direct column; it lives inside payload as json_object
+    expect(UPSERT_ISSUE_FROM_WEBHOOK_SQL).not.toMatch(/title\s*=\s*excluded\.title/);
   });
 });
 
@@ -500,5 +517,41 @@ describe("renameMilestone", () => {
     renameMilestone(db, "Roxabi/lyra", "Sprint 1", "Sprint 2");
     // Assert
     expect(stmts()[0].args).toEqual(["Sprint 2", "Roxabi/lyra", "Sprint 1"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bumpDataVersion
+// ---------------------------------------------------------------------------
+
+describe("bumpDataVersion", () => {
+  const iso = "2024-06-10T12:00:00.000Z";
+
+  it("uses BUMP_DATA_VERSION_SQL constant", () => {
+    // Arrange
+    const { db, stmts } = captureDb();
+    // Act
+    bumpDataVersion(db, iso);
+    // Assert
+    expect(stmts()[0].sql).toBe(BUMP_DATA_VERSION_SQL);
+  });
+
+  it("BUMP_DATA_VERSION_SQL has ON CONFLICT(tenant_id, key) clause", () => {
+    // Assert — conflict target must include tenant_id for multi-tenant correctness
+    expect(BUMP_DATA_VERSION_SQL).toContain("ON CONFLICT(tenant_id, key)");
+  });
+
+  it("BUMP_DATA_VERSION_SQL inserts literal 0 tenant_id and 'data_version' key", () => {
+    // Assert — VALUES row must start with (0, 'data_version', ...)
+    expect(BUMP_DATA_VERSION_SQL).toMatch(/VALUES\s*\(0, 'data_version'/);
+  });
+
+  it("binds iso twice — value and updated_at", () => {
+    // Arrange
+    const { db, stmts } = captureDb();
+    // Act
+    bumpDataVersion(db, iso);
+    // Assert — bind args are [iso, iso] (value = ?, updated_at = ?)
+    expect(stmts()[0].args).toEqual([iso, iso]);
   });
 });
