@@ -118,10 +118,11 @@ jobs:
       - if: steps.guard.outputs.enabled == 'true'
         id: app-secrets-guard
         name: Guard — GITHUB_APP_* secrets
+        # GitHub forbids GITHUB_-prefixed Actions secret names (422) — repo secrets are GH_APP_*
         env:
-          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
-          GITHUB_APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
-          GITHUB_APP_WEBHOOK_SECRET: ${{ secrets.GITHUB_APP_WEBHOOK_SECRET }}
+          GITHUB_APP_ID: ${{ secrets.GH_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          GITHUB_APP_WEBHOOK_SECRET: ${{ secrets.GH_APP_WEBHOOK_SECRET }}
         run: |
           missing=()
           [ -z "$GITHUB_APP_ID" ] && missing+=("GITHUB_APP_ID")

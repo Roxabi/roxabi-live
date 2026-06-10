@@ -32,4 +32,14 @@ export interface Env {
    * only guard). Set via `wrangler secret put ADMIN_TOKEN` to enable the gate.
    */
   ADMIN_TOKEN?: string;
+  // numeric App ID (App-JWT iss) — S3 consumes
+  GITHUB_APP_ID: string;
+  // OAuth client_id (login redirect)
+  GITHUB_APP_CLIENT_ID: string;
+  // OAuth client_secret (token exchange) — never logged
+  GITHUB_APP_CLIENT_SECRET: string;
+  // base64(PKCS#8 DER) of the App RSA key — importKey('pkcs8')
+  GITHUB_APP_PRIVATE_KEY: string;
+  // App webhook HMAC secret (distinct from org GITHUB_WEBHOOK_SECRET)
+  GITHUB_APP_WEBHOOK_SECRET: string;
 }
