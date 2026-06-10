@@ -20,15 +20,15 @@
 /** Webhook upsert — preserves status (Project v2) and has_active_branch. */
 export const UPSERT_ISSUE_FROM_WEBHOOK_SQL = `
   INSERT INTO issues
-      (key, repo, number, title, state, url, created_at, updated_at, closed_at,
+      (key, repo, number, payload, state, url, created_at, updated_at, closed_at,
        milestone, is_stub, lane, priority, size, status, has_active_branch)
   VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?, ?,
+      (?, ?, ?, json_object('title', ?), ?, ?, ?, ?, ?,
        ?, 0, ?, ?, ?, NULL, 0)
   ON CONFLICT(key) DO UPDATE SET
       repo       = excluded.repo,
       number     = excluded.number,
-      title      = excluded.title,
+      payload    = excluded.payload,
       state      = excluded.state,
       url        = excluded.url,
       created_at = excluded.created_at,
@@ -70,9 +70,9 @@ const RENAME_MILESTONE_SQL =
 
 /** Upsert the data_version key in sync_control with the given ISO-8601 timestamp. */
 export const BUMP_DATA_VERSION_SQL = `
-  INSERT INTO sync_control (key, value, updated_at)
-  VALUES ('data_version', ?, ?)
-  ON CONFLICT(key) DO UPDATE SET
+  INSERT INTO sync_control (tenant_id, key, value, updated_at)
+  VALUES (0, 'data_version', ?, ?)
+  ON CONFLICT(tenant_id, key) DO UPDATE SET
       value      = excluded.value,
       updated_at = excluded.updated_at
 `;

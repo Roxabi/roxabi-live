@@ -21,7 +21,7 @@ export const versionRoute = async (c: Context<{ Bindings: Env }>) => {
     `SELECT MAX(v) AS version FROM (
        SELECT COALESCE(MAX(last_synced_at), '') AS v FROM sync_state
        UNION ALL
-       SELECT COALESCE(value, '') AS v FROM sync_control WHERE key = 'data_version'
+       SELECT COALESCE(value, '') AS v FROM sync_control WHERE key = 'data_version' AND tenant_id = 0
      )`,
   ).first<{ version: string | null }>();
   return c.json({ version: row?.version ?? "" });
