@@ -335,4 +335,23 @@ describe("logoutRoute", () => {
     // Should still succeed (204) even with no cookie
     expect(res.status).toBe(204);
   });
+
+  it("returns 204 + clears session cookie even when no Cookie header is present (ungated — null-safe)", async () => {
+    // Arrange — bare app with no requireSession, no stub session middleware.
+    // This is the negative guard test: if /logout were gated by requireSession,
+    // this request (no cookie) would return 401 instead of 204, proving the guard was
+    // present. Its 204 response proves the route is truly ungated and null-safe.
+    const { db } = captureDb();
+    const logoutApp = new Hono<AuthEnv>();
+    logoutApp.post("/logout", logoutRoute);
+
+    // Act — POST /logout with no Cookie header
+    const res = await logoutApp.request("/logout", { method: "POST" }, makeEnv(db));
+
+    // Assert
+    expect(res.status).toBe(204);
+    const setCookie = res.headers.get("Set-Cookie") ?? "";
+    expect(setCookie).toContain("__Host-session=");
+    expect(setCookie).toContain("Max-Age=0");
+  });
 });

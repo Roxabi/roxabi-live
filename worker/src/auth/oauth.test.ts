@@ -86,32 +86,6 @@ function captureDb(): { db: D1Database; stmts: () => FakeStmt[] } {
   return { db, stmts: () => captured };
 }
 
-/**
- * Build a FakeD1 whose prepare().bind().first() returns the given row the first
- * time it is called, then null thereafter. Used to model single-use state lookup.
- */
-function captureDbWithFirstRow(
-  firstRowBySql: Map<string, FakeResult | null>,
-): { db: D1Database; stmts: () => FakeStmt[] } {
-  const captured: FakeStmt[] = [];
-  const callCounts = new Map<string, number>();
-  const db = makeFakeDb((sql, args) => {
-    const count = callCounts.get(sql) ?? 0;
-    callCounts.set(sql, count + 1);
-    const rowForSql = firstRowBySql.get(sql);
-    // Return the configured row only on the first call with this SQL.
-    const row = count === 0 ? (rowForSql ?? null) : null;
-    const stmt = makeFakeStmt(sql, args, row !== null ? [row] : [], 0);
-    // Override first() to return the per-call row.
-    (stmt as { first: <T>() => Promise<T | null> }).first = vi
-      .fn()
-      .mockResolvedValue(row);
-    captured.push(stmt);
-    return stmt;
-  });
-  return { db, stmts: () => captured };
-}
-
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
@@ -330,6 +304,66 @@ describe("loginRoute", () => {
       expect(insertStmt).toBeDefined();
       expect(insertStmt!.args[1]).toBe("/");
     });
+
+    it("?redirect=/\\evil stores '/' (backslash bypass guard)", async () => {
+      // Arrange — backslash-prefixed path; sanitizeRedirect regex (?![/\\]) rejects it
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        "http://localhost/login?redirect=/\\evil",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — deleting the /[/\\]/ check in sanitizeRedirect would let "/\evil" pass
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt!.args[1]).toBe("/");
+    });
+
+    it("?redirect=/ok\\r\\nX-Injected:x stores '/' (CRLF injection guard)", async () => {
+      // Arrange — CRLF chars smuggled in the redirect param; sanitizeRedirect rejects via /[\r\n\0]/
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act — encodeURIComponent so the URL parser doesn't strip the special chars
+      await app.request(
+        "http://localhost/login?redirect=" + encodeURIComponent("/ok\r\nX-Injected: x"),
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — deleting the /[\r\n\0]/ check in sanitizeRedirect would let the injection through
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt!.args[1]).toBe("/");
+    });
+
+    it("?redirect=/ok\\0null stores '/' (NUL injection guard)", async () => {
+      // Arrange — NUL byte smuggled in the redirect param; sanitizeRedirect rejects via /[\r\n\0]/
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act — encodeURIComponent so the URL parser doesn't strip the NUL byte
+      await app.request(
+        "http://localhost/login?redirect=" + encodeURIComponent("/ok\0null"),
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — deleting the /[\r\n\0]/ check in sanitizeRedirect would let the NUL through
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt!.args[1]).toBe("/");
+    });
   });
 });
 
@@ -450,7 +484,7 @@ describe("callbackRoute", () => {
      * Build a FakeD1 for happy-path callback tests.
      * State consumption is now a DELETE...RETURNING (detected via "delete" + "oauth_state").
      */
-    function makeHappyPathDb(captured: FakeStmt[]): D1Database {
+    function makeHappyPathDb(captured: FakeStmt[], redirectAfter = "/"): D1Database {
       let oauthDeleteCallCount = 0;
       return makeFakeDb((sql, args) => {
         const isOauthDelete =
@@ -459,7 +493,7 @@ describe("callbackRoute", () => {
         oauthDeleteCallCount += isOauthDelete ? 1 : 0;
         const row =
           isOauthDelete && oauthDeleteCallCount === 1
-            ? ({ redirect_after: "/" } as FakeResult)
+            ? ({ redirect_after: redirectAfter } as FakeResult)
             : null;
 
         // For users RETURNING id, return a row with id
@@ -653,6 +687,34 @@ describe("callbackRoute", () => {
       expect(cookie).toContain("SameSite=Strict");
       expect(cookie).toContain("Path=/");
       expect(cookie).not.toContain("Domain");
+    });
+
+    it("redirects to redirect_after from state row when it is '/dashboard'", async () => {
+      // Arrange — state row returns redirect_after: "/dashboard"
+      const stateValue = "f".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured, "/dashboard");
+
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — Location must reflect the stored redirect_after, not the hardcoded "/"
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/dashboard");
+      const cookie = res.headers.get("Set-Cookie") ?? "";
+      expect(cookie).toContain("__Host-session=");
     });
   });
 
@@ -848,6 +910,47 @@ describe("callbackRoute", () => {
       );
 
       // Assert
+      expect(res.status).toBe(502);
+    });
+
+    it("returns 502 when /user/installations fetch returns non-ok status", async () => {
+      // Arrange — token exchange + /user succeed but /user/installations returns 500
+      const { db } = makeStateOnlyDb();
+      const stateValue = "a".repeat(32);
+
+      let fetchCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          fetchCallCount++;
+          if (fetchCallCount === 1) {
+            // Token exchange succeeds
+            return new Response(
+              JSON.stringify({ access_token: "tok-abc" }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          } else if (fetchCallCount === 2) {
+            // /user succeeds
+            return new Response(
+              JSON.stringify({ id: 1, login: "alice" }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          // /user/installations returns 500
+          return new Response("Internal Server Error", { status: 500 });
+        }),
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=goodcode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — deleting the if (!installRes.ok) guard would let the route parse a 500 body
       expect(res.status).toBe(502);
     });
   });

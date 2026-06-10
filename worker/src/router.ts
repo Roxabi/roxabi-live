@@ -64,7 +64,8 @@ app.get("/login", loginRoute);
 app.get("/oauth/callback", callbackRoute);
 app.use("/api/me", requireSession);
 app.get("/api/me", meRoute);
-app.use("/logout", requireSession);
+// /logout is intentionally ungated: logoutRoute is null-safe + idempotent, and SameSite=Strict
+// blocks cross-site cookie submission — gating it would make a stale/expired cookie impossible to clear.
 app.post("/logout", logoutRoute);
 
 // ── Static-assets fallback — last resort (frontend populated in S7, #99) ────
