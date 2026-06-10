@@ -168,6 +168,11 @@ function makeEnv(overrides: Partial<Env> = {}): Env {
     GITHUB_ORG: "Roxabi",
     GITHUB_WEBHOOK_SECRET: "test-secret",
     ASSETS: {} as Fetcher,
+    GITHUB_APP_ID: "0",
+    GITHUB_APP_CLIENT_ID: "placeholder",
+    GITHUB_APP_CLIENT_SECRET: "placeholder",
+    GITHUB_APP_PRIVATE_KEY: "placeholder",
+    GITHUB_APP_WEBHOOK_SECRET: "placeholder",
     ...overrides,
   };
 }
