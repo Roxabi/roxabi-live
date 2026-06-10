@@ -394,7 +394,7 @@ describe("callbackRoute", () => {
 
   describe("unknown or expired state", () => {
     it("returns 400 when state lookup returns null (unknown state)", async () => {
-      // Arrange — FakeD1 first() returns null for oauth_state lookup
+      // Arrange — FakeD1 first() returns null for oauth_state DELETE...RETURNING
       const { db } = captureDb();
       const { app, env } = makeApp(db);
 
@@ -446,26 +446,19 @@ describe("callbackRoute", () => {
       return mockFetch;
     }
 
-    it("issues DELETE FROM oauth_state to consume state single-use", async () => {
-      // Arrange
-      const stateValue = "a".repeat(32);
-      const stateRowBySql = new Map<string, FakeResult | null>([
-        [
-          // The SELECT that looks up the state row — matched via substring
-          "SELECT redirect_after FROM oauth_state WHERE state = ? AND expires_at > datetime('now')",
-          { redirect_after: "/" } as FakeResult,
-        ],
-      ]);
-      // Use a flexible factory so ANY sql with oauth_state SELECT returns the row
-      const captured: FakeStmt[] = [];
-      let oauthSelectCallCount = 0;
-      const db = makeFakeDb((sql, args) => {
-        const isOauthSelect =
+    /**
+     * Build a FakeD1 for happy-path callback tests.
+     * State consumption is now a DELETE...RETURNING (detected via "delete" + "oauth_state").
+     */
+    function makeHappyPathDb(captured: FakeStmt[]): D1Database {
+      let oauthDeleteCallCount = 0;
+      return makeFakeDb((sql, args) => {
+        const isOauthDelete =
           sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("select");
-        oauthSelectCallCount += isOauthSelect ? 1 : 0;
+          sql.toLowerCase().includes("delete");
+        oauthDeleteCallCount += isOauthDelete ? 1 : 0;
         const row =
-          isOauthSelect && oauthSelectCallCount === 1
+          isOauthDelete && oauthDeleteCallCount === 1
             ? ({ redirect_after: "/" } as FakeResult)
             : null;
 
@@ -481,12 +474,7 @@ describe("callbackRoute", () => {
           sql.toLowerCase().includes("returning");
         const tenantsRow = isTenantsInsert ? ({ id: 10 } as FakeResult) : null;
 
-        // For sessions INSERT
-        const isSessionInsert =
-          sql.toLowerCase().includes("sessions") &&
-          sql.toLowerCase().includes("insert");
-
-        const rows = isOauthSelect
+        const rows = isOauthDelete
           ? (row ? [row] : [])
           : isUsersInsert
             ? (usersRow ? [usersRow] : [])
@@ -495,7 +483,7 @@ describe("callbackRoute", () => {
               : [];
 
         const stmt = makeFakeStmt(sql, args, rows, 0);
-        if (isOauthSelect) {
+        if (isOauthDelete) {
           (stmt as { first: <T>() => Promise<T | null> }).first = vi
             .fn()
             .mockResolvedValue(row);
@@ -511,6 +499,13 @@ describe("callbackRoute", () => {
         captured.push(stmt);
         return stmt;
       });
+    }
+
+    it("uses atomic DELETE...RETURNING to consume state (closes TOCTOU)", async () => {
+      // Arrange
+      const stateValue = "a".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
 
       stubFetchSequence(
         "t",
@@ -527,55 +522,22 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — a DELETE FROM oauth_state statement was issued
+      // Assert — a DELETE FROM oauth_state statement was issued (the atomic consume)
       const deleteStmt = captured.find(
         (s) =>
           s.sql.toLowerCase().includes("delete") &&
           s.sql.toLowerCase().includes("oauth_state"),
       );
       expect(deleteStmt).toBeDefined();
+      // It must also have RETURNING (atomic, not a separate DELETE)
+      expect(deleteStmt!.sql.toUpperCase()).toContain("RETURNING");
     });
 
     it("issues users upsert with ON CONFLICT(github_id)", async () => {
       // Arrange
       const stateValue = "b".repeat(32);
-      let oauthSelectCallCount = 0;
       const captured: FakeStmt[] = [];
-      const db = makeFakeDb((sql, args) => {
-        const isOauthSelect =
-          sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("select");
-        oauthSelectCallCount += isOauthSelect ? 1 : 0;
-        const row =
-          isOauthSelect && oauthSelectCallCount === 1
-            ? ({ redirect_after: "/" } as FakeResult)
-            : null;
-        const isUsersInsert =
-          sql.toLowerCase().includes("users") &&
-          sql.toLowerCase().includes("returning");
-        const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
-        const isTenantsInsert =
-          sql.toLowerCase().includes("tenants") &&
-          sql.toLowerCase().includes("returning");
-        const tenantsRow = isTenantsInsert ? ({ id: 10 } as FakeResult) : null;
-
-        const stmt = makeFakeStmt(sql, args, [], 0);
-        if (isOauthSelect) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(row);
-        } else if (isUsersInsert) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(usersRow);
-        } else if (isTenantsInsert) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(tenantsRow);
-        }
-        captured.push(stmt);
-        return stmt;
-      });
+      const db = makeHappyPathDb(captured);
 
       stubFetchSequence(
         "t",
@@ -605,43 +567,8 @@ describe("callbackRoute", () => {
     it("issues tenants upsert with ON CONFLICT(installation_id)", async () => {
       // Arrange
       const stateValue = "c".repeat(32);
-      let oauthSelectCallCount = 0;
       const captured: FakeStmt[] = [];
-      const db = makeFakeDb((sql, args) => {
-        const isOauthSelect =
-          sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("select");
-        oauthSelectCallCount += isOauthSelect ? 1 : 0;
-        const row =
-          isOauthSelect && oauthSelectCallCount === 1
-            ? ({ redirect_after: "/" } as FakeResult)
-            : null;
-        const isUsersInsert =
-          sql.toLowerCase().includes("users") &&
-          sql.toLowerCase().includes("returning");
-        const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
-        const isTenantsInsert =
-          sql.toLowerCase().includes("tenants") &&
-          sql.toLowerCase().includes("returning");
-        const tenantsRow = isTenantsInsert ? ({ id: 10 } as FakeResult) : null;
-
-        const stmt = makeFakeStmt(sql, args, [], 0);
-        if (isOauthSelect) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(row);
-        } else if (isUsersInsert) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(usersRow);
-        } else if (isTenantsInsert) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(tenantsRow);
-        }
-        captured.push(stmt);
-        return stmt;
-      });
+      const db = makeHappyPathDb(captured);
 
       stubFetchSequence(
         "t",
@@ -671,43 +598,8 @@ describe("callbackRoute", () => {
     it("issues user_installations INSERT", async () => {
       // Arrange
       const stateValue = "d".repeat(32);
-      let oauthSelectCallCount = 0;
       const captured: FakeStmt[] = [];
-      const db = makeFakeDb((sql, args) => {
-        const isOauthSelect =
-          sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("select");
-        oauthSelectCallCount += isOauthSelect ? 1 : 0;
-        const row =
-          isOauthSelect && oauthSelectCallCount === 1
-            ? ({ redirect_after: "/" } as FakeResult)
-            : null;
-        const isUsersInsert =
-          sql.toLowerCase().includes("users") &&
-          sql.toLowerCase().includes("returning");
-        const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
-        const isTenantsInsert =
-          sql.toLowerCase().includes("tenants") &&
-          sql.toLowerCase().includes("returning");
-        const tenantsRow = isTenantsInsert ? ({ id: 10 } as FakeResult) : null;
-
-        const stmt = makeFakeStmt(sql, args, [], 0);
-        if (isOauthSelect) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(row);
-        } else if (isUsersInsert) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(usersRow);
-        } else if (isTenantsInsert) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(tenantsRow);
-        }
-        captured.push(stmt);
-        return stmt;
-      });
+      const db = makeHappyPathDb(captured);
 
       stubFetchSequence(
         "t",
@@ -734,41 +626,8 @@ describe("callbackRoute", () => {
     it("returns 302 with Set-Cookie __Host-session containing HttpOnly Secure SameSite=Strict Path=/ and NO Domain", async () => {
       // Arrange
       const stateValue = "e".repeat(32);
-      let oauthSelectCallCount = 0;
-      const db = makeFakeDb((sql, _args) => {
-        const isOauthSelect =
-          sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("select");
-        oauthSelectCallCount += isOauthSelect ? 1 : 0;
-        const row =
-          isOauthSelect && oauthSelectCallCount === 1
-            ? ({ redirect_after: "/" } as FakeResult)
-            : null;
-        const isUsersInsert =
-          sql.toLowerCase().includes("users") &&
-          sql.toLowerCase().includes("returning");
-        const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
-        const isTenantsInsert =
-          sql.toLowerCase().includes("tenants") &&
-          sql.toLowerCase().includes("returning");
-        const tenantsRow = isTenantsInsert ? ({ id: 10 } as FakeResult) : null;
-
-        const stmt = makeFakeStmt(sql, _args, [], 0);
-        if (isOauthSelect) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(row);
-        } else if (isUsersInsert) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(usersRow);
-        } else if (isTenantsInsert) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(tenantsRow);
-        }
-        return stmt;
-      });
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
 
       stubFetchSequence(
         "t",
@@ -797,37 +656,216 @@ describe("callbackRoute", () => {
     });
   });
 
-  describe("replay attack — state already consumed (first()→null on 2nd call)", () => {
-    it("returns 400 on replay (state gone after first use)", async () => {
-      // Arrange — state row returns null (simulating already-consumed state)
-      const { db } = captureDb();
-      const { app, env } = makeApp(db);
-      // captureDb returns null for first() by default — models "state not found"
+  describe("replay attack — behavioral single-use enforcement", () => {
+    it("first request mints session (302 + Set-Cookie); second with same state returns 400", async () => {
+      // Arrange — FakeD1 whose state-consume DELETE...RETURNING returns a row
+      // on the first call and null on the second (simulating row deleted by first request).
+      const stateValue = "aaaa0000bbbb1111cccc2222dddd3333";
+      const atomicDeleteSql =
+        `DELETE FROM oauth_state WHERE state = ? AND expires_at > datetime('now') RETURNING redirect_after`;
 
-      // Act
-      const res = await app.request(
-        "http://localhost/oauth/callback?code=replaycode&state=aaaa0000bbbb1111cccc2222dddd3333",
+      let atomicDeleteCallCount = 0;
+
+      const captured: FakeStmt[] = [];
+      const db = makeFakeDb((sql, args) => {
+        const isAtomicDelete = sql.trim() === atomicDeleteSql.trim() ||
+          (sql.toLowerCase().includes("delete") &&
+            sql.toLowerCase().includes("oauth_state") &&
+            sql.toLowerCase().includes("returning"));
+
+        const isUsersInsert =
+          sql.toLowerCase().includes("users") &&
+          sql.toLowerCase().includes("returning");
+        const isTenantsInsert =
+          sql.toLowerCase().includes("tenants") &&
+          sql.toLowerCase().includes("returning");
+
+        let row: FakeResult | null = null;
+        if (isAtomicDelete) {
+          atomicDeleteCallCount++;
+          row = atomicDeleteCallCount === 1
+            ? ({ redirect_after: "/" } as FakeResult)
+            : null;
+        } else if (isUsersInsert) {
+          row = { id: 1 } as FakeResult;
+        } else if (isTenantsInsert) {
+          row = { id: 10 } as FakeResult;
+        }
+
+        const stmt = makeFakeStmt(sql, args, row !== null ? [row] : [], 0);
+        (stmt as { first: <T>() => Promise<T | null> }).first = vi
+          .fn()
+          .mockResolvedValue(row);
+        captured.push(stmt);
+        return stmt;
+      });
+
+      // Stub fetch so both calls hit GitHub APIs successfully
+      let fetchCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (_url: string) => {
+          fetchCallCount++;
+          // Cycle through token → user → installations for each OAuth callback
+          const pos = ((fetchCallCount - 1) % 3) + 1;
+          if (pos === 1) {
+            return new Response(
+              JSON.stringify({ access_token: "tok-abc" }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          } else if (pos === 2) {
+            return new Response(
+              JSON.stringify({ id: 42, login: "alice" }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          } else {
+            return new Response(
+              JSON.stringify({ installations: [{ id: 9, account: { login: "Roxabi", type: "Organization" } }] }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+        }),
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act — first call
+      const res1 = await app.request(
+        `http://localhost/oauth/callback?code=code1&state=${stateValue}`,
         { method: "GET" },
         env,
       );
 
-      // Assert — state is unknown (null row) → 400
+      // Act — second call with the same state (simulates replay)
+      const res2 = await app.request(
+        `http://localhost/oauth/callback?code=code2&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — first request succeeds with session cookie
+      expect(res1.status).toBe(302);
+      expect(res1.headers.get("Set-Cookie")).toContain("__Host-session=");
+
+      // Assert — second request fails (state row gone after first consume)
+      expect(res2.status).toBe(400);
+    });
+  });
+
+  describe("F1 — GitHub token / API error handling", () => {
+    /**
+     * Build a FakeD1 that successfully returns a state row (for state consume)
+     * but returns null for all other first() calls (sessions, etc.).
+     */
+    function makeStateOnlyDb(): { db: D1Database; stmts: () => FakeStmt[] } {
+      const captured: FakeStmt[] = [];
+      let oauthDeleteCallCount = 0;
+      const db = makeFakeDb((sql, args) => {
+        const isOauthDelete =
+          sql.toLowerCase().includes("oauth_state") &&
+          sql.toLowerCase().includes("delete");
+        oauthDeleteCallCount += isOauthDelete ? 1 : 0;
+        const row =
+          isOauthDelete && oauthDeleteCallCount === 1
+            ? ({ redirect_after: "/" } as FakeResult)
+            : null;
+
+        const stmt = makeFakeStmt(sql, args, row !== null ? [row] : [], 0);
+        (stmt as { first: <T>() => Promise<T | null> }).first = vi
+          .fn()
+          .mockResolvedValue(row);
+        captured.push(stmt);
+        return stmt;
+      });
+      return { db, stmts: () => captured };
+    }
+
+    it("returns 400 when token endpoint returns {error} with no access_token", async () => {
+      // Arrange — GitHub returns HTTP 200 with error body (standard OAuth error shape)
+      const { db, stmts } = makeStateOnlyDb();
+      const stateValue = "e".repeat(32);
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          new Response(
+            JSON.stringify({ error: "bad_verification_code" }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=badcode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
       expect(res.status).toBe(400);
+
+      // No INSERT INTO sessions should have been executed
+      const sessionsInsert = stmts().find(
+        (s) =>
+          s.sql.toLowerCase().includes("sessions") &&
+          s.sql.toLowerCase().includes("insert"),
+      );
+      expect(sessionsInsert).toBeUndefined();
+    });
+
+    it("returns 502 when /user fetch returns non-ok status", async () => {
+      // Arrange — token exchange succeeds but /user returns 401
+      const { db } = makeStateOnlyDb();
+      const stateValue = "f".repeat(32);
+
+      let fetchCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          fetchCallCount++;
+          if (fetchCallCount === 1) {
+            // Token exchange succeeds
+            return new Response(
+              JSON.stringify({ access_token: "tok-xyz" }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          // /user returns 401
+          return new Response("Unauthorized", { status: 401 });
+        }),
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=goodcode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      expect(res.status).toBe(502);
     });
   });
 
   describe("zero installations", () => {
-    it("returns 302 to GitHub app install page when installations is empty", async () => {
-      // Arrange
-      const stateValue = "f".repeat(32);
-      let oauthSelectCallCount = 0;
-      const db = makeFakeDb((sql, _args) => {
-        const isOauthSelect =
+    /**
+     * Build a FakeD1 for zero-installation tests.
+     * Tracks whether INSERT INTO users was ever called.
+     */
+    function makeZeroInstallDb(captured: FakeStmt[]): D1Database {
+      let oauthDeleteCallCount = 0;
+      return makeFakeDb((sql, args) => {
+        const isOauthDelete =
           sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("select");
-        oauthSelectCallCount += isOauthSelect ? 1 : 0;
+          sql.toLowerCase().includes("delete");
+        oauthDeleteCallCount += isOauthDelete ? 1 : 0;
         const row =
-          isOauthSelect && oauthSelectCallCount === 1
+          isOauthDelete && oauthDeleteCallCount === 1
             ? ({ redirect_after: "/" } as FakeResult)
             : null;
         const isUsersInsert =
@@ -835,8 +873,8 @@ describe("callbackRoute", () => {
           sql.toLowerCase().includes("returning");
         const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
 
-        const stmt = makeFakeStmt(sql, _args, [], 0);
-        if (isOauthSelect) {
+        const stmt = makeFakeStmt(sql, args, [], 0);
+        if (isOauthDelete) {
           (stmt as { first: <T>() => Promise<T | null> }).first = vi
             .fn()
             .mockResolvedValue(row);
@@ -845,10 +883,12 @@ describe("callbackRoute", () => {
             .fn()
             .mockResolvedValue(usersRow);
         }
+        captured.push(stmt);
         return stmt;
       });
+    }
 
-      // Stub fetch with empty installations
+    function stubZeroInstallFetch() {
       let fetchCallCount = 0;
       vi.stubGlobal(
         "fetch",
@@ -881,7 +921,14 @@ describe("callbackRoute", () => {
           }
         }),
       );
+    }
 
+    it("returns 302 to GitHub app install page when installations is empty", async () => {
+      // Arrange
+      const stateValue = "f".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeZeroInstallDb(captured);
+      stubZeroInstallFetch();
       const { app, env } = makeApp(db);
 
       // Act
@@ -901,58 +948,9 @@ describe("callbackRoute", () => {
     it("does NOT set a session cookie when installations is empty", async () => {
       // Arrange
       const stateValue = "0".repeat(32);
-      let oauthSelectCallCount = 0;
-      const db = makeFakeDb((sql, _args) => {
-        const isOauthSelect =
-          sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("select");
-        oauthSelectCallCount += isOauthSelect ? 1 : 0;
-        const row =
-          isOauthSelect && oauthSelectCallCount === 1
-            ? ({ redirect_after: "/" } as FakeResult)
-            : null;
-        const isUsersInsert =
-          sql.toLowerCase().includes("users") &&
-          sql.toLowerCase().includes("returning");
-        const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
-
-        const stmt = makeFakeStmt(sql, _args, [], 0);
-        if (isOauthSelect) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(row);
-        } else if (isUsersInsert) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(usersRow);
-        }
-        return stmt;
-      });
-
-      let fetchCallCount = 0;
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async (_url: string) => {
-          fetchCallCount++;
-          if (fetchCallCount === 1) {
-            return new Response(
-              JSON.stringify({ access_token: "tok" }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
-          } else if (fetchCallCount === 2) {
-            return new Response(
-              JSON.stringify({ id: 42, login: "alice" }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
-          } else {
-            return new Response(
-              JSON.stringify({ installations: [] }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
-          }
-        }),
-      );
-
+      const captured: FakeStmt[] = [];
+      const db = makeZeroInstallDb(captured);
+      stubZeroInstallFetch();
       const { app, env } = makeApp(db);
 
       // Act
@@ -969,60 +967,9 @@ describe("callbackRoute", () => {
     it("does NOT insert a session row when installations is empty", async () => {
       // Arrange
       const stateValue = "1".repeat(32);
-      let oauthSelectCallCount = 0;
       const captured: FakeStmt[] = [];
-      const db = makeFakeDb((sql, args) => {
-        const isOauthSelect =
-          sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("select");
-        oauthSelectCallCount += isOauthSelect ? 1 : 0;
-        const row =
-          isOauthSelect && oauthSelectCallCount === 1
-            ? ({ redirect_after: "/" } as FakeResult)
-            : null;
-        const isUsersInsert =
-          sql.toLowerCase().includes("users") &&
-          sql.toLowerCase().includes("returning");
-        const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
-
-        const stmt = makeFakeStmt(sql, args, [], 0);
-        if (isOauthSelect) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(row);
-        } else if (isUsersInsert) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(usersRow);
-        }
-        captured.push(stmt);
-        return stmt;
-      });
-
-      let fetchCallCount = 0;
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async (_url: string) => {
-          fetchCallCount++;
-          if (fetchCallCount === 1) {
-            return new Response(
-              JSON.stringify({ access_token: "tok" }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
-          } else if (fetchCallCount === 2) {
-            return new Response(
-              JSON.stringify({ id: 42, login: "alice" }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
-          } else {
-            return new Response(
-              JSON.stringify({ installations: [] }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
-          }
-        }),
-      );
-
+      const db = makeZeroInstallDb(captured);
+      stubZeroInstallFetch();
       const { app, env } = makeApp(db);
 
       // Act
@@ -1039,6 +986,31 @@ describe("callbackRoute", () => {
           s.sql.toLowerCase().includes("insert"),
       );
       expect(sessionsInsert).toBeUndefined();
+    });
+
+    it("F4 — does NOT insert a user row when installations is empty (no ghost users)", async () => {
+      // Arrange — F4: user upsert must happen AFTER the install check, so zero
+      // installations must never produce an INSERT INTO users.
+      const stateValue = "2".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeZeroInstallDb(captured);
+      stubZeroInstallFetch();
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — no INSERT INTO users statement was executed
+      const usersInsert = captured.find(
+        (s) =>
+          s.sql.toLowerCase().includes("insert") &&
+          s.sql.toLowerCase().includes("users"),
+      );
+      expect(usersInsert).toBeUndefined();
     });
   });
 });

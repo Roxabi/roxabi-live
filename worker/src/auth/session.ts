@@ -21,7 +21,7 @@ export interface SessionContext {
 
 export type AuthEnv = {
   Bindings: Env;
-  Variables: { session: SessionContext };
+  Variables: { session?: SessionContext };
 };
 
 // ---------------------------------------------------------------------------

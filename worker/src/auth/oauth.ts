@@ -19,10 +19,11 @@ import { mintSession, sessionCookie } from "./session";
 /**
  * Validate a `redirect` query parameter as a safe relative path.
  * Accepts paths starting with "/" but not "//" (open-redirect via protocol-
- * relative URLs) and rejects anything that is not a plain relative path.
+ * relative URLs), not starting with "/\" (backslash bypass), and rejects
+ * CRLF / NUL injection.
  */
 function sanitizeRedirect(raw: string | undefined): string {
-  if (raw && /^\/(?!\/)/.test(raw)) return raw;
+  if (raw && /^\/(?![/\\])/.test(raw) && !/[\r\n\0]/.test(raw)) return raw;
   return "/";
 }
 
@@ -90,11 +91,11 @@ export async function loginRoute(
  * GitHub redirects here after the user authorises (or denies) the app.
  * Flow:
  *   1. Validate code + state params.
- *   2. Consume state single-use (SELECT then DELETE).
+ *   2. Consume state — atomic single-use DELETE ... RETURNING (closes TOCTOU).
  *   3. Exchange code for access_token.
  *   4. Fetch /user and /user/installations.
- *   5. Upsert user → tenants → user_installations.
- *   6. If no installations → redirect to app install page (no session).
+ *   5. If no installations → redirect to app install page (no DB write, no session).
+ *   6. Upsert user → tenants → user_installations.
  *   7. Mint session tied to first installation, set __Host-session cookie.
  */
 export async function callbackRoute(
@@ -107,9 +108,9 @@ export async function callbackRoute(
     return c.json({ error: "bad_request" }, 400);
   }
 
-  // Consume state — single-use: SELECT (with expiry guard) then DELETE
+  // Consume state — single-use + expiry guard in one atomic statement (closes TOCTOU)
   const stateRow = await c.env.DB.prepare(
-    `SELECT redirect_after FROM oauth_state WHERE state = ? AND expires_at > datetime('now')`,
+    `DELETE FROM oauth_state WHERE state = ? AND expires_at > datetime('now') RETURNING redirect_after`,
   )
     .bind(state)
     .first<{ redirect_after: string | null }>();
@@ -117,10 +118,6 @@ export async function callbackRoute(
   if (!stateRow) {
     return c.json({ error: "bad_request" }, 400);
   }
-
-  await c.env.DB.prepare(`DELETE FROM oauth_state WHERE state = ?`)
-    .bind(state)
-    .run();
 
   const redirectAfter = stateRow.redirect_after ?? "/";
 
@@ -146,9 +143,15 @@ export async function callbackRoute(
       }),
     },
   );
-  const { access_token } = (await tokenRes.json()) as {
-    access_token: string;
-  };
+
+  if (!tokenRes.ok) {
+    return c.json({ error: "oauth_failed" }, 502);
+  }
+  const tokenBody = (await tokenRes.json()) as { access_token?: string; error?: string };
+  if (tokenBody.error || !tokenBody.access_token) {
+    return c.json({ error: "oauth_failed" }, 400);
+  }
+  const access_token = tokenBody.access_token;
 
   const ghHeaders = {
     Authorization: `Bearer ${access_token}`,
@@ -160,6 +163,9 @@ export async function callbackRoute(
   const userRes = await fetch("https://api.github.com/user", {
     headers: ghHeaders,
   });
+  if (!userRes.ok) {
+    return c.json({ error: "github_unavailable" }, 502);
+  }
   const ghUser = (await userRes.json()) as { id: number; login: string };
 
   // Fetch user installations
@@ -167,12 +173,25 @@ export async function callbackRoute(
     "https://api.github.com/user/installations",
     { headers: ghHeaders },
   );
+  if (!installRes.ok) {
+    return c.json({ error: "github_unavailable" }, 502);
+  }
   const { installations } = (await installRes.json()) as {
     installations: Array<{
       id: number;
       account: { login: string; type: string };
     }>;
   };
+
+  // No installations — redirect to app install page, no session, no DB write
+  if (installations.length === 0) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: "https://github.com/apps/roxabi-live/installations/new",
+      },
+    });
+  }
 
   // Upsert user — get internal id
   const userRow = await c.env.DB.prepare(
@@ -183,17 +202,10 @@ export async function callbackRoute(
     .bind(ghUser.id, ghUser.login)
     .first<{ id: number }>();
 
-  const userId = userRow!.id;
-
-  // No installations — redirect to app install page, no session
-  if (installations.length === 0) {
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: "https://github.com/apps/roxabi-live/installations/new",
-      },
-    });
+  if (!userRow) {
+    return c.json({ error: "db_error" }, 500);
   }
+  const userId = userRow.id;
 
   // Upsert each installation as a tenant and link to user
   let firstTenantId: number | null = null;
@@ -208,7 +220,10 @@ export async function callbackRoute(
       .bind(inst.id, inst.account.login, inst.account.type)
       .first<{ id: number }>();
 
-    const tenantId = tenantRow!.id;
+    if (!tenantRow) {
+      return c.json({ error: "db_error" }, 500);
+    }
+    const tenantId = tenantRow.id;
 
     await c.env.DB.prepare(
       `INSERT OR IGNORE INTO user_installations (user_id, tenant_id) VALUES (?, ?)`,
@@ -221,8 +236,12 @@ export async function callbackRoute(
     }
   }
 
+  if (firstTenantId === null) {
+    return c.json({ error: "db_error" }, 500);
+  }
+
   // Mint session tied to the first installation's tenant
-  const rawToken = await mintSession(c.env.DB, userId, firstTenantId!);
+  const rawToken = await mintSession(c.env.DB, userId, firstTenantId);
 
   return new Response(null, {
     status: 302,

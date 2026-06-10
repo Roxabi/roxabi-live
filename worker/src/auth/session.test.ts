@@ -285,6 +285,47 @@ describe("validateSession — return value", () => {
 });
 
 // ---------------------------------------------------------------------------
+// validateSession — suspended-tenant behavioral guard (mutation-catching)
+// ---------------------------------------------------------------------------
+
+describe("validateSession — suspended-tenant behavioral guard", () => {
+  /**
+   * SQL-discriminating FakeD1: if the executed SQL contains the
+   * suspended_at IS NOT NULL guard (i.e. the guard is present in source),
+   * first() returns null — correctly filtering out the suspended tenant.
+   * If the guard is ABSENT from the SQL, first() returns a valid row —
+   * which would make validateSession return non-null and break toBeNull().
+   *
+   * This test FAILS if the suspended-tenant guard is removed from
+   * validateSession's SQL, because the fake would then return a row
+   * and validateSession would return non-null instead of null.
+   */
+  it("returns null for a suspended tenant (guard is mutation-catching)", async () => {
+    // Arrange — a valid session row that would be returned if the guard is absent
+    const validRow: FakeResult = {
+      userId: 7,
+      tenantId: 9,
+      githubId: 42,
+      githubLogin: "alice",
+    };
+
+    const db = makeFakeDb((sql, args) => {
+      // If the suspended-tenant guard is present in the SQL, simulate the DB
+      // filtering out the row (suspended tenant → no result).
+      // If the guard is absent, the DB returns a valid row — causing toBeNull() to fail.
+      const guardPresent = sql.includes("suspended_at IS NOT NULL");
+      return makeFakeStmt(sql, args, guardPresent ? [] : [validRow], 0);
+    });
+
+    // Act
+    const result = await validateSession(db, "a".repeat(64));
+
+    // Assert — suspended tenant session must be filtered out → null
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // deleteSession
 // ---------------------------------------------------------------------------
 
@@ -339,7 +380,9 @@ describe("requireSession", () => {
 
     app.use("/protected", requireSession);
     app.get("/protected", (c) => {
-      const session = c.get("session");
+      // requireSession guarantees session is set before next() is called;
+      // the non-null assertion is safe here (the middleware returns 401 otherwise).
+      const session = c.get("session")!;
       return probeHandler(session);
     });
 

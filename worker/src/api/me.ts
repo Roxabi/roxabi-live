@@ -17,6 +17,9 @@ import { readSessionToken, deleteSession, clearSessionCookie } from "../auth/ses
  */
 export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
+  if (!s) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
 
   const rows = await c.env.DB
     .prepare(
