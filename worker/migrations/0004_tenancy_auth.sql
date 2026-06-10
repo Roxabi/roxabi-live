@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS user_repo_permission_cache (
 -- Deviation D-2: NO foreign key on tenant_id — the existing 5 sentinel rows use tenant_id=0
 -- (a sentinel, not a real tenant), which would violate a FK constraint to tenants(id).
 -- Strategy: rename-rebuild to preserve existing data, seeding sentinel rows at tenant_id=0.
+-- recovery guard — if a prior partial run failed between CREATE and RENAME, re-apply starts clean
+DROP TABLE IF EXISTS sync_control_new;
 CREATE TABLE sync_control_new (
   tenant_id  INTEGER NOT NULL DEFAULT 0,
   key        TEXT NOT NULL,
