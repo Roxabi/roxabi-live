@@ -1,0 +1,33 @@
+---
+title: "feat(schema): tenant_id + auth-table migrations + CI/infra (Phase 1 S1)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 144
+status: approved
+tier: M
+---
+
+## Scope
+
+Slice **S1** of #141. Foundation migration + deploy plumbing — no runtime auth behavior yet.
+
+- **M-a migration:** `tenant_id` **nullable** on `issues`/`edges`/`labels`/`pr_state`/`sync_state`/`repos`/`repo_allowlist`; **composite-PK table-recreation** (`CREATE→INSERT…SELECT→DROP→RENAME`, preserving indexes/FKs) on `issues`/`edges`/`labels`/`pr_state`; new tables `users`/`installations`/`user_installations`/`sessions`/`oauth_state`; per-tenant `sync_control`; **`title` moved into `payload` JSON** (no top-level `title`; `body` absent).
+- **CI (`ci.yml`, `deploy:` job):** add `wrangler d1 migrations apply DB [--env staging]` **inside the `CF_API_TOKEN` guard, between `npm ci` and `wrangler deploy`** + a `GITHUB_APP_*` secret-presence guard (same pattern as `CF_API_TOKEN`).
+- **`wrangler.toml`:** `[[env.staging.r2_buckets]] bucket_name="roxabi-live-logs-staging"` + `[env.staging] workers_dev=true`.
+- **Excludes the NOT-NULL migration** (ships in S7/#150).
+
+## Success Criteria
+
+- [ ] M-a applies cleanly on staging D1 (nullable `tenant_id` on 7 tables; composite PKs on `issues`/`edges`/`labels`/`pr_state`; 5 new auth tables; per-tenant `sync_control`).
+- [ ] `issues` has no top-level `title` column — `title` in `payload` (`JSON_EXTRACT(payload,'$.title')`); `body` absent.
+- [ ] `ci.yml` migrate-step inside `CF_API_TOKEN` guard in `deploy:` job between `npm ci` and `wrangler deploy`; `GITHUB_APP_*` secret-presence guard present.
+- [ ] `wrangler.toml` staging R2 = `roxabi-live-logs-staging` + `[env.staging] workers_dev=true`.
+
+## Dependencies
+
+None (foundation).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx) ·
+ADR: [zk-encryption-spike-analysis.mdx](../analyses/zk-encryption-spike-analysis.mdx)

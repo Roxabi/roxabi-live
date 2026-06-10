@@ -1,0 +1,31 @@
+---
+title: "feat(deploy): NOT-NULL migration + CF Access cutover + runbook (Phase 1 S7)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 150
+status: approved
+tier: S
+---
+
+## Scope
+
+Slice **S7** of #141. Final cutover (one-way edge change — gated).
+
+- Re-verify `COUNT(*) WHERE tenant_id IS NULL = 0` → commit + apply **M-b `000N_tenant_not_null.sql`** (the NOT-NULL file is authored in S1's design but **committed here**, so CI never applies it before backfill runs).
+- **Staging smoke-test gate:** app sessions verified returning **401** for unauthenticated callers on staging.
+- → CF Access scoped to **`/admin/*` only** (`/webhook/*` keeps its existing bypass) → prod cutover.
+- Rollback runbook (re-enable the Access rule) written to a tracked file.
+
+## Success Criteria
+
+- [ ] Backfill re-verified (`COUNT NULL = 0`) → M-b NOT-NULL migration committed + applied (never earlier).
+- [ ] App sessions verified 401 unauth on staging → CF Access scoped to `/admin/*` only; `/webhook/*` bypass retained.
+- [ ] Rollback (re-enable Access) documented in a tracked runbook file.
+
+## Dependencies
+
+Blocked by **#149** (S6 — full UI flow shippable).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx)

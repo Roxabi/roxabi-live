@@ -1,0 +1,31 @@
+---
+title: "feat(api): tenant-filtered reads + active-tenant + org-picker (Phase 1 S5)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 148
+status: approved
+tier: M
+---
+
+## Scope
+
+Slice **S5** of #141. **This slice satisfies the epic acceptance criterion.**
+
+- Fail-closed **session middleware on `/api/*`**: no/invalid session → **401 before any DB statement**.
+- Inject `tenant_id` (= session's active tenant) into every read: `listIssuesRoute`, all 5 `graphRoute` queries, and **`getIssueRoute`** (issue + labels + edges) with SQL-level **`AND tenant_id=?`** (closes the IDOR — keys are public GitHub URLs).
+- Session encodes **one active `tenant_id`**; user with >1 installation → **org-picker** (`POST /api/active-tenant`, membership-checked). **No cross-tenant UNION** queries.
+
+## Success Criteria
+
+- [ ] Every `/api/*` route gated by fail-closed middleware (no/invalid session → 401 before any DB statement).
+- [ ] `getIssueRoute` issue/label/edge queries include SQL-level `AND tenant_id=?` (code-review-verified); foreign-tenant key → 404; `listIssuesRoute` + 5 `graphRoute` queries tenant-filtered. [IDOR closed]
+- [ ] >1 installation → org-picker; session carries exactly one active `tenant_id`; no cross-tenant UNION.
+- [ ] **Acceptance:** a second GitHub account sees only its own issues + graph; operator sees only `Roxabi` — verified on staging.
+
+## Dependencies
+
+Blocked by **#145** (S2 — sessions) and **#146** (S3 — tenant data).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx)

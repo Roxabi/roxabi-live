@@ -1,0 +1,32 @@
+---
+title: "feat(webhook): tenant routing + cross-tenant stub policy (Phase 1 S4)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 147
+status: approved
+tier: M
+---
+
+## Scope
+
+Slice **S4** of #141. Webhook isolation. Reuses the existing single-secret HMAC (`webhook/hmac.ts`).
+
+- After HMAC pass, **mandatory** `payload.installation.id` → `installations` lookup → `tenant_id` **before any** INSERT/UPDATE/DELETE.
+- Unknown / known-but-missing-`tenant_id` installation → **200 OK, no DB write** (so GitHub doesn't retry; no orphan/wrong-tenant rows).
+- All webhook mutations (`webhook/mutations.ts`) tenant-scoped.
+- **Cross-tenant dep stub policy:** a referenced foreign-repo issue materializes only as `tenant_id`=requester, `is_stub=1`, `title=NULL`, `body=NULL` — never another tenant's real content fetched under another installation's token.
+- `installation.deleted` → delete that tenant's sessions + data.
+
+## Success Criteria
+
+- [ ] Webhook resolves `installation.id` → `tenant_id` via DB lookup **before** any write; unknown/missing-tenant installation → 200, no write.
+- [ ] Cross-tenant dep reference → `tenant_id`=requester, `is_stub=1`, `title=NULL` row only.
+- [ ] `installation.deleted` deletes that tenant's sessions + data.
+
+## Dependencies
+
+Blocked by **#146** (S3 — installations table + per-tenant writes).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx)

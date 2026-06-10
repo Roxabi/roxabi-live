@@ -1,0 +1,33 @@
+---
+title: "feat(sync): installation linking + per-install sync + PAT retired + backfill (Phase 1 S3)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 146
+status: approved
+tier: L
+---
+
+## Scope
+
+Slice **S3** of #141. Data-access + sync fan-out (the largest slice).
+
+- `installation` webhook → populate `installations` + `user_installations`; onboarding "authorized-not-installed" handled in S6.
+- `runSync` becomes a **per-installation loop:** App-JWT → `POST /app/installations/:id/access_tokens` (cache ≤ 1 h) → sync that install's repos → write rows tagged with its `tenant_id`.
+- Per-tenant `sync_control` / auth-halt breaker; **`closedHopPass` scoped per-tenant** (walk only that tenant's edge graph).
+- **Remove `GITHUB_TOKEN` (PAT)** from `Env`, `wrangler.toml`, `handleDeps`, `handleRefDelete` — **no fallback**.
+- **Backfill** existing rows to the operator's **real `installation_id`** (runtime op — admin endpoint or `wrangler d1 execute "UPDATE … WHERE tenant_id IS NULL"`, chunked to D1 limits; orphan-row rollback defined) → verify `COUNT(*) WHERE tenant_id IS NULL = 0`.
+- **Pre-impl gate:** `subIssues`/`parent` GraphQL via an installation token (confirm no preview header post-GA — token type changed from PAT).
+
+## Success Criteria
+
+- [ ] Cron mints a per-installation token (App-JWT RS256) and writes issues/edges tagged with that installation's `tenant_id`; RS256 sign errors log message only (never key/JWT).
+- [ ] `GITHUB_TOKEN` removed from `Env`/`wrangler.toml`/`handleDeps`/`handleRefDelete`; no fallback.
+- [ ] Backfill executed; `COUNT(*) WHERE tenant_id IS NULL = 0` verified.
+
+## Dependencies
+
+Blocked by **#145** (S2 — App/OAuth/sessions).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx)

@@ -1,0 +1,30 @@
+---
+title: "feat(ui): login + account-link + operator-read consent (Phase 1 S6)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 149
+status: approved
+tier: M
+---
+
+## Scope
+
+Slice **S6** of #141. Frontend (`frontend/index.html`, `app.js`).
+
+- Unauthenticated landing + **Log in with GitHub** button.
+- **Install-App CTA** for the authorized-not-installed state → links to the GitHub App install URL.
+- **Org-picker** UI (when >1 installation).
+- **Operator-read consent** the user must **acknowledge before any issue data renders** + a persistent dashboard notice ("operator can read your data this phase; don't paste secrets into issue bodies").
+
+## Success Criteria
+
+- [ ] Consent acknowledged before any issue data renders; persistent dashboard notice present.
+- [ ] Full browser flow works: logged-out → login → install CTA → consent → org-picker → scoped dashboard.
+
+## Dependencies
+
+Blocked by **#148** (S5 — tenant-filtered reads + active-tenant API).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx)
