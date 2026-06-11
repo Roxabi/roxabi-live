@@ -35,8 +35,14 @@ vi.mock("../sync/sync", async (importOriginal) => {
   };
 });
 
+// RED (S3): resolveInstallToken does not exist yet — import fails at runtime → test fails
+vi.mock("../auth/installToken", () => ({
+  resolveInstallToken: vi.fn(),
+}));
+
 import { fetchIssueDeps } from "../sync/graphql";
 import { syncBranches } from "../sync/sync";
+import { resolveInstallToken } from "../auth/installToken";
 
 // ---------------------------------------------------------------------------
 // FakeD1 — cloned from mutations.test.ts / sync.test.ts pattern
@@ -173,6 +179,7 @@ function makeEnv(overrides: Partial<Env> = {}): Env {
     GITHUB_APP_CLIENT_SECRET: "placeholder",
     GITHUB_APP_PRIVATE_KEY: "placeholder",
     GITHUB_APP_WEBHOOK_SECRET: "placeholder",
+    INSTALL_TOKEN_KEY: "placeholder",
     ...overrides,
   };
 }
@@ -462,6 +469,56 @@ describe("handleDeps", () => {
       // Assert — catch swallows all errors, not just GraphQLError
       expect(result).toBe(0);
     });
+
+    // RED (S3 — future multi-tenant): handleDeps cross-repo path must use resolveInstallToken,
+    // NOT env.GITHUB_TOKEN. Current impl calls fetchIssueDeps(db, env.GITHUB_TOKEN, ...) at
+    // handlers.ts line ~209. Future impl must call resolveInstallToken(db, env, owner, name)
+    // and pass the resulting token to fetchIssueDeps.
+    it("cross-repo path resolves token via resolveInstallToken(db, env, owner, name) — NOT env.GITHUB_TOKEN", async () => {
+      // Arrange
+      const { db } = captureDb();
+      vi.mocked(fetchIssueDeps).mockResolvedValue({ blocked_by: [], blocking: [] });
+      // Future: resolveInstallToken returns an install token
+      vi.mocked(resolveInstallToken).mockResolvedValue("ghs_install_token");
+
+      // Use REPO which is "Roxabi/roxabi-live" → owner="Roxabi", name="roxabi-live"
+      const [owner, name] = REPO.split("/");
+
+      let patAccessCount = 0;
+      const envWithSpy: Env = { ...baseEnv, DB: db };
+      delete (envWithSpy as unknown as Record<string, unknown>)["GITHUB_TOKEN"];
+      Object.defineProperty(envWithSpy, "GITHUB_TOKEN", {
+        get() {
+          patAccessCount++;
+          return "ghp_test";
+        },
+        configurable: true,
+      });
+
+      const payload = {
+        action: "blocked_by_added",
+        blocked_issue: { number: 42 },
+        repository: { full_name: REPO },
+        // no blocking_issue key → cross-repo path
+      };
+
+      // Act
+      await handleDeps(payload, db, envWithSpy);
+
+      // Assert 1: resolveInstallToken called with the right db + env + owner/name.
+      // Compare via mock.calls indices, NOT toHaveBeenCalledWith(db, envWithSpy, ...): the
+      // structural matcher enumerates envWithSpy's own property names, which trips the
+      // GITHUB_TOKEN getter-spy and inflates patAccessCount. Reference-identity (toBe) and
+      // index access do not enumerate, so they measure the impl's access only.
+      const call = vi.mocked(resolveInstallToken).mock.calls[0];
+      expect(call?.[0]).toBe(db);
+      expect(call?.[1]).toBe(envWithSpy);
+      expect(call?.[2]).toBe(owner);
+      expect(call?.[3]).toBe(name);
+
+      // Assert 2: env.GITHUB_TOKEN must NOT be accessed by the impl (PAT bypass)
+      expect(patAccessCount).toBe(0);
+    });
   });
 });
 
@@ -622,6 +679,9 @@ describe("handleRefDelete", () => {
     // Arrange
     const { db } = captureDb();
     vi.mocked(syncBranches).mockResolvedValue(undefined);
+    // S3: handleRefDelete resolves the install token, then passes it to syncBranches
+    // (no longer env.GITHUB_TOKEN).
+    vi.mocked(resolveInstallToken).mockResolvedValue("ghs_install_token");
     const payload = {
       ref_type: "branch",
       ref: "42-done",
@@ -631,8 +691,8 @@ describe("handleRefDelete", () => {
     // Act
     await handleRefDelete(payload, db, { ...baseEnv, DB: db });
 
-    // Assert — syncBranches called with correct owner/name split
-    expect(vi.mocked(syncBranches)).toHaveBeenCalledWith(db, baseEnv.GITHUB_TOKEN, "Roxabi", "lyra");
+    // Assert — syncBranches called with the resolved install token + correct owner/name split
+    expect(vi.mocked(syncBranches)).toHaveBeenCalledWith(db, "ghs_install_token", "Roxabi", "lyra");
   });
 
   it("no-op for non-matching branch name", async () => {
@@ -665,6 +725,56 @@ describe("handleRefDelete", () => {
 
     // Assert
     expect(vi.mocked(syncBranches)).not.toHaveBeenCalled();
+  });
+
+  // RED (S3 — future multi-tenant): handleRefDelete must resolve the token for the
+  // deleted-branch repo via resolveInstallToken(db, env, owner, name), NOT env.GITHUB_TOKEN.
+  // Current impl calls syncBranches(db, env.GITHUB_TOKEN, owner, name) at handlers.ts line ~364.
+  // Future impl must call resolveInstallToken and pass the install token to syncBranches.
+  it("resolves token via resolveInstallToken for deleted-branch repo — NOT env.GITHUB_TOKEN", async () => {
+    // Arrange
+    const { db } = captureDb();
+    vi.mocked(syncBranches).mockResolvedValue(undefined);
+    // Future: resolveInstallToken returns an install token for this repo
+    vi.mocked(resolveInstallToken).mockResolvedValue("ghs_install_token");
+
+    // Use "Roxabi/lyra" so owner="Roxabi", name="lyra"
+    const repoFullName = "Roxabi/lyra";
+    const [owner, name] = repoFullName.split("/");
+
+    let patAccessCount = 0;
+    const envWithSpy: Env = { ...baseEnv, DB: db };
+    delete (envWithSpy as unknown as Record<string, unknown>)["GITHUB_TOKEN"];
+    Object.defineProperty(envWithSpy, "GITHUB_TOKEN", {
+      get() {
+        patAccessCount++;
+        return "ghp_test";
+      },
+      configurable: true,
+    });
+
+    const payload = {
+      ref_type: "branch",
+      ref: "42-done",
+      repository: { full_name: repoFullName },
+    };
+
+    // Act
+    await handleRefDelete(payload, db, envWithSpy);
+
+    // Assert 1: resolveInstallToken called with the right db + env + owner/name.
+    // Compare via mock.calls indices, NOT toHaveBeenCalledWith(db, envWithSpy, ...): the
+    // structural matcher enumerates envWithSpy's own property names, which trips the
+    // GITHUB_TOKEN getter-spy and inflates patAccessCount. Reference-identity (toBe) and
+    // index access do not enumerate, so they measure the impl's access only.
+    const call = vi.mocked(resolveInstallToken).mock.calls[0];
+    expect(call?.[0]).toBe(db);
+    expect(call?.[1]).toBe(envWithSpy);
+    expect(call?.[2]).toBe(owner);
+    expect(call?.[3]).toBe(name);
+
+    // Assert 2: env.GITHUB_TOKEN must NOT be accessed by the impl (PAT bypass)
+    expect(patAccessCount).toBe(0);
   });
 });
 

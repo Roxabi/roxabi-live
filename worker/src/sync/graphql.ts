@@ -52,6 +52,7 @@ export async function ghGraphql<T = unknown>(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       "User-Agent": "roxabi-live-worker",
+      "GraphQL-Features": "sub_issues",
     },
     body: JSON.stringify({ query, variables }),
   });

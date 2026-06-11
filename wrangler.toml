@@ -80,6 +80,7 @@ binding     = "LOGS"
 bucket_name = "roxabi-live-logs-staging"
 
 # ── Dormant — activate when Workers Paid (Queues) is enabled ─────────────────
+# DORMANT — activate on Workers Paid + >30 repos (no consumer in Phase 1; uncommenting requires `wrangler queues create`)
 # [[queues.producers]]
 # binding = "SYNC_QUEUE"
 # queue   = "roxabi-live-sync"

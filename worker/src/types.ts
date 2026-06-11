@@ -42,4 +42,7 @@ export interface Env {
   GITHUB_APP_PRIVATE_KEY: string;
   // App webhook HMAC secret (distinct from org GITHUB_WEBHOOK_SECRET)
   GITHUB_APP_WEBHOOK_SECRET: string;
+  // base64 32-byte AES-GCM DEK for install-token encryption at rest (S3a, #146).
+  // Consumed by auth/tokenCrypto + auth/installToken. Set via `wrangler secret put INSTALL_TOKEN_KEY`.
+  INSTALL_TOKEN_KEY: string;
 }

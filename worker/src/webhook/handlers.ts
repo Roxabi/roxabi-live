@@ -28,6 +28,7 @@ import {
 } from "./mutations";
 import { BRANCH_ISSUE_RE, canonicalKey, extractFromLabels, syncBranches } from "../sync/sync";
 import { fetchIssueDeps, GraphQLError } from "../sync/graphql";
+import { resolveInstallToken } from "../auth/installToken";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -206,7 +207,24 @@ export async function handleDeps(
   // current dep graph and derive edges from the authoritative GitHub state.
   if (blockingIssue == null) {
     const repoObj = (payload["repository"] as Record<string, unknown> | undefined) ?? {};
-    return await pointFetchAndUpsertDeps(db, env.GITHUB_TOKEN, blockedIssue, repoObj);
+    const fullName = (repoObj["full_name"] as string | undefined) ?? "";
+    const slashIdx = fullName.indexOf("/");
+    if (slashIdx < 0 || slashIdx === fullName.length - 1) {
+      console.warn(
+        `[webhook] handle_deps: cannot resolve token — malformed repository.full_name=${JSON.stringify(fullName)}`,
+      );
+      return 0;
+    }
+    const owner = fullName.slice(0, slashIdx);
+    const name = fullName.slice(slashIdx + 1);
+    let token: string;
+    try {
+      token = await resolveInstallToken(db, env, owner, name);
+    } catch (err) {
+      console.warn(`[webhook] handle_deps: resolveInstallToken failed for ${fullName}`, err);
+      return 0;
+    }
+    return await pointFetchAndUpsertDeps(db, token, blockedIssue, repoObj);
   }
 
   // Same-repo fast path: both sides are in the payload — use them directly.
@@ -361,7 +379,8 @@ export async function handleRefDelete(
   const name = repo.slice(slashIdx + 1);
 
   try {
-    await syncBranches(db, env.GITHUB_TOKEN, owner, name);
+    const token = await resolveInstallToken(db, env, owner, name);
+    await syncBranches(db, token, owner, name);
   } catch (err) {
     console.error(
       `[webhook] handle_ref_delete: syncBranches failed for repo=${repo} ref=${ref}`,
