@@ -118,7 +118,7 @@ function generateInstallTokenKey(): string {
 // We'll use a simple approach: store a known "encrypted" value using the
 // real tokenCrypto module once it exists. For now, tests that need a seeded
 // encrypted row (cache-hit path) import encryptToken directly.
-import { importDek, encryptToken } from "./tokenCrypto";
+import { importDek, encryptToken, decryptToken } from "./tokenCrypto";
 
 // ---------------------------------------------------------------------------
 // Fake env builder
@@ -375,9 +375,9 @@ describe("getInstallationToken — cache stale/missing", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("after a mint, the stored token_enc value is NOT the plaintext token", async () => {
+  it("after a mint, the stored token_enc value is NOT the plaintext token (real decryption round-trip)", async () => {
     // Arrange
-    const { env } = await buildFakeEnv();
+    const { env, installTokenKeyB64 } = await buildFakeEnv();
     const freshToken = "ghs_freshly_minted_secret";
     const upsertCapture: Array<{ sql: string; args: unknown[] }> = [];
 
@@ -405,16 +405,27 @@ describe("getInstallationToken — cache stale/missing", () => {
     // Act
     await getInstallationToken(db, { ...env, DB: db }, 1, 42);
 
-    // Assert — upsert must have been called, and the stored enc must NOT be plaintext
+    // Assert — upsert must have been called
     expect(upsertCapture.length).toBeGreaterThanOrEqual(1);
     const upsertArgs = upsertCapture[upsertCapture.length - 1].args;
-    // token_enc arg must not equal the plaintext token
-    const storedEnc = upsertArgs.find(
-      (a) => typeof a === "string" && a !== freshToken,
-    );
-    expect(storedEnc).toBeDefined();
-    // None of the args should literally be the plaintext
+
+    // None of the args should literally be the plaintext (basic guard)
     expect(upsertArgs).not.toContain(freshToken);
+
+    // Real guard: recover token_enc and token_iv by SQL parameter position
+    // INSERT INTO install_tokens (tenant_id, token_enc, token_iv, expires_at, updated_at)
+    // VALUES (?, ?, ?, ?, ?)
+    // .bind(tenantId, enc, iv, expires_at, updatedAt)
+    //        idx 0    1    2   3           4
+    const storedTokenEnc = upsertArgs[1] as string;
+    const storedTokenIv = upsertArgs[2] as string;
+    expect(typeof storedTokenEnc).toBe("string");
+    expect(typeof storedTokenIv).toBe("string");
+
+    // Decrypt and verify round-trip — this FAILS if impl stored plaintext instead of ciphertext
+    const dek = await importDek(installTokenKeyB64);
+    const recovered = await decryptToken(dek, storedTokenEnc, storedTokenIv);
+    expect(recovered).toBe(freshToken);
   });
 });
 

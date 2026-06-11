@@ -383,7 +383,7 @@ export async function handleRefDelete(
     await syncBranches(db, token, owner, name);
   } catch (err) {
     console.error(
-      `[webhook] handle_ref_delete: syncBranches failed for repo=${repo} ref=${ref}`,
+      `[webhook] handle_ref_delete: token resolution or branch sync failed for repo=${repo} ref=${ref}`,
       err,
     );
   }

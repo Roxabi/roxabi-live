@@ -111,11 +111,19 @@ export async function getInstallationToken(
   if (!mintRes.ok) {
     const text = await mintRes.text();
     throw new Error(
-      `GitHub installation token mint failed: HTTP ${mintRes.status} — ${text}`,
+      `GitHub installation token mint failed: HTTP ${mintRes.status} — ${text.slice(0, 200)}`,
     );
   }
 
-  const { token, expires_at } = (await mintRes.json()) as GHAccessTokenResponse;
+  let mintBody: GHAccessTokenResponse;
+  try {
+    mintBody = (await mintRes.json()) as GHAccessTokenResponse;
+  } catch {
+    throw new Error(
+      `GitHub installation token mint failed: unexpected non-JSON response for installation ${installationId}`,
+    );
+  }
+  const { token, expires_at } = mintBody;
 
   // Step 3 — Encrypt and upsert
   const dek = await importDek(installTokenKey);
@@ -180,9 +188,7 @@ export async function resolveInstallToken(
   }
 
   if (row.suspended_at !== null) {
-    throw new Error(
-      `Installation for repository ${repo} is suspended (suspended_at: ${row.suspended_at})`,
-    );
+    throw new Error(`Installation for ${repo} is suspended`);
   }
 
   return getInstallationToken(db, env, row.id, row.installation_id);
@@ -227,11 +233,18 @@ export async function listInstallationRepos(token: string): Promise<string[]> {
     if (!res.ok) {
       const text = await res.text();
       throw new Error(
-        `GitHub list installation repositories failed: HTTP ${res.status} — ${text}`,
+        `GitHub list installation repositories failed: HTTP ${res.status} — ${text.slice(0, 200)}`,
       );
     }
 
-    const body = (await res.json()) as GHInstallationReposResponse;
+    let body: GHInstallationReposResponse;
+    try {
+      body = (await res.json()) as GHInstallationReposResponse;
+    } catch {
+      throw new Error(
+        `GitHub list installation repositories failed: unexpected non-JSON response (page ${page})`,
+      );
+    }
     const pageRepos = body.repositories ?? [];
 
     for (const r of pageRepos) {
