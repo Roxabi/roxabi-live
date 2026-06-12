@@ -73,7 +73,6 @@ function makeListEnvWithCapture(
       },
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_TOKEN: "",
     GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
@@ -101,7 +100,6 @@ function makeListEnv(opts: ListEnvOptions): Env {
       ],
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_TOKEN: "",
     GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
@@ -150,7 +148,6 @@ function makeGetEnv(opts: GetEnvOptions): Env {
       batch: async () => [],
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_TOKEN: "",
     GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
@@ -196,7 +193,6 @@ function makeGetEnvWithCapture(opts: GetEnvOptions): {
       batch: async () => [],
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_TOKEN: "",
     GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;

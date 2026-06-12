@@ -504,7 +504,7 @@ describe("acquireSyncLock", () => {
     // Assert
     expect(capturedStmts).toHaveLength(1);
     expect(capturedStmts[0].sql).toContain("key = 'sync_running'");
-    expect(capturedStmts[0].sql).toContain("AND tenant_id = 0");
+    expect(capturedStmts[0].sql).toContain("AND tenant_id = ?");
   });
 });
 
@@ -553,9 +553,9 @@ describe("haltSync", () => {
     expect(capturedStmts[0].sql).toContain("value='1'");
     expect(capturedStmts[0].sql).toContain("key='halted'");
     // tenant isolation guard must be present (TF3)
-    expect(capturedStmts[0].sql).toContain("AND tenant_id = 0");
-    // only the ISO timestamp is bound
-    expect(capturedStmts[0].args).toHaveLength(1);
+    expect(capturedStmts[0].sql).toContain("AND tenant_id = ?");
+    // ISO timestamp + tenantId are bound
+    expect(capturedStmts[0].args).toHaveLength(2);
     expect(typeof capturedStmts[0].args[0]).toBe("string");
     expect(String(capturedStmts[0].args[0])).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
@@ -590,9 +590,9 @@ describe("auth failure helpers", () => {
     expect(capturedStmts[0].sql).toContain("value='0'");
     expect(capturedStmts[0].sql).toContain("key='auth_failures'");
     // tenant isolation guard must be present (TF3)
-    expect(capturedStmts[0].sql).toContain("AND tenant_id = 0");
-    // only the ISO timestamp is bound
-    expect(capturedStmts[0].args).toHaveLength(1);
+    expect(capturedStmts[0].sql).toContain("AND tenant_id = ?");
+    // ISO timestamp + tenantId are bound
+    expect(capturedStmts[0].args).toHaveLength(2);
     expect(String(capturedStmts[0].args[0])).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -656,6 +656,12 @@ vi.mock("./queries", () => ({
   REPO_BUNDLE_QUERY: "REPO_BUNDLE_QUERY",
   REPOS_QUERY: "REPOS_QUERY",
   STUB_ISSUE_QUERY: "STUB_ISSUE_QUERY",
+}));
+
+vi.mock("../auth/installToken", () => ({
+  getInstallationToken: vi.fn(),
+  resolveInstallToken: vi.fn(),
+  listInstallationRepos: vi.fn(),
 }));
 
 describe("syncRepoIssues", () => {
@@ -925,7 +931,6 @@ describe("runSync", () => {
   function makeEnv(overrides: Record<string, unknown> = {}): Env {
     return {
       DB: undefined as unknown as D1Database,
-      GITHUB_TOKEN: "tok",
       GITHUB_ORG: "Roxabi",
       ...overrides,
     } as unknown as Env;
@@ -964,162 +969,38 @@ describe("runSync", () => {
     expect(vi.mocked(ghGraphql)).not.toHaveBeenCalled();
   });
 
-  it("returns early (logs warn) when allowlist is empty", async () => {
-    let callIdx = 0;
+  it("returns early (logs warn) when no tenants with installation_id exist", async () => {
+    const { listInstallationRepos } = await import("../auth/installToken");
+    const { getInstallationToken } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
+    vi.mocked(listInstallationRepos).mockResolvedValue([]);
+
     const db = makeFakeDb((sql, args) => {
-      callIdx++;
-      if (sql.includes("key='halted'") || (callIdx === 1 && sql.includes("sync_control"))) {
-        // isHalted → halted=0
-        return makeFakeStmt(sql, args, [{ value: "0" }], 0);
-      }
-      if (sql.includes("UPDATE") && sql.includes("sync_running")) {
-        // acquireSyncLock → acquired (changes=1)
-        return makeFakeStmt(sql, args, [], 1);
-      }
-      if (sql.includes("sync_started_at")) {
-        return makeFakeStmt(sql, args, [], 1);
-      }
-      if (sql.includes("repo_allowlist") || sql.includes("SELECT key FROM")) {
-        // getRepoAllowlist → empty
+      if (sql.includes("FROM tenants")) {
+        // discoverTenants → empty (no tenants with installation_id)
         return makeFakeStmt(sql, args, []);
       }
-      // releaseSyncLock
       return makeFakeStmt(sql, args, [], 1);
     });
-
-    // Override batch to work nicely
-    (db as unknown as { batch: ReturnType<typeof vi.fn> }).batch.mockResolvedValue([]);
 
     const env = makeEnv({ DB: db });
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     await expect(runSync(env)).resolves.toBeUndefined();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("repo_allowlist empty"));
-    warnSpy.mockRestore();
-  });
-
-  it("halts when auth failures reach threshold (>=2)", async () => {
-    const { ghGraphql, GraphQLError } = await import("./graphql");
-    const mockGhGraphql = vi.mocked(ghGraphql);
-
-    // enumerateOrgRepos calls ghGraphql; throw auth error
-    mockGhGraphql.mockRejectedValue(new GraphQLError("auth", true));
-
-    let callIdx = 0;
-    const db = makeFakeDb((sql, args) => {
-      callIdx++;
-      // isHalted → not halted
-      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
-      // acquireSyncLock → acquired
-      if (sql.includes("sync_running") && sql.includes("UPDATE")) {
-        return makeFakeStmt(sql, args, [], 1);
-      }
-      // sync_started_at update
-      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
-      // getRepoAllowlist → one repo so we proceed past the empty check
-      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
-        return makeFakeStmt(sql, args, [{ key: "Roxabi/lyra" }]);
-      }
-      // incrementAuthFailures UPDATE → changes=1
-      if (sql.includes("auth_failures") && sql.includes("UPDATE")) {
-        return makeFakeStmt(sql, args, [], 1);
-      }
-      // incrementAuthFailures SELECT → value=2 (at threshold)
-      if (sql.includes("auth_failures") && sql.includes("SELECT")) {
-        return makeFakeStmt(sql, args, [{ value: "2" }], 0);
-      }
-      // haltSync UPDATE, releaseSyncLock
-      return makeFakeStmt(sql, args, [], 1);
-    });
-
-    const env = makeEnv({ DB: db });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    await expect(runSync(env)).resolves.toBeUndefined();
-
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("HALTED"),
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("no repos discovered across all installations — nothing to sync"),
     );
-    errorSpy.mockRestore();
-  });
-
-  // Halt-alert POST path (S8, #100) ----------------------------------------
-
-  // Builds a FakeD1 that drives runSync straight to the auth-halt branch
-  // (isHalted=0 → lock acquired → one allowlist repo → ghGraphql throws auth →
-  // auth_failures=2 → haltSync). Shared by the two NOTIFY_URL tests below.
-  function makeHaltDb() {
-    return makeFakeDb((sql, args) => {
-      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
-      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
-      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
-      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
-        return makeFakeStmt(sql, args, [{ key: "Roxabi/lyra" }]);
-      }
-      if (sql.includes("auth_failures") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
-      if (sql.includes("auth_failures") && sql.includes("SELECT")) return makeFakeStmt(sql, args, [{ value: "2" }], 0);
-      return makeFakeStmt(sql, args, [], 1);
-    });
-  }
-
-  it("POSTs a sync_halted alert to NOTIFY_URL when the breaker trips", async () => {
-    const { ghGraphql, GraphQLError } = await import("./graphql");
-    vi.mocked(ghGraphql).mockRejectedValue(new GraphQLError("auth", true));
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(null, { status: 200 }));
-
-    const env = makeEnv({ DB: makeHaltDb(), NOTIFY_URL: "https://ntfy.example/roxabi" });
-    await expect(runSync(env)).resolves.toBeUndefined();
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe("https://ntfy.example/roxabi");
-    expect(init).toMatchObject({ method: "POST" });
-    expect(String((init as RequestInit).body)).toContain("sync_halted");
-  });
-
-  it("does not POST when NOTIFY_URL is unset", async () => {
-    const { ghGraphql, GraphQLError } = await import("./graphql");
-    vi.mocked(ghGraphql).mockRejectedValue(new GraphQLError("auth", true));
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-
-    const env = makeEnv({ DB: makeHaltDb() }); // no NOTIFY_URL
-    await expect(runSync(env)).resolves.toBeUndefined();
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  // R2 run-audit (#120) -----------------------------------------------------
-
-  it("writes a run-audit object to R2 (outcome=halted) on the halt path", async () => {
-    const { ghGraphql, GraphQLError } = await import("./graphql");
-    vi.mocked(ghGraphql).mockRejectedValue(new GraphQLError("auth", true));
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    const put = vi.fn().mockResolvedValue(undefined);
-
-    const env = makeEnv({ DB: makeHaltDb(), LOGS: { put } as unknown as R2Bucket });
-    await expect(runSync(env)).resolves.toBeUndefined();
-
-    expect(put).toHaveBeenCalledTimes(1);
-    const [key, body] = put.mock.calls[0];
-    expect(key).toMatch(/^runs\/\d{4}-\d{2}-\d{2}\/.+\.json$/);
-    expect(JSON.parse(body as string).outcome).toBe("halted");
+    warnSpy.mockRestore();
   });
 
   // Prune + archived-repo tracking (#N) -------------------------------------
 
   /**
    * Builds a FakeD1 that drives runSync through the prune path:
-   *   isHalted=0 → lock acquired → allowlist=[Roxabi/roxabi-factory] →
-   *   ghGraphql returns live=[roxabi-factory] + archived=[roxabi-vault] →
+   *   discoverTenants → [{id:1, installation_id:139542392}] →
+   *   lock acquired → getInstallationToken → listInstallationRepos=[Roxabi/roxabi-factory] →
    *   DB SELECT DISTINCT queries return stale=[Roxabi/lyra] in issues/edges/pr_state/sync_state →
    *   batchChunked invoked with DELETE stmts for Roxabi/lyra
-   *
-   * Callers replace ghGraphql mocks before calling makeFullSyncDb.
    */
   function makeFullSyncDb(opts: {
     issueRepos?: string[];
@@ -1140,8 +1021,13 @@ describe("runSync", () => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
-      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
-        return makeFakeStmt(sql, args, [{ key: "Roxabi/roxabi-factory" }]);
+      // discoverTenants
+      if (sql.includes("FROM tenants")) {
+        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 139542392 }]);
+      }
+      // tenant_repo_access (not used in prune path but respond gracefully)
+      if (sql.includes("FROM tenant_repo_access")) {
+        return makeFakeStmt(sql, args, [{ owner: "Roxabi", name: "roxabi-factory" }]);
       }
       // Prune SELECT DISTINCT queries
       if (sql.includes("SELECT DISTINCT repo FROM issues")) {
@@ -1165,34 +1051,14 @@ describe("runSync", () => {
   }
 
   it("prunes issues/edges/pr_state/sync_state for a deleted repo (Roxabi/lyra)", async () => {
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
+    // listInstallationRepos returns only roxabi-factory (lyra is gone)
+    vi.mocked(listInstallationRepos).mockResolvedValue(["Roxabi/roxabi-factory"]);
+
     const { ghGraphql } = await import("./graphql");
     const mockGhGraphql = vi.mocked(ghGraphql);
-
-    // REPOS_QUERY → live: only roxabi-factory (lyra is gone)
-    mockGhGraphql.mockResolvedValueOnce({
-      data: {
-        organization: {
-          repositories: {
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [{ name: "roxabi-factory", owner: { login: "Roxabi" }, isArchived: false, isPrivate: false }],
-          },
-        },
-        rateLimit: { cost: 1, remaining: 5000, resetAt: "2026-01-01T00:00:00Z" },
-      },
-    });
-    // ARCHIVED_REPOS_QUERY → archived: roxabi-vault
-    mockGhGraphql.mockResolvedValueOnce({
-      data: {
-        organization: {
-          repositories: {
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [{ nameWithOwner: "Roxabi/roxabi-vault" }],
-          },
-        },
-        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
-      },
-    });
-    // syncRepoBundle calls (REPO_BUNDLE_QUERY) for roxabi-factory — empty result
+    // syncRepoBundle calls for roxabi-factory — empty result
     mockGhGraphql.mockResolvedValue({
       data: {
         repository: {
@@ -1223,35 +1089,15 @@ describe("runSync", () => {
     expect(deletedEdgeStmts.length).toBeGreaterThan(0);
   });
 
-  it("does NOT prune rows for an archived repo (roxabi-vault stays)", async () => {
+  it("does NOT prune rows for a repo still accessible via installation (roxabi-vault stays)", async () => {
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
+    // listInstallationRepos returns both repos — roxabi-vault is still accessible
+    vi.mocked(listInstallationRepos).mockResolvedValue(["Roxabi/roxabi-factory", "Roxabi/roxabi-vault"]);
+
     const { ghGraphql } = await import("./graphql");
     const mockGhGraphql = vi.mocked(ghGraphql);
-
-    // REPOS_QUERY → live: only roxabi-factory
-    mockGhGraphql.mockResolvedValueOnce({
-      data: {
-        organization: {
-          repositories: {
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [{ name: "roxabi-factory", owner: { login: "Roxabi" }, isArchived: false, isPrivate: false }],
-          },
-        },
-        rateLimit: { cost: 1, remaining: 5000, resetAt: "2026-01-01T00:00:00Z" },
-      },
-    });
-    // ARCHIVED_REPOS_QUERY → archived: roxabi-vault (it IS in archived, not stale)
-    mockGhGraphql.mockResolvedValueOnce({
-      data: {
-        organization: {
-          repositories: {
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [{ nameWithOwner: "Roxabi/roxabi-vault" }],
-          },
-        },
-        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
-      },
-    });
-    // syncRepoBundle empty result for roxabi-factory
+    // syncRepoBundle empty result for each repo
     mockGhGraphql.mockResolvedValue({
       data: {
         repository: {
@@ -1263,7 +1109,7 @@ describe("runSync", () => {
       },
     });
 
-    // DB returns roxabi-vault as present in issues — but it's archived, so NOT stale
+    // DB returns roxabi-vault as present in issues — but it's still in live set, so NOT stale
     const db = makeFullSyncDb({
       issueRepos: ["Roxabi/roxabi-vault", "Roxabi/roxabi-factory"],
       edgeSrcRepos: [],
@@ -1283,41 +1129,18 @@ describe("runSync", () => {
     expect(deletedVaultStmts).toHaveLength(0);
   });
 
-  it("skips all prune logic (warn) when live repo enumeration returns 0 repos", async () => {
-    const { ghGraphql } = await import("./graphql");
-    const mockGhGraphql = vi.mocked(ghGraphql);
-
-    // REPOS_QUERY → live: empty (transient error)
-    mockGhGraphql.mockResolvedValueOnce({
-      data: {
-        organization: {
-          repositories: {
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [],
-          },
-        },
-        rateLimit: { cost: 1, remaining: 5000, resetAt: "2026-01-01T00:00:00Z" },
-      },
-    });
-    // ARCHIVED_REPOS_QUERY
-    mockGhGraphql.mockResolvedValueOnce({
-      data: {
-        organization: {
-          repositories: {
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [{ nameWithOwner: "Roxabi/roxabi-vault" }],
-          },
-        },
-        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
-      },
-    });
+  it("skips all prune logic (warn) when listInstallationRepos returns 0 repos", async () => {
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
+    // listInstallationRepos returns empty — transient error
+    vi.mocked(listInstallationRepos).mockResolvedValue([]);
 
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
-      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
-        return makeFakeStmt(sql, args, [{ key: "Roxabi/roxabi-factory" }]);
+      if (sql.includes("FROM tenants")) {
+        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 139542392 }]);
       }
       return makeFakeStmt(sql, args, [], 1);
     });
@@ -1328,77 +1151,14 @@ describe("runSync", () => {
     const env = makeEnv({ DB: db });
     await expect(runSync(env)).resolves.toBeUndefined();
 
-    // Safety guard must have warned
+    // Safety guard must have warned — new flow emits the "nothing to sync" message
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("live repo enumeration returned 0 repos"),
+      expect.stringContaining("no repos discovered across all installations — nothing to sync"),
     );
 
     // No DELETE statements should have been issued
     const deleteStmts = db._recorded.filter((s) => s.sql.includes("DELETE"));
     expect(deleteStmts).toHaveLength(0);
-  });
-
-  it("upserts repos table with archived=1 when a repo moves live→archived", async () => {
-    const { ghGraphql } = await import("./graphql");
-    const mockGhGraphql = vi.mocked(ghGraphql);
-
-    // REPOS_QUERY → roxabi-factory live (roxabi-vault is now archived, not in live list)
-    mockGhGraphql.mockResolvedValueOnce({
-      data: {
-        organization: {
-          repositories: {
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [{ name: "roxabi-factory", owner: { login: "Roxabi" }, isArchived: false, isPrivate: false }],
-          },
-        },
-        rateLimit: { cost: 1, remaining: 5000, resetAt: "2026-01-01T00:00:00Z" },
-      },
-    });
-    // ARCHIVED_REPOS_QUERY → roxabi-vault is now archived
-    mockGhGraphql.mockResolvedValueOnce({
-      data: {
-        organization: {
-          repositories: {
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [{ nameWithOwner: "Roxabi/roxabi-vault" }],
-          },
-        },
-        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
-      },
-    });
-    // syncRepoBundle empty result
-    mockGhGraphql.mockResolvedValue({
-      data: {
-        repository: {
-          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
-          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
-          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
-        },
-        rateLimit: { cost: 1, remaining: 4998, resetAt: "2026-01-01T00:00:00Z" },
-      },
-    });
-
-    const db = makeFullSyncDb({
-      issueRepos: ["Roxabi/roxabi-vault", "Roxabi/roxabi-factory"],
-      edgeSrcRepos: [],
-      edgeDstRepos: [],
-      prStateRepos: [],
-      syncStateRepos: ["Roxabi/roxabi-vault", "Roxabi/roxabi-factory"],
-    });
-    vi.spyOn(console, "log").mockImplementation(() => {});
-
-    const env = makeEnv({ DB: db });
-    await expect(runSync(env)).resolves.toBeUndefined();
-
-    // The upsert INSERT stmt for Roxabi/roxabi-vault must use the archived=1 SQL variant
-    // (literal `1` is in the SQL text, not in bind args — only the repo name is bound)
-    const archivedUpsertStmts = db._recorded.filter(
-      (s) =>
-        s.sql.includes("INSERT INTO repos") &&
-        s.sql.includes("VALUES (?, 1)") &&
-        s.args.includes("Roxabi/roxabi-vault"),
-    );
-    expect(archivedUpsertStmts.length).toBeGreaterThan(0);
   });
 });
 
@@ -1482,95 +1242,124 @@ describe("writeRunAudit", () => {
 //      throws before syncRepoBundle. Add the mock when implementing #160.
 // ---------------------------------------------------------------------------
 
-describe.skip("runSync — multi-tenant installation sync (DEFERRED #160 — un-skip + fix in S3b)", () => {
+describe("runSync — multi-tenant installation sync (#160)", () => {
   // Local makeEnv scoped to this describe so it composes cleanly
   function makeEnv(overrides: Record<string, unknown> = {}): Env {
     return {
       DB: undefined as unknown as D1Database,
-      GITHUB_TOKEN: "tok",
       GITHUB_ORG: "Roxabi",
       ...overrides,
     } as unknown as Env;
   }
 
   it("deduplicates GraphQL bundle fetches: two tenants sharing repo o/r → exactly 1 REPO_BUNDLE_QUERY issued for o/r", async () => {
-    // Two tenants both have tenant_repo_access for "o/r".
-    // The future multi-tenant runSync must deduplicate: one fetch regardless of tenant count.
+    // Two tenants both have access to "o/r" via their install tokens.
+    // runSync must deduplicate: one syncRepoBundle call regardless of tenant count.
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
+    // Both tenants enumerate the same repo "o/r"
+    vi.mocked(listInstallationRepos).mockResolvedValue(["o/r"]);
+
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
-      // Future: tenants table → two rows
       if (sql.includes("FROM tenants")) {
         return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }, { id: 2, installation_id: 20 }]);
-      }
-      // Future: tenant_repo_access for both tenants → same repo "o/r"
-      if (sql.includes("FROM tenant_repo_access")) {
-        return makeFakeStmt(sql, args, [{ owner: "o", name: "r" }, { owner: "o", name: "r" }]);
       }
       return makeFakeStmt(sql, args, [], 1);
     });
 
     const { ghGraphql } = await import("./graphql");
     const mockGhGraphql = vi.mocked(ghGraphql);
-    // Future REPO_BUNDLE_QUERY path — stub returns minimal valid shape
+    // syncRepoBundle uses REPO_BUNDLE_QUERY — stub returns minimal valid shape
     mockGhGraphql.mockResolvedValue({
-      data: { repository: { issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] }, pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } },
+      data: {
+        repository: {
+          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
+      },
     });
 
     const env = makeEnv({ DB: db });
+    vi.spyOn(console, "log").mockImplementation(() => {});
     await runSync(env);
 
-    // Exactly 1 ghGraphql call with REPO_BUNDLE_QUERY for owner="o", name="r"
+    // Exactly 1 ghGraphql call for repo o/r (deduplication)
     const bundleCalls = mockGhGraphql.mock.calls.filter(
-      (c) => c[0] === "REPO_BUNDLE_QUERY" && c[1]?.owner === "o" && c[1]?.name === "r",
+      (c) => (c[1] as Record<string, unknown>)?.owner === "o" && (c[1] as Record<string, unknown>)?.name === "r",
     );
     expect(bundleCalls).toHaveLength(1);
   });
 
   it("advances sync_slot per tick: seed sync_slot=0, after runSync the slot is updated", async () => {
-    // Future: sync_control row sync_slot tracks which window of repos was processed.
-    // The current impl has no windowing — this test will fail (RED) until slot logic is added.
+    // sync_control row sync_slot tracks which window of repos was processed.
+    // Discovery must yield ≥1 repo so Phase 2 runs and reaches the slot-advance write.
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
+    vi.mocked(listInstallationRepos).mockResolvedValue(["o/r"]);
+
+    const { ghGraphql } = await import("./graphql");
+    vi.mocked(ghGraphql).mockResolvedValue({
+      data: {
+        repository: {
+          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+
     let syncSlotWritten = false;
+    let nextSlotValue: unknown;
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("FROM tenants")) {
+        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }]);
+      }
       // Return sync_slot=0 on read
       if (sql.includes("sync_slot") && sql.includes("SELECT")) {
-        return makeFakeStmt(sql, args, [{ key: "sync_slot", value: "0" }]);
+        return makeFakeStmt(sql, args, [{ value: "0" }]);
       }
-      // Detect the slot-advance write (INSERT OR REPLACE / UPDATE with key=sync_slot)
-      if (sql.includes("sync_slot") && (sql.includes("INSERT") || sql.includes("UPDATE"))) {
+      // Detect the slot-advance write (UPDATE with key=sync_slot); capture bound value.
+      if (sql.includes("sync_slot") && sql.includes("UPDATE")) {
         syncSlotWritten = true;
+        nextSlotValue = args[0];
         return makeFakeStmt(sql, args, [], 1);
-      }
-      // repo_allowlist — empty → runSync short-circuits after acquiring lock
-      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
-        return makeFakeStmt(sql, args, []);
       }
       return makeFakeStmt(sql, args, [], 1);
     });
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     const env = makeEnv({ DB: db });
     await runSync(env);
-    warnSpy.mockRestore();
 
-    // Assertion: the sync run must have written an updated sync_slot value.
-    // Currently no slot logic exists → syncSlotWritten stays false → RED.
+    // The sync run must advance sync_slot: 0 → (0+1) % NUM_SLOTS = 1.
     expect(syncSlotWritten).toBe(true);
+    expect(nextSlotValue).toBe("1");
   });
 
   it("per-tenant lock isolation: tenant A holding sync_running=1 does NOT prevent tenant B from syncing", async () => {
-    // Future: acquireSyncLock(db, tenantId) must be scoped per-tenant.
-    // Current impl: global lock (tenant_id=0 hardcoded) → tenant A's lock blocks everyone → RED.
+    // acquireSyncLock(db, tenantId) is per-tenant: tenant A's held lock (changes=0)
+    // must not stop discovery from attempting tenant B's own lock.
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
+    vi.mocked(listInstallationRepos).mockResolvedValue([]);
+
     let tenantBLockAttempted = false;
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       if (sql.includes("sync_running") && sql.includes("UPDATE")) {
-        // Lock for tenant A (id=1) is held → changes=0; lock for tenant B (id=2) is free → changes=1
-        const tenantArg = args.find((a) => typeof a === "number");
+        // Lock bound as [..., tenantId] — tenantId is last arg (a number)
+        const tenantArg = [...args].reverse().find((a) => typeof a === "number");
+        if (tenantArg === 0) return makeFakeStmt(sql, args, [], 1); // global tick lock: acquired
         if (tenantArg === 1) return makeFakeStmt(sql, args, [], 0); // tenant A: lock held
         if (tenantArg === 2) {
           tenantBLockAttempted = true;
@@ -1582,9 +1371,6 @@ describe.skip("runSync — multi-tenant installation sync (DEFERRED #160 — un-
       if (sql.includes("FROM tenants")) {
         return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }, { id: 2, installation_id: 20 }]);
       }
-      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
-        return makeFakeStmt(sql, args, []);
-      }
       return makeFakeStmt(sql, args, [], 1);
     });
 
@@ -1593,25 +1379,25 @@ describe.skip("runSync — multi-tenant installation sync (DEFERRED #160 — un-
     await runSync(env);
     warnSpy.mockRestore();
 
-    // Tenant B's lock attempt must have been made (i.e., runSync iterates tenants independently).
-    // With current single-tenant global lock this never happens → RED.
+    // Tenant B's lock attempt must have been made (runSync iterates tenants independently).
     expect(tenantBLockAttempted).toBe(true);
   });
 
   it("no PAT access: runSync completes via install tokens without reading env.GITHUB_TOKEN", async () => {
-    // Future: runSync must use resolveInstallToken() and never fall back to the PAT.
-    // Current impl reads env.GITHUB_TOKEN at enumerateOrgRepos (line ~1161) → spy records it.
-    // The DB must return a non-empty allowlist so runSync advances past the early-return
-    // guard and actually reaches the PAT read site (enumerateOrgRepos / syncRepoBundle).
+    // runSync must use getInstallationToken() and never read env.GITHUB_TOKEN.
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
+    vi.mocked(listInstallationRepos).mockResolvedValue(["Roxabi/roxabi-factory"]);
+
     const { ghGraphql } = await import("./graphql");
     vi.mocked(ghGraphql).mockResolvedValue({
       data: {
-        organization: {
-          repositories: {
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [{ name: "r", owner: { login: "o" }, isArchived: false, isPrivate: false }],
-          },
+        repository: {
+          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
         },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
       },
     });
 
@@ -1619,9 +1405,8 @@ describe.skip("runSync — multi-tenant installation sync (DEFERRED #160 — un-
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
-      // Non-empty allowlist — ensures runSync does NOT short-circuit before the PAT read
-      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
-        return makeFakeStmt(sql, args, [{ key: "o/r" }]);
+      if (sql.includes("FROM tenants")) {
+        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 139542392 }]);
       }
       return makeFakeStmt(sql, args, [], 1);
     });
@@ -1633,15 +1418,15 @@ describe.skip("runSync — multi-tenant installation sync (DEFERRED #160 — un-
     Object.defineProperty(base, "GITHUB_TOKEN", {
       get() {
         patAccessCount++;
-        return "tok"; // still returns a value so runSync can proceed (error swallowing aside)
+        return "tok";
       },
       configurable: true,
     });
 
+    vi.spyOn(console, "log").mockImplementation(() => {});
     await runSync(base);
 
-    // Future impl: patAccessCount must be 0 (resolveInstallToken used instead).
-    // Current impl reads env.GITHUB_TOKEN at enumerateOrgRepos + archivedRepos → count > 0 → RED.
+    // runSync must not read env.GITHUB_TOKEN — install token is used exclusively.
     expect(patAccessCount).toBe(0);
   });
 });

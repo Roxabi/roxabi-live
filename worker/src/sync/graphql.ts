@@ -3,7 +3,7 @@
  *
  * Replaces the `gh api graphql` subprocess with a direct fetch() call so the
  * transport runs inside the Cloudflare Worker runtime. The token is an explicit
- * parameter (comes from env.GITHUB_TOKEN) rather than being ambient.
+ * parameter (a per-installation GitHub App token, #160) rather than being ambient.
  */
 
 import { SINGLE_ISSUE_DEPS_QUERY } from "./queries";
@@ -108,7 +108,7 @@ interface IssueDepsData {
  * @param owner   Repository owner (org or user login).
  * @param name    Repository name.
  * @param number  Issue number.
- * @param token   GitHub PAT (env.GITHUB_TOKEN in Worker context).
+ * @param token   GitHub token (per-installation GitHub App token, #160).
  * @returns       `{ blocked_by, blocking }` — each a list of `"owner/repo#N"` keys.
  */
 export async function fetchIssueDeps(

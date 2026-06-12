@@ -224,10 +224,11 @@ interface GHInstallationReposResponse {
  * @returns Array of `"owner/name"` full_name strings.
  */
 export async function listInstallationRepos(token: string): Promise<string[]> {
+  const MAX_PAGES = 10;
   const repos: string[] = [];
-  let page = 1;
+  let lastPageFull = false;
 
-  while (true) {
+  for (let page = 1; page <= MAX_PAGES; page++) {
     const url = `https://api.github.com/installation/repositories?per_page=100&page=${page}`;
     const res = await fetch(url, {
       headers: {
@@ -236,6 +237,7 @@ export async function listInstallationRepos(token: string): Promise<string[]> {
         "User-Agent": "roxabi-live-worker",
         "X-GitHub-Api-Version": "2022-11-28",
       },
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!res.ok) {
@@ -259,12 +261,18 @@ export async function listInstallationRepos(token: string): Promise<string[]> {
       repos.push(r.full_name);
     }
 
+    lastPageFull = pageRepos.length === 100;
+
     // Stop if this page was not full (last page)
     if (pageRepos.length < 100) {
       break;
     }
+  }
 
-    page++;
+  if (lastPageFull) {
+    console.warn(
+      `[installToken] listInstallationRepos hit MAX_PAGES (${MAX_PAGES}) — repo list may be truncated`,
+    );
   }
 
   return repos;
