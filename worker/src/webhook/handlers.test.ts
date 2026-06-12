@@ -35,7 +35,7 @@ vi.mock("../sync/sync", async (importOriginal) => {
   };
 });
 
-// RED (S3): resolveInstallToken does not exist yet — import fails at runtime → test fails
+// Mocked to isolate webhook handler tests from the installation-token implementation.
 vi.mock("../auth/installToken", () => ({
   resolveInstallToken: vi.fn(),
 }));
@@ -411,6 +411,8 @@ describe("handleDeps", () => {
   });
 
   describe("cross-repo (blocking_issue absent)", () => {
+    beforeEach(() => vi.clearAllMocks());
+
     it("calls fetchIssueDeps then db.batch with upsertEdges stmts", async () => {
       // Arrange
       const { db } = captureDb();
@@ -671,6 +673,7 @@ describe("handleRefCreate", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleRefDelete", () => {
+  beforeEach(() => vi.clearAllMocks());
   afterEach(() => vi.clearAllMocks());
 
   const baseEnv: Env = makeEnv();

@@ -198,7 +198,19 @@ function buildSeededDb(opts: {
       return makeFakeStmt(sql, args, []); // cache miss
     }
 
-    // Query on tenant_repo_access
+    // JOIN query: SQL contains both "tenant_repo_access" and "join" — this branch must
+    // precede the bare tenant_repo_access branch because the JOIN SQL includes both table
+    // names and would be incorrectly intercepted by that branch, returning the wrong row
+    // shape ({tenant_id, repo} instead of {id, installation_id, suspended_at}).
+    if (sqlLower.includes("tenant_repo_access") && sqlLower.includes("join")) {
+      const matchingAccess = repoAccess.find((r) => args.includes(r.repo));
+      if (matchingAccess && tenant) {
+        return makeFakeStmt(sql, args, [tenant as unknown as FakeResult]);
+      }
+      return makeFakeStmt(sql, args, []); // no matching tenant
+    }
+
+    // Query on tenant_repo_access (bare — no JOIN)
     if (sqlLower.includes("tenant_repo_access")) {
       const matchingRow = repoAccess.find(
         (r) => args.includes(r.repo),
@@ -486,5 +498,41 @@ describe("resolveInstallToken — fail-closed guards", () => {
     await expect(
       resolveInstallToken(db, { ...env, DB: db }, "owner", "my-repo"),
     ).rejects.toThrow();
+  });
+
+  it("resolves to the decrypted token via cache-hit when tenant is active", async () => {
+    // Arrange
+    const { env, installTokenKeyB64 } = await buildFakeEnv();
+    const dek = await importDek(installTokenKeyB64);
+    const plaintext = "ghs_live_token";
+    const { enc, iv } = await encryptToken(dek, plaintext);
+
+    const db = buildSeededDb({
+      tenant: {
+        id: 1,
+        installation_id: 42,
+        account_login: "owner",
+        account_type: "Organization",
+        suspended_at: null, // active — not suspended
+      },
+      installToken: {
+        tenant_id: 1,
+        token_enc: enc,
+        token_iv: iv,
+        expires_at: nowPlusSeconds(10 * 60), // fresh — well beyond 5-min stale window
+      },
+      repoAccess: [{ tenant_id: 1, repo: "owner/active-repo" }],
+    });
+
+    // Act
+    const token = await resolveInstallToken(
+      db,
+      { ...env, DB: db },
+      "owner",
+      "active-repo",
+    );
+
+    // Assert — cache-hit decrypt path returns the expected plaintext token
+    expect(token).toBe(plaintext);
   });
 });

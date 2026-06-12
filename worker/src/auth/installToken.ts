@@ -109,6 +109,7 @@ export async function getInstallationToken(
       "User-Agent": "roxabi-live-worker",
       "X-GitHub-Api-Version": "2022-11-28",
     },
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!mintRes.ok) {
@@ -230,7 +231,7 @@ export async function listInstallationRepos(token: string): Promise<string[]> {
     const url = `https://api.github.com/installation/repositories?per_page=100&page=${page}`;
     const res = await fetch(url, {
       headers: {
-        Authorization: `token ${token}`,
+        Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
         "User-Agent": "roxabi-live-worker",
         "X-GitHub-Api-Version": "2022-11-28",
