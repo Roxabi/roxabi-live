@@ -2,11 +2,6 @@ import { describe, expect, it } from "vitest";
 import { importDek, encryptToken, decryptToken } from "./tokenCrypto";
 
 // ---------------------------------------------------------------------------
-// NOTE: tokenCrypto.ts does not exist yet — these tests are intentionally RED.
-// They define the AES-GCM encryption contract that tokenCrypto.ts must satisfy.
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -52,6 +47,12 @@ describe("importDek", () => {
     expect(key.algorithm).toMatchObject({ name: "AES-GCM" });
     expect(key.usages).toContain("encrypt");
     expect(key.usages).toContain("decrypt");
+  });
+
+  it("rejects a non-32-byte (AES-128 / 16-byte) key with a clear error", async () => {
+    const raw = crypto.getRandomValues(new Uint8Array(16));
+    const b64 = btoa(String.fromCharCode(...raw));
+    await expect(importDek(b64)).rejects.toThrow(/32 bytes/);
   });
 });
 

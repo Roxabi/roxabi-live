@@ -39,6 +39,11 @@ function fromBase64url(s: string): Uint8Array {
  */
 export async function importDek(b64: string): Promise<CryptoKey> {
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  if (bytes.byteLength !== 32) {
+    throw new Error(
+      `INSTALL_TOKEN_KEY must decode to exactly 32 bytes (AES-256), got ${bytes.byteLength}`,
+    );
+  }
   return crypto.subtle.importKey(
     "raw",
     bytes,
@@ -64,7 +69,7 @@ export async function encryptToken(
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, dek, encoded);
   return {
     enc: toBase64url(ct),
-    iv: toBase64url(iv.buffer as ArrayBuffer),
+    iv: toBase64url(iv.buffer),
   };
 }
 

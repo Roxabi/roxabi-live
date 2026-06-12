@@ -3,11 +3,6 @@ import { getInstallationToken, resolveInstallToken } from "./installToken";
 import type { Env } from "../types";
 
 // ---------------------------------------------------------------------------
-// NOTE: installToken.ts does not exist yet — these tests are intentionally RED.
-// They define the contract that installToken.ts must satisfy (S3 task).
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // FakeD1 — local copy of the project pattern (see session.test.ts)
 // ---------------------------------------------------------------------------
 
@@ -206,7 +201,7 @@ function buildSeededDb(opts: {
     // Query on tenant_repo_access
     if (sqlLower.includes("tenant_repo_access")) {
       const matchingRow = repoAccess.find(
-        (r) => args.includes(r.repo) || args.length === 0,
+        (r) => args.includes(r.repo),
       );
       if (matchingRow) {
         return makeFakeStmt(sql, args, [matchingRow as unknown as FakeResult]);
@@ -328,6 +323,9 @@ describe("getInstallationToken — cache stale/missing", () => {
     const calledUrl = fetchMock.mock.calls[0][0] as string;
     expect(calledUrl).toContain("42");
     expect(calledUrl).toContain("access_tokens");
+    // Assert upsert was issued to install_tokens cache
+    expect(upsertCapture.length).toBeGreaterThanOrEqual(1);
+    expect(upsertCapture[0].sql.toLowerCase()).toContain("install_tokens");
   });
 
   it("calls GitHub mint endpoint once when cache is stale (expires_at ≤ now+5min)", async () => {

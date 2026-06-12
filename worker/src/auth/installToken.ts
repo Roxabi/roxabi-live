@@ -45,6 +45,9 @@ const STALE_THRESHOLD_MS = 5 * 60 * 1000;
 
 /** Read the AES-GCM DEK (base64) used to encrypt install tokens at rest. */
 function getInstallTokenKey(env: Env): string {
+  if (!env.INSTALL_TOKEN_KEY) {
+    throw new Error("INSTALL_TOKEN_KEY secret is not configured");
+  }
   return env.INSTALL_TOKEN_KEY;
 }
 
@@ -172,7 +175,11 @@ export async function resolveInstallToken(
 ): Promise<string> {
   const repo = `${owner}/${name}`;
 
-  // JOIN tenant_repo_access → tenants to get suspension status + installation_id
+  // JOIN tenant_repo_access → tenants to get suspension status + installation_id.
+  // Phase-1 invariant (see #141/#147): one repo → one installation (enforced by
+  // tenants UNIQUE(installation_id) + tenant_repo_access FK). .first() is therefore
+  // deterministic here. Re-verify this assumption before extending to multi-tenant
+  // (Phase 2 / #147) — the query will need GROUP BY or a different resolution strategy.
   const row = await db
     .prepare(
       `SELECT t.id, t.installation_id, t.suspended_at
