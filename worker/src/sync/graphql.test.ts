@@ -68,6 +68,21 @@ describe("ghGraphql — request headers", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers["User-Agent"]).toBe("roxabi-live-worker");
   });
+
+  it("sends GraphQL-Features: sub_issues", async () => {
+    const mockFetch = makeFetchMock({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ data: {} }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await ghGraphql("query { viewer { login } }", {}, "any-token");
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["GraphQL-Features"]).toBe("sub_issues");
+  });
 });
 
 // ---------------------------------------------------------------------------

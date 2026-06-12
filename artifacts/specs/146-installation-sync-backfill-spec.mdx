@@ -98,7 +98,7 @@ post-GA when token type changes from PAT → installation. Gates this slice.
 - [ ] Cron fan-out deduplicates repos across tenants: 1 GraphQL call per unique repo (not per tenant).
 - [ ] Slot-rotation: `sync_control (tenant_id, 'sync_slot')` advances per tick; repos beyond
   the per-tick cap deferred to next tick; no subrequest-cap breach under ~22 repos/tick.
-- [ ] SYNC_QUEUE binding declared in `wrangler.toml`; **no consumer handler registered** (DORMANT).
+- [ ] SYNC_QUEUE binding declared in `wrangler.toml` as an intentional DORMANT placeholder for future fan-out (Phase 2); **no consumer handler registered** in Phase 1.
 - [ ] `GITHUB_TOKEN` removed from `Env` / `wrangler.toml` / `handleDeps` / `handleRefDelete`;
   no PAT fallback anywhere.
 - [ ] PAT deleted from staging secrets after first verified installation sync tick; then prod.

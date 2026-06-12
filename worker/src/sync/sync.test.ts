@@ -1470,6 +1470,183 @@ describe("writeRunAudit", () => {
 });
 
 // ---------------------------------------------------------------------------
+// runSync — multi-tenant / per-installation tests
+// ---------------------------------------------------------------------------
+// DEFERRED to #160 (S3b — sync per-tenant cutover + PAT retirement). The runSync
+// rewrite was split out of #146 (S3a shipped the install-token infra + webhook
+// cutover). Skipped here because (a) these assert the not-yet-built per-tenant
+// runSync, and (b) two bugs must be fixed when un-skipping in #160:
+//   1. dedup assertion uses c[2]/c[3]; ghGraphql(query, variables, token) puts
+//      query at c[0], vars at c[1].
+//   2. no vi.mock("../auth/installToken") → a faithful impl's getInstallationToken
+//      throws before syncRepoBundle. Add the mock when implementing #160.
+// ---------------------------------------------------------------------------
+
+describe.skip("runSync — multi-tenant installation sync (DEFERRED #160 — un-skip + fix in S3b)", () => {
+  // Local makeEnv scoped to this describe so it composes cleanly
+  function makeEnv(overrides: Record<string, unknown> = {}): Env {
+    return {
+      DB: undefined as unknown as D1Database,
+      GITHUB_TOKEN: "tok",
+      GITHUB_ORG: "Roxabi",
+      ...overrides,
+    } as unknown as Env;
+  }
+
+  it("deduplicates GraphQL bundle fetches: two tenants sharing repo o/r → exactly 1 REPO_BUNDLE_QUERY issued for o/r", async () => {
+    // Two tenants both have tenant_repo_access for "o/r".
+    // The future multi-tenant runSync must deduplicate: one fetch regardless of tenant count.
+    const db = makeFakeDb((sql, args) => {
+      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
+      // Future: tenants table → two rows
+      if (sql.includes("FROM tenants")) {
+        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }, { id: 2, installation_id: 20 }]);
+      }
+      // Future: tenant_repo_access for both tenants → same repo "o/r"
+      if (sql.includes("FROM tenant_repo_access")) {
+        return makeFakeStmt(sql, args, [{ owner: "o", name: "r" }, { owner: "o", name: "r" }]);
+      }
+      return makeFakeStmt(sql, args, [], 1);
+    });
+
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+    // Future REPO_BUNDLE_QUERY path — stub returns minimal valid shape
+    mockGhGraphql.mockResolvedValue({
+      data: { repository: { issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] }, pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } },
+    });
+
+    const env = makeEnv({ DB: db });
+    await runSync(env);
+
+    // Exactly 1 ghGraphql call with REPO_BUNDLE_QUERY for owner="o", name="r"
+    const bundleCalls = mockGhGraphql.mock.calls.filter(
+      (c) => c[0] === "REPO_BUNDLE_QUERY" && c[1]?.owner === "o" && c[1]?.name === "r",
+    );
+    expect(bundleCalls).toHaveLength(1);
+  });
+
+  it("advances sync_slot per tick: seed sync_slot=0, after runSync the slot is updated", async () => {
+    // Future: sync_control row sync_slot tracks which window of repos was processed.
+    // The current impl has no windowing — this test will fail (RED) until slot logic is added.
+    let syncSlotWritten = false;
+    const db = makeFakeDb((sql, args) => {
+      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
+      // Return sync_slot=0 on read
+      if (sql.includes("sync_slot") && sql.includes("SELECT")) {
+        return makeFakeStmt(sql, args, [{ key: "sync_slot", value: "0" }]);
+      }
+      // Detect the slot-advance write (INSERT OR REPLACE / UPDATE with key=sync_slot)
+      if (sql.includes("sync_slot") && (sql.includes("INSERT") || sql.includes("UPDATE"))) {
+        syncSlotWritten = true;
+        return makeFakeStmt(sql, args, [], 1);
+      }
+      // repo_allowlist — empty → runSync short-circuits after acquiring lock
+      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
+        return makeFakeStmt(sql, args, []);
+      }
+      return makeFakeStmt(sql, args, [], 1);
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const env = makeEnv({ DB: db });
+    await runSync(env);
+    warnSpy.mockRestore();
+
+    // Assertion: the sync run must have written an updated sync_slot value.
+    // Currently no slot logic exists → syncSlotWritten stays false → RED.
+    expect(syncSlotWritten).toBe(true);
+  });
+
+  it("per-tenant lock isolation: tenant A holding sync_running=1 does NOT prevent tenant B from syncing", async () => {
+    // Future: acquireSyncLock(db, tenantId) must be scoped per-tenant.
+    // Current impl: global lock (tenant_id=0 hardcoded) → tenant A's lock blocks everyone → RED.
+    let tenantBLockAttempted = false;
+    const db = makeFakeDb((sql, args) => {
+      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) {
+        // Lock for tenant A (id=1) is held → changes=0; lock for tenant B (id=2) is free → changes=1
+        const tenantArg = args.find((a) => typeof a === "number");
+        if (tenantArg === 1) return makeFakeStmt(sql, args, [], 0); // tenant A: lock held
+        if (tenantArg === 2) {
+          tenantBLockAttempted = true;
+          return makeFakeStmt(sql, args, [], 1); // tenant B: lock acquired
+        }
+        return makeFakeStmt(sql, args, [], 0);
+      }
+      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("FROM tenants")) {
+        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }, { id: 2, installation_id: 20 }]);
+      }
+      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
+        return makeFakeStmt(sql, args, []);
+      }
+      return makeFakeStmt(sql, args, [], 1);
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const env = makeEnv({ DB: db });
+    await runSync(env);
+    warnSpy.mockRestore();
+
+    // Tenant B's lock attempt must have been made (i.e., runSync iterates tenants independently).
+    // With current single-tenant global lock this never happens → RED.
+    expect(tenantBLockAttempted).toBe(true);
+  });
+
+  it("no PAT access: runSync completes via install tokens without reading env.GITHUB_TOKEN", async () => {
+    // Future: runSync must use resolveInstallToken() and never fall back to the PAT.
+    // Current impl reads env.GITHUB_TOKEN at enumerateOrgRepos (line ~1161) → spy records it.
+    // The DB must return a non-empty allowlist so runSync advances past the early-return
+    // guard and actually reaches the PAT read site (enumerateOrgRepos / syncRepoBundle).
+    const { ghGraphql } = await import("./graphql");
+    vi.mocked(ghGraphql).mockResolvedValue({
+      data: {
+        organization: {
+          repositories: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [{ name: "r", owner: { login: "o" }, isArchived: false, isPrivate: false }],
+          },
+        },
+      },
+    });
+
+    const db = makeFakeDb((sql, args) => {
+      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
+      // Non-empty allowlist — ensures runSync does NOT short-circuit before the PAT read
+      if (sql.includes("repo_allowlist") || (sql.includes("SELECT key") && sql.includes("sync_control"))) {
+        return makeFakeStmt(sql, args, [{ key: "o/r" }]);
+      }
+      return makeFakeStmt(sql, args, [], 1);
+    });
+
+    const base = makeEnv({ DB: db });
+    // Replace GITHUB_TOKEN with a spy getter that records every access.
+    let patAccessCount = 0;
+    delete (base as unknown as Record<string, unknown>)["GITHUB_TOKEN"];
+    Object.defineProperty(base, "GITHUB_TOKEN", {
+      get() {
+        patAccessCount++;
+        return "tok"; // still returns a value so runSync can proceed (error swallowing aside)
+      },
+      configurable: true,
+    });
+
+    await runSync(base);
+
+    // Future impl: patAccessCount must be 0 (resolveInstallToken used instead).
+    // Current impl reads env.GITHUB_TOKEN at enumerateOrgRepos + archivedRepos → count > 0 → RED.
+    expect(patAccessCount).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Teardown
 // ---------------------------------------------------------------------------
 
