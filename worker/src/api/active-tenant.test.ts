@@ -4,7 +4,7 @@ import type { AuthEnv, SessionContext } from "../auth/session";
 import { activeTenantRoute } from "./active-tenant";
 import {
   captureDb,
-  captureDbWithRows,
+  dispatchByTable,
   makeEnv,
   STUB_SESSION,
 } from "../test-utils";
@@ -78,8 +78,13 @@ async function postActiveTenant(
 describe("activeTenantRoute", () => {
   describe("POST /api/active-tenant — member switch (200)", () => {
     it("returns 200 with active_tenant_id and issues UPDATE sessions", async () => {
-      // Arrange — membership SELECT returns a row; UPDATE sessions runs after.
-      const { db, stmts } = captureDbWithRows([{ 1: 1 }]);
+      // Arrange — membership row found AND target tenant not suspended → UPDATE runs.
+      const { db, stmts } = captureDb((sql) =>
+        dispatchByTable(sql, {
+          user_installations: [{ 1: 1 }],
+          tenants: [{ suspended_at: null }],
+        }),
+      );
       const app = makeApp(db);
 
       // Act
@@ -116,6 +121,34 @@ describe("activeTenantRoute", () => {
       expect(body.error).toBe("forbidden");
 
       // Assert — no UPDATE sessions was issued
+      const updateStmt = stmts().find(
+        (s) =>
+          s.sql.toLowerCase().includes("update sessions") &&
+          s.sql.toLowerCase().includes("tenant_id"),
+      );
+      expect(updateStmt).toBeUndefined();
+    });
+  });
+
+  describe("POST /api/active-tenant — suspended tenant (403)", () => {
+    it("returns 403 when the target tenant is suspended and issues NO UPDATE sessions", async () => {
+      // Arrange — user IS a member, but the tenant carries a suspended_at timestamp.
+      const { db, stmts } = captureDb((sql) =>
+        dispatchByTable(sql, {
+          user_installations: [{ 1: 1 }],
+          tenants: [{ suspended_at: "2026-01-01T00:00:00.000Z" }],
+        }),
+      );
+      const app = makeApp(db);
+
+      // Act
+      const res = await postActiveTenant(app, db, { tenant_id: 2 }, COOKIE_HEADER);
+
+      // Assert — switch rejected before any session mutation
+      expect(res.status).toBe(403);
+      const body = await res.json() as { error: string };
+      expect(body.error).toBe("forbidden");
+
       const updateStmt = stmts().find(
         (s) =>
           s.sql.toLowerCase().includes("update sessions") &&

@@ -93,7 +93,11 @@ populated by `discoverTenants` from the GitHub `private` flag):
    - 204 → `has_access=1`; upsert cache.
    - 404/403 → `has_access=0`; upsert cache.
    - API error / timeout → **fail-closed** (treat as no access, 404); do not cache.
-3. **Cache error** (D1 read failure): fail-closed → 404.
+3. **Cache error** (D1 read failure on the cache lookup): fall through to the live check
+   (step 2). The live check is itself fail-closed (any error/timeout/non-204 → no access), so
+   it stays authoritative; a transient D1 blip must not permanently deny a genuine collaborator.
+   _(Amended 2026-06-13 per PR #171 review — code is more resilient than the original
+   "fail-closed → 404"; no access can be granted without a definitive GitHub 204.)_
 
 Public repos (`is_private = 0`) skip the permission check entirely.
 
@@ -107,13 +111,15 @@ webhook handlers land in #147, the 24h TTL + live-API fallback is the sole fresh
 Returns authenticated user info and installation list:
 ```json
 {
-  "github_login": "...",
+  "user": { "github_id": 1001, "github_login": "..." },
   "active_tenant_id": 42,
   "installations": [
     { "tenant_id": 42, "account_login": "Roxabi", "account_type": "Organization" }
   ]
 }
 ```
+_(Amended 2026-06-13 per PR #171 review: identity is nested under `user`; `installation_id`
+is NOT surfaced — internal infra id, unnecessary client exposure removed.)_
 
 No `tenant_id` column exposed from `issues`/`edges` rows. Response shapes are identical to
 single-tenant responses — authorization is fully backend-side.

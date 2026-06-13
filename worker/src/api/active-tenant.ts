@@ -47,6 +47,18 @@ export async function activeTenantRoute(c: Context<AuthEnv>): Promise<Response> 
     return c.json({ error: "forbidden" }, 403);
   }
 
+  // Suspended-tenant guard: a member must not switch into a suspended tenant.
+  // validateSession would 401 every subsequent request (NOT-EXISTS suspended guard),
+  // self-locking the session — reject the switch up-front instead.
+  const tenant = await c.env.DB
+    .prepare(`SELECT suspended_at FROM tenants WHERE id = ?`)
+    .bind(tenantId)
+    .first<{ suspended_at: string | null }>();
+
+  if (!tenant || tenant.suspended_at !== null) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
   // Read raw token from cookie for hashing inside setSessionTenant.
   const raw = readSessionToken(c);
   if (!raw) {

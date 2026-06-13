@@ -62,7 +62,7 @@ describe("checkPrivateAccess", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     // Act
-    const result = await checkPrivateAccess(db, env, 1, 42, "Roxabi/secret", "octocat");
+    const result = await checkPrivateAccess(db, env, 1, 1, 42, "Roxabi/secret", "octocat");
 
     // Assert
     expect(result).toBe(true);
@@ -82,7 +82,7 @@ describe("checkPrivateAccess", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     // Act
-    const result = await checkPrivateAccess(db, env, 1, 42, "Roxabi/secret", "octocat");
+    const result = await checkPrivateAccess(db, env, 1, 1, 42, "Roxabi/secret", "octocat");
 
     // Assert
     expect(result).toBe(false);
@@ -105,7 +105,7 @@ describe("checkPrivateAccess", () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 204 }) as typeof fetch;
 
     // Act
-    const result = await checkPrivateAccess(db, env, 1, 42, "Roxabi/secret", "octocat");
+    const result = await checkPrivateAccess(db, env, 1, 1, 42, "Roxabi/secret", "octocat");
 
     // Assert — access granted
     expect(result).toBe(true);
@@ -134,7 +134,7 @@ describe("checkPrivateAccess", () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 404 }) as typeof fetch;
 
     // Act
-    const result = await checkPrivateAccess(db, env, 1, 42, "Roxabi/secret", "octocat");
+    const result = await checkPrivateAccess(db, env, 1, 1, 42, "Roxabi/secret", "octocat");
 
     // Assert
     expect(result).toBe(false);
@@ -156,7 +156,7 @@ describe("checkPrivateAccess", () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 403 }) as typeof fetch;
 
     // Act
-    const result = await checkPrivateAccess(db, env, 1, 42, "Roxabi/secret", "octocat");
+    const result = await checkPrivateAccess(db, env, 1, 1, 42, "Roxabi/secret", "octocat");
 
     // Assert
     expect(result).toBe(false);
@@ -178,7 +178,7 @@ describe("checkPrivateAccess", () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("network error")) as typeof fetch;
 
     // Act
-    const result = await checkPrivateAccess(db, env, 1, 42, "Roxabi/secret", "octocat");
+    const result = await checkPrivateAccess(db, env, 1, 1, 42, "Roxabi/secret", "octocat");
 
     // Assert — denied
     expect(result).toBe(false);

@@ -210,7 +210,7 @@ describe("meRoute", () => {
 
   it("surfaces installation rows returned by D1 in the response body", async () => {
     // Arrange — FakeD1 returns one installation row
-    const fakeRow = { tenant_id: 9, installation_id: 5, account_login: "Roxabi" };
+    const fakeRow = { tenant_id: 9, account_login: "Roxabi", account_type: "Organization" };
     const { db } = captureDbWithRows([fakeRow]);
     const app = makeApp(db);
 
@@ -223,9 +223,23 @@ describe("meRoute", () => {
     expect(body.installations).toHaveLength(1);
     expect(body.installations[0]).toMatchObject({
       tenant_id: 9,
-      installation_id: 5,
       account_login: "Roxabi",
+      account_type: "Organization",
     });
+  });
+
+  it("installations SELECT does NOT project installation_id (#171 — unnecessary exposure removed)", async () => {
+    // Arrange
+    const { db, stmts } = captureDb();
+    const app = makeApp(db);
+
+    // Act
+    await app.request("/api/me", {}, makeEnv(db));
+
+    // Assert — installation_id is internal infra detail, not surfaced to clients
+    const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
+    expect(installStmt).toBeDefined();
+    expect(installStmt!.sql).not.toContain("installation_id");
   });
 
   it("response includes active_tenant_id from the session (#148 SC7)", async () => {

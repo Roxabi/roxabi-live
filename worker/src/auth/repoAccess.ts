@@ -112,6 +112,7 @@ export async function resolveVisibleRepos(
         db,
         env,
         s.userId,
+        s.tenantId,
         installationId,
         row.repo,
         s.githubLogin,
@@ -144,6 +145,7 @@ export async function resolveVisibleRepos(
  * @param db             - D1 database binding.
  * @param env            - Worker env bindings (for getInstallationToken).
  * @param userId         - users.id of the authenticated user.
+ * @param tenantId       - tenants.id (supplied by the caller, which already holds it).
  * @param installationId - GitHub App installation_id (resolved by the caller).
  * @param repo           - Full repo name "owner/name" (already validated by caller).
  * @param login          - GitHub login of the user (for the collaborator check URL).
@@ -153,6 +155,7 @@ export async function checkPrivateAccess(
   db: D1Database,
   env: Env,
   userId: number,
+  tenantId: number,
   installationId: number,
   repo: string,
   login: string,
@@ -180,26 +183,12 @@ export async function checkPrivateAccess(
   // Any error in this block must return false without writing cache.
   let access: boolean;
   try {
-    // Resolve installation access token (tenant_id not needed by caller-side contract;
-    // installToken.ts requires it for cache keying — we use tenantId=0 sentinel is wrong;
-    // instead we need the actual tenantId). However, getInstallationToken's signature
-    // requires tenantId. The caller (resolveVisibleRepos) has it, but checkPrivateAccess
-    // receives only installationId. To keep this function self-contained and the interface
-    // clean, we look up the tenantId from the tenants table using installationId.
-    const tenantRow = await db
-      .prepare(`SELECT id FROM tenants WHERE installation_id = ?`)
-      .bind(installationId)
-      .first<{ id: number }>();
-
-    if (!tenantRow) {
-      // No matching tenant — fail-closed.
-      return false;
-    }
-
+    // tenantId + installationId are both supplied by the caller (resolveVisibleRepos),
+    // which already holds them on the session — no reverse lookup needed.
     const token = await getInstallationToken(
       db,
       env,
-      tenantRow.id,
+      tenantId,
       installationId,
     );
 
