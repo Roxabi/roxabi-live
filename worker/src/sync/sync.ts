@@ -25,7 +25,9 @@ import { getInstallationToken, listInstallationRepos } from "../auth/installToke
 // ---------------------------------------------------------------------------
 
 export const MAX_PAGES = 500;
+/** Repos synced per slot per tick. Coverage ceiling: WINDOW * NUM_SLOTS = 60 repos. */
 export const WINDOW = 20;
+/** Number of rotation slots. Coverage ceiling: WINDOW * NUM_SLOTS = 60 repos. */
 export const NUM_SLOTS = 3;
 
 /** Verbatim port of sync.py UPSERT_ISSUE_SQL — full sync path (sets status=null). */
@@ -1109,6 +1111,7 @@ export async function discoverTenants(
         repos = await listInstallationRepos(token);
       } catch (err) {
         console.error(`[sync] tenant ${tenantId} discovery failed:`, err);
+        await incrementAuthFailures(db, tenantId);
         continue;
       }
 
@@ -1198,6 +1201,9 @@ export async function runSync(env: Env): Promise<void> {
       return;
     }
 
+    if (allRepos.length > WINDOW * NUM_SLOTS)
+      console.warn(`[sync] ${allRepos.length} repos exceed window capacity ${WINDOW * NUM_SLOTS} — repos beyond index ${WINDOW * NUM_SLOTS} are not synced this cycle`);
+
     // Upsert repos table from the union.
     const repoUpsertStmts = allRepos.map((repo) =>
       db
@@ -1279,7 +1285,8 @@ export async function runSync(env: Env): Promise<void> {
     const slot = parseInt(slotRow?.value ?? "0", 10);
     const windowStart = slot * WINDOW;
     const windowEnd = windowStart + WINDOW;
-    const windowedRepos = allRepos.slice(windowStart, windowEnd);
+    // Windowing only engages past WINDOW repos; below that, sync everything hourly.
+    const windowedRepos = allRepos.length <= WINDOW ? allRepos : allRepos.slice(windowStart, windowEnd);
 
     console.log(
       `[sync] slot=${slot} window=[${windowStart},${windowEnd}) repos=${windowedRepos.length}/${allRepos.length}`,
@@ -1301,6 +1308,7 @@ export async function runSync(env: Env): Promise<void> {
 
     // Pass 1: bundled issues + refs + PRs per repo in window.
     const collectedEdges = new Map<string, EdgeData>();
+    let skippedCount = 0;
     for (const repo of windowedRepos) {
       const slash = repo.indexOf("/");
       const owner = repo.slice(0, slash);
@@ -1311,12 +1319,8 @@ export async function runSync(env: Env): Promise<void> {
         const token = await resolveToken();
         await syncRepoBundle(db, token, owner, name, collectedEdges);
       } catch (err) {
-        if (err instanceof GraphQLError && err.isAuth) {
-          // Auth failure already counted above; skip this repo, don't abort.
-          console.error(`[sync] skipping ${repo} — all tokens failed`);
-        } else {
-          console.error(`[sync] skipping ${repo}:`, err);
-        }
+        console.error(`[sync] skipping ${repo}:`, err);
+        skippedCount++;
       }
     }
 
@@ -1343,17 +1347,14 @@ export async function runSync(env: Env): Promise<void> {
       .bind(String(nextSlot), new Date().toISOString())
       .run();
 
-    await resetAuthFailures(db);
-    outcome = "success";
-  } catch (err) {
-    const isAuth = err instanceof GraphQLError && err.isAuth;
-    if (isAuth) {
-      const failures = await incrementAuthFailures(db);
-      console.error(`[sync] auth failure ${failures}/2`);
+    const systemicFailure = windowedRepos.length > 0 && skippedCount === windowedRepos.length;
+    if (systemicFailure) {
+      const failures = await incrementAuthFailures(db, 0);
+      console.error(`[sync] all ${windowedRepos.length} windowed repo(s) failed — systemic auth failure ${failures}/2`);
       outcome = failures >= 2 ? "halted" : "auth_error";
       if (failures >= 2) {
-        await haltSync(db);
-        console.error("[sync] HALTED: 2 consecutive auth failures");
+        await haltSync(db, 0);
+        console.error("[sync] HALTED: systemic token failure across all repos");
         const notifyUrl = env.NOTIFY_URL;
         if (notifyUrl) {
           await fetch(notifyUrl, {
@@ -1363,10 +1364,18 @@ export async function runSync(env: Env): Promise<void> {
           }).catch(() => {});
         }
       }
-    } else {
-      outcome = "error";
-      console.error("[sync] error:", err);
     }
+
+    if (!systemicFailure) {
+      const tenantIds = new Set<number>();
+      for (const list of repoTenantMap.values()) for (const e of list) tenantIds.add(e.tenantId);
+      await resetAuthFailures(db, 0);
+      for (const id of tenantIds) await resetAuthFailures(db, id);
+      outcome = "success";
+    }
+  } catch (err) {
+    outcome = "error";
+    console.error("[sync] error:", err);
   } finally {
     await releaseSyncLock(db);
     await writeRunAudit(env, db, {
