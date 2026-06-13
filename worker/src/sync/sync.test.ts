@@ -1054,7 +1054,7 @@ describe("runSync", () => {
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
     // listInstallationRepos returns only roxabi-factory (lyra is gone)
-    vi.mocked(listInstallationRepos).mockResolvedValue(["Roxabi/roxabi-factory"]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "Roxabi/roxabi-factory", isPrivate: false }]);
 
     const { ghGraphql } = await import("./graphql");
     const mockGhGraphql = vi.mocked(ghGraphql);
@@ -1093,7 +1093,7 @@ describe("runSync", () => {
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
     // listInstallationRepos returns both repos — roxabi-vault is still accessible
-    vi.mocked(listInstallationRepos).mockResolvedValue(["Roxabi/roxabi-factory", "Roxabi/roxabi-vault"]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "Roxabi/roxabi-factory", isPrivate: false }, { repo: "Roxabi/roxabi-vault", isPrivate: false }]);
 
     const { ghGraphql } = await import("./graphql");
     const mockGhGraphql = vi.mocked(ghGraphql);
@@ -1258,7 +1258,7 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
     // Both tenants enumerate the same repo "o/r"
-    vi.mocked(listInstallationRepos).mockResolvedValue(["o/r"]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "o/r", isPrivate: false }]);
 
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
@@ -1300,7 +1300,7 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     // Discovery must yield ≥1 repo so Phase 2 runs and reaches the slot-advance write.
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
-    vi.mocked(listInstallationRepos).mockResolvedValue(["o/r"]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "o/r", isPrivate: false }]);
 
     const { ghGraphql } = await import("./graphql");
     vi.mocked(ghGraphql).mockResolvedValue({
@@ -1387,7 +1387,7 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     // runSync must use getInstallationToken() and never read env.GITHUB_TOKEN.
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
-    vi.mocked(listInstallationRepos).mockResolvedValue(["Roxabi/roxabi-factory"]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "Roxabi/roxabi-factory", isPrivate: false }]);
 
     const { ghGraphql } = await import("./graphql");
     vi.mocked(ghGraphql).mockResolvedValue({
@@ -1501,7 +1501,7 @@ describe("runSync — breaker + discovery (#160)", () => {
     // Arrange
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockResolvedValue("tok");
-    vi.mocked(listInstallationRepos).mockResolvedValue(["o/keep"]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "o/keep", isPrivate: true }]);
 
     const { ghGraphql } = await import("./graphql");
     vi.mocked(ghGraphql).mockResolvedValue({
@@ -1555,10 +1555,12 @@ describe("runSync — breaker + discovery (#160)", () => {
     const recorded = db._recorded;
     const insertKeep = recorded.find(
       (s) =>
-        s.sql.includes("INSERT OR IGNORE INTO tenant_repo_access") &&
+        s.sql.includes("INSERT INTO tenant_repo_access") &&
         s.args.includes("o/keep"),
     );
     expect(insertKeep).toBeDefined();
+    // #148: is_private written (o/keep mocked private → bound 1; args = [tenantId, repo, is_private])
+    expect(insertKeep?.args[2]).toBe(1);
 
     // Assert — DELETE for "o/stale" (not for "o/keep")
     const deleteStale = recorded.find(
@@ -1576,11 +1578,77 @@ describe("runSync — breaker + discovery (#160)", () => {
     expect(deleteKeep).toBeUndefined();
   });
 
+  it("B3b: discoverTenants writes is_private=0 for a public repo", async () => {
+    // Arrange
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("tok");
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "o/pub", isPrivate: false }]);
+
+    const { ghGraphql } = await import("./graphql");
+    vi.mocked(ghGraphql).mockResolvedValue({
+      data: {
+        repository: {
+          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+
+    const db = makeFakeDb((sql, args) => {
+      // Global tick lock → acquired
+      if (sql.includes("sync_running") && sql.includes("UPDATE") && args[0] === 0) {
+        return makeFakeStmt(sql, args, [], 1);
+      }
+      // Tenant lock → acquired
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) {
+        return makeFakeStmt(sql, args, [], 1);
+      }
+      // halted guard
+      if (sql.includes("key='halted'") && sql.includes("SELECT")) {
+        return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      }
+      // auth_failures SELECT → not halted
+      if (sql.includes("key='auth_failures'") && sql.includes("SELECT") && !sql.includes("UPDATE")) {
+        return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      }
+      // tenants discovery → 1 tenant
+      if (sql.includes("FROM tenants")) {
+        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }]);
+      }
+      // existing tenant_repo_access rows → same as current (no stale)
+      if (sql.includes("SELECT repo FROM tenant_repo_access")) {
+        return makeFakeStmt(sql, args, [{ repo: "o/pub" }]);
+      }
+      return makeFakeStmt(sql, args, [], 1);
+    });
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const env = makeEnv({ DB: db });
+
+    // Act
+    await runSync(env);
+
+    // Assert — INSERT for "o/pub" with is_private=0
+    const recorded = db._recorded;
+    const insertPub = recorded.find(
+      (s) =>
+        s.sql.includes("INSERT INTO tenant_repo_access") &&
+        s.args.includes("o/pub"),
+    );
+    expect(insertPub).toBeDefined();
+    // #148: is_private=0 for public repo (args = [tenantId, repo, is_private])
+    expect(insertPub?.args[2]).toBe(0);
+  });
+
   it("B4: token-exhausted repo is skipped, runSync resolves without throwing", async () => {
     // Arrange — getInstallationToken always rejects for Phase 2 lookups
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockRejectedValue(new Error("no-token"));
-    vi.mocked(listInstallationRepos).mockResolvedValue(["o/a"]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "o/a", isPrivate: false }]);
 
     const { ghGraphql } = await import("./graphql");
     vi.mocked(ghGraphql).mockResolvedValue({
@@ -1641,7 +1709,7 @@ describe("runSync — breaker + discovery (#160)", () => {
     vi.mocked(getInstallationToken)
       .mockResolvedValueOnce("tok-discovery") // Phase 1 success
       .mockRejectedValue(new Error("systemic-error")); // Phase 2 failures
-    vi.mocked(listInstallationRepos).mockResolvedValue(["o/r"]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "o/r", isPrivate: false }]);
 
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("sync_running") && sql.includes("UPDATE") && args[0] === 0) {
@@ -1703,7 +1771,7 @@ describe("runSync — breaker + discovery (#160)", () => {
     vi.mocked(getInstallationToken)
       .mockResolvedValueOnce("tok-discovery") // Phase 1 success
       .mockRejectedValue(new Error("systemic-error")); // Phase 2 failures
-    vi.mocked(listInstallationRepos).mockResolvedValue(["o/r"]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "o/r", isPrivate: false }]);
 
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("sync_running") && sql.includes("UPDATE") && args[0] === 0) {
@@ -1759,7 +1827,7 @@ describe("runSync — breaker + discovery (#160)", () => {
     // Arrange — 1 tenant id=7, 1 repo synced OK
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockResolvedValue("tok-7");
-    vi.mocked(listInstallationRepos).mockResolvedValue(["o/ok"]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "o/ok", isPrivate: false }]);
 
     const { ghGraphql } = await import("./graphql");
     vi.mocked(ghGraphql).mockResolvedValue({

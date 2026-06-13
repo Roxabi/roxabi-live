@@ -149,6 +149,30 @@ export async function validateSession(
 }
 
 /**
+ * Switch the active tenant for an existing session.
+ * Hashes the raw token, then updates sessions.tenant_id in place.
+ * The UPDATE is a no-op if the session has expired or been revoked,
+ * which is safe — the caller (activeTenantRoute) guards membership first.
+ */
+export async function setSessionTenant(
+  db: D1Database,
+  rawToken: string,
+  tenantId: number,
+): Promise<void> {
+  const hash = await sha256hex(rawToken);
+
+  await db
+    .prepare(
+      `UPDATE sessions SET tenant_id = ?
+       WHERE token_hash = ?
+         AND revoked_at IS NULL
+         AND expires_at > datetime('now')`,
+    )
+    .bind(tenantId, hash)
+    .run();
+}
+
+/**
  * Delete a session by raw token (hashes before querying).
  */
 export async function deleteSession(

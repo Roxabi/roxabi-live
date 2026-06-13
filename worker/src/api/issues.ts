@@ -9,18 +9,10 @@
  */
 
 import type { Context } from "hono";
-import type { Env } from "../types";
+import type { AuthEnv } from "../auth/session";
+import { resolveVisibleRepos } from "../auth/repoAccess";
 
 const ISSUE_KEY_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+#[0-9]+$/;
-
-/** Parse 'owner/repo#N' → { repo, number }. Returns { repo: key, number: null } on failure. */
-function parseKey(key: string): { repo: string; number: number | null } {
-  const m = /^(.+)#(\d+)$/.exec(key);
-  if (m) {
-    return { repo: m[1], number: parseInt(m[2], 10) };
-  }
-  return { repo: key, number: null };
-}
 
 interface IssueListRow {
   key: string;
@@ -47,11 +39,13 @@ interface CountRow {
 
 interface EdgeJoinRow {
   key: string;
-  number: number | null;
-  repo: string | null;
+  number: number;
+  repo: string;
 }
 
-export const listIssuesRoute = async (c: Context<{ Bindings: Env }>) => {
+export const listIssuesRoute = async (c: Context<AuthEnv>) => {
+  const visible = await resolveVisibleRepos(c);
+
   const url = new URL(c.req.url);
   const repo = url.searchParams.get("repo");
   const state = url.searchParams.get("state");
@@ -65,8 +59,14 @@ export const listIssuesRoute = async (c: Context<{ Bindings: Env }>) => {
   const limit = Math.max(1, Math.min(rawLimitParsed, 500));
   const offset = Math.max(0, rawOffsetParsed);
 
-  const conditions: string[] = [];
-  const params: (string | number)[] = [];
+  if (visible.length === 0) {
+    return c.json({ issues: [], total: 0, limit, offset });
+  }
+
+  const ph = visible.map(() => "?").join(",");
+
+  const conditions: string[] = [`issues.repo IN (${ph})`];
+  const params: (string | number)[] = [...visible];
 
   if (repo !== null) {
     conditions.push("issues.repo = ?");
@@ -139,7 +139,9 @@ export const listIssuesRoute = async (c: Context<{ Bindings: Env }>) => {
   return c.json({ issues, total, limit, offset });
 };
 
-export const getIssueRoute = async (c: Context<{ Bindings: Env }>) => {
+export const getIssueRoute = async (c: Context<AuthEnv>) => {
+  const visible = await resolveVisibleRepos(c);
+
   // Extract key from path: /api/issues/<owner>/<repo>#<number>
   // The key contains a slash so a single :key param won't match — use wildcard.
   const rawKey = decodeURIComponent(c.req.path.slice("/api/issues/".length));
@@ -151,10 +153,16 @@ export const getIssueRoute = async (c: Context<{ Bindings: Env }>) => {
     );
   }
 
+  if (visible.length === 0) {
+    return c.json({ detail: "Issue not found" }, 404);
+  }
+
+  const ph = visible.map(() => "?").join(",");
+
   const issueSql =
     "SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone, is_stub," +
-    " created_at, updated_at, closed_at FROM issues WHERE key = ?";
-  const row = await c.env.DB.prepare(issueSql).bind(rawKey).first<IssueListRow>();
+    ` created_at, updated_at, closed_at FROM issues WHERE key = ? AND repo IN (${ph})`;
+  const row = await c.env.DB.prepare(issueSql).bind(rawKey, ...visible).first<IssueListRow>();
 
   if (!row) {
     return c.json({ detail: "Issue not found" }, 404);
@@ -167,34 +175,38 @@ export const getIssueRoute = async (c: Context<{ Bindings: Env }>) => {
     .all<{ name: string }>();
   const labels = labelsResult.results.map((r) => r.name);
 
-  // blocking: edges where this issue is src (kind=blocks) → dst issues
+  // blocking: edges where this issue is src (kind=blocks) → dst issues.
+  // blocked_by: edges where this issue is dst (kind=blocks) → src issues.
+  // INNER JOIN + `i.repo IN (...)` keeps an edge only when its OTHER endpoint is also
+  // visible (the anchor issue is already confirmed visible above). A blocker in a repo
+  // the caller can't see is dropped entirely — no key/number disclosure — matching the
+  // both-endpoints-visible rule graph.ts enforces.
   const blockingResult = await c.env.DB.prepare(
     "SELECT e.dst_key AS key, i.number, i.repo" +
-      " FROM edges e LEFT JOIN issues i ON i.key = e.dst_key" +
+      ` FROM edges e JOIN issues i ON i.key = e.dst_key AND i.repo IN (${ph})` +
       " WHERE e.src_key = ? AND e.kind = 'blocks'",
   )
-    .bind(rawKey)
+    .bind(...visible, rawKey)
     .all<EdgeJoinRow>();
 
-  // blocked_by: edges where this issue is dst (kind=blocks) → src issues
   const blockedByResult = await c.env.DB.prepare(
     "SELECT e.src_key AS key, i.number, i.repo" +
-      " FROM edges e LEFT JOIN issues i ON i.key = e.src_key" +
+      ` FROM edges e JOIN issues i ON i.key = e.src_key AND i.repo IN (${ph})` +
       " WHERE e.dst_key = ? AND e.kind = 'blocks'",
   )
-    .bind(rawKey)
+    .bind(...visible, rawKey)
     .all<EdgeJoinRow>();
 
-  function edgeItem(edgeRow: EdgeJoinRow) {
-    if (edgeRow.number === null || edgeRow.repo === null) {
-      const parsed = parseKey(edgeRow.key);
-      return { key: edgeRow.key, number: parsed.number, repo: parsed.repo };
-    }
-    return { key: edgeRow.key, number: edgeRow.number, repo: edgeRow.repo };
-  }
-
-  const blocking = blockingResult.results.map(edgeItem);
-  const blocked_by = blockedByResult.results.map(edgeItem);
+  const blocking = blockingResult.results.map((e) => ({
+    key: e.key,
+    number: e.number,
+    repo: e.repo,
+  }));
+  const blocked_by = blockedByResult.results.map((e) => ({
+    key: e.key,
+    number: e.number,
+    repo: e.repo,
+  }));
 
   return c.json({
     key: row.key,
