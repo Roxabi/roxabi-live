@@ -95,7 +95,6 @@ function makeEnv(db: D1Database): Env {
   return {
     DB: db,
     ASSETS: {} as Fetcher,
-    GITHUB_TOKEN: "gh-token",
     GITHUB_ORG: "Roxabi",
     GITHUB_WEBHOOK_SECRET: "webhook-secret",
     GITHUB_APP_ID: "12345",

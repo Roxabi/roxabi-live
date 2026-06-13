@@ -35,7 +35,6 @@ function makeGraphEnv(
       }),
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_TOKEN: "",
     GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
@@ -70,7 +69,6 @@ function makeGraphEnvWithCapture(
       },
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_TOKEN: "",
     GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;

@@ -1,5 +1,9 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { getInstallationToken, resolveInstallToken } from "./installToken";
+import {
+  getInstallationToken,
+  resolveInstallToken,
+  listInstallationRepos,
+} from "./installToken";
 import type { Env } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -129,7 +133,6 @@ async function buildFakeEnv(
   const env: Env = {
     DB: null as unknown as D1Database, // overridden per test
     ASSETS: null as unknown as Fetcher,
-    GITHUB_TOKEN: "gh_test_token",
     GITHUB_ORG: "TestOrg",
     GITHUB_WEBHOOK_SECRET: "test-webhook-secret",
     GITHUB_APP_ID: "999999",
@@ -534,5 +537,74 @@ describe("resolveInstallToken — fail-closed guards", () => {
 
     // Assert — cache-hit decrypt path returns the expected plaintext token
     expect(token).toBe(plaintext);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listInstallationRepos — W2 pagination bound (#160)
+// ---------------------------------------------------------------------------
+
+describe("listInstallationRepos — W2 pagination bound", () => {
+  const realFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    vi.restoreAllMocks();
+  });
+
+  function fullPage(): Response {
+    // Exactly 100 repos → a "full" page that signals more pages may follow.
+    const repositories = Array.from({ length: 100 }, (_, i) => ({
+      full_name: `o/repo-${i}`,
+    }));
+    return new Response(JSON.stringify({ repositories }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  it("caps pagination at MAX_PAGES (10) and warns on truncation when every page is full", async () => {
+    const fetchMock = vi.fn(async () => fullPage());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const repos = await listInstallationRepos("fake-token");
+
+    expect(fetchMock).toHaveBeenCalledTimes(10); // MAX_PAGES — never exceeded
+    expect(repos).toHaveLength(1000); // 10 pages × 100 repos
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("MAX_PAGES"));
+  });
+
+  it("passes an AbortSignal (per-page timeout) on every fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ repositories: [{ full_name: "o/r" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await listInstallationRepos("fake-token");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const opts = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("stops early on a short final page and does NOT warn (normal case)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ repositories: [{ full_name: "o/only" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const repos = await listInstallationRepos("fake-token");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1); // short page → single fetch
+    expect(repos).toEqual(["o/only"]);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });

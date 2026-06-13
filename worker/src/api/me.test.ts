@@ -121,7 +121,6 @@ function makeEnv(db: D1Database): Env {
   return {
     DB: db,
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) } as unknown as Fetcher,
-    GITHUB_TOKEN: "",
     GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
