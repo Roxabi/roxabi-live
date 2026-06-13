@@ -9,6 +9,7 @@ import { checkAdminAuth } from "./api/auth";
 import { loginRoute, callbackRoute } from "./auth/oauth";
 import { meRoute, logoutRoute } from "./api/me";
 import { requireSession, type AuthEnv } from "./auth/session";
+import { activeTenantRoute } from "./api/active-tenant";
 
 const app = new Hono<AuthEnv>();
 
@@ -20,12 +21,16 @@ app.get("/api/version", versionRoute);
 // POST /webhook/github — HMAC-verified GitHub org webhooks (S5, #97).
 app.post("/webhook/github", webhookRoute);
 
-// GET /api/graph — v6 graph payload: nodes + edges (S6, #98).
+// GET /api/graph — v6 graph payload: nodes + edges (S6, #98). Session-gated (#148).
+app.use("/api/graph", requireSession);
 app.get("/api/graph", graphRoute);
 
 // GET /api/issues — list with optional repo/state/label/limit/offset filters (S6, #98).
 // GET /api/issues/* — single issue by key (key contains owner/repo#N slash) (S6, #98).
 // List route MUST be registered before the wildcard so Hono's first-match wins.
+// Both paths need their own use() — /api/issues/* does NOT match bare /api/issues (#148).
+app.use("/api/issues", requireSession);
+app.use("/api/issues/*", requireSession);
 app.get("/api/issues", listIssuesRoute);
 app.get("/api/issues/*", getIssueRoute);
 
@@ -64,6 +69,7 @@ app.get("/login", loginRoute);
 app.get("/oauth/callback", callbackRoute);
 app.use("/api/me", requireSession);
 app.get("/api/me", meRoute);
+app.post("/api/active-tenant", requireSession, activeTenantRoute);
 // /logout is intentionally ungated: logoutRoute is null-safe + idempotent, and SameSite=Strict
 // blocks cross-site cookie submission — gating it would make a stale/expired cookie impossible to clear.
 app.post("/logout", logoutRoute);

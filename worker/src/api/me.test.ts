@@ -228,6 +228,34 @@ describe("meRoute", () => {
     });
   });
 
+  it("response includes active_tenant_id from the session (#148 SC7)", async () => {
+    // Arrange
+    const { db } = captureDb();
+    const app = makeApp(db);
+
+    // Act
+    const res = await app.request("/api/me", {}, makeEnv(db));
+
+    // Assert — the active tenant is surfaced so the client can render the tenant switcher
+    expect(res.status).toBe(200);
+    const body = await res.json() as { active_tenant_id: number };
+    expect(body.active_tenant_id).toBe(STUB_SESSION.tenantId);
+  });
+
+  it("installations SELECT projects account_type (#148 SC7)", async () => {
+    // Arrange
+    const { db, stmts } = captureDb();
+    const app = makeApp(db);
+
+    // Act
+    await app.request("/api/me", {}, makeEnv(db));
+
+    // Assert — account_type must be selected so User vs Organization tenants are distinguishable
+    const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
+    expect(installStmt).toBeDefined();
+    expect(installStmt!.sql).toContain("account_type");
+  });
+
   it("returns 401 when requireSession finds no session cookie (negative guard test)", async () => {
     // Arrange — separate throwaway app mounting real requireSession, no stub session
     // This verifies the guard is not tautological: deleting requireSession would let

@@ -1,9 +1,43 @@
-import { describe, expect, it, afterEach, vi } from "vitest";
+import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import type { Env } from "../types";
 import { app } from "../router";
+import { resolveVisibleRepos } from "../auth/repoAccess";
+
+// #148: these are handler unit tests — they exercise listIssuesRoute/getIssueRoute
+// logic (row mapping, filter SQL, limit/offset clamping). The auth middleware is
+// covered by router.test.ts + session.test.ts, and repo-permission resolution by
+// repoAccess.test.ts. So here we stub the auth boundary: requireSession becomes a
+// pass-through that injects a session, and resolveVisibleRepos returns a fixed
+// visible set (overridable per test).
+vi.mock("../auth/repoAccess", () => ({
+  resolveVisibleRepos: vi.fn(),
+}));
+
+vi.mock("../auth/session", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../auth/session")>();
+  return {
+    ...actual,
+    requireSession: (async (c, next) => {
+      c.set("session", {
+        userId: 1,
+        tenantId: 1,
+        githubId: 1001,
+        githubLogin: "octocat",
+      });
+      await next();
+    }) as typeof actual.requireSession,
+  };
+});
+
+const DEFAULT_VISIBLE = ["Roxabi/roxabi-live"];
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+beforeEach(() => {
+  // Default: the repo used by makeIssueRow fixtures is visible. Override per test.
+  vi.mocked(resolveVisibleRepos).mockResolvedValue(DEFAULT_VISIBLE);
 });
 
 // ── Env builders ─────────────────────────────────────────────────────────────
@@ -198,6 +232,38 @@ function makeGetEnvWithCapture(opts: GetEnvOptions): {
   } as unknown as Env;
 
   return { env, capturedSqls };
+}
+
+/**
+ * #148: like makeGetEnv but mimics the real `WHERE key = ? AND repo IN (...)` filter —
+ * the issue row is returned ONLY if its repo was bound into the statement (i.e. is in
+ * the visible set the handler passed). Lets us prove the IDOR 404 on a foreign repo.
+ */
+function makeRepoFilteredGetEnv(opts: {
+  issueRow: { repo: string } & Record<string, unknown>;
+}): Env {
+  const { issueRow } = opts;
+  return {
+    DB: {
+      prepare: (sql: string) => ({
+        bind: (...args: unknown[]) => ({
+          first: async () => {
+            if (sql.includes("FROM issues WHERE key") && args.includes(issueRow.repo)) {
+              return issueRow;
+            }
+            return null;
+          },
+          all: async () => ({ results: [] }),
+        }),
+        first: async () => null,
+        all: async () => ({ results: [] }),
+      }),
+      batch: async () => [],
+    },
+    ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
+    GITHUB_ORG: "",
+    GITHUB_WEBHOOK_SECRET: "",
+  } as unknown as Env;
 }
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -512,22 +578,23 @@ describe("GET /api/issues/:key", () => {
     });
   });
 
-  describe("edgeItem fallback when join returns null number/repo", () => {
-    it("parses number and repo from key when join columns are null", async () => {
-      const row = makeIssueRow();
-      // Edge join returned null for number+repo (orphan edge row)
-      const blocking = [
-        { key: "Roxabi/roxabi-live#5", number: null, repo: null },
-      ];
-      const res = await app.request(
-        "/api/issues/Roxabi/roxabi-live%231",
-        {},
-        makeGetEnv({ issueRow: row, blocking }),
+  describe("edge visibility (INNER JOIN, #148)", () => {
+    it("blocking/blocked_by queries INNER JOIN issues on the visible set", async () => {
+      vi.mocked(resolveVisibleRepos).mockResolvedValue(["Roxabi/roxabi-live"]);
+      const { env, capturedSqls } = makeGetEnvWithCapture({ issueRow: makeIssueRow() });
+      await app.request("/api/issues/Roxabi/roxabi-live%231", {}, env);
+
+      const edgeSqls = capturedSqls.filter(
+        (s) => s.includes("e.src_key = ?") || s.includes("e.dst_key = ?"),
       );
-      const body = await res.json<{ blocking: Record<string, unknown>[] }>();
-      expect(body.blocking[0].key).toBe("Roxabi/roxabi-live#5");
-      expect(body.blocking[0].number).toBe(5);
-      expect(body.blocking[0].repo).toBe("Roxabi/roxabi-live");
+      expect(edgeSqls).toHaveLength(2);
+      // The protection: each edge query INNER-JOINs issues on `repo IN (visible)`, so a
+      // non-visible (or orphan) endpoint can never match → no parseKey fallback to leak it.
+      for (const sql of edgeSqls) {
+        expect(sql).not.toContain("LEFT JOIN");
+        expect(sql).toContain("JOIN issues");
+        expect(sql).toContain("repo IN");
+      }
     });
   });
 });
@@ -616,5 +683,94 @@ describe("GET /api/issues — filter SQL params and clamping (FIX 4)", () => {
       const body = await res.json<{ offset: number }>();
       expect(body.offset).toBe(0);
     });
+  });
+});
+
+// ── #148: tenant-scoped reads (IDOR + visibility) ────────────────────────────
+
+describe("#148 tenant scoping", () => {
+  it("IDOR: a foreign-repo issue is 404 when its repo is not in the visible set", async () => {
+    vi.mocked(resolveVisibleRepos).mockResolvedValue(["Roxabi/alpha"]);
+    const env = makeRepoFilteredGetEnv({
+      issueRow: makeIssueRow({
+        key: "Roxabi/secret#42",
+        repo: "Roxabi/secret",
+        number: 42,
+      }),
+    });
+    const res = await app.request("/api/issues/Roxabi/secret%2342", {}, env);
+    // Indistinguishable from a missing issue — no existence/metadata leak.
+    expect(res.status).toBe(404);
+  });
+
+  it("the same issue is 200 when its repo IS visible", async () => {
+    vi.mocked(resolveVisibleRepos).mockResolvedValue(["Roxabi/secret"]);
+    const env = makeRepoFilteredGetEnv({
+      issueRow: makeIssueRow({
+        key: "Roxabi/secret#42",
+        repo: "Roxabi/secret",
+        number: 42,
+      }),
+    });
+    const res = await app.request("/api/issues/Roxabi/secret%2342", {}, env);
+    expect(res.status).toBe(200);
+  });
+
+  it("get-issue SQL carries repo IN (?) bound to the visible set", async () => {
+    vi.mocked(resolveVisibleRepos).mockResolvedValue(["Roxabi/alpha", "Roxabi/beta"]);
+    const { env, capturedSqls } = makeGetEnvWithCapture({ issueRow: makeIssueRow() });
+    await app.request("/api/issues/Roxabi/roxabi-live%231", {}, env);
+    const issueSql = capturedSqls.find((s) => s.includes("FROM issues WHERE key"));
+    expect(issueSql).toContain("repo IN");
+  });
+
+  it("list: empty visible set short-circuits to an empty page (no DB rows leak)", async () => {
+    vi.mocked(resolveVisibleRepos).mockResolvedValue([]);
+    const res = await app.request(
+      "/api/issues",
+      {},
+      // countN:99/rows present — must be ignored by the empty-set short-circuit
+      makeListEnv({ countN: 99, rows: [makeIssueRow()] }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json<{ issues: unknown[]; total: number }>();
+    expect(body.issues).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it("edge no-leak: a blocker in a non-visible repo is dropped from blocked_by", async () => {
+    vi.mocked(resolveVisibleRepos).mockResolvedValue(["Roxabi/roxabi-live"]);
+    // Faithful INNER-JOIN mock: the blocked_by query returns the hidden blocker ONLY if
+    // its repo was bound into the statement (i.e. is in the visible set). The handler
+    // binds `...visible, rawKey` = ["Roxabi/roxabi-live", key] — "SecretOrg/secret" is
+    // never bound, so the JOIN can't match it → the row never reaches the response.
+    const hiddenBlocker = { key: "SecretOrg/secret#9", number: 9, repo: "SecretOrg/secret" };
+    const env = {
+      DB: {
+        prepare: (sql: string) => ({
+          bind: (...args: unknown[]) => ({
+            first: async () =>
+              sql.includes("FROM issues WHERE key") ? makeIssueRow() : null,
+            all: async () => {
+              if (sql.includes("e.dst_key = ?")) {
+                return { results: args.includes(hiddenBlocker.repo) ? [hiddenBlocker] : [] };
+              }
+              return { results: [] };
+            },
+          }),
+          first: async () => null,
+          all: async () => ({ results: [] }),
+        }),
+        batch: async () => [],
+      },
+      ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
+      GITHUB_ORG: "",
+      GITHUB_WEBHOOK_SECRET: "",
+    } as unknown as Env;
+
+    const res = await app.request("/api/issues/Roxabi/roxabi-live%231", {}, env);
+    const body = await res.json<{ blocked_by: Record<string, unknown>[] }>();
+    // No key/number/repo of the non-visible blocker leaks — the relationship is omitted.
+    expect(body.blocked_by).toEqual([]);
   });
 });
