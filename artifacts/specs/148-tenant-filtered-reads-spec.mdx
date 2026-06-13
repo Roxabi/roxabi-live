@@ -14,6 +14,24 @@ amended: 2026-06-10
 > `user_repo_permission_cache` check (24h TTL, live API fallback); session middleware includes
 > NOT-EXISTS suspended-tenant guard; no `tenant_id` in response shapes.
 
+> **Amendment (2026-06-13, recheck — Option 3 "self-absorb"):** drift-check vs the shipped
+> 0004 schema found `tenant_repo_access` has no `is_private` column, which criterion 4 needs.
+> Rather than block on #147 (S4), **this issue absorbs the minimal `is_private` enablers** so all
+> 8 criteria ship together. Concretely #148 now also: (a) migration **0007** adds
+> `tenant_repo_access.is_private INTEGER NOT NULL DEFAULT 0`; (b) `listInstallationRepos` surfaces
+> the `private` flag (already in the GitHub response, currently discarded); (c) `discoverTenants`
+> upserts `is_private` (real UPSERT, not `INSERT OR IGNORE`, so privacy flips propagate each
+> hourly sync). **#147 is NOT subsumed** — it keeps webhook event-routing, cross-tenant stub
+> policy, `repository.privatized/publicized` (real-time `is_private` updates), `member.removed`
+> cache invalidation, and retention-on-uninstall. The 24h TTL + live-API fallback is the
+> fail-safe until #147's webhook invalidation lands (this matches the original spec, which already
+> deferred invalidation to #147). **Coordination:** #147 must NOT re-add the `is_private` column.
+>
+> **Column/name fixes applied (shipped-schema drift):** `user_repo_permission_cache.cached_at`
+> → **`checked_at`** (0004:84); issue title reads → **`JSON_EXTRACT(payload,'$.title')`** (title
+> column dropped in 0004:123); edge columns → **`src_key`/`dst_key`** (0001); `graphRoute` has
+> **5** queries (nodes/labels/pr_state/edges/repos) — fix the stale "Four D1 reads" header.
+
 ## Scope
 
 Slice **S5** of #141. **This slice satisfies the epic acceptance criterion.**
@@ -64,10 +82,11 @@ This JOIN applies to:
 
 ### Private-repo permission check (`user_repo_permission_cache`)
 
-When `tenant_repo_access.is_private = 1`:
+When `tenant_repo_access.is_private = 1` (column added by **migration 0007**, this issue —
+populated by `discoverTenants` from the GitHub `private` flag):
 
 1. **Cache hit** (row in `user_repo_permission_cache` where `user_id=? AND repo=?` and
-   `cached_at > now - 24h`): use `has_access` value directly — **fail-closed** (if
+   `checked_at > now - 24h`): use `has_access` value directly — **fail-closed** (if
    `has_access=0`, 404, no data returned).
 2. **Cache miss** (no row, or row older than 24h): call GitHub API
    `GET /repos/:owner/:repo/collaborators/:username` with the installation token.
@@ -78,8 +97,10 @@ When `tenant_repo_access.is_private = 1`:
 
 Public repos (`is_private = 0`) skip the permission check entirely.
 
-TTL: 24 hours from `cached_at`. Cache is invalidated by webhook events
-(`member.removed` / `membership.removed` / `repository.privatized` — see #147).
+TTL: 24 hours from `checked_at`. Cache is invalidated by webhook events
+(`member.removed` / `membership.removed` / `repository.privatized` — see #147). Until those
+webhook handlers land in #147, the 24h TTL + live-API fallback is the sole freshness mechanism
+(acceptable: a removed collaborator loses access at next read after TTL expiry, ≤24h).
 
 ### `GET /api/me`
 
@@ -113,8 +134,11 @@ No cross-tenant UNION queries anywhere.
 - [ ] `getIssueRoute` issue/label/edge queries use `JOIN tenant_repo_access` (no
   `AND tenant_id=?`); foreign-tenant or unknown repo key → 404. [IDOR closed]
 - [ ] `listIssuesRoute` + all 5 `graphRoute` queries use `JOIN tenant_repo_access`.
-- [ ] Private-repo reads check `user_repo_permission_cache` (24h TTL); cache miss → live API
-  fallback; any error path → fail-closed (404).
+- [ ] Migration **0007** adds `tenant_repo_access.is_private` (DEFAULT 0); `listInstallationRepos`
+  surfaces the GitHub `private` flag; `discoverTenants` UPSERTs it each sync.
+- [ ] Private-repo reads (`is_private = 1`) check `user_repo_permission_cache` (24h TTL via
+  `checked_at`); cache miss → live API fallback (`GET /repos/:owner/:repo/collaborators/:user`,
+  204→access / 404→deny); any error path → fail-closed (404).
 - [ ] `GET /api/me` returns `installations` array; no `tenant_id` in issue/edge response shapes.
 - [ ] `POST /api/active-tenant` switches session tenant; membership verified before update.
 - [ ] >1 installation → org-picker flow works end-to-end.
@@ -123,8 +147,12 @@ No cross-tenant UNION queries anywhere.
 
 ## Dependencies
 
-Blocked by **#147** (S4 — `tenant_repo_access` populated by webhook; `user_repo_permission_cache`
-invalidation wired) and **#145** (S2 — sessions + `user_installations` table).
+- **#145** (S2 — sessions + `user_installations` table): **DONE** (shipped, closed).
+- ~~**#147** (S4)~~: **no longer a blocker** as of the 2026-06-13 Option-3 amendment — #148 self-absorbs
+  the `is_private` column + population. #147 retains its webhook scope (event routing, stub policy,
+  real-time privacy updates, cache invalidation, retention) and stays open; its later landing only
+  *improves freshness* of the permission cache, it does not gate this issue. #147 must NOT re-add
+  the `is_private` column (introduced here by migration 0007).
 
 ## Reference
 
