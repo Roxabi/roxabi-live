@@ -1,0 +1,51 @@
+---
+title: "feat(deploy): NOT-NULL migration (new tables) + CF Access cutover + runbook (Phase 1 S7)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 150
+status: approved
+tier: S
+amended: 2026-06-10
+---
+
+> **Pivot note (2026-06-10):** Scope shrunk. NOT-NULL cutover applies only to **new tables** created
+> in S1. No `COUNT(*) WHERE tenant_id IS NULL = 0` check (no `tenant_id` column on old tables).
+> No backfill step. CF Access narrowed to `/admin/*` only (coordinated with S2 deploy).
+
+## Scope
+
+Slice **S7** of #141. Final cutover (one-way edge change — gated).
+
+- **M-b NOT-NULL migration** (`000N_new_tables_not_null.sql`): tighten nullable columns on the
+  **10 new tables** from S1 only (e.g. add NOT NULL constraints where nullable was used during
+  initial migration for safety). **No changes to `issues`/`edges`/`labels`/`pr_state`** — those
+  tables have no new nullable columns from this epic.
+  The SQL file is authored in S1's design but **committed here**, so CI never applies it before
+  S5 (reads) and S6 (UI) are verified on staging.
+- **Staging smoke-test gate:** app sessions verified returning **401** for unauthenticated callers
+  on staging before CF Access change is applied.
+- **CF Access narrowing:** scope CF Access rule from the entire Worker to **`/admin/*` only**.
+  `/webhook/*` retains its existing bypass. All other routes (`/login`, `/oauth/*`, `/api/*`)
+  rely on Worker-level session auth (S2) — CF Access is defense-in-depth for admin only.
+  Coordinate timing with S2 deploy completion to avoid lockout window.
+- **Rollback runbook:** re-enable the CF Access rule to full Worker scope; written to a tracked
+  file in `docs/runbooks/`.
+
+## Success Criteria
+
+- [ ] M-b NOT-NULL migration applies cleanly on staging; only new-table columns affected; no
+  changes to `issues`/`edges`/`labels`/`pr_state` schema.
+- [ ] No `COUNT(*) WHERE tenant_id IS NULL` check — not applicable (no `tenant_id` column on
+  old tables).
+- [ ] App sessions verified → 401 unauth on staging before CF Access change.
+- [ ] CF Access rule scoped to `/admin/*` only; `/webhook/*` bypass retained; `/api/*` and
+  `/login` reachable without CF Access (Worker session auth governs).
+- [ ] Rollback runbook (re-enable Access to full Worker) committed to `docs/runbooks/`.
+
+## Dependencies
+
+Blocked by **#149** (S6 — full UI flow shippable on staging).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx)

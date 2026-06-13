@@ -1,0 +1,143 @@
+---
+title: "feat(webhook): tenant routing + installation lifecycle handlers (Phase 1 S4)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 147
+status: approved
+tier: M
+amended: 2026-06-10
+---
+
+> **Pivot note (2026-06-10):** Title + scope rewritten. Original scope: routing via
+> `installations` table, `installation.deleted` deletes all tenant sessions + data,
+> cross-tenant dep stub policy. **New scope:** routing via `payload.installation.id` →
+> `tenants`; `installation.deleted` retains global issue rows, deletes `tenant_repo_access`
+> only; full lifecycle handlers for install/repo/member events; `user_repo_permission_cache`
+> invalidation. `installations` table renamed `tenants`. Cross-tenant stub policy superseded
+> by repo-canonical model (issue rows globally shared; authorization via `tenant_repo_access`).
+
+## Scope
+
+Slice **S4** of #141. Webhook isolation. Reuses the existing single-secret HMAC (`webhook/hmac.ts`).
+
+### Routing
+
+After HMAC pass, **mandatory**: `payload.installation.id` → `tenants` lookup → resolve
+`tenant_id` **before any** INSERT/UPDATE/DELETE.
+
+Unknown installation (not in `tenants`) → **200 OK, no DB write** (GitHub does not retry;
+no orphan rows). Suspended tenant → log, 200, no write.
+
+All webhook mutations remain in `webhook/mutations.ts`; all use repo-canonical tables
+(`issues`, `edges`) with no `tenant_id` filter.
+
+### Installation lifecycle handlers
+
+#### `installation.created`
+
+1. Upsert row in `tenants` (`installation_id`, `account_login`, `account_type`, `app_id`,
+   `suspended_at=NULL`, `installed_at=now`).
+2. For each repo in `repositories`: upsert `tenant_repo_access (tenant_id, repo, is_private)`.
+3. Enqueue a sync for newly accessible repos (via `sync_control` slot or direct cron hint).
+
+#### `installation.deleted`
+
+1. Delete `tenant_repo_access` rows where `tenant_id = ?`.
+2. Delete `install_tokens` for that tenant.
+3. Delete `sessions` for that tenant.
+4. **Retain** all rows in `issues` and `edges` — global issue data is not tenant-owned.
+5. Mark `tenants` row with `deleted_at = now` (soft-delete; do not hard-delete for audit trail).
+
+#### `installation.suspend`
+
+Set `tenants.suspended_at = now`. Active sessions will fail the NOT-EXISTS guard on next
+request (no immediate invalidation needed; session SELECT includes the guard).
+
+#### `installation.unsuspend`
+
+Set `tenants.suspended_at = NULL`. Sessions resume automatically on next request.
+
+### Repository lifecycle handlers
+
+#### `installation_repositories.added`
+
+For each added repo: upsert `tenant_repo_access (tenant_id, repo, is_private)`.
+Trigger sync for those repos via `sync_control`.
+
+#### `installation_repositories.removed`
+
+Delete `tenant_repo_access (tenant_id, repo)` rows for each removed repo.
+Issue rows in `issues` / `edges` are **retained** (globally shared; other tenants may still
+have access).
+
+#### `repository.renamed`
+
+Anchor: `repo_node_id` (GitHub node ID; stable across renames). Steps:
+1. Look up current `repo` slug by `repo_node_id` in `repos.repo_node_id`.
+2. Cascade update: `repos.repo = new_full_name` + `tenant_repo_access.repo = new_full_name`
+   + `issues.repo = new_full_name` + `edges` entries that embed the repo component of `key`.
+3. If `repo_node_id` not found: upsert with new name (first-time rename before node_id was
+   stored — fallback to `previous_repository.full_name` lookup by old slug).
+
+#### `repository.transferred`
+
+Same cascade as `repository.renamed` (repo gets a new owner/name; node_id stable).
+
+#### `repository.privatized`
+
+Set `tenant_repo_access.is_private = 1` for that repo. Invalidate
+`user_repo_permission_cache` rows for that repo (`DELETE WHERE repo = ?`).
+
+#### `repository.publicized`
+
+Set `tenant_repo_access.is_private = 0` for that repo. Invalidate
+`user_repo_permission_cache` rows for that repo (`DELETE WHERE repo = ?`).
+
+### Member / membership handlers (permission-cache invalidation)
+
+#### `member.removed`
+
+A collaborator was removed from a specific repo. Delete `user_repo_permission_cache` rows
+for `(user_id matching github_id, repo)`.
+
+#### `membership.removed`
+
+A member was removed from the org (or a team). Delete all `user_repo_permission_cache` rows
+for that `github_id` (all repos in that installation's scope — conservative invalidation;
+next read triggers live API fallback and re-populates).
+
+### No cross-tenant stub policy
+
+The original cross-tenant dep stub (`is_stub=1, title=NULL`) is superseded. In the
+repo-canonical model, `issues` rows are globally unique by `owner/repo#N`. A dep that
+references a foreign repo simply resolves to that repo's row (if synced) or is absent.
+No stub insertion. Authorization is at read time via `tenant_repo_access`.
+
+## Success Criteria
+
+- [ ] `payload.installation.id` → `tenants` lookup before any write; unknown installation
+  → 200, no write; suspended tenant → 200, no write.
+- [ ] `installation.created`: `tenants` row upserted + `tenant_repo_access` rows upserted
+  for each repo.
+- [ ] `installation.deleted`: `tenant_repo_access` + `install_tokens` + `sessions` deleted;
+  `issues`/`edges` rows **retained**; `tenants.deleted_at` set.
+- [ ] `installation.suspend` / `installation.unsuspend`: `tenants.suspended_at` toggled;
+  session NOT-EXISTS guard enforces revocation without immediate session flush.
+- [ ] `installation_repositories.added` / `removed`: `tenant_repo_access` upsert / delete;
+  issue rows retained on removal.
+- [ ] `repository.renamed` + `repository.transferred`: cascade update anchored by
+  `repo_node_id`; `repos`, `tenant_repo_access`, `issues` all consistent.
+- [ ] `repository.privatized` / `publicized`: `is_private` updated + `user_repo_permission_cache`
+  invalidated.
+- [ ] `member.removed` / `membership.removed`: `user_repo_permission_cache` rows deleted
+  for affected user+repo scope.
+- [ ] No cross-tenant stub insertion logic.
+
+## Dependencies
+
+Blocked by **#144** (S1 — `tenants`, `tenant_repo_access`, `user_repo_permission_cache`
+tables created) and **#145** (S2 — sessions + HMAC infra).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx)

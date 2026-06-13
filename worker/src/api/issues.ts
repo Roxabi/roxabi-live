@@ -87,7 +87,7 @@ export const listIssuesRoute = async (c: Context<{ Bindings: Env }>) => {
 
   const countSql = `SELECT COUNT(*) AS n FROM issues ${where}`;
   const dataSql =
-    `SELECT issues.key, issues.repo, issues.number, issues.title,` +
+    `SELECT issues.key, issues.repo, issues.number, JSON_EXTRACT(issues.payload,'$.title') AS title,` +
     ` issues.state, issues.url, issues.milestone, issues.is_stub,` +
     ` issues.created_at, issues.updated_at, issues.closed_at` +
     ` FROM issues ${where} ORDER BY issues.updated_at ASC LIMIT ? OFFSET ?`;
@@ -152,7 +152,7 @@ export const getIssueRoute = async (c: Context<{ Bindings: Env }>) => {
   }
 
   const issueSql =
-    "SELECT key, repo, number, title, state, url, milestone, is_stub," +
+    "SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone, is_stub," +
     " created_at, updated_at, closed_at FROM issues WHERE key = ?";
   const row = await c.env.DB.prepare(issueSql).bind(rawKey).first<IssueListRow>();
 

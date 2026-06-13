@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "types": ["bun-types"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true
+  },
+  "include": ["vitest.config.ts", "vitest.setup.ts", "skills/**/*.ts"],
+  "exclude": ["node_modules", "skills/issue-triage/triage.ts"]
+}

@@ -1,0 +1,105 @@
+---
+title: "Multi-tenant GitHub App auth — make roxabi-live a multi-user tool (Phase 1)"
+issue: 141
+status: approved
+tier: F-full
+date: 2026-06-09
+---
+
+## Problem
+
+`roxabi-live` is single-tenant. One CF Worker + one D1 sit behind CF Access for a single
+identity (`mickael@bouly.io`). The corpus, the hourly cron sync, the GitHub org webhook, and
+the dep-graph all assume **one operator's org data**. There is no path for another GitHub user
+to authenticate and see *their own* issues — it is a personal cockpit, not a product.
+
+Now is the trigger: the CF Worker + D1 stack was validated in production (M₁ cutover complete
+2026-06-08, `live.roxabi.dev` fully independent), so the foundation is proven and ready to
+extend from one user to many.
+
+This is **Phase 1** of the decision recorded in
+`artifacts/analyses/zk-encryption-spike-analysis.mdx` (ADR → Shape D, hybrid/phased). Phase 1
+is the multi-tenant, **server-centric** baseline. It deliberately does **not** make data
+operator-blind — that is Phase 2 (epic #142, blocked-by this). The auth primitive is chosen
+here so Phase 2 needs no auth rewrite.
+
+## Who
+
+- **Primary:** any GitHub user who installs / links the GitHub App → authenticates and sees
+  **only their own** issues + dep-graph in the cockpit.
+- **Secondary:** the operator (mickael) — runs and maintains sync, holds the D1 database. Must
+  now (a) enforce tenant isolation on every read, and (b) communicate honestly that in Phase 1
+  the operator **can** read user data (same trust users already place in GitHub for the same
+  issues), warning users not to paste secrets into issue bodies.
+
+## Constraints
+
+- **Auth primitive = a single GitHub App** (not an OAuth App). Issues both *installation
+  tokens* (server-to-server: cron, webhooks; `Issues:Read` covers `subIssues`/`parent`/
+  `blockedBy`/`blocking`, all GA) and *user-to-server tokens* (reused by Phase 2). Picking it
+  now means Phase 2 does not re-litigate auth.
+- **Server-side OAuth code-exchange endpoint holding `client_secret`** — GitHub PKCE does not
+  remove the secret, so a thin Worker endpoint is unavoidable. Secret must be **rotatable** and
+  **never logged**.
+- **App-level sessions replace CF Access** for the public app; CF Access stays only on
+  `/admin/*`. From day one: short TTL, **server-side revocation**, and a defined reaction to
+  GitHub App **un-installation**. (Retrofitting session invalidation later is harder than the
+  rest.) NOTE: session tokens at rest in D1 are operator-readable.
+- **D1 schema: single DB + `tenant_id`** on issues/edges (Durable-Object-per-tenant explicitly
+  rejected at this scale). The migration is **breaking** on the live DB (backfill existing rows
+  to a seed tenant); CF deploy + migration are **not transactional** → sequence
+  **migration-before-code** with a rollback path for orphan rows.
+- **Isolate a `payload` column** (title/body/notes JSON) from structural metadata (`state`,
+  `edges` stay plaintext) — so Phase 2 swaps **one column** to ciphertext, not the row shape.
+- **Per-install webhooks + tenant routing**; per-tenant sync scoping; cron fan-out within the
+  workerd limits (10k subrequests / 15 min CPU per invocation) → fine for hundreds of users;
+  move to Cloudflare Queues only beyond that.
+- **Runtime:** Cloudflare Workers (workerd) — `fetch()` + Web Crypto + D1 binding only.
+
+## Out of Scope
+
+- **Phase 2 client-side zero-knowledge / operator-blind mode** → epic **#142** (blocked-by
+  this). No ECIES, no browser-local keys, no ciphertext storage in Phase 1.
+- **Cloudflare Queues** migration for cron fan-out — deferred until ~hundreds of users.
+- **At-rest content encryption in Phase 1** — optional, a *product call* per the ADR open
+  questions, not a hard requirement here. Default = honest "operator can read." (Can be added
+  later as anti-DB-breach without being advertised as operator-blind.)
+- **Billing, plans, quotas, rate-limit tiering.**
+- **Multi-device key bootstrap, WASM-Argon2id** — Phase-2 concerns.
+
+## Premise Validity
+
+**Success in 6 months:** ≥1 GitHub user *other than the operator* has logged in via the GitHub
+App, linked their account, and sees **only their own** issues + dep-graph in production; tenant
+isolation is verified (no cross-tenant leakage observed). The epic's acceptance criterion — "a
+second GitHub user can log in, link their account, and see only their own issues + graph" — is
+met live.
+
+**Failure in 6 months (falsifiable):** after ship, **either** (i) external-tenant count = **0**
+(no non-operator user has successfully linked and used the tool across the period) **or**
+(ii) **≥1 observed cross-tenant data-exposure incident** in production (one tenant's issues
+rendered to another). Both are observable boolean/threshold states on a 6-month horizon and
+would trigger redesign-or-abort.
+
+**Simplest alternative:** keep CF Access and expand its allow-list to multiple emails — one
+shared single-org corpus, no GitHub App, no `tenant_id`.
+
+**Why not simplest:** a multi-email CF Access list still shows every allowed user the **same**
+corpus (the operator's org data), not their *own* GitHub issues. No per-user GitHub data, no
+isolation, no user token — it cannot become "their" tool, and it cannot graduate to Phase-2
+zero-knowledge (no user-to-server token, no per-tenant payload column). It fails the core
+outcome ("a tool for everyone").
+
+## Complexity
+
+**Tier: F-full** — multi-domain, new architecture, and a breaking migration on a live database.
+
+Signals observed:
+- **Multi-domain:** auth (GitHub App + OAuth exchange + sessions) · DB (breaking `tenant_id`
+  migration + `payload` column) · sync/webhook (per-install tokens, tenant routing) · API
+  (tenant-filtered reads) · frontend (login + account-link UI).
+- **New architecture:** GitHub App as auth primitive; app-level session layer replacing edge
+  CF Access; tenant model across the whole data path.
+- **Unknowns:** session revocation / App-uninstall reaction design; breaking live-DB migration
+  sequencing (non-transactional deploy+migrate) + orphan-row rollback.
+- **Size label:** `size:F-full` (L/XL).

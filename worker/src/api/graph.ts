@@ -154,7 +154,7 @@ export const graphRoute = async (c: Context<{ Bindings: Env }>) => {
 
   // (c) issues
   const issueRows = await c.env.DB.prepare(
-    "SELECT key, repo, number, title, state, url, milestone," +
+    "SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone," +
       " lane, priority, size, status, is_stub, has_active_branch FROM issues",
   ).all<IssueRow>();
 

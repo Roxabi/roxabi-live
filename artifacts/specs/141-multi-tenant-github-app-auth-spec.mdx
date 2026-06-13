@@ -1,0 +1,184 @@
+---
+title: "Multi-tenant GitHub App auth — Phase 1 (#141)"
+issue: 141
+status: approved
+tier: F-full
+date: 2026-06-09
+promoted_from: artifacts/analyses/141-multi-tenant-github-app-auth-analysis.mdx
+amended: 2026-06-10
+---
+
+> **Pivot note (2026-06-10):** Data model amended from per-tenant (composite PKs + `tenant_id` on
+> all tables) to **repo-canonical**. `issues`/`edges`/`labels`/`pr_state` PKs are **unchanged**;
+> `tenant_id` is **never added** to those tables. Authorization is a JOIN-only layer
+> (`tenant_repo_access`). Risky table-recreation step eliminated. See analysis addendum.
+
+## Context
+
+Source: `artifacts/analyses/141-multi-tenant-github-app-auth-analysis.mdx` (approved, review-hardened)
+→ ADR `artifacts/analyses/zk-encryption-spike-analysis.mdx` (Shape D, Phase 1). Frame:
+`artifacts/frames/141-multi-tenant-github-app-auth-frame.mdx`.
+
+Turn the single-tenant cockpit (CF Worker + D1 behind CF Access for one identity) into a multi-user
+tool: any GitHub user logs in, links their account, sees **only their own** issues + dep-graph.
+Server-centric (operator *can* read — honest in UX); a single **GitHub App** serves both this phase
+and the future Phase-2 ZK mode (#142). Decision set = the analysis's 24 settled sub-decisions.
+
+## Goal
+
+A second GitHub user can log in, link their account, and see only their own issues + graph in prod,
+with tenant isolation verified — without an auth rewrite when Phase-2 ZK lands.
+
+## Users
+
+- **Primary:** any GitHub user (installs the App + authorizes) → scoped cockpit of their own issues.
+- **Secondary:** operator (mickael) — runs/maintains sync, holds D1; must enforce isolation and
+  honestly disclose Phase-1 operator-readability.
+
+## Expected Behavior
+
+1. **Logged-out** visitor hits `/` → unauthenticated landing with a **Log in with GitHub** button.
+2. **Login:** `/login` → GitHub authorize (with single-use `state`) → `/oauth/callback` exchanges
+   `code`→token (`client_secret`), creates/updates the `users` row, mints a **fresh** session
+   (cookie `HttpOnly; Secure; SameSite=Strict; Domain=<exact host>`).
+3. **Not installed yet:** if the user has no installation, callback lands on an **"install the App"**
+   CTA → GitHub App install page → on return, `installation` webhook (or callback re-check) populates
+   `tenants` + `user_installations` + `tenant_repo_access` rows.
+4. **Consent:** before any issue data renders, the user must **acknowledge** a notice — "the operator
+   can read your issue data in this phase; don't paste secrets into issue bodies." A persistent
+   dashboard notice repeats it.
+5. **Active tenant:** exactly one installation → it becomes the active tenant; more than one → an
+   **org-picker** sets the active `tenant_id` (switchable). The session carries one active `tenant_id`.
+6. **Viewing:** `/api/issues`, `/api/issues/:key`, `/api/graph` return **only** rows where
+   `tenant_repo_access.tenant_id = session.active_tenant` (JOIN filter). No session → **401 before any DB query**.
+7. **Sync:** hourly cron loops installations, mints an installation token (App-JWT RS256) per install,
+   syncs that install's repos, writes rows tagged with the installation's `tenant_id`. The org webhook
+   delivers to one endpoint (one App secret); each event is routed to a tenant by `installation.id`;
+   an unknown installation → 200 OK, **no write**.
+8. **Logout / uninstall:** logout deletes the session row; GitHub App `installation.deleted` deletes
+   `tenant_repo_access` rows for that tenant — **issue/edge rows are retained** (globally-keyed data).
+
+## Data Model & Consumers
+
+```mermaid
+classDiagram
+  class User { id PK; github_id UNIQUE; github_login; created_at }
+  class Tenant { id PK; installation_id UNIQUE; account_login; account_type; suspended_at }
+  class UserInstallation { user_id FK; tenant_id FK; "PK(user_id,tenant_id)" }
+  class Session { id PK; user_id FK; tenant_id FK; token_hash UNIQUE; expires_at; revoked_at }
+  class OAuthState { state PK; redirect_after; expires_at }
+  class InstallToken { tenant_id PK FK; token_enc; token_iv; expires_at }
+  class TenantRepoAccess { tenant_id FK; repo; "PK(tenant_id,repo)" }
+  class Issue { key PK; repo; number; state; payload; url; ...; is_stub }
+  class Edge { "PK(src_key,dst_key,kind)"; src_key; dst_key; kind }
+  class SyncControl { "PK(tenant_id,key)"; tenant_id FK; key; value; updated_at }
+  User "1" --> "*" UserInstallation
+  Tenant "1" --> "*" UserInstallation
+  User "1" --> "*" Session
+  Tenant "1" --> "*" TenantRepoAccess
+  Tenant "1" --> "*" SyncControl
+  Tenant "1" --> "1" InstallToken
+  TenantRepoAccess "*" --> "*" Issue : repo filter
+  Issue "1" --> "*" Edge : key
+```
+
+> **`payload` (D24, Phase-2 ZK seam):** `issues` has **no top-level `title` column** — `title` lives
+> inside `payload` JSON (`JSON_EXTRACT(payload,'$.title')`); `body` is **absent** in Phase 1.
+> `issues`/`edges`/`labels`/`pr_state` **PKs are unchanged** — no `tenant_id` column added to those
+> tables. Authorization is a JOIN through `tenant_repo_access` (fail-closed: no row → no data).
+
+```mermaid
+flowchart LR
+  subgraph thisIssue[Phase 1 — this epic]
+    SES[session middleware] -->|active_tenant_id| READS[api/issues, api/graph]
+    CRON[cron fan-out] -->|installation token| ISS[(Issue/Edge rows<br/>tenant_id)]
+    WH[webhook router] -->|installation.id→tenant| ISS
+    READS --> ISS
+  end
+  subgraph future[Phase 2 #142 — out of scope]
+    CLIENT[browser ECIES] -.->|encrypts| PAY[payload column → ciphertext]
+  end
+  ISS -. payload swappable .-> PAY
+```
+
+| Consumer | Fields consumed | When | Status |
+|---|---|---|---|
+| session middleware | `Session.token_hash`, `tenant_id`, `expires_at`; NOT-suspended guard via `tenants` | every `/api/*` | this issue |
+| `api/graph` | `Issue.{key,state,payload.title}`, `Edge.*`, JOIN `tenant_repo_access` | page load / refresh | this issue |
+| `api/issues` | `Issue.*` + JOIN `tenant_repo_access` (+ `user_repo_permission_cache` for private) | list / detail | this issue |
+| cron sync | `Tenant.installation_id`, `InstallToken.token_enc/iv`, per-tenant `SyncControl` | hourly | this issue |
+| webhook router | `payload.installation.id` → `tenants` lookup → `tenant_repo_access` writes | on event | this issue |
+| Phase-2 client | `Issue.payload` (→ ciphertext) | opt-in ZK | **future (#142)** — payload column accessible |
+
+## Breadboard
+
+**Routes / handlers (N):**
+
+| ID | Affordance | Handler | Data touched |
+|----|-----------|---------|--------------|
+| N1 | `GET /login` | redirect→GitHub authorize + write `OAuthState` | `oauth_state` |
+| N2 | `GET /oauth/callback` | verify+delete `state`, `code`→token, upsert `User`, mint `Session` | `oauth_state`,`users`,`sessions` |
+| N3 | `GET /api/me` | session→user + installations + active tenant | `sessions`,`user_installations` |
+| N4 | `POST /logout` | delete session row | `sessions` |
+| N5 | `POST /api/active-tenant` | set `Session.active_tenant_id` (membership-checked) | `sessions`,`user_installations` |
+| N6 | `POST /webhook/github` (extend) | HMAC → `installation.id`→`tenants` lookup → scoped mutate; `installation.created/deleted/suspend/unsuspend`, `installation_repositories`, `repository.renamed/transferred/privatized/publicized`, `member.removed`/`membership.removed` | `tenants`,`tenant_repo_access`,`user_installations`,`sessions` |
+| N7 | `GET /api/issues` (extend) | middleware → `JOIN tenant_repo_access WHERE tenant_id=?` | `issues`,`labels`,`tenant_repo_access` |
+| N8 | `GET /api/issues/:key` (extend) | middleware → `JOIN tenant_repo_access WHERE key=? AND tra.tenant_id=?` | `issues`,`edges`,`labels`,`tenant_repo_access` |
+| N9 | `GET /api/graph` (extend) | middleware → all 5 queries `JOIN tenant_repo_access WHERE tenant_id=?` | `issues`,`edges`,`labels`,`pr_state`,`repos`,`tenant_repo_access` |
+| N10 | `scheduled` cron (extend) | loop repos (from `tenant_repo_access`) → AES-GCM decrypt install token → per-repo sync + slot-rotation | `tenants`,`install_tokens`,`tenant_repo_access`,`issues`,`edges`,`sync_control` |
+
+**UI (U):**
+
+| ID | Affordance | Wires to |
+|----|-----------|----------|
+| U1 | Logged-out landing | N1 |
+| U2 | Log in with GitHub | N1 |
+| U3 | Install-App CTA (authorized-not-installed) | links to **GitHub App install URL (external)** → user installs → GitHub fires `installation` webhook → N6 |
+| U4 | Org-picker (>1 installation) | N5 |
+| U5 | Operator-read consent (acknowledge) | gates data render |
+| U6 | Persistent dashboard notice | — |
+| U7 | Logout | N4 |
+
+**Middleware/util (M):** M1 session middleware (fail-closed 401) on `/api/*`; M2 App-JWT RS256 signer;
+M3 installation-token minter (cache ≤1h); M4 HMAC verify (existing, reused).
+
+## Slices
+
+Vertical increments, dependency-ordered. **Each slice = one child issue.**
+
+| # | Slice | Demo-able outcome | Depends |
+|---|-------|-------------------|---------|
+| **S1** | **Schema & auth-table migrations + CI/infra** | **M-a** migration: **10 new tables** (`tenants`, `users`, `user_installations`, `sessions`, `oauth_state`, `install_tokens`, `tenant_repo_access`, `user_repo_permission_cache`, `sync_control` with composite PK `(tenant_id,key)`, `zk_payloads`) + **2 ALTERs** (`ALTER TABLE issues ADD COLUMN payload TEXT`; `ALTER TABLE repos ADD COLUMN repo_node_id TEXT UNIQUE`). **No composite-PK recreation; no `tenant_id` column on `issues`/`edges`/`labels`/`pr_state`.** **`title` moved into `payload` JSON** (no top-level `title`; `body` absent). `ci.yml`: add `wrangler d1 migrations apply DB [--env staging]` **inside the `CF_API_TOKEN` guard, in the `deploy:` job, between `npm ci` and `wrangler deploy`** + a `GITHUB_APP_*` secret-presence guard (same pattern as `CF_API_TOKEN`). `wrangler.toml`: `[[env.staging.r2_buckets]] bucket_name="roxabi-live-logs-staging"` + `[env.staging] workers_dev=true` + `SYNC_QUEUE` binding declared **DORMANT**. **Excludes the NOT-NULL migration (ships in S7).** | — |
+| **S2** | **GitHub App + OAuth login + sessions** | user OAuths → fresh session cookie; `GET /api/me` returns identity; logout revokes; `state` single-use+TTL; new secrets wired (per-env) | S1 |
+| **S3** | **Per-repo sync fan-out + AES-GCM install tokens + PAT retired** | `installation` webhook populates `tenants`/`user_installations`/`tenant_repo_access`; `runSync` loops **repos** (from `tenant_repo_access`) not installations — deduplicated fan-out; credentials = AES-GCM-decrypted install token (`install_tokens.token_enc/iv`, DEK = `INSTALL_TOKEN_KEY` secret); per-tenant `sync_control` slot-rotation; `SYNC_QUEUE` binding declared **DORMANT** (no active consumer); **`GITHUB_TOKEN` (PAT) removed from `Env`/`wrangler.toml`/`handleDeps`/`handleRefDelete` — no fallback**; PAT retired after **first successful installation sync, staging first**. No `tenant_id` backfill (no column to fill). | S2 |
+| **S4** | **Webhook tenant routing + stub policy** | webhook event from install A writes only A's rows (route by `installation.id`); unknown install → 200 no-write; cross-tenant dep ref → tenant-local title-less stub; `installation.deleted` wipes tenant | S3 |
+| **S5** | **Tenant-filtered reads + active-tenant + org-picker** | `/api/*` behind fail-closed middleware (session includes NOT-suspended-tenant guard); all reads filtered via `JOIN tenant_repo_access WHERE tenant_id=?` (IDOR on `/:key` closed); private repos add `user_repo_permission_cache` check; active tenant in session; org-picker for >1 install — **second user sees only their own issues + graph** | S2, S3 |
+| **S6** | **Login / account-link / consent UI** | full browser flow logged-out → login → install CTA → consent acknowledge → org-picker → scoped dashboard | S5 |
+| **S7** | **NOT-NULL migration + CF Access cutover + runbook** | re-verify `COUNT NULL = 0` → commit + apply **M-b `000N_tenant_not_null.sql`** (the NOT-NULL file is authored in S1's design but **committed here**, so CI never applies it before backfill); staging smoke-test gate passes (sessions return 401 unauth) → Access scoped to `/admin/*` only (`/webhook/*` keeps its bypass) → prod cutover; rollback runbook (re-enable Access rule) written to a tracked file | S6 |
+
+**Pre-impl validation (gates S2/S3, do first):** RS256 sign in workerd (`crypto.subtle` RSASSA-PKCS1-v1_5);
+`subIssues`/`parent` GraphQL via installation token (no preview header post-GA).
+
+## Success Criteria
+
+- [ ] **M-a** migration applies cleanly on **staging D1**: **10 new tables** created; `ALTER TABLE issues ADD COLUMN payload TEXT` + `ALTER TABLE repos ADD COLUMN repo_node_id TEXT UNIQUE` applied; **no `tenant_id` column on `issues`/`edges`/`labels`/`pr_state`; no composite-PK table-recreation**.
+- [ ] `issues` has **no top-level `title` column** — `title` is stored inside `payload` and read via `JSON_EXTRACT(payload,'$.title')`; **`body` is absent** from the Phase-1 payload schema. (D24 ZK seam.)
+- [ ] `ci.yml` `deploy:` job runs `wrangler d1 migrations apply DB [--env staging]` **inside the `CF_API_TOKEN` guard, between `npm ci` and `wrangler deploy`**; a CI secret-presence step (same pattern as `CF_API_TOKEN`) fails the deploy when any `GITHUB_APP_*` secret is empty.
+- [ ] `wrangler.toml` sets `[[env.staging.r2_buckets]] bucket_name="roxabi-live-logs-staging"` and `[env.staging] workers_dev=true` (staging reachable for end-to-end auth test).
+- [ ] A user completes GitHub OAuth and receives a session; `GET /api/me` returns their GitHub identity + installations; `POST /logout` deletes the session row (subsequent `/api/*` → 401).
+- [ ] OAuth `state` is single-use (deleted on verify), TTL ≤ 10 min, and `redirect_uri` is Worker-hard-coded; a replayed `state` is rejected.
+- [ ] **Session security:** the token issued after OAuth is **freshly minted** (no pre-auth value reused); `sessions.token_hash` stores the **SHA-256 hash** of the token (never the token); the cookie is `HttpOnly; Secure; SameSite=Strict; Domain=<exact host>` (not `.roxabi.dev`); presenting an old pre-auth value after login returns 401.
+- [ ] Cron sync loops **repos** (from `tenant_repo_access`) — not installations — deduplicated fan-out; credentials = AES-GCM-decrypted install token (`install_tokens.token_enc/iv`, DEK = `INSTALL_TOKEN_KEY` secret); per-tenant `sync_control` slot-rotation; `GITHUB_TOKEN` is removed from `Env`, `wrangler.toml`, `handleDeps`, `handleRefDelete` with **no fallback**; RS256 sign errors log the message only (never key/JWT). No `tenant_id` backfill (no column to fill).
+- [ ] Webhook resolves `payload.installation.id` → `tenants` lookup **before** any INSERT/UPDATE/DELETE; unknown installation → 200, **no write**; handles `installation.created/deleted/suspend/unsuspend`, `installation_repositories.added/removed`, `repository.renamed/transferred/privatized/publicized`, `member.removed`/`membership.removed`; `installation.deleted` deletes `tenant_repo_access` rows only — **issue/edge rows are retained** (globally-keyed data).
+- [ ] A cross-tenant dependency reference materializes only as a `tenant_id`=requester, `is_stub=1`, `title=NULL` row — never another tenant's real title/body.
+- [ ] Every `/api/*` route is gated by fail-closed session middleware (no/invalid session → 401 **before** any DB statement).
+- [ ] `GET /api/issues/:key` and its label/edge sub-queries are filtered via **`JOIN tenant_repo_access tra ON tra.repo=i.repo AND tra.tenant_id=?`** bound to the session's `active_tenant` **in the SQL** (code-review-verified); `GET /api/issues` + all 5 `GET /api/graph` queries use the same JOIN; private repos add a `user_repo_permission_cache` check; fetching a key that belongs to another tenant returns **404** (not 200/500). [IDOR closed]
+- [ ] A user with >1 installation gets an org-picker; the session carries exactly one active `tenant_id`; **no query UNIONs across tenants**.
+- [ ] Before any issue data renders, the user must acknowledge the operator-read consent notice; a persistent dashboard notice is present.
+- [ ] **Acceptance:** a *second* GitHub account logs in, links its account, sees **only its own** issues + dep-graph; the operator account sees only `Roxabi`'s — verified live on staging.
+- [ ] **S7 cutover:** **M-b NOT-NULL migration** applies only to new tables (no NOT-NULL on `issues`/`edges`/`labels`/`pr_state` — no backfill required); NOT-NULL file committed + applied (ships in S7, never earlier); app sessions verified returning 401 unauth on staging → CF Access scoped to `/admin/*` only (`/webhook/*` keeps bypass); rollback (re-enable Access) documented in a tracked runbook file.
+
+## Out of Scope (→ #142 or follow-up)
+
+Client-side ZK / operator-blind content; syncing issue `body`; merged cross-installation view;
+Cloudflare Queues fan-out; billing/quotas.

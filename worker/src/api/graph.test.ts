@@ -35,10 +35,44 @@ function makeGraphEnv(
       }),
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_TOKEN: "",
     GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
+}
+
+/**
+ * Like makeGraphEnv but also accumulates every SQL string passed to prepare()
+ * so tests can assert on the exact queries issued by graphRoute.
+ */
+function makeGraphEnvWithCapture(
+  labels: unknown[],
+  prState: unknown[],
+  issues: unknown[],
+  edges: unknown[],
+  repos: unknown[] = [],
+): { env: Env; capturedSqls: string[] } {
+  const capturedSqls: string[] = [];
+  const env = {
+    DB: {
+      prepare: (sql: string) => {
+        capturedSqls.push(sql);
+        return {
+          all: async () => {
+            if (sql.includes("FROM labels")) return { results: labels };
+            if (sql.includes("FROM pr_state")) return { results: prState };
+            if (sql.includes("FROM issues")) return { results: issues };
+            if (sql.includes("FROM edges")) return { results: edges };
+            if (sql.includes("FROM repos")) return { results: repos };
+            return { results: [] };
+          },
+        };
+      },
+    },
+    ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
+    GITHUB_ORG: "",
+    GITHUB_WEBHOOK_SECRET: "",
+  } as unknown as Env;
+  return { env, capturedSqls };
 }
 
 describe("GET /api/graph", () => {
@@ -436,6 +470,18 @@ describe("GET /api/graph", () => {
         { repo: "Roxabi/roxabi-live", archived: false },
         { repo: "Roxabi/roxabi-vault", archived: true },
       ]);
+    });
+  });
+
+  describe("SQL shape assertions", () => {
+    it("issues SELECT uses JSON_EXTRACT(payload,'$.title') AS title", async () => {
+      // Arrange
+      const { env, capturedSqls } = makeGraphEnvWithCapture([], [], [], []);
+      // Act
+      await app.request("/api/graph", {}, env);
+      // Assert — the issues query must project title via JSON_EXTRACT
+      const issuesSql = capturedSqls.find((s) => s.includes("FROM issues"));
+      expect(issuesSql).toContain("JSON_EXTRACT(payload,'$.title') AS title");
     });
   });
 });

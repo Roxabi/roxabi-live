@@ -6,8 +6,6 @@ export interface Env {
   DB: D1Database;
   /** Static-assets binding — serves the v6 frontend (wired in S7, #99). */
   ASSETS: Fetcher;
-  /** GitHub PAT for GraphQL sync (S3, #95). */
-  GITHUB_TOKEN: string;
   /** GitHub org to sync (e.g. "Roxabi"). */
   GITHUB_ORG: string;
   /** HMAC secret for webhook verification (S5, #97) — differs per env. */
@@ -32,4 +30,18 @@ export interface Env {
    * only guard). Set via `wrangler secret put ADMIN_TOKEN` to enable the gate.
    */
   ADMIN_TOKEN?: string;
+  // numeric App ID (App-JWT iss) — S3 consumes
+  GITHUB_APP_ID: string;
+  // OAuth client_id (login redirect)
+  GITHUB_APP_CLIENT_ID: string;
+  // OAuth client_secret (token exchange) — never logged
+  GITHUB_APP_CLIENT_SECRET: string;
+  // base64(PKCS#8 DER) of the App RSA key — importKey('pkcs8')
+  GITHUB_APP_PRIVATE_KEY: string;
+  // App webhook HMAC secret (distinct from org GITHUB_WEBHOOK_SECRET)
+  GITHUB_APP_WEBHOOK_SECRET: string;
+  // base64 32-byte AES-GCM DEK for install-token encryption at rest (S3a, #146).
+  // Consumed by auth/tokenCrypto + auth/installToken. Set via `wrangler secret put INSTALL_TOKEN_KEY`.
+  // Optional at type-level (provisioned at deploy-time via CI); runtime guard in auth/installToken.ts getInstallTokenKey().
+  INSTALL_TOKEN_KEY?: string;
 }

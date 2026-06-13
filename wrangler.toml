@@ -53,6 +53,7 @@ bucket_name = "roxabi-live-logs"
 
 [env.staging]
 name = "roxabi-live-staging"
+workers_dev = true
 # `routes` is inheritable — without this explicit empty override a staging
 # deploy would inherit the top-level live.roxabi.dev custom domain (#101) and
 # bind it to the staging Worker. Keep this even though staging has no routes.
@@ -73,6 +74,14 @@ enabled = true
 head_sampling_rate = 1
 
 # Named envs don't inherit top-level [[r2_buckets]] either — repeat for staging.
+# Separate bucket from prod to isolate staging/prod audit-log streams.
 [[env.staging.r2_buckets]]
 binding     = "LOGS"
-bucket_name = "roxabi-live-logs"
+bucket_name = "roxabi-live-logs-staging"
+
+# ── Dormant — activate when Workers Paid (Queues) is enabled ─────────────────
+# DORMANT — activate on Workers Paid + >30 repos (no consumer in Phase 1; uncommenting requires `wrangler queues create`)
+# [[queues.producers]]
+# binding = "SYNC_QUEUE"
+# queue   = "roxabi-live-sync"
+# dormant — activate with Queues (Workers Paid) for per-repo sync fan-out, see #146

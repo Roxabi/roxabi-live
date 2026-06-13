@@ -1,0 +1,46 @@
+---
+title: "feat(auth): GitHub App + OAuth login + sessions (Phase 1 S2)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 145
+status: approved
+tier: M
+amended: 2026-06-10
+---
+
+> **Pivot note (2026-06-10):** SameSite=Lax → **SameSite=Strict**. Added: suspended-tenant session
+> guard; PKCS#8 private-key conversion contract; vitest RS256 sign/verify CI guard.
+
+## Scope
+
+Slice **S2** of #141. Identity layer.
+
+- Register the single **GitHub App**; provision per-env secrets `GITHUB_APP_{ID,CLIENT_ID,CLIENT_SECRET,PRIVATE_KEY,WEBHOOK_SECRET}` (rotatable, never logged).
+- **`GITHUB_APP_PRIVATE_KEY` contract:** convert the PEM once:
+  `openssl pkcs8 -topk8 -nocrypt -in app.pem -outform DER | base64 -w0` → secret = `base64(PKCS#8 DER)`.
+  Worker: `atob(secret) → importKey('pkcs8', …, { name:'RSASSA-PKCS1-v1_5', hash:'SHA-256' }, false, ['sign'])`.
+  RS256 natively supported. Rotation: 2 active keys = zero-downtime; redeploy coupled; document in runbook.
+- **App-JWT (RS256) signer** util (`crypto.subtle` RSASSA-PKCS1-v1_5). **Pre-impl gate: RS256-in-workerd smoke-test** — if it fails, re-evaluate the App-JWT path. Add **vitest (workers pool) test** for RS256 sign/verify with a throwaway key as a permanent CI guard.
+- `GET /login` (redirect to GitHub authorize + single-use `state`) and `GET /oauth/callback` (verify+delete `state`, `code`→token with `client_secret`, upsert `users`, mint **fresh** session).
+- **`sessions`** writes (token **hashed at rest**, returned raw once, hash stored only); fail-closed session middleware (Hono, mirrors `checkAdminAuth`). Session SELECT includes NOT-suspended-tenant guard (see below).
+
+## Success Criteria
+
+- [ ] OAuth → fresh session; `GET /api/me` returns identity + installations; `POST /logout` deletes the session row (subsequent `/api/*` → 401).
+- [ ] `state` single-use (deleted on verify), TTL ≤ 10 min, `redirect_uri` Worker-hard-coded; replay rejected.
+- [ ] Session token freshly minted post-auth (no pre-auth value reused); `sessions.token_hash` = SHA-256 of token; raw token returned once only; cookie `HttpOnly; Secure; SameSite=Strict; Domain=<exact host>`.
+- [ ] Session SELECT includes suspended-tenant guard:
+  ```sql
+  WHERE s.token_hash=? AND s.expires_at>datetime('now') AND s.revoked_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id=s.tenant_id AND t.suspended_at IS NOT NULL)
+  ```
+- [ ] `GITHUB_APP_PRIVATE_KEY` secret = `base64(PKCS#8 DER)`; Worker imports via `importKey('pkcs8', …)`; PKCS#1 PEM never stored.
+- [ ] Vitest (workers pool) RS256 sign/verify test with throwaway key passes in CI.
+
+## Dependencies
+
+Blocked by **#144** (S1 — schema/auth tables).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx)

@@ -22,3 +22,9 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]
+      - id: worker-typecheck
+        name: worker typecheck (tsc)
+        entry: bash -c 'cd worker && npm run typecheck'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

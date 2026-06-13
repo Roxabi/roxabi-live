@@ -6,8 +6,11 @@ import { listIssuesRoute, getIssueRoute } from "./api/issues";
 import { adminSyncRoute } from "./api/admin";
 import { webhookRoute } from "./webhook/handlers";
 import { checkAdminAuth } from "./api/auth";
+import { loginRoute, callbackRoute } from "./auth/oauth";
+import { meRoute, logoutRoute } from "./api/me";
+import { requireSession, type AuthEnv } from "./auth/session";
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<AuthEnv>();
 
 // ── API routes — evaluated BEFORE the ASSETS fallback ───────────────────────
 // S1 scaffold wires /health + /api/version. S5 (#97) adds POST /webhook/github.
@@ -55,6 +58,15 @@ app.get("/health", async (c) => {
   }
   return c.json({ status: "ok", db_reachable: dbReachable, issue_count: issueCount });
 });
+
+// ── Auth routes (#145, S2) ───────────────────────────────────────────────────
+app.get("/login", loginRoute);
+app.get("/oauth/callback", callbackRoute);
+app.use("/api/me", requireSession);
+app.get("/api/me", meRoute);
+// /logout is intentionally ungated: logoutRoute is null-safe + idempotent, and SameSite=Strict
+// blocks cross-site cookie submission — gating it would make a stale/expired cookie impossible to clear.
+app.post("/logout", logoutRoute);
 
 // ── Static-assets fallback — last resort (frontend populated in S7, #99) ────
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));

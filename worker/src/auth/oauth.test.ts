@@ -1,0 +1,1118 @@
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { Hono } from "hono";
+import type { Env } from "../types";
+import { loginRoute, callbackRoute } from "./oauth";
+
+// ---------------------------------------------------------------------------
+// FakeD1 — cloned from src/webhook/mutations.test.ts
+// ---------------------------------------------------------------------------
+
+type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
+
+interface FakeStmt {
+  sql: string;
+  args: unknown[];
+  run: () => Promise<{ meta: { changes: number } }>;
+  first: <T = FakeResult>() => Promise<T | null>;
+  all: <T = FakeResult>() => Promise<{ results: T[] }>;
+}
+
+function makeFakeStmt(
+  sql: string,
+  args: unknown[],
+  rows: FakeResult[],
+  changes = 0,
+): FakeStmt {
+  return {
+    sql,
+    args,
+    run: vi.fn().mockResolvedValue({ meta: { changes } }),
+    first: vi.fn().mockResolvedValue(rows[0] ?? null),
+    all: vi.fn().mockResolvedValue({ results: rows }),
+  };
+}
+
+function makeFakeDb(
+  stmtFactory: (sql: string, args: unknown[]) => FakeStmt,
+): D1Database {
+  const recorded: FakeStmt[] = [];
+
+  const db = {
+    prepare(sql: string) {
+      let directStmt: FakeStmt | null = null;
+      const getDirectStmt = (): FakeStmt => {
+        if (!directStmt) {
+          directStmt = stmtFactory(sql, []);
+          recorded.push(directStmt);
+        }
+        return directStmt;
+      };
+
+      return {
+        first<T = FakeResult>(): Promise<T | null> {
+          return getDirectStmt().first<T>();
+        },
+        run(): Promise<{ meta: { changes: number } }> {
+          return getDirectStmt().run();
+        },
+        all<T = FakeResult>(): Promise<{ results: T[] }> {
+          return getDirectStmt().all<T>();
+        },
+        bind(...args: unknown[]) {
+          const stmt = stmtFactory(sql, args);
+          recorded.push(stmt);
+          return stmt;
+        },
+      };
+    },
+    batch: vi.fn(async (stmts: FakeStmt[]) => {
+      await Promise.all(stmts.map((s) => s.run()));
+      return stmts.map(() => ({ results: [], meta: { changes: 0 } }));
+    }),
+    _recorded: recorded,
+  } as unknown as D1Database & { _recorded: FakeStmt[] };
+
+  return db;
+}
+
+/** Capture all statements produced via bind() calls on the FakeDb. */
+function captureDb(): { db: D1Database; stmts: () => FakeStmt[] } {
+  const captured: FakeStmt[] = [];
+  const db = makeFakeDb((sql, args) => {
+    const stmt = makeFakeStmt(sql, args, [], 0);
+    captured.push(stmt);
+    return stmt;
+  });
+  return { db, stmts: () => captured };
+}
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+/** Minimal Env stub — only the fields needed for OAuth routes. */
+function makeEnv(db: D1Database): Env {
+  return {
+    DB: db,
+    ASSETS: {} as Fetcher,
+    GITHUB_ORG: "Roxabi",
+    GITHUB_WEBHOOK_SECRET: "webhook-secret",
+    GITHUB_APP_ID: "12345",
+    GITHUB_APP_CLIENT_ID: "Iv1.abc123",
+    GITHUB_APP_CLIENT_SECRET: "secret-xyz",
+    GITHUB_APP_PRIVATE_KEY: "base64privkey",
+    GITHUB_APP_WEBHOOK_SECRET: "app-webhook-secret",
+  } as unknown as Env;
+}
+
+/** Mount the login and callback routes on a throwaway Hono app. */
+function makeApp(db: D1Database) {
+  const app = new Hono<{ Bindings: Env }>();
+  app.get("/login", loginRoute);
+  app.get("/oauth/callback", callbackRoute);
+  const env = makeEnv(db);
+  return { app, env };
+}
+
+// ---------------------------------------------------------------------------
+// loginRoute
+// ---------------------------------------------------------------------------
+
+describe("loginRoute", () => {
+  describe("GET /login", () => {
+    it("returns 302 redirect", async () => {
+      // Arrange
+      const { db } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        "http://localhost/login",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      expect(res.status).toBe(302);
+    });
+
+    it("Location starts with https://github.com/login/oauth/authorize", async () => {
+      // Arrange
+      const { db } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        "http://localhost/login",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      const location = res.headers.get("Location") ?? "";
+      expect(location).toMatch(/^https:\/\/github\.com\/login\/oauth\/authorize/);
+    });
+
+    it("Location query includes client_id matching env", async () => {
+      // Arrange
+      const { db } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        "http://localhost/login",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      const location = res.headers.get("Location") ?? "";
+      const url = new URL(location);
+      expect(url.searchParams.get("client_id")).toBe("Iv1.abc123");
+    });
+
+    it("Location query includes state as 32 hex chars", async () => {
+      // Arrange
+      const { db } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        "http://localhost/login",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      const location = res.headers.get("Location") ?? "";
+      const url = new URL(location);
+      const state = url.searchParams.get("state") ?? "";
+      expect(state).toMatch(/^[0-9a-f]{32}$/);
+    });
+
+    it("Location redirect_uri ends with /oauth/callback derived from request origin", async () => {
+      // Arrange
+      const { db } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        "http://myapp.example.com/login",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      const location = res.headers.get("Location") ?? "";
+      const url = new URL(location);
+      const redirectUri = url.searchParams.get("redirect_uri") ?? "";
+      expect(redirectUri).toMatch(/\/oauth\/callback$/);
+      expect(redirectUri).toContain("myapp.example.com");
+    });
+
+    it("oauth_state INSERT SQL contains '+10 minutes' for expiry", async () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request("http://localhost/login", { method: "GET" }, env);
+
+      // Assert — state row has datetime('now', '+10 minutes')
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt!.sql).toContain("+10 minutes");
+    });
+
+    it("oauth_state INSERT binds [state, redirectAfter] in that order", async () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request("http://localhost/login", { method: "GET" }, env);
+
+      // Assert
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      // args[0] = state (32 hex), args[1] = redirectAfter
+      expect(insertStmt!.args[0]).toMatch(/^[0-9a-f]{32}$/);
+      expect(insertStmt!.args[1]).toBe("/"); // default when no ?redirect param
+    });
+
+    it("?redirect=/dash stores '/dash' as redirect_after", async () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        "http://localhost/login?redirect=/dash",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt!.args[1]).toBe("/dash");
+    });
+
+    it("?redirect=//evil stores '/' (open-redirect guard)", async () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        "http://localhost/login?redirect=//evil",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt!.args[1]).toBe("/");
+    });
+
+    it("?redirect=https://evil stores '/' (absolute URL guard)", async () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        "http://localhost/login?redirect=https://evil",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt!.args[1]).toBe("/");
+    });
+
+    it("?redirect=/\\evil stores '/' (backslash bypass guard)", async () => {
+      // Arrange — backslash-prefixed path; sanitizeRedirect regex (?![/\\]) rejects it
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        "http://localhost/login?redirect=/\\evil",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — deleting the /[/\\]/ check in sanitizeRedirect would let "/\evil" pass
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt!.args[1]).toBe("/");
+    });
+
+    it("?redirect=/ok\\r\\nX-Injected:x stores '/' (CRLF injection guard)", async () => {
+      // Arrange — CRLF chars smuggled in the redirect param; sanitizeRedirect rejects via /[\r\n\0]/
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act — encodeURIComponent so the URL parser doesn't strip the special chars
+      await app.request(
+        "http://localhost/login?redirect=" + encodeURIComponent("/ok\r\nX-Injected: x"),
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — deleting the /[\r\n\0]/ check in sanitizeRedirect would let the injection through
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt!.args[1]).toBe("/");
+    });
+
+    it("?redirect=/ok\\0null stores '/' (NUL injection guard)", async () => {
+      // Arrange — NUL byte smuggled in the redirect param; sanitizeRedirect rejects via /[\r\n\0]/
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act — encodeURIComponent so the URL parser doesn't strip the NUL byte
+      await app.request(
+        "http://localhost/login?redirect=" + encodeURIComponent("/ok\0null"),
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — deleting the /[\r\n\0]/ check in sanitizeRedirect would let the NUL through
+      const insertStmt = stmts().find((s) =>
+        s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt!.args[1]).toBe("/");
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// callbackRoute
+// ---------------------------------------------------------------------------
+
+describe("callbackRoute", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  describe("missing parameters", () => {
+    it("returns 400 when code is missing", async () => {
+      // Arrange
+      const { db } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        "http://localhost/oauth/callback?state=abc123",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when state is missing", async () => {
+      // Arrange
+      const { db } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        "http://localhost/oauth/callback?code=somecode",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when both code and state are missing", async () => {
+      // Arrange
+      const { db } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        "http://localhost/oauth/callback",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe("unknown or expired state", () => {
+    it("returns 400 when state lookup returns null (unknown state)", async () => {
+      // Arrange — FakeD1 first() returns null for oauth_state DELETE...RETURNING
+      const { db } = captureDb();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        "http://localhost/oauth/callback?code=code1&state=unknownstate000000000000000000",
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe("happy path — user has installations", () => {
+    function stubFetchSequence(
+      accessToken: string,
+      user: { id: number; login: string },
+      installations: Array<{ id: number; account: { login: string; type: string } }>,
+    ) {
+      let callCount = 0;
+      const mockFetch = vi.fn(async (url: string, _init?: RequestInit) => {
+        callCount++;
+        if (callCount === 1) {
+          // Token exchange
+          return new Response(
+            JSON.stringify({ access_token: accessToken }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        } else if (callCount === 2) {
+          // /user
+          return new Response(JSON.stringify(user), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        } else {
+          // /user/installations
+          return new Response(JSON.stringify({ installations }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      });
+      vi.stubGlobal("fetch", mockFetch);
+      return mockFetch;
+    }
+
+    /**
+     * Build a FakeD1 for happy-path callback tests.
+     * State consumption is now a DELETE...RETURNING (detected via "delete" + "oauth_state").
+     */
+    function makeHappyPathDb(captured: FakeStmt[], redirectAfter = "/"): D1Database {
+      let oauthDeleteCallCount = 0;
+      return makeFakeDb((sql, args) => {
+        const isOauthDelete =
+          sql.toLowerCase().includes("oauth_state") &&
+          sql.toLowerCase().includes("delete");
+        oauthDeleteCallCount += isOauthDelete ? 1 : 0;
+        const row =
+          isOauthDelete && oauthDeleteCallCount === 1
+            ? ({ redirect_after: redirectAfter } as FakeResult)
+            : null;
+
+        // For users RETURNING id, return a row with id
+        const isUsersInsert =
+          sql.toLowerCase().includes("users") &&
+          sql.toLowerCase().includes("returning");
+        const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
+
+        // For tenants RETURNING id
+        const isTenantsInsert =
+          sql.toLowerCase().includes("tenants") &&
+          sql.toLowerCase().includes("returning");
+        const tenantsRow = isTenantsInsert ? ({ id: 10 } as FakeResult) : null;
+
+        const rows = isOauthDelete
+          ? (row ? [row] : [])
+          : isUsersInsert
+            ? (usersRow ? [usersRow] : [])
+            : isTenantsInsert
+              ? (tenantsRow ? [tenantsRow] : [])
+              : [];
+
+        const stmt = makeFakeStmt(sql, args, rows, 0);
+        if (isOauthDelete) {
+          (stmt as { first: <T>() => Promise<T | null> }).first = vi
+            .fn()
+            .mockResolvedValue(row);
+        } else if (isUsersInsert) {
+          (stmt as { first: <T>() => Promise<T | null> }).first = vi
+            .fn()
+            .mockResolvedValue(usersRow);
+        } else if (isTenantsInsert) {
+          (stmt as { first: <T>() => Promise<T | null> }).first = vi
+            .fn()
+            .mockResolvedValue(tenantsRow);
+        }
+        captured.push(stmt);
+        return stmt;
+      });
+    }
+
+    it("uses atomic DELETE...RETURNING to consume state (closes TOCTOU)", async () => {
+      // Arrange
+      const stateValue = "a".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
+
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — a DELETE FROM oauth_state statement was issued (the atomic consume)
+      const deleteStmt = captured.find(
+        (s) =>
+          s.sql.toLowerCase().includes("delete") &&
+          s.sql.toLowerCase().includes("oauth_state"),
+      );
+      expect(deleteStmt).toBeDefined();
+      // It must also have RETURNING (atomic, not a separate DELETE)
+      expect(deleteStmt!.sql.toUpperCase()).toContain("RETURNING");
+    });
+
+    it("issues users upsert with ON CONFLICT(github_id)", async () => {
+      // Arrange
+      const stateValue = "b".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
+
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      const usersStmt = captured.find(
+        (s) =>
+          s.sql.toLowerCase().includes("users") &&
+          s.sql.toUpperCase().includes("ON CONFLICT(github_id)".toUpperCase()),
+      );
+      expect(usersStmt).toBeDefined();
+      expect(usersStmt!.sql).toContain("ON CONFLICT(github_id)");
+    });
+
+    it("issues tenants upsert with ON CONFLICT(installation_id)", async () => {
+      // Arrange
+      const stateValue = "c".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
+
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      const tenantsStmt = captured.find(
+        (s) =>
+          s.sql.toLowerCase().includes("tenants") &&
+          s.sql.toUpperCase().includes("ON CONFLICT(installation_id)".toUpperCase()),
+      );
+      expect(tenantsStmt).toBeDefined();
+      expect(tenantsStmt!.sql).toContain("ON CONFLICT(installation_id)");
+    });
+
+    it("issues user_installations INSERT", async () => {
+      // Arrange
+      const stateValue = "d".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
+
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      const uiStmt = captured.find((s) =>
+        s.sql.toLowerCase().includes("user_installations"),
+      );
+      expect(uiStmt).toBeDefined();
+    });
+
+    it("returns 302 with Set-Cookie __Host-session containing HttpOnly Secure SameSite=Strict Path=/ and NO Domain", async () => {
+      // Arrange
+      const stateValue = "e".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
+
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      expect(res.status).toBe(302);
+      const cookie = res.headers.get("Set-Cookie") ?? "";
+      expect(cookie).toContain("__Host-session=");
+      expect(cookie).toContain("HttpOnly");
+      expect(cookie).toContain("Secure");
+      expect(cookie).toContain("SameSite=Strict");
+      expect(cookie).toContain("Path=/");
+      expect(cookie).not.toContain("Domain");
+    });
+
+    it("redirects to redirect_after from state row when it is '/dashboard'", async () => {
+      // Arrange — state row returns redirect_after: "/dashboard"
+      const stateValue = "f".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured, "/dashboard");
+
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — Location must reflect the stored redirect_after, not the hardcoded "/"
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/dashboard");
+      const cookie = res.headers.get("Set-Cookie") ?? "";
+      expect(cookie).toContain("__Host-session=");
+    });
+  });
+
+  describe("replay attack — behavioral single-use enforcement", () => {
+    it("first request mints session (302 + Set-Cookie); second with same state returns 400", async () => {
+      // Arrange — FakeD1 whose state-consume DELETE...RETURNING returns a row
+      // on the first call and null on the second (simulating row deleted by first request).
+      const stateValue = "aaaa0000bbbb1111cccc2222dddd3333";
+      const atomicDeleteSql =
+        `DELETE FROM oauth_state WHERE state = ? AND expires_at > datetime('now') RETURNING redirect_after`;
+
+      let atomicDeleteCallCount = 0;
+
+      const captured: FakeStmt[] = [];
+      const db = makeFakeDb((sql, args) => {
+        const isAtomicDelete = sql.trim() === atomicDeleteSql.trim() ||
+          (sql.toLowerCase().includes("delete") &&
+            sql.toLowerCase().includes("oauth_state") &&
+            sql.toLowerCase().includes("returning"));
+
+        const isUsersInsert =
+          sql.toLowerCase().includes("users") &&
+          sql.toLowerCase().includes("returning");
+        const isTenantsInsert =
+          sql.toLowerCase().includes("tenants") &&
+          sql.toLowerCase().includes("returning");
+
+        let row: FakeResult | null = null;
+        if (isAtomicDelete) {
+          atomicDeleteCallCount++;
+          row = atomicDeleteCallCount === 1
+            ? ({ redirect_after: "/" } as FakeResult)
+            : null;
+        } else if (isUsersInsert) {
+          row = { id: 1 } as FakeResult;
+        } else if (isTenantsInsert) {
+          row = { id: 10 } as FakeResult;
+        }
+
+        const stmt = makeFakeStmt(sql, args, row !== null ? [row] : [], 0);
+        (stmt as { first: <T>() => Promise<T | null> }).first = vi
+          .fn()
+          .mockResolvedValue(row);
+        captured.push(stmt);
+        return stmt;
+      });
+
+      // Stub fetch so both calls hit GitHub APIs successfully
+      let fetchCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (_url: string) => {
+          fetchCallCount++;
+          // Cycle through token → user → installations for each OAuth callback
+          const pos = ((fetchCallCount - 1) % 3) + 1;
+          if (pos === 1) {
+            return new Response(
+              JSON.stringify({ access_token: "tok-abc" }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          } else if (pos === 2) {
+            return new Response(
+              JSON.stringify({ id: 42, login: "alice" }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          } else {
+            return new Response(
+              JSON.stringify({ installations: [{ id: 9, account: { login: "Roxabi", type: "Organization" } }] }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+        }),
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act — first call
+      const res1 = await app.request(
+        `http://localhost/oauth/callback?code=code1&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Act — second call with the same state (simulates replay)
+      const res2 = await app.request(
+        `http://localhost/oauth/callback?code=code2&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — first request succeeds with session cookie
+      expect(res1.status).toBe(302);
+      expect(res1.headers.get("Set-Cookie")).toContain("__Host-session=");
+
+      // Assert — second request fails (state row gone after first consume)
+      expect(res2.status).toBe(400);
+    });
+  });
+
+  describe("F1 — GitHub token / API error handling", () => {
+    /**
+     * Build a FakeD1 that successfully returns a state row (for state consume)
+     * but returns null for all other first() calls (sessions, etc.).
+     */
+    function makeStateOnlyDb(): { db: D1Database; stmts: () => FakeStmt[] } {
+      const captured: FakeStmt[] = [];
+      let oauthDeleteCallCount = 0;
+      const db = makeFakeDb((sql, args) => {
+        const isOauthDelete =
+          sql.toLowerCase().includes("oauth_state") &&
+          sql.toLowerCase().includes("delete");
+        oauthDeleteCallCount += isOauthDelete ? 1 : 0;
+        const row =
+          isOauthDelete && oauthDeleteCallCount === 1
+            ? ({ redirect_after: "/" } as FakeResult)
+            : null;
+
+        const stmt = makeFakeStmt(sql, args, row !== null ? [row] : [], 0);
+        (stmt as { first: <T>() => Promise<T | null> }).first = vi
+          .fn()
+          .mockResolvedValue(row);
+        captured.push(stmt);
+        return stmt;
+      });
+      return { db, stmts: () => captured };
+    }
+
+    it("returns 400 when token endpoint returns {error} with no access_token", async () => {
+      // Arrange — GitHub returns HTTP 200 with error body (standard OAuth error shape)
+      const { db, stmts } = makeStateOnlyDb();
+      const stateValue = "e".repeat(32);
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          new Response(
+            JSON.stringify({ error: "bad_verification_code" }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=badcode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      expect(res.status).toBe(400);
+
+      // No INSERT INTO sessions should have been executed
+      const sessionsInsert = stmts().find(
+        (s) =>
+          s.sql.toLowerCase().includes("sessions") &&
+          s.sql.toLowerCase().includes("insert"),
+      );
+      expect(sessionsInsert).toBeUndefined();
+    });
+
+    it("returns 502 when /user fetch returns non-ok status", async () => {
+      // Arrange — token exchange succeeds but /user returns 401
+      const { db } = makeStateOnlyDb();
+      const stateValue = "f".repeat(32);
+
+      let fetchCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          fetchCallCount++;
+          if (fetchCallCount === 1) {
+            // Token exchange succeeds
+            return new Response(
+              JSON.stringify({ access_token: "tok-xyz" }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          // /user returns 401
+          return new Response("Unauthorized", { status: 401 });
+        }),
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=goodcode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      expect(res.status).toBe(502);
+    });
+
+    it("returns 502 when /user/installations fetch returns non-ok status", async () => {
+      // Arrange — token exchange + /user succeed but /user/installations returns 500
+      const { db } = makeStateOnlyDb();
+      const stateValue = "a".repeat(32);
+
+      let fetchCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          fetchCallCount++;
+          if (fetchCallCount === 1) {
+            // Token exchange succeeds
+            return new Response(
+              JSON.stringify({ access_token: "tok-abc" }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          } else if (fetchCallCount === 2) {
+            // /user succeeds
+            return new Response(
+              JSON.stringify({ id: 1, login: "alice" }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          // /user/installations returns 500
+          return new Response("Internal Server Error", { status: 500 });
+        }),
+      );
+
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=goodcode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — deleting the if (!installRes.ok) guard would let the route parse a 500 body
+      expect(res.status).toBe(502);
+    });
+  });
+
+  describe("zero installations", () => {
+    /**
+     * Build a FakeD1 for zero-installation tests.
+     * Tracks whether INSERT INTO users was ever called.
+     */
+    function makeZeroInstallDb(captured: FakeStmt[]): D1Database {
+      let oauthDeleteCallCount = 0;
+      return makeFakeDb((sql, args) => {
+        const isOauthDelete =
+          sql.toLowerCase().includes("oauth_state") &&
+          sql.toLowerCase().includes("delete");
+        oauthDeleteCallCount += isOauthDelete ? 1 : 0;
+        const row =
+          isOauthDelete && oauthDeleteCallCount === 1
+            ? ({ redirect_after: "/" } as FakeResult)
+            : null;
+        const isUsersInsert =
+          sql.toLowerCase().includes("users") &&
+          sql.toLowerCase().includes("returning");
+        const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
+
+        const stmt = makeFakeStmt(sql, args, [], 0);
+        if (isOauthDelete) {
+          (stmt as { first: <T>() => Promise<T | null> }).first = vi
+            .fn()
+            .mockResolvedValue(row);
+        } else if (isUsersInsert) {
+          (stmt as { first: <T>() => Promise<T | null> }).first = vi
+            .fn()
+            .mockResolvedValue(usersRow);
+        }
+        captured.push(stmt);
+        return stmt;
+      });
+    }
+
+    function stubZeroInstallFetch() {
+      let fetchCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (_url: string) => {
+          fetchCallCount++;
+          if (fetchCallCount === 1) {
+            return new Response(
+              JSON.stringify({ access_token: "tok" }),
+              {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          } else if (fetchCallCount === 2) {
+            return new Response(
+              JSON.stringify({ id: 42, login: "alice" }),
+              {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          } else {
+            return new Response(
+              JSON.stringify({ installations: [] }),
+              {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
+        }),
+      );
+    }
+
+    it("returns 302 to GitHub app install page when installations is empty", async () => {
+      // Arrange
+      const stateValue = "f".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeZeroInstallDb(captured);
+      stubZeroInstallFetch();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert
+      expect(res.status).toBe(302);
+      const location = res.headers.get("Location") ?? "";
+      expect(location).toContain("github.com/apps/");
+      expect(location).toContain("installations/new");
+    });
+
+    it("does NOT set a session cookie when installations is empty", async () => {
+      // Arrange
+      const stateValue = "0".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeZeroInstallDb(captured);
+      stubZeroInstallFetch();
+      const { app, env } = makeApp(db);
+
+      // Act
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — no Set-Cookie header when no installations
+      expect(res.headers.get("Set-Cookie")).toBeNull();
+    });
+
+    it("does NOT insert a session row when installations is empty", async () => {
+      // Arrange
+      const stateValue = "1".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeZeroInstallDb(captured);
+      stubZeroInstallFetch();
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — no INSERT INTO sessions statement
+      const sessionsInsert = captured.find(
+        (s) =>
+          s.sql.toLowerCase().includes("sessions") &&
+          s.sql.toLowerCase().includes("insert"),
+      );
+      expect(sessionsInsert).toBeUndefined();
+    });
+
+    it("F4 — does NOT insert a user row when installations is empty (no ghost users)", async () => {
+      // Arrange — F4: user upsert must happen AFTER the install check, so zero
+      // installations must never produce an INSERT INTO users.
+      const stateValue = "2".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeZeroInstallDb(captured);
+      stubZeroInstallFetch();
+      const { app, env } = makeApp(db);
+
+      // Act
+      await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+
+      // Assert — no INSERT INTO users statement was executed
+      const usersInsert = captured.find(
+        (s) =>
+          s.sql.toLowerCase().includes("insert") &&
+          s.sql.toLowerCase().includes("users"),
+      );
+      expect(usersInsert).toBeUndefined();
+    });
+  });
+});

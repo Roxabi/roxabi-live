@@ -11,34 +11,37 @@
 
 import { ghGraphql, GraphQLError } from "./graphql";
 import {
-  ARCHIVED_REPOS_QUERY,
   ISSUES_QUERY,
   PRS_QUERY,
   REFS_QUERY,
   REPO_BUNDLE_QUERY,
-  REPOS_QUERY,
   STUB_ISSUE_QUERY,
 } from "./queries";
 import type { Env } from "../types";
+import { getInstallationToken, listInstallationRepos } from "../auth/installToken";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 export const MAX_PAGES = 500;
+/** Repos synced per slot per tick. Coverage ceiling: WINDOW * NUM_SLOTS = 60 repos. */
+export const WINDOW = 20;
+/** Number of rotation slots. Coverage ceiling: WINDOW * NUM_SLOTS = 60 repos. */
+export const NUM_SLOTS = 3;
 
 /** Verbatim port of sync.py UPSERT_ISSUE_SQL — full sync path (sets status=null). */
 export const UPSERT_ISSUE_SQL = `
   INSERT INTO issues
-      (key, repo, number, title, state, url, created_at, updated_at,
+      (key, repo, number, payload, state, url, created_at, updated_at,
        closed_at, milestone, is_stub, lane, priority, size, status,
        has_active_branch)
   VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (?, ?, ?, json_object('title', ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(key) DO UPDATE SET
       repo              = excluded.repo,
       number            = excluded.number,
-      title             = excluded.title,
+      payload           = excluded.payload,
       state             = excluded.state,
       url               = excluded.url,
       created_at        = excluded.created_at,
@@ -210,157 +213,68 @@ export async function batchChunked(
 // sync_control helpers
 // ---------------------------------------------------------------------------
 
-export async function acquireSyncLock(db: D1Database): Promise<boolean> {
+export async function acquireSyncLock(db: D1Database, tenantId: number = 0): Promise<boolean> {
   const result = await db
     .prepare(
       `UPDATE sync_control
        SET value = '1', updated_at = ?
        WHERE key = 'sync_running'
+         AND tenant_id = ?
          AND (value = '0' OR (CAST(strftime('%s','now') AS INTEGER) - CAST(strftime('%s', updated_at) AS INTEGER)) > 900)`,
     )
-    .bind(new Date().toISOString())
+    .bind(new Date().toISOString(), tenantId)
     .run();
   return result.meta.changes > 0;
 }
 
-export async function releaseSyncLock(db: D1Database): Promise<void> {
+export async function releaseSyncLock(db: D1Database, tenantId: number = 0): Promise<void> {
   await db
-    .prepare(`UPDATE sync_control SET value='0', updated_at=? WHERE key='sync_running'`)
-    .bind(new Date().toISOString())
+    .prepare(`UPDATE sync_control SET value='0', updated_at=? WHERE key='sync_running' AND tenant_id = ?`)
+    .bind(new Date().toISOString(), tenantId)
     .run();
 }
 
-export async function isHalted(db: D1Database): Promise<boolean> {
+export async function isHalted(db: D1Database, tenantId: number = 0): Promise<boolean> {
   const row = await db
-    .prepare(`SELECT value FROM sync_control WHERE key='halted'`)
+    .prepare(`SELECT value FROM sync_control WHERE key='halted' AND tenant_id = ?`)
+    .bind(tenantId)
     .first<{ value: string }>();
   return row?.value === "1";
 }
 
-export async function getAuthFailures(db: D1Database): Promise<number> {
+export async function getAuthFailures(db: D1Database, tenantId: number = 0): Promise<number> {
   const row = await db
-    .prepare(`SELECT value FROM sync_control WHERE key='auth_failures'`)
+    .prepare(`SELECT value FROM sync_control WHERE key='auth_failures' AND tenant_id = ?`)
+    .bind(tenantId)
     .first<{ value: string }>();
   return parseInt(row?.value ?? "0", 10);
 }
 
-export async function incrementAuthFailures(db: D1Database): Promise<number> {
+export async function incrementAuthFailures(db: D1Database, tenantId: number = 0): Promise<number> {
   await db
     .prepare(
       `UPDATE sync_control SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT), updated_at=?
-       WHERE key='auth_failures'`,
+       WHERE key='auth_failures' AND tenant_id = ?`,
     )
-    .bind(new Date().toISOString())
+    .bind(new Date().toISOString(), tenantId)
     .run();
-  return getAuthFailures(db);
+  return getAuthFailures(db, tenantId);
 }
 
-export async function haltSync(db: D1Database): Promise<void> {
+export async function haltSync(db: D1Database, tenantId: number = 0): Promise<void> {
   await db
-    .prepare(`UPDATE sync_control SET value='1', updated_at=? WHERE key='halted'`)
-    .bind(new Date().toISOString())
+    .prepare(`UPDATE sync_control SET value='1', updated_at=? WHERE key='halted' AND tenant_id = ?`)
+    .bind(new Date().toISOString(), tenantId)
     .run();
 }
 
-export async function resetAuthFailures(db: D1Database): Promise<void> {
+export async function resetAuthFailures(db: D1Database, tenantId: number = 0): Promise<void> {
   await db
     .prepare(
-      `UPDATE sync_control SET value='0', updated_at=? WHERE key='auth_failures'`,
+      `UPDATE sync_control SET value='0', updated_at=? WHERE key='auth_failures' AND tenant_id = ?`,
     )
-    .bind(new Date().toISOString())
+    .bind(new Date().toISOString(), tenantId)
     .run();
-}
-
-// ---------------------------------------------------------------------------
-// Repo allowlist
-// ---------------------------------------------------------------------------
-
-export async function getRepoAllowlist(db: D1Database): Promise<string[]> {
-  const result = await db.prepare(`SELECT repo FROM repo_allowlist`).all<{ repo: string }>();
-  return (result.results ?? []).map((r) => r.repo);
-}
-
-// ---------------------------------------------------------------------------
-// Org repo enumeration
-// ---------------------------------------------------------------------------
-
-interface RepoNode {
-  name: string;
-  owner: { login: string };
-  isArchived: boolean;
-  isPrivate: boolean;
-}
-interface ReposData {
-  organization: {
-    repositories: {
-      pageInfo: { hasNextPage: boolean; endCursor: string | null };
-      nodes: RepoNode[];
-    };
-  };
-  rateLimit: { cost: number; remaining: number; resetAt: string };
-}
-
-export async function enumerateOrgRepos(
-  org: string,
-  token: string,
-): Promise<Array<{ owner: string; name: string }>> {
-  const repos: Array<{ owner: string; name: string }> = [];
-  let cursor: string | null = null;
-
-  while (true) {
-    const response: { data: ReposData } & Record<string, unknown> = await ghGraphql<ReposData>(REPOS_QUERY, { org, cursor }, token);
-    const data: ReposData = response.data;
-    const rl = data.rateLimit;
-    console.log(`[sync] repos cost=${rl.cost} remaining=${rl.remaining}`);
-
-    for (const node of data.organization.repositories.nodes) {
-      repos.push({ owner: node.owner.login, name: node.name });
-    }
-
-    const pageInfo: { hasNextPage: boolean; endCursor: string | null } = data.organization.repositories.pageInfo;
-    if (!pageInfo.hasNextPage) break;
-    cursor = pageInfo.endCursor;
-    if (!cursor) break;
-  }
-
-  return repos;
-}
-
-interface ArchivedReposData {
-  organization: {
-    repositories: {
-      pageInfo: { hasNextPage: boolean; endCursor: string | null };
-      nodes: Array<{ nameWithOwner: string }>;
-    };
-  };
-  rateLimit: { cost: number; remaining: number; resetAt: string };
-}
-
-export async function enumerateArchivedOrgRepos(
-  org: string,
-  token: string,
-): Promise<string[]> {
-  const repos: string[] = [];
-  let cursor: string | null = null;
-
-  while (true) {
-    const response: { data: ArchivedReposData } & Record<string, unknown> =
-      await ghGraphql<ArchivedReposData>(ARCHIVED_REPOS_QUERY, { org, cursor }, token);
-    const data: ArchivedReposData = response.data;
-    const rl = data.rateLimit;
-    console.log(`[sync] archived-repos cost=${rl.cost} remaining=${rl.remaining}`);
-
-    for (const node of data.organization.repositories.nodes) {
-      repos.push(node.nameWithOwner);
-    }
-
-    const pageInfo = data.organization.repositories.pageInfo;
-    if (!pageInfo.hasNextPage) break;
-    cursor = pageInfo.endCursor;
-    if (!cursor) break;
-  }
-
-  return repos;
 }
 
 // ---------------------------------------------------------------------------
@@ -982,7 +896,10 @@ interface StubIssueData {
  * Find edge endpoints missing from issues, stub-fetch them.
  * Catches ANY GraphQLError → log as orphan + continue (matches Python behaviour).
  */
-export async function closedHopPass(db: D1Database, token: string): Promise<number> {
+export async function closedHopPass(
+  db: D1Database,
+  resolveToken: (owner: string, name: string) => Promise<string>,
+): Promise<number> {
   const missingRows = await db
     .prepare(
       `SELECT DISTINCT k FROM (
@@ -1007,6 +924,14 @@ export async function closedHopPass(db: D1Database, token: string): Promise<numb
     if (slashIdx < 0) continue;
     const owner = ownerRepo.slice(0, slashIdx);
     const name = ownerRepo.slice(slashIdx + 1);
+
+    let token: string;
+    try {
+      token = await resolveToken(owner, name);
+    } catch {
+      console.log(`[sync] no token for closed-hop ${key}`);
+      continue;
+    }
 
     let response: { data: StubIssueData } & Record<string, unknown>;
     try {
@@ -1093,7 +1018,7 @@ export async function writeRunAudit(
         .first<{ w: string | null }>(),
       db
         .prepare(
-          "SELECT key, value FROM sync_control WHERE key IN ('halted','auth_failures')",
+          "SELECT key, value FROM sync_control WHERE key IN ('halted','auth_failures') AND tenant_id = 0",
         )
         .all<{ key: string; value: string }>(),
     ]);
@@ -1123,6 +1048,120 @@ export async function writeRunAudit(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 1 — per-tenant discovery
+// ---------------------------------------------------------------------------
+
+/**
+ * Discover repos accessible to each installed tenant and build the global
+ * dedup map used by Phase 2 fan-out.
+ *
+ * For each tenant with an installation_id:
+ *   1. Seed sync_control rows (INSERT OR IGNORE) so acquireSyncLock can UPDATE.
+ *   2. Attempt acquireSyncLock(db, tenantId) as a within-tick skip-guard.
+ *   3. Under try/finally call getInstallationToken → listInstallationRepos.
+ *   4. Upsert tenant_repo_access; delete stale rows.
+ *   5. Accumulate Map<repo, Array<{tenantId, installationId}>> sorted by tenantId
+ *      (lowest = owning; used for token fallback in Phase 2).
+ */
+export async function discoverTenants(
+  db: D1Database,
+  env: Env,
+): Promise<Map<string, Array<{ tenantId: number; installationId: number }>>> {
+  const repoMap = new Map<string, Array<{ tenantId: number; installationId: number }>>();
+
+  const tenantRows = await db
+    .prepare(`SELECT id, installation_id FROM tenants WHERE installation_id IS NOT NULL ORDER BY id ASC`)
+    .all<{ id: number; installation_id: number }>();
+
+  for (const tenant of tenantRows.results ?? []) {
+    const tenantId = tenant.id;
+    const installationId = tenant.installation_id;
+
+    // Seed sync_control rows so acquireSyncLock UPDATE has a row to match.
+    const seedStmts: D1PreparedStatement[] = [
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO sync_control (tenant_id, key, value, updated_at) VALUES (?, 'sync_running', '0', ?)`,
+        )
+        .bind(tenantId, new Date().toISOString()),
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO sync_control (tenant_id, key, value, updated_at) VALUES (?, 'auth_failures', '0', ?)`,
+        )
+        .bind(tenantId, new Date().toISOString()),
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO sync_control (tenant_id, key, value, updated_at) VALUES (?, 'halted', '0', ?)`,
+        )
+        .bind(tenantId, new Date().toISOString()),
+    ];
+    await batchChunked(db, seedStmts);
+
+    const got = await acquireSyncLock(db, tenantId);
+    if (!got) {
+      console.log(`[sync] tenant ${tenantId} lock held — skipping discovery`);
+      continue;
+    }
+
+    try {
+      let repos: string[];
+      try {
+        const token = await getInstallationToken(db, env, tenantId, installationId);
+        repos = await listInstallationRepos(token);
+      } catch (err) {
+        console.error(`[sync] tenant ${tenantId} discovery failed:`, err);
+        await incrementAuthFailures(db, tenantId);
+        continue;
+      }
+
+      // Upsert accessible repos into tenant_repo_access.
+      if (repos.length > 0) {
+        const upsertStmts = repos.map((repo) =>
+          db
+            .prepare(
+              `INSERT OR IGNORE INTO tenant_repo_access (tenant_id, repo) VALUES (?, ?)`,
+            )
+            .bind(tenantId, repo),
+        );
+        await batchChunked(db, upsertStmts);
+      }
+
+      // Delete stale rows: repos no longer returned by the installation.
+      const repoSet = new Set(repos);
+      const existing = await db
+        .prepare(`SELECT repo FROM tenant_repo_access WHERE tenant_id = ?`)
+        .bind(tenantId)
+        .all<{ repo: string }>();
+      const stale = (existing.results ?? []).map((r) => r.repo).filter((r) => !repoSet.has(r));
+      if (stale.length > 0) {
+        const deleteStmts = stale.map((repo) =>
+          db
+            .prepare(`DELETE FROM tenant_repo_access WHERE tenant_id = ? AND repo = ?`)
+            .bind(tenantId, repo),
+        );
+        await batchChunked(db, deleteStmts);
+        console.log(`[sync] tenant ${tenantId} removed ${stale.length} stale repo(s)`);
+      }
+
+      // Merge into global map (sorted ascending by tenantId — maintained by ORDER BY above).
+      for (const repo of repos) {
+        const entry = repoMap.get(repo);
+        if (entry) {
+          entry.push({ tenantId, installationId });
+        } else {
+          repoMap.set(repo, [{ tenantId, installationId }]);
+        }
+      }
+      console.log(`[sync] tenant ${tenantId} discovered ${repos.length} repo(s)`);
+    } finally {
+      await releaseSyncLock(db, tenantId);
+    }
+  }
+
+  return repoMap;
+}
+
 export async function runSync(env: Env): Promise<void> {
   const db = env.DB;
 
@@ -1145,159 +1184,177 @@ export async function runSync(env: Env): Promise<void> {
     const startedAt = new Date().toISOString();
     await db
       .prepare(
-        `UPDATE sync_control SET value=?, updated_at=? WHERE key='sync_started_at'`,
+        `UPDATE sync_control SET value=?, updated_at=? WHERE key='sync_started_at' AND tenant_id = 0`,
       )
       .bind(startedAt, startedAt)
       .run();
 
-    const allowlist = await getRepoAllowlist(db);
-    if (allowlist.length === 0) {
-      console.warn("[sync] repo_allowlist empty — nothing to sync");
+    // Phase 1 — per-tenant discovery: build Map<repo, [{tenantId,installationId}]>.
+    const repoTenantMap = await discoverTenants(db, env);
+
+    // Union of all repos accessible across all tenants.
+    const allRepos = [...repoTenantMap.keys()].sort();
+
+    if (allRepos.length === 0) {
+      console.warn("[sync] no repos discovered across all installations — nothing to sync");
       outcome = "empty";
       return;
     }
 
-    const orgRepos = await enumerateOrgRepos(env.GITHUB_ORG, env.GITHUB_TOKEN);
-    const active = orgRepos.filter((r) => allowlist.includes(`${r.owner}/${r.name}`));
+    if (allRepos.length > WINDOW * NUM_SLOTS)
+      console.warn(`[sync] ${allRepos.length} repos exceed window capacity ${WINDOW * NUM_SLOTS} — repos beyond index ${WINDOW * NUM_SLOTS} are not synced this cycle`);
 
-    // Enumerate archived repos for tracking + prune safety.
-    const archivedRepoNames = await enumerateArchivedOrgRepos(
-      env.GITHUB_ORG,
-      env.GITHUB_TOKEN,
+    // Upsert repos table from the union.
+    const repoUpsertStmts = allRepos.map((repo) =>
+      db
+        .prepare(
+          `INSERT INTO repos (repo, archived) VALUES (?, 0) ON CONFLICT(repo) DO UPDATE SET archived=excluded.archived`,
+        )
+        .bind(repo),
     );
-    const liveRepoNames = orgRepos.map((r) => `${r.owner}/${r.name}`);
+    await batchChunked(db, repoUpsertStmts);
+    console.log(`[sync] upserted ${allRepos.length} repo(s) from tenant discovery`);
 
-    // SAFETY GUARD: if live enumeration returned 0 repos (transient API error),
-    // skip all prune logic to prevent wiping the entire DB. This is NOT a halt —
-    // sync continues with the (empty) active set, which means no issues are synced
-    // this run, but existing DB rows are preserved.
-    if (liveRepoNames.length === 0) {
-      console.warn("[sync] live repo enumeration returned 0 repos — skipping prune");
-    } else {
-      // Upsert repos table: live repos with archived=0, archived repos with archived=1.
-      const repoUpsertStmts: D1PreparedStatement[] = [
-        ...liveRepoNames.map((repo) =>
+    // Prune: delete data for repos absent from the union.
+    // SAFETY GUARD: skip prune if union is empty (already handled above, but be explicit).
+    const knownRepos = new Set(allRepos);
+    const CHUNK = 90;
+
+    const [issueRepos, edgeSrcRepos, edgeDstRepos, prStateRepos, syncStateRepos] =
+      await Promise.all([
+        db.prepare("SELECT DISTINCT repo FROM issues").all<{ repo: string }>(),
+        db.prepare("SELECT DISTINCT substr(src_key, 1, instr(src_key,'#')-1) AS repo FROM edges").all<{ repo: string }>(),
+        db.prepare("SELECT DISTINCT substr(dst_key, 1, instr(dst_key,'#')-1) AS repo FROM edges").all<{ repo: string }>(),
+        db.prepare("SELECT DISTINCT repo FROM pr_state").all<{ repo: string }>(),
+        db.prepare("SELECT repo FROM sync_state").all<{ repo: string }>(),
+      ]);
+
+    const staleIssueRepos = (issueRepos.results ?? []).map((r) => r.repo).filter((r) => !knownRepos.has(r));
+    const staleEdgeRepos = [
+      ...(edgeSrcRepos.results ?? []).map((r) => r.repo),
+      ...(edgeDstRepos.results ?? []).map((r) => r.repo),
+    ].filter((r) => !knownRepos.has(r));
+    const stalePrStateRepos = (prStateRepos.results ?? []).map((r) => r.repo).filter((r) => !knownRepos.has(r));
+    const staleSyncStateRepos = (syncStateRepos.results ?? []).map((r) => r.repo).filter((r) => !knownRepos.has(r));
+
+    const pruneStmts: D1PreparedStatement[] = [];
+    for (let i = 0; i < staleIssueRepos.length; i += CHUNK) {
+      for (const repo of staleIssueRepos.slice(i, i + CHUNK)) {
+        pruneStmts.push(db.prepare("DELETE FROM issues WHERE repo=?").bind(repo));
+      }
+    }
+    const staleEdgeReposUniq = [...new Set(staleEdgeRepos)];
+    for (let i = 0; i < staleEdgeReposUniq.length; i += CHUNK) {
+      for (const repo of staleEdgeReposUniq.slice(i, i + CHUNK)) {
+        pruneStmts.push(
           db
             .prepare(
-              "INSERT INTO repos (repo, archived) VALUES (?, 0) ON CONFLICT(repo) DO UPDATE SET archived=excluded.archived",
+              "DELETE FROM edges WHERE substr(src_key,1,instr(src_key,'#')-1)=? OR substr(dst_key,1,instr(dst_key,'#')-1)=?",
             )
-            .bind(repo),
-        ),
-        ...archivedRepoNames.map((repo) =>
-          db
-            .prepare(
-              "INSERT INTO repos (repo, archived) VALUES (?, 1) ON CONFLICT(repo) DO UPDATE SET archived=excluded.archived",
-            )
-            .bind(repo),
-        ),
-      ];
-      if (repoUpsertStmts.length > 0) {
-        await batchChunked(db, repoUpsertStmts);
-        console.log(
-          `[sync] upserted ${liveRepoNames.length} live + ${archivedRepoNames.length} archived repo(s)`,
+            .bind(repo, repo),
         );
       }
-
-      // Full prune: delete issues (+ cascaded labels), edges, pr_state, sync_state
-      // for repos absent from live ∪ archived. Chunk at ≤90 to stay under D1 limits.
-      const knownRepos = new Set([...liveRepoNames, ...archivedRepoNames]);
-      const CHUNK = 90;
-
-      // Collect all repos currently in DB tables.
-      const [issueRepos, edgeSrcRepos, edgeDstRepos, prStateRepos, syncStateRepos] =
-        await Promise.all([
-          db.prepare("SELECT DISTINCT repo FROM issues").all<{ repo: string }>(),
-          db.prepare("SELECT DISTINCT substr(src_key, 1, instr(src_key,'#')-1) AS repo FROM edges").all<{ repo: string }>(),
-          db.prepare("SELECT DISTINCT substr(dst_key, 1, instr(dst_key,'#')-1) AS repo FROM edges").all<{ repo: string }>(),
-          db.prepare("SELECT DISTINCT repo FROM pr_state").all<{ repo: string }>(),
-          db.prepare("SELECT repo FROM sync_state").all<{ repo: string }>(),
-        ]);
-
-      const staleIssueRepos = (issueRepos.results ?? [])
-        .map((r) => r.repo)
-        .filter((r) => !knownRepos.has(r));
-      const staleEdgeRepos = [
-        ...(edgeSrcRepos.results ?? []).map((r) => r.repo),
-        ...(edgeDstRepos.results ?? []).map((r) => r.repo),
-      ].filter((r) => !knownRepos.has(r));
-      const stalePrStateRepos = (prStateRepos.results ?? [])
-        .map((r) => r.repo)
-        .filter((r) => !knownRepos.has(r));
-      const staleSyncStateRepos = (syncStateRepos.results ?? [])
-        .map((r) => r.repo)
-        .filter((r) => !knownRepos.has(r));
-
-      const pruneStmts: D1PreparedStatement[] = [];
-      for (let i = 0; i < staleIssueRepos.length; i += CHUNK) {
-        for (const repo of staleIssueRepos.slice(i, i + CHUNK)) {
-          pruneStmts.push(db.prepare("DELETE FROM issues WHERE repo=?").bind(repo));
-        }
+    }
+    for (let i = 0; i < stalePrStateRepos.length; i += CHUNK) {
+      for (const repo of stalePrStateRepos.slice(i, i + CHUNK)) {
+        pruneStmts.push(db.prepare("DELETE FROM pr_state WHERE repo=?").bind(repo));
       }
-      // Deduplicate stale edge repos before chunking
-      const staleEdgeReposUniq = [...new Set(staleEdgeRepos)];
-      for (let i = 0; i < staleEdgeReposUniq.length; i += CHUNK) {
-        for (const repo of staleEdgeReposUniq.slice(i, i + CHUNK)) {
-          pruneStmts.push(
-            db
-              .prepare(
-                "DELETE FROM edges WHERE substr(src_key,1,instr(src_key,'#')-1)=? OR substr(dst_key,1,instr(dst_key,'#')-1)=?",
-              )
-              .bind(repo, repo),
-          );
-        }
-      }
-      for (let i = 0; i < stalePrStateRepos.length; i += CHUNK) {
-        for (const repo of stalePrStateRepos.slice(i, i + CHUNK)) {
-          pruneStmts.push(db.prepare("DELETE FROM pr_state WHERE repo=?").bind(repo));
-        }
-      }
-      for (let i = 0; i < staleSyncStateRepos.length; i += CHUNK) {
-        for (const repo of staleSyncStateRepos.slice(i, i + CHUNK)) {
-          pruneStmts.push(db.prepare("DELETE FROM sync_state WHERE repo=?").bind(repo));
-        }
-      }
-
-      if (pruneStmts.length > 0) {
-        await batchChunked(db, pruneStmts);
-        const totalStale = new Set([
-          ...staleIssueRepos,
-          ...staleEdgeReposUniq,
-          ...stalePrStateRepos,
-          ...staleSyncStateRepos,
-        ]).size;
-        console.log(`[sync] pruned data for ${totalStale} stale repo(s)`);
+    }
+    for (let i = 0; i < staleSyncStateRepos.length; i += CHUNK) {
+      for (const repo of staleSyncStateRepos.slice(i, i + CHUNK)) {
+        pruneStmts.push(db.prepare("DELETE FROM sync_state WHERE repo=?").bind(repo));
       }
     }
 
-    // Pass 1: bundled issues + refs + PRs per repo (1 subreq/repo instead of 3)
+    if (pruneStmts.length > 0) {
+      await batchChunked(db, pruneStmts);
+      const totalStale = new Set([
+        ...staleIssueRepos,
+        ...staleEdgeReposUniq,
+        ...stalePrStateRepos,
+        ...staleSyncStateRepos,
+      ]).size;
+      console.log(`[sync] pruned data for ${totalStale} stale repo(s)`);
+    }
+
+    // Phase 2 — deduped windowed fan-out.
+    // Read current slot (tenant_id=0).
+    const slotRow = await db
+      .prepare(`SELECT value FROM sync_control WHERE key='sync_slot' AND tenant_id = 0`)
+      .first<{ value: string }>();
+    const slot = parseInt(slotRow?.value ?? "0", 10);
+    const windowStart = slot * WINDOW;
+    const windowEnd = windowStart + WINDOW;
+    // Windowing only engages past WINDOW repos; below that, sync everything hourly.
+    const windowedRepos = allRepos.length <= WINDOW ? allRepos : allRepos.slice(windowStart, windowEnd);
+
+    console.log(
+      `[sync] slot=${slot} window=[${windowStart},${windowEnd}) repos=${windowedRepos.length}/${allRepos.length}`,
+    );
+
+    // Per-repo token resolver: try owning tenant first, fall back down list.
+    const makeRepoResolver = (repoTenants: Array<{ tenantId: number; installationId: number }>) =>
+      async (): Promise<string> => {
+        for (const { tenantId, installationId } of repoTenants) {
+          try {
+            return await getInstallationToken(db, env, tenantId, installationId);
+          } catch (err) {
+            console.error(`[sync] token fallback: tenant ${tenantId} failed:`, err);
+            await incrementAuthFailures(db, tenantId);
+          }
+        }
+        throw new Error("all tenants failed to provide a token");
+      };
+
+    // Pass 1: bundled issues + refs + PRs per repo in window.
     const collectedEdges = new Map<string, EdgeData>();
-    for (const { owner, name } of active) {
+    let skippedCount = 0;
+    for (const repo of windowedRepos) {
+      const slash = repo.indexOf("/");
+      const owner = repo.slice(0, slash);
+      const name = repo.slice(slash + 1);
+      const repoTenants = repoTenantMap.get(repo)!;
+      const resolveToken = makeRepoResolver(repoTenants);
       try {
-        await syncRepoBundle(db, env.GITHUB_TOKEN, owner, name, collectedEdges);
+        const token = await resolveToken();
+        await syncRepoBundle(db, token, owner, name, collectedEdges);
       } catch (err) {
-        if (err instanceof GraphQLError && err.isAuth) throw err;
-        console.error(`[sync] skipping ${owner}/${name}:`, err);
+        console.error(`[sync] skipping ${repo}:`, err);
+        skippedCount++;
       }
     }
 
-    // Pass 2: flush all edges (deferred to avoid cross-repo FK hazard)
+    // Pass 2: flush all edges (deferred to avoid cross-repo FK hazard).
     await flushEdges(db, collectedEdges);
 
-    // Closed-hop pass
-    stubsCount = await closedHopPass(db, env.GITHUB_TOKEN);
+    // Closed-hop pass with per-(owner,name) resolver.
+    stubsCount = await closedHopPass(db, async (owner: string, name: string) => {
+      const repo = `${owner}/${name}`;
+      const repoTenants = repoTenantMap.get(repo);
+      if (!repoTenants || repoTenants.length === 0) {
+        throw new Error(`no tenant for ${repo}`);
+      }
+      return makeRepoResolver(repoTenants)();
+    });
     console.log(`[sync] completed — stubs=${stubsCount}`);
 
-    await resetAuthFailures(db);
-    outcome = "success";
-  } catch (err) {
-    const isAuth = err instanceof GraphQLError && err.isAuth;
-    if (isAuth) {
-      const failures = await incrementAuthFailures(db);
-      console.error(`[sync] auth failure ${failures}/2`);
+    // Advance slot.
+    const nextSlot = (slot + 1) % NUM_SLOTS;
+    await db
+      .prepare(
+        `UPDATE sync_control SET value=?, updated_at=? WHERE key='sync_slot' AND tenant_id = 0`,
+      )
+      .bind(String(nextSlot), new Date().toISOString())
+      .run();
+
+    const systemicFailure = windowedRepos.length > 0 && skippedCount === windowedRepos.length;
+    if (systemicFailure) {
+      const failures = await incrementAuthFailures(db, 0);
+      console.error(`[sync] all ${windowedRepos.length} windowed repo(s) failed — systemic auth failure ${failures}/2`);
       outcome = failures >= 2 ? "halted" : "auth_error";
       if (failures >= 2) {
-        await haltSync(db);
-        console.error("[sync] HALTED: 2 consecutive auth failures");
+        await haltSync(db, 0);
+        console.error("[sync] HALTED: systemic token failure across all repos");
         const notifyUrl = env.NOTIFY_URL;
         if (notifyUrl) {
           await fetch(notifyUrl, {
@@ -1307,10 +1364,18 @@ export async function runSync(env: Env): Promise<void> {
           }).catch(() => {});
         }
       }
-    } else {
-      outcome = "error";
-      console.error("[sync] error:", err);
     }
+
+    if (!systemicFailure) {
+      const tenantIds = new Set<number>();
+      for (const list of repoTenantMap.values()) for (const e of list) tenantIds.add(e.tenantId);
+      await resetAuthFailures(db, 0);
+      for (const id of tenantIds) await resetAuthFailures(db, id);
+      outcome = "success";
+    }
+  } catch (err) {
+    outcome = "error";
+    console.error("[sync] error:", err);
   } finally {
     await releaseSyncLock(db);
     await writeRunAudit(env, db, {

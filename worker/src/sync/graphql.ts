@@ -3,7 +3,7 @@
  *
  * Replaces the `gh api graphql` subprocess with a direct fetch() call so the
  * transport runs inside the Cloudflare Worker runtime. The token is an explicit
- * parameter (comes from env.GITHUB_TOKEN) rather than being ambient.
+ * parameter (a per-installation GitHub App token, #160) rather than being ambient.
  */
 
 import { SINGLE_ISSUE_DEPS_QUERY } from "./queries";
@@ -37,7 +37,7 @@ export class GraphQLError extends Error {
  *
  * @param query     GraphQL query string (one of the constants from queries.ts).
  * @param variables Variable map matching the query's parameter declarations.
- * @param token     GitHub PAT (env.GITHUB_TOKEN in Worker context).
+ * @param token     GitHub token — org PAT in S3a; GitHub App installation token from #160.
  * @returns         Parsed response body; always contains a `data` key on success.
  * @throws          GraphQLError on HTTP errors or GraphQL-level `errors` in body.
  */
@@ -52,6 +52,7 @@ export async function ghGraphql<T = unknown>(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       "User-Agent": "roxabi-live-worker",
+      "GraphQL-Features": "sub_issues",
     },
     body: JSON.stringify({ query, variables }),
   });
@@ -107,7 +108,7 @@ interface IssueDepsData {
  * @param owner   Repository owner (org or user login).
  * @param name    Repository name.
  * @param number  Issue number.
- * @param token   GitHub PAT (env.GITHUB_TOKEN in Worker context).
+ * @param token   GitHub token (per-installation GitHub App token, #160).
  * @returns       `{ blocked_by, blocking }` — each a list of `"owner/repo#N"` keys.
  */
 export async function fetchIssueDeps(

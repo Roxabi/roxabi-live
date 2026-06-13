@@ -1,0 +1,154 @@
+---
+title: "feat(schema): auth-table migrations + CI/infra (Phase 1 S1)"
+parent_spec: "artifacts/specs/141-multi-tenant-github-app-auth-spec.mdx"
+parent_issue: 141
+issue: 144
+status: approved
+tier: M
+amended: 2026-06-10
+---
+
+> **Pivot note (2026-06-10):** Scope rewritten from "nullable `tenant_id` on 7 existing tables +
+> composite-PK recreation + 5 new auth tables" to **10 new tables + 2 ALTERs only**.
+> No `tenant_id` column on `issues`/`edges`/`labels`/`pr_state`; no composite-PK table-recreation.
+
+## Scope
+
+Slice **S1** of #141. Foundation migration + deploy plumbing — no runtime auth behavior yet.
+
+- **M-a migration:** Create **10 new tables** (all nullable-safe; no existing table PK recreation):
+  `tenants`, `users`, `user_installations`, `sessions`, `oauth_state`, `install_tokens`,
+  `tenant_repo_access`, `user_repo_permission_cache`, `sync_control` (composite PK `(tenant_id,key)`),
+  `zk_payloads` (PK `(user_id,issue_key)` — per-user browser keys, not per-tenant).
+- **2 ALTERs on existing tables:**
+  - `ALTER TABLE issues ADD COLUMN payload TEXT` — ZK seam (D24); `title` lives inside `payload`
+    JSON (`JSON_EXTRACT(payload,'$.title')`); `body` absent in Phase 1.
+  - `ALTER TABLE repos ADD COLUMN repo_node_id TEXT UNIQUE` — rename anchor for `repository.renamed`
+    webhook events.
+- **No composite-PK recreation.** `issues`/`edges`/`labels`/`pr_state` keep globally-unique PKs
+  unchanged; `tenant_id` is **never added** to those tables.
+- **CI (`ci.yml`, `deploy:` job):** add `wrangler d1 migrations apply DB [--env staging]` **inside
+  the `CF_API_TOKEN` guard, between `npm ci` and `wrangler deploy`** + a `GITHUB_APP_*` secret-presence
+  guard (same pattern as `CF_API_TOKEN`).
+- **`wrangler.toml`:** `[[env.staging.r2_buckets]] bucket_name="roxabi-live-logs-staging"` +
+  `[env.staging] workers_dev=true` + `SYNC_QUEUE` binding declared **DORMANT** (no active consumer;
+  placeholder for future Queues-based fan-out).
+- **Excludes the NOT-NULL migration** (ships in S7/#150 — applies only to new tables).
+
+## DDL
+
+```sql
+-- tenants: one row per GitHub App installation
+CREATE TABLE tenants (
+  id              INTEGER PRIMARY KEY,
+  installation_id INTEGER NOT NULL UNIQUE,
+  account_login   TEXT NOT NULL,
+  account_type    TEXT NOT NULL CHECK(account_type IN ('User','Organization')),
+  suspended_at    TEXT,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- users: one row per GitHub user who has authorized the App
+CREATE TABLE users (
+  id           INTEGER PRIMARY KEY,
+  github_id    INTEGER NOT NULL UNIQUE,
+  github_login TEXT NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- user_installations: which users belong to which tenant
+CREATE TABLE user_installations (
+  user_id   INTEGER NOT NULL REFERENCES users(id),
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+  PRIMARY KEY (user_id, tenant_id)
+);
+
+-- sessions: D1 (not KV) for strongly-consistent revocation
+CREATE TABLE sessions (
+  id          INTEGER PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  tenant_id   INTEGER NOT NULL REFERENCES tenants(id),
+  token_hash  TEXT NOT NULL UNIQUE,
+  expires_at  TEXT NOT NULL,
+  revoked_at  TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- oauth_state: single-use PKCE-like state for OAuth flow
+CREATE TABLE oauth_state (
+  state         TEXT PRIMARY KEY,
+  redirect_after TEXT,
+  expires_at    TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- install_tokens: AES-GCM-encrypted installation access tokens; DEK = INSTALL_TOKEN_KEY secret
+CREATE TABLE install_tokens (
+  tenant_id  INTEGER NOT NULL REFERENCES tenants(id) PRIMARY KEY,
+  token_enc  TEXT NOT NULL,
+  token_iv   TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- tenant_repo_access: authorization layer (fail-closed: no row → no data)
+CREATE TABLE tenant_repo_access (
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+  repo      TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, repo)
+);
+
+-- user_repo_permission_cache: per-user private-repo permission; 24h TTL
+CREATE TABLE user_repo_permission_cache (
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  repo       TEXT NOT NULL,
+  has_access INTEGER NOT NULL DEFAULT 0,
+  checked_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, repo)
+);
+
+-- sync_control: per-tenant lock/slot-rotation state; composite PK avoids cross-tenant contention
+CREATE TABLE sync_control (
+  tenant_id  INTEGER NOT NULL REFERENCES tenants(id),
+  key        TEXT NOT NULL,
+  value      TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (tenant_id, key)
+);
+
+-- zk_payloads: Phase-2 ZK seam; PK is per-user (browser keys, not per-tenant)
+CREATE TABLE zk_payloads (
+  user_id           INTEGER NOT NULL REFERENCES users(id),
+  issue_key         TEXT NOT NULL,
+  pubkey_fp         TEXT NOT NULL,
+  encrypted_payload TEXT NOT NULL,
+  updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, issue_key)
+);
+
+-- ALTERs on existing tables (safe: nullable, no PK change)
+ALTER TABLE issues ADD COLUMN payload TEXT;
+ALTER TABLE repos  ADD COLUMN repo_node_id TEXT UNIQUE;
+```
+
+## Success Criteria
+
+- [ ] M-a applies cleanly on staging D1: **10 new tables** created; `ALTER TABLE issues ADD COLUMN
+  payload TEXT` + `ALTER TABLE repos ADD COLUMN repo_node_id TEXT UNIQUE` applied; **no `tenant_id`
+  column on `issues`/`edges`/`labels`/`pr_state`; no composite-PK table-recreation**.
+- [ ] `issues` has no top-level `title` column — `title` in `payload` (`JSON_EXTRACT(payload,'$.title')`); `body` absent.
+- [ ] `zk_payloads` PK is `(user_id, issue_key)` (not `tenant_id`) — verified in migration DDL.
+- [ ] `sync_control` PK is `(tenant_id, key)` composite — verified in migration DDL.
+- [ ] `ci.yml` migrate-step inside `CF_API_TOKEN` guard in `deploy:` job between `npm ci` and `wrangler deploy`; `GITHUB_APP_*` secret-presence guard present.
+- [ ] `wrangler.toml` staging R2 = `roxabi-live-logs-staging` + `[env.staging] workers_dev=true` + `SYNC_QUEUE` binding present but **DORMANT** (no active consumer).
+
+## Dependencies
+
+None (foundation).
+
+## Reference
+
+Full spec: [141-multi-tenant-github-app-auth-spec.mdx](./141-multi-tenant-github-app-auth-spec.mdx) ·
+ADR: [zk-encryption-spike-analysis.mdx](../analyses/zk-encryption-spike-analysis.mdx)

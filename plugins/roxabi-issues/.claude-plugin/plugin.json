@@ -1,0 +1,8 @@
+{
+  "name": "roxabi-issues",
+  "version": "0.1.0",
+  "description": "Issue triage — set labels (size/priority/lane/type), manage blocked-by dependencies and parent/child sub-issues on GitHub issues. Labels + native relations, no Projects V2 board.",
+  "author": {
+    "name": "Roxabi"
+  }
+}

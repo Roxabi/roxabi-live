@@ -1,0 +1,90 @@
+---
+title: per-installation runSync cutover + PAT retirement (Phase 1 S3b)
+issue: 160
+status: approved
+tier: F-full
+date: 2026-06-12
+---
+
+## Problem
+
+S3a (#146) landed the install-token plumbing — `installToken.ts`
+(`getInstallationToken`/`resolveInstallToken`/`listInstallationRepos`),
+`tokenCrypto.ts` (AES-GCM), the `0005_sync_slot_seed` migration, and the CI
+`INSTALL_TOKEN_KEY` inject. But `runSync` still runs the **legacy
+org-enumeration / `repo_allowlist` / PAT flow**: it reads `env.GITHUB_TOKEN`
+and calls `enumerateOrgRepos`/`enumerateArchivedOrgRepos`. Consequences:
+
+- The org-scoped **PAT (`GITHUB_TOKEN`) is still the live sync credential** —
+  it cannot be retired (RT3) until sync runs on installation tokens.
+- `tenant_repo_access` is **never populated** — nothing fills it until this
+  slice's discovery pass, leaving the S3a→S3b fail-closed gap open.
+- The deduped, slot-rotated, per-tenant multi-tenant fan-out **does not exist**;
+  the 4 RED cases in `sync.test.ts` (`describe.skip(… DEFERRED #160 …)`) encode
+  the target behaviour but are skipped.
+
+## Who
+
+- **Primary:** the cockpit's hourly Cron sync + the operator (Mickael) — sync
+  must keep reconciling issue/edge data into D1 after the org-scoped PAT is gone.
+- **Secondary:** future multi-tenant installations — each installation's repos
+  sync via its own token, with no cross-tenant lock/failure bleed.
+
+## Constraints
+
+- Cloudflare Worker **subrequest cap (~50/invocation)** → slot-rotation windowing
+  required (`sync_control.sync_slot`, 0005 seed already live).
+- Live hourly sync must not break during cutover — **PAT stays live** until a
+  verified install-token tick; retirement is staging→prod after empirical verify.
+- D1 `0005` sync_slot seed live; `tenant_repo_access` table exists but **empty**.
+- `listInstallationRepos` is currently **unbounded** (`while(true)`, no per-call
+  timeout) — must harden (W2: `MAX_PAGES` + `AbortSignal.timeout`) before wiring
+  its first caller here.
+- No KV in Phase 1 (repo-canonical pivot, #141).
+- **Prod `/promote` is blocked** until the #164 CI inject fix reaches prod
+  secrets (`GITHUB_APP_*`/`INSTALL_TOKEN_KEY` never injected on main) — out of
+  this slice's scope but gates the RT3 prod leg.
+
+## Out of Scope
+
+- SYNC_QUEUE activation (DORMANT, deferred beyond Phase 1).
+- Frontend / `state.js` changes.
+- Board / ProjectV2 (roxabi-live is issues-only, #118).
+- The #164 prod-inject fix itself (separate; only sequenced against here).
+
+## Premise Validity
+
+**Success in 6 months:** `runSync` runs entirely on per-installation GitHub App
+tokens; `GITHUB_TOKEN` is deleted from staging+prod secrets and absent from
+`Env`/`wrangler.toml`/all `sync/` paths (no fallback); the hourly tick reconciles
+every installed tenant's repos with **≤1 GraphQL bundle call per unique repo** and
+**no subrequest-cap breach**; `tenant_repo_access` is populated each tick.
+
+**Failure in 6 months (falsifiable):** any one of —
+- `wrangler secret list` (staging or prod) still shows `GITHUB_TOKEN` after RT3; OR
+- a tick issues **> (unique-repo count)** GraphQL bundle calls (dedup broken); OR
+- one tenant's auth-failure/lock **halts another tenant's** sync (lock not isolated); OR
+- subrequest-cap breaches drop repos on a tick (observable via R2 audit log).
+
+**Simplest alternative:** keep the PAT and add per-tenant token resolution
+*alongside* the existing org-enum flow.
+**Why not simplest:** it leaves the org-scoped PAT as a standing secret — which is
+the explicit retirement target (RT3) — keeps `tenant_repo_access` empty (S3a
+fail-closed gap stays open), and never dedups the multi-tenant fan-out, so the
+subrequest cap is breached as installs grow. The PAT is the credential we are
+deliberately removing; a parallel path keeps it live indefinitely.
+
+## Complexity
+
+**Tier: F-full** — multi-file, cross-cutting rewrite of the sync core with a new
+discovery/dedup/slot-rotation algorithm, per-tenant lock threading through 5
+helpers, and reconciliation of a ~15-case integration test suite.
+
+Signals observed:
+- `size:F-full` label on the issue.
+- Rewrite of `sync.ts` `runSync` + new fan-out algorithm (new pattern).
+- Per-tenant lock isolation threaded through `acquireSyncLock`/`releaseSyncLock`/
+  `isHalted`/`incrementAuthFailures`/`resetAuthFailures`.
+- Test-suite reconciliation (allowlist/prune/auth-halt cases conflict with the
+  per-tenant model) + 4 RED cases to un-skip & repair.
+- Cross-cutting `Env`/`wrangler.toml` type + config change (T10) with no fallback.
