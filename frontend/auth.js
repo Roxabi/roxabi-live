@@ -1,0 +1,252 @@
+// auth.js — Auth gate state machine, consent persistence, API wrapper
+// Exports: AuthError, api, hasConsent, setConsent, resolveView, requireAuthGate
+
+const $ = id => document.getElementById(id);
+
+// ─── AuthError ────────────────────────────────────────────────────────────────
+
+export class AuthError extends Error {
+  constructor(msg = 'Not authenticated') {
+    super(msg);
+    this.name = 'AuthError';
+  }
+}
+
+// ─── API wrapper ──────────────────────────────────────────────────────────────
+
+/** fetch wrapper — throws AuthError on 401, Error on other non-ok responses. */
+export async function api(path, opts) {
+  const resp = await fetch(path, opts);
+  if (resp.status === 401) throw new AuthError();
+  if (!resp.ok) throw new Error(`${path} ${resp.status}`);
+  return resp;
+}
+
+// ─── Consent persistence ──────────────────────────────────────────────────────
+
+const CONSENT_PREFIX = 'roxabi:consent:';
+
+/** Returns true if the user has previously acknowledged the operator-read consent. */
+export function hasConsent(login) {
+  return Boolean(localStorage.getItem(CONSENT_PREFIX + login));
+}
+
+/** Persists consent acknowledgement for this login (ISO timestamp). */
+export function setConsent(login) {
+  localStorage.setItem(CONSENT_PREFIX + login, new Date().toISOString());
+}
+
+// ─── View resolution (pure) ───────────────────────────────────────────────────
+
+/**
+ * Resolve which view to show.
+ * Pure: no DOM, no storage, no fetch — call sites handle side-effects.
+ *
+ * @param {{ user: { github_id: number, github_login: string }, active_tenant_id: number|null, installations: Array<{ tenant_id: number, account_login: string, account_type: string }> }} me
+ * @param {boolean} consented
+ * @returns {'install'|'consent'|'dashboard'}
+ */
+export function resolveView(me, consented) {
+  if (me.installations.length === 0) return 'install';
+  if (!consented) return 'consent';
+  return 'dashboard';
+}
+
+// ─── Internal: /api/me ────────────────────────────────────────────────────────
+
+/** Fetches /api/me. Throws AuthError if 401 (no session). */
+async function fetchMe() {
+  const resp = await api('/api/me');
+  return resp.json();
+}
+
+// ─── Internal: render landing ─────────────────────────────────────────────────
+
+function renderLanding() {
+  const el = $('auth-landing');
+  el.innerHTML = `
+    <h2>Welcome to Roxabi Live</h2>
+    <p>Sign in with GitHub to view your organisation's dependency graph.</p>
+    <a href="/login" class="auth-login-btn" aria-label="Sign in with GitHub">Sign in with GitHub</a>
+  `;
+  el.removeAttribute('hidden');
+}
+
+// ─── Internal: render install CTA ────────────────────────────────────────────
+
+function renderInstallCta() {
+  const el = $('auth-install');
+  el.innerHTML = `
+    <h2>Install the GitHub App</h2>
+    <p>No GitHub App installation found for your account. Install the Roxabi Live app on your organisation to get started.</p>
+    <a
+      href="https://github.com/apps/roxabi-live/installations/new"
+      class="auth-login-btn"
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Install GitHub App"
+    >Install GitHub App</a>
+    <p><small>After installing, reload this page.</small></p>
+  `;
+  el.removeAttribute('hidden');
+}
+
+// ─── Internal: render consent gate ───────────────────────────────────────────
+
+/**
+ * Renders the consent overlay and resolves when the user acknowledges.
+ * @param {{ user: { github_id: number, github_login: string }, active_tenant_id: number|null, installations: Array<{ tenant_id: number, account_login: string, account_type: string }> }} me
+ * @returns {Promise<void>} resolves on ACK
+ */
+function renderConsentGate(me) {
+  return new Promise(resolve => {
+    const el = $('consent-gate');
+    el.innerHTML = `
+      <div class="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="consent-title">
+        <h2 id="consent-title">Operator data access</h2>
+        <p>
+          Roxabi Live reads your GitHub organisation data on your behalf to build
+          the dependency graph. The following access is required:
+        </p>
+        <div class="consent-scopes">
+          <div class="consent-scope-item">Read issues, labels, milestones, and sub-issue relationships</div>
+          <div class="consent-scope-item">Read repository metadata (name, visibility, archived status)</div>
+          <div class="consent-scope-item">Data is stored in Cloudflare D1 and scoped to your organisation</div>
+        </div>
+        <p>
+          Signed in as <strong>${escHtml(me.user.github_login)}</strong>.
+          You can revoke access at any time from your
+          <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">GitHub App settings</a>.
+        </p>
+        <div class="consent-actions">
+          <button class="consent-btn-secondary" id="consent-logout">Sign out</button>
+          <button class="consent-btn-primary" id="consent-ack">I understand — continue</button>
+        </div>
+      </div>
+    `;
+    el.removeAttribute('hidden');
+
+    $('consent-ack').addEventListener('click', () => {
+      setConsent(me.user.github_login);
+      el.setAttribute('hidden', '');
+      resolve();
+    });
+
+    $('consent-logout').addEventListener('click', async () => {
+      await fetch('/logout', { method: 'POST' });
+      location.reload();
+    });
+  });
+}
+
+// ─── Internal: render org picker ─────────────────────────────────────────────
+
+function renderOrgPicker(me) {
+  const sel = $('org-picker');
+  if (me.installations.length <= 1) { sel.setAttribute('hidden', ''); return; }
+  sel.innerHTML = '';
+  for (const inst of me.installations) {
+    const opt = document.createElement('option');
+    opt.value = inst.tenant_id;
+    opt.textContent = inst.account_login;
+    sel.appendChild(opt);
+  }
+  sel.value = String(me.active_tenant_id);
+  sel.removeAttribute('hidden');
+
+  sel.addEventListener('change', async () => {
+    const id = Number(sel.value);
+    try {
+      await api('/api/active-tenant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenant_id: id }),
+      });
+      location.reload();
+    } catch {
+      // transient — user can retry
+    }
+  });
+}
+
+// ─── Internal: render operator notice ────────────────────────────────────────
+
+function renderOperatorNotice() {
+  const el = $('operator-notice');
+  el.innerHTML = `
+    <strong>Operator read access:</strong> This tool reads your GitHub org data via the Roxabi Live App.
+    <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">Manage</a>
+  `;
+  el.removeAttribute('hidden');
+}
+
+// ─── Internal: wire logout ────────────────────────────────────────────────────
+
+function wireLogout() {
+  const btn = $('logout-btn');
+  btn.removeAttribute('hidden');
+  btn.addEventListener('click', async () => {
+    await fetch('/logout', { method: 'POST' });
+    location.reload();
+  });
+}
+
+// ─── Internal: escape HTML ────────────────────────────────────────────────────
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ─── requireAuthGate (async orchestrator) ─────────────────────────────────────
+
+/**
+ * Runs the full auth gate flow.
+ *
+ * SC1 render-block: callers MUST check the returned view and skip
+ * fetch('/api/graph') (and all other /api/* data calls) until this returns
+ * 'dashboard'. This is a frontend render-gate, NOT an authz boundary — the
+ * server already scopes /api/* to the active session+tenant. The gate here
+ * exists so the UI never fires graph data fetches for unauthenticated or
+ * unconsented users, which would produce confusing 401/empty-graph errors.
+ *
+ * @returns {Promise<'landing'|'install'|'consent'|'dashboard'>}
+ */
+export async function requireAuthGate() {
+  let me;
+  try {
+    me = await fetchMe();
+  } catch (e) {
+    if (e instanceof AuthError) {
+      renderLanding();
+      return 'landing';
+    }
+    throw e;
+  }
+
+  const consented = hasConsent(me.user.github_login);
+  const view = resolveView(me, consented);
+
+  if (view === 'install') {
+    renderInstallCta();
+    return 'install';
+  }
+
+  if (view === 'consent') {
+    await renderConsentGate(me);
+    // After ACK, wire persistent UI before returning 'dashboard'
+    renderOrgPicker(me);
+    renderOperatorNotice();
+    wireLogout();
+    return 'dashboard';
+  }
+
+  // view === 'dashboard': already consented, wire persistent UI immediately
+  renderOrgPicker(me);
+  renderOperatorNotice();
+  wireLogout();
+  return 'dashboard';
+}

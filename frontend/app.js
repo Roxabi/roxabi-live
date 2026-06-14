@@ -6,6 +6,7 @@ import { initGraph, clearSearchHighlight }   from './graph.js';
 import { MultiSelect } from './multi_select.js';
 import { clearPinned } from './hover.js';
 import { repoTone } from './tone.js';
+import { api, AuthError, requireAuthGate } from './auth.js';
 
 const $ = id => document.getElementById(id);
 
@@ -243,8 +244,7 @@ function restoreControls() {
 }
 
 async function loadGraphData() {
-  const resp = await fetch('/api/graph');
-  if (!resp.ok) throw new Error(`/api/graph ${resp.status}`);
+  const resp = await api('/api/graph');
   return resp.json();
 }
 
@@ -274,8 +274,7 @@ const POLL_MS = 15000;
 let lastVersion = null;
 
 async function fetchVersion() {
-  const resp = await fetch('/api/version');
-  if (!resp.ok) throw new Error(`/api/version ${resp.status}`);
+  const resp = await api('/api/version');
   return (await resp.json()).version;
 }
 
@@ -291,6 +290,17 @@ function startPolling() {
 }
 
 async function init() {
+  // SC1: requireAuthGate() gates all data fetches behind resolveView === 'dashboard'.
+  // This is a render-block (UX), not an authz boundary — /api/* is already
+  // session+tenant-scoped on the server. The gate prevents confusing 401/empty-graph
+  // errors for unauthenticated or unconsented users.
+  try {
+    const view = await requireAuthGate();
+    if (view !== 'dashboard') return; // auth gate is showing; do not fetch data
+  } catch (e) {
+    if (e instanceof AuthError) return; // no session — landing view shown by requireAuthGate
+    throw e;
+  }
   restoreControls();
   try {
     await loadAndRender();

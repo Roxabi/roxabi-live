@@ -1,0 +1,223 @@
+/* auth.css — Login gate, consent overlay, operator notice, org picker, logout btn */
+
+/* ─── Auth views (landing + install) ────────────────────────────────────────── */
+
+.auth-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 40px 24px;
+  gap: 24px;
+  text-align: center;
+}
+
+.auth-view h2 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.auth-view p {
+  color: var(--text-muted);
+  font-size: 14px;
+  max-width: 420px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ─── Login / install CTA button ─────────────────────────────────────────── */
+
+.auth-login-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.auth-login-btn:hover {
+  opacity: 0.88;
+}
+
+.auth-login-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* ─── Org picker (select in header-actions) ──────────────────────────────── */
+
+.org-picker {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: 'Inter', system-ui, sans-serif;
+  padding: 5px 10px;
+  height: 30px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b93a1' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 26px;
+}
+
+.org-picker:focus-visible {
+  border-color: var(--accent);
+}
+
+[data-theme="light"] .org-picker {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%235a6070' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* ─── Operator notice (sticky banner below toolbar) ──────────────────────── */
+
+.operator-notice {
+  background: var(--accent-dim);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: 'Inter', system-ui, sans-serif;
+  padding: 6px 16px;
+  text-align: center;
+}
+
+.operator-notice strong {
+  color: var(--text);
+}
+
+/* ─── Consent gate (full-viewport overlay) ───────────────────────────────── */
+
+/* Must exceed z-index 500 (.ms-panel uses 500) */
+.consent-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+[data-theme="light"] .consent-gate {
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.consent-dialog {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hi);
+  border-radius: 12px;
+  box-shadow: var(--panel-shadow);
+  max-width: 480px;
+  width: 100%;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.consent-dialog h2 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.consent-dialog p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.consent-scopes {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.consent-scope-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.consent-scope-item::before {
+  content: '•';
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.consent-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.consent-btn-primary {
+  padding: 9px 20px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.consent-btn-primary:hover {
+  opacity: 0.88;
+}
+
+.consent-btn-primary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.consent-btn-secondary {
+  padding: 9px 16px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.consent-btn-secondary:hover {
+  border-color: var(--border-hi);
+  color: var(--text);
+}
+
+.consent-btn-secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}

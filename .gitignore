@@ -26,3 +26,6 @@ reports/
 .dev.vars
 .dev.vars.*
 .wrangler/
+
+# frontend test harness (node_modules not committed)
+frontend/node_modules/
