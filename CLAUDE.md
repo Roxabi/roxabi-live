@@ -45,7 +45,9 @@ Let:
 | `worker/src/sync/graphql.ts` | GitHub GraphQL client (`fetch()`) |
 | `worker/src/sync/queries.ts` | GraphQL query strings |
 | `worker/src/sync/parse.ts` | Issue/edge parsing |
-| `worker/src/webhook/handlers.ts` | Webhook dispatch (issues/deps/sub_issues) |
+| `worker/src/webhook/handlers.ts` | Webhook dispatch + tenant routing gate (issues/deps/sub_issues + installation/repository/member) |
+| `worker/src/webhook/handlers-app.ts` | App lifecycle handlers (installation/installation_repositories/repository/member/membership) |
+| `worker/src/webhook/tenant.ts` | Tenant lookup (`installation_id`/`account_login` → `tenants`) |
 | `worker/src/webhook/hmac.ts` | HMAC verification |
 | `worker/src/webhook/mutations.ts` | D1 write helpers |
 | `worker/migrations/` | D1 schema migrations |

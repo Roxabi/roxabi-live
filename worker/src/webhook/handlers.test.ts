@@ -1200,3 +1200,229 @@ describe("webhookRoute", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tenant routing gate (S4 #147) — webhookRoute integration tests
+// ---------------------------------------------------------------------------
+//
+// These tests extend the webhookRoute suite (above) with a focus on the
+// tenant-routing gate introduced in #147.  They exercise the gate path in
+// isolation by supplying a seeded (or empty) fake DB so that
+// getTenantByInstallationId / getTenantByOrgLogin return controlled values.
+//
+// Architecture note — makeContextWith:
+//   makeContext() calls captureDb() internally and overwrites env.DB, so it is
+//   not possible to inject a pre-seeded DB through it.  makeContextWith() is a
+//   local variant that accepts the DB as a parameter, mirroring makeContext()
+//   exactly but skipping the internal captureDb() call.
+// ---------------------------------------------------------------------------
+
+/** Mirror of makeContext that accepts a pre-built db instead of creating one. */
+function makeContextWith(
+  req: Request,
+  env: Env,
+  db: D1Database & { _recorded: FakeStmt[] },
+): { c: Parameters<typeof webhookRoute>[0]; db: D1Database & { _recorded: FakeStmt[] } } {
+  const envWithDb: Env = { ...env, DB: db };
+
+  const headers: Record<string, string> = {};
+  req.headers.forEach((v, k) => {
+    headers[k.toLowerCase()] = v;
+  });
+
+  const c = {
+    env: envWithDb,
+    req: {
+      header: (name: string) => headers[name.toLowerCase()] ?? undefined,
+      arrayBuffer: () => req.arrayBuffer(),
+    },
+    json: (data: unknown, status?: number) =>
+      new Response(JSON.stringify(data), {
+        status: status ?? 200,
+        headers: { "content-type": "application/json" },
+      }),
+  } as unknown as Parameters<typeof webhookRoute>[0];
+
+  return { c, db };
+}
+
+/** Build a seeded fake DB that returns tenantRow for any FROM tenants query. */
+function seededTenantDb(
+  tenantRow: Record<string, unknown> | null,
+): D1Database & { _recorded: FakeStmt[] } {
+  return makeFakeDb((sql, args) => {
+    const rows = /FROM tenants/.test(sql) && tenantRow ? [tenantRow as FakeResult] : [];
+    return makeFakeStmt(sql, args, rows, 1);
+  });
+}
+
+const ACTIVE_TENANT = {
+  id: 1,
+  installation_id: 55_000,
+  account_login: "Roxabi",
+  account_type: "Organization",
+  suspended_at: null,
+  deleted_at: null,
+};
+
+describe("webhookRoute — tenant routing gate (S4 #147)", () => {
+  const SECRET = "test-secret";
+
+  /** Build a signed request carrying a payload with the given installation id. */
+  async function makeIssuesRequestWithInstallation(
+    installationId: number | null,
+  ): Promise<Request> {
+    const payload = {
+      action: "opened",
+      installation: installationId !== null ? { id: installationId } : undefined,
+      issue: {
+        number: 1,
+        title: "T",
+        state: "open",
+        html_url: "https://github.com/Roxabi/lyra/issues/1",
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-01-01T00:00:00Z",
+        closed_at: null,
+        milestone: null,
+        labels: [],
+      },
+      repository: { full_name: "Roxabi/lyra" },
+    };
+    const body = JSON.stringify(payload);
+    const enc = new TextEncoder().encode(body);
+    const sig = await computeHmac(enc.buffer as ArrayBuffer, SECRET);
+    return makeRequest(body, sig, "issues");
+  }
+
+  it("rejects an issues event for an unknown installation_id (tenant not in DB)", async () => {
+    // Arrange — no tenant row seeded; getTenantByInstallationId returns null
+    const db = seededTenantDb(null);
+    const env = makeEnv();
+    const req = await makeIssuesRequestWithInstallation(55_000);
+    const { c } = makeContextWith(req, env, db);
+
+    // Act
+    const res = await webhookRoute(c);
+    const body = await res.json<{ ok: boolean; ignored?: string }>();
+
+    // Assert — gate returns ignored, no DB writes
+    expect(res.status).toBe(200);
+    expect(body).toEqual({ ok: true, ignored: "issues" });
+    expect(vi.mocked(db.batch)).not.toHaveBeenCalled();
+  });
+
+  it("rejects an issues event when tenant is suspended (suspended_at non-null)", async () => {
+    // Arrange
+    const db = seededTenantDb({
+      ...ACTIVE_TENANT,
+      suspended_at: "2024-06-01T00:00:00Z",
+    });
+    const env = makeEnv();
+    const req = await makeIssuesRequestWithInstallation(55_000);
+    const { c } = makeContextWith(req, env, db);
+
+    // Act
+    const res = await webhookRoute(c);
+    const body = await res.json<{ ok: boolean; ignored?: string }>();
+
+    // Assert
+    expect(res.status).toBe(200);
+    expect(body).toEqual({ ok: true, ignored: "issues" });
+    expect(vi.mocked(db.batch)).not.toHaveBeenCalled();
+  });
+
+  it("rejects an issues event when tenant is soft-deleted (deleted_at non-null)", async () => {
+    // Arrange
+    const db = seededTenantDb({
+      ...ACTIVE_TENANT,
+      deleted_at: "2024-06-10T00:00:00Z",
+    });
+    const env = makeEnv();
+    const req = await makeIssuesRequestWithInstallation(55_000);
+    const { c } = makeContextWith(req, env, db);
+
+    // Act
+    const res = await webhookRoute(c);
+    const body = await res.json<{ ok: boolean; ignored?: string }>();
+
+    // Assert
+    expect(res.status).toBe(200);
+    expect(body).toEqual({ ok: true, ignored: "issues" });
+    expect(vi.mocked(db.batch)).not.toHaveBeenCalled();
+  });
+
+  it("passes through an issues event when tenant is active", async () => {
+    // Arrange — active tenant; gate must NOT return ignored
+    const db = seededTenantDb(ACTIVE_TENANT);
+    const env = makeEnv();
+    const req = await makeIssuesRequestWithInstallation(55_000);
+    const { c } = makeContextWith(req, env, db);
+
+    // Act
+    const res = await webhookRoute(c);
+    const body = await res.json<{ ok: boolean; ignored?: string }>();
+
+    // Assert — handler ran and bumped data_version (db.batch called at least once)
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.ignored).toBeUndefined();
+    expect(vi.mocked(db.batch)).toHaveBeenCalled();
+  });
+
+  it("rejects a membership event when org login resolves to no known tenant", async () => {
+    // Arrange — membership payload without installation block; org unknown
+    const db = seededTenantDb(null);
+    const env = makeEnv();
+    const payload = {
+      action: "added",
+      // No `installation` key — membership fallback via organization.login
+      organization: { login: "ghost-org" },
+      member: { login: "some-user" },
+      scope: "team",
+      team: { name: "devs" },
+    };
+    const body = JSON.stringify(payload);
+    const enc = new TextEncoder().encode(body);
+    const sig = await computeHmac(enc.buffer as ArrayBuffer, SECRET);
+    const req = makeRequest(body, sig, "membership");
+    const { c } = makeContextWith(req, env, db);
+
+    // Act
+    const res = await webhookRoute(c);
+    const resBody = await res.json<{ ok: boolean; ignored?: string }>();
+
+    // Assert — gate ignores because org login has no tenant row
+    expect(res.status).toBe(200);
+    expect(resBody).toEqual({ ok: true, ignored: "membership" });
+    expect(vi.mocked(db.batch)).not.toHaveBeenCalled();
+  });
+
+  it("installation.created event is exempt from the tenant routing gate even when no tenant exists", async () => {
+    // Arrange — no tenant in DB; gate MUST NOT return ignored for installation events
+    const db = seededTenantDb(null);
+    const env = makeEnv();
+    const payload = {
+      action: "created",
+      installation: {
+        id: 55_000,
+        account: { login: "Roxabi", type: "Organization" },
+      },
+      repositories: [],
+      sender: { login: "mickael" },
+    };
+    const body = JSON.stringify(payload);
+    const enc = new TextEncoder().encode(body);
+    const sig = await computeHmac(enc.buffer as ArrayBuffer, SECRET);
+    const req = makeRequest(body, sig, "installation");
+    const { c } = makeContextWith(req, env, db);
+
+    // Act
+    const res = await webhookRoute(c);
+    const resBody = await res.json<{ ok: boolean; ignored?: string }>();
+
+    // Assert — gate is bypassed; response must NOT carry `ignored: "installation"`
+    expect(res.status).toBe(200);
+    expect(resBody.ok).toBe(true);
+    expect(resBody.ignored).toBeUndefined();
+  });
+});

@@ -555,3 +555,384 @@ describe("bumpDataVersion", () => {
     expect(stmts()[0].args).toEqual([iso, iso]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// webhook mutations — tenant/repo/cache helpers (S4 #147)
+// ---------------------------------------------------------------------------
+
+import {
+  upsertTenant,
+  softDeleteTenant,
+  setTenantSuspended,
+  upsertRepoAccess,
+  deleteRepoAccess,
+  deleteAllRepoAccessForTenant,
+  setRepoPrivacy,
+  cascadeRepoRename,
+  invalidateCacheByRepo,
+  invalidateCacheByUserRepo,
+  invalidateCacheByUser,
+  deleteSessionsForTenant,
+  deleteInstallTokensForTenant,
+} from "./mutations";
+
+describe("webhook mutations — tenant/repo/cache helpers (S4 #147)", () => {
+  const now = "2026-06-14T12:00:00.000Z";
+
+  // ── Tenant lifecycle ─────────────────────────────────────────────────────
+
+  describe("upsertTenant", () => {
+    it("binds installation_id, account_login, account_type, nowIso, nowIso", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      upsertTenant(db, {
+        installation_id: 111,
+        account_login: "Roxabi",
+        account_type: "Organization",
+        nowIso: now,
+      });
+      // Assert
+      expect(stmts()[0].args).toEqual([111, "Roxabi", "Organization", now, now]);
+    });
+
+    it("targets the tenants table via INSERT INTO tenants", () => {
+      const { db, stmts } = captureDb();
+      upsertTenant(db, {
+        installation_id: 111,
+        account_login: "Roxabi",
+        account_type: "Organization",
+        nowIso: now,
+      });
+      expect(stmts()[0].sql).toContain("INSERT INTO tenants");
+    });
+
+    it("uses ON CONFLICT(installation_id) and clears suspended_at and deleted_at", () => {
+      const { db, stmts } = captureDb();
+      upsertTenant(db, {
+        installation_id: 111,
+        account_login: "Roxabi",
+        account_type: "Organization",
+        nowIso: now,
+      });
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("ON CONFLICT(installation_id)");
+      expect(sql).toContain("suspended_at  = NULL");
+      expect(sql).toContain("deleted_at    = NULL");
+    });
+  });
+
+  describe("softDeleteTenant", () => {
+    it("binds nowIso, nowIso, tenantId — sets deleted_at and updated_at", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      softDeleteTenant(db, 7, now);
+      // Assert
+      expect(stmts()[0].args).toEqual([now, now, 7]);
+    });
+
+    it("targets the tenants table with UPDATE SET deleted_at", () => {
+      const { db, stmts } = captureDb();
+      softDeleteTenant(db, 7, now);
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("UPDATE tenants");
+      expect(sql).toContain("deleted_at");
+    });
+  });
+
+  describe("setTenantSuspended", () => {
+    it("binds suspendedAtOrNull, nowIso, tenantId when suspending", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      setTenantSuspended(db, 7, now, now);
+      // Assert
+      expect(stmts()[0].args).toEqual([now, now, 7]);
+    });
+
+    it("binds null, nowIso, tenantId when unsuspending", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      setTenantSuspended(db, 7, null, now);
+      // Assert
+      expect(stmts()[0].args).toEqual([null, now, 7]);
+    });
+
+    it("targets tenants table with SET suspended_at", () => {
+      const { db, stmts } = captureDb();
+      setTenantSuspended(db, 7, now, now);
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("UPDATE tenants");
+      expect(sql).toContain("suspended_at");
+    });
+  });
+
+  // ── Repository access ────────────────────────────────────────────────────
+
+  describe("upsertRepoAccess", () => {
+    it("binds tenantId, repo, isPrivate", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      upsertRepoAccess(db, 3, "Roxabi/roxabi-live", 1);
+      // Assert
+      expect(stmts()[0].args).toEqual([3, "Roxabi/roxabi-live", 1]);
+    });
+
+    it("binds isPrivate=0 for public repos", () => {
+      const { db, stmts } = captureDb();
+      upsertRepoAccess(db, 3, "Roxabi/public-repo", 0);
+      expect(stmts()[0].args).toEqual([3, "Roxabi/public-repo", 0]);
+    });
+
+    it("targets tenant_repo_access with INSERT ON CONFLICT DO UPDATE", () => {
+      const { db, stmts } = captureDb();
+      upsertRepoAccess(db, 3, "Roxabi/roxabi-live", 1);
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("INSERT INTO tenant_repo_access");
+      expect(sql).toContain("ON CONFLICT");
+      expect(sql).toContain("is_private");
+    });
+  });
+
+  describe("deleteRepoAccess", () => {
+    it("binds tenantId, repo", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      deleteRepoAccess(db, 3, "Roxabi/roxabi-live");
+      // Assert
+      expect(stmts()[0].args).toEqual([3, "Roxabi/roxabi-live"]);
+    });
+
+    it("targets tenant_repo_access with WHERE tenant_id=? AND repo=?", () => {
+      const { db, stmts } = captureDb();
+      deleteRepoAccess(db, 3, "Roxabi/roxabi-live");
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("DELETE FROM tenant_repo_access");
+      expect(sql).toContain("tenant_id=?");
+      expect(sql).toContain("repo=?");
+    });
+  });
+
+  describe("deleteAllRepoAccessForTenant", () => {
+    it("binds tenantId only", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      deleteAllRepoAccessForTenant(db, 5);
+      // Assert
+      expect(stmts()[0].args).toEqual([5]);
+    });
+
+    it("deletes by tenant_id without narrowing by repo", () => {
+      const { db, stmts } = captureDb();
+      deleteAllRepoAccessForTenant(db, 5);
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("DELETE FROM tenant_repo_access");
+      expect(sql).toContain("tenant_id=?");
+      // no per-repo narrowing (the table name contains "repo", so match the column filter)
+      expect(sql).not.toContain("repo=?");
+    });
+  });
+
+  describe("setRepoPrivacy", () => {
+    it("binds isPrivate, repo (UPDATE SET pattern)", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      setRepoPrivacy(db, "Roxabi/roxabi-live", 1);
+      // Assert — isPrivate first, then repo (WHERE clause)
+      expect(stmts()[0].args).toEqual([1, "Roxabi/roxabi-live"]);
+    });
+
+    it("binds isPrivate=0 for publicize", () => {
+      const { db, stmts } = captureDb();
+      setRepoPrivacy(db, "Roxabi/roxabi-live", 0);
+      expect(stmts()[0].args).toEqual([0, "Roxabi/roxabi-live"]);
+    });
+
+    it("targets tenant_repo_access with UPDATE SET is_private", () => {
+      const { db, stmts } = captureDb();
+      setRepoPrivacy(db, "Roxabi/roxabi-live", 1);
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("UPDATE tenant_repo_access");
+      expect(sql).toContain("is_private=?");
+      expect(sql).toContain("WHERE repo=?");
+    });
+  });
+
+  // ── cascadeRepoRename (5 stmts) ──────────────────────────────────────────
+
+  describe("cascadeRepoRename", () => {
+    const oldName = "OldOrg/old-repo";
+    const newName = "NewOrg/new-repo";
+    const oldPrefix = oldName + "#";
+    const newPrefix = newName + "#";
+    const oldPrefixLen = oldPrefix.length;
+
+    it("returns exactly 5 prepared statements", () => {
+      // Arrange
+      const { db } = captureDb();
+      // Act
+      const stmts = cascadeRepoRename(db, oldName, newName) as unknown as FakeStmt[];
+      // Assert
+      expect(stmts).toHaveLength(5);
+    });
+
+    it("stmt[0] renames repo in repos table — binds (newName, oldName)", () => {
+      const { db } = captureDb();
+      const stmts = cascadeRepoRename(db, oldName, newName) as unknown as FakeStmt[];
+      expect(stmts[0].sql).toContain("UPDATE repos");
+      expect(stmts[0].sql).toContain("repo=?");
+      expect(stmts[0].args).toEqual([newName, oldName]);
+    });
+
+    it("stmt[1] renames repo in tenant_repo_access — binds (newName, oldName)", () => {
+      const { db } = captureDb();
+      const stmts = cascadeRepoRename(db, oldName, newName) as unknown as FakeStmt[];
+      expect(stmts[1].sql).toContain("UPDATE tenant_repo_access");
+      expect(stmts[1].args).toEqual([newName, oldName]);
+    });
+
+    it("stmt[2] renames repo and recomputes key in issues — binds (newName, newName, oldName)", () => {
+      const { db } = captureDb();
+      const stmts = cascadeRepoRename(db, oldName, newName) as unknown as FakeStmt[];
+      expect(stmts[2].sql).toContain("UPDATE issues");
+      expect(stmts[2].sql).toContain("repo=?");
+      expect(stmts[2].sql).toContain("key=");
+      expect(stmts[2].args).toEqual([newName, newName, oldName]);
+    });
+
+    it("stmt[3] rewrites edges src_key prefix — binds (newPrefix, oldPrefixLen+1, oldPrefixLen, oldPrefix)", () => {
+      const { db } = captureDb();
+      const stmts = cascadeRepoRename(db, oldName, newName) as unknown as FakeStmt[];
+      expect(stmts[3].sql).toContain("UPDATE edges");
+      expect(stmts[3].sql).toContain("src_key");
+      expect(stmts[3].args).toEqual([newPrefix, oldPrefixLen + 1, oldPrefixLen, oldPrefix]);
+    });
+
+    it("stmt[4] rewrites edges dst_key prefix — binds (newPrefix, oldPrefixLen+1, oldPrefixLen, oldPrefix)", () => {
+      const { db } = captureDb();
+      const stmts = cascadeRepoRename(db, oldName, newName) as unknown as FakeStmt[];
+      expect(stmts[4].sql).toContain("UPDATE edges");
+      expect(stmts[4].sql).toContain("dst_key");
+      expect(stmts[4].args).toEqual([newPrefix, oldPrefixLen + 1, oldPrefixLen, oldPrefix]);
+    });
+
+    it("retention invariant (D-2): no stmt touches sync_control", () => {
+      // Arrange
+      const { db } = captureDb();
+      // Act
+      const stmts = cascadeRepoRename(db, oldName, newName) as unknown as FakeStmt[];
+      // Assert — cascade must NOT touch sync_control sentinel rows
+      for (const stmt of stmts) {
+        expect(stmt.sql).not.toContain("sync_control");
+      }
+    });
+  });
+
+  // ── Permission cache invalidation ────────────────────────────────────────
+
+  describe("invalidateCacheByRepo", () => {
+    it("binds repo only", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      invalidateCacheByRepo(db, "Roxabi/roxabi-live");
+      // Assert
+      expect(stmts()[0].args).toEqual(["Roxabi/roxabi-live"]);
+    });
+
+    it("deletes from user_repo_permission_cache WHERE repo=?", () => {
+      const { db, stmts } = captureDb();
+      invalidateCacheByRepo(db, "Roxabi/roxabi-live");
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("DELETE FROM user_repo_permission_cache");
+      expect(sql).toContain("repo=?");
+    });
+  });
+
+  describe("invalidateCacheByUserRepo", () => {
+    it("binds userId, repo", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      invalidateCacheByUserRepo(db, 42, "Roxabi/roxabi-live");
+      // Assert
+      expect(stmts()[0].args).toEqual([42, "Roxabi/roxabi-live"]);
+    });
+
+    it("deletes from user_repo_permission_cache WHERE user_id=? AND repo=?", () => {
+      const { db, stmts } = captureDb();
+      invalidateCacheByUserRepo(db, 42, "Roxabi/roxabi-live");
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("DELETE FROM user_repo_permission_cache");
+      expect(sql).toContain("user_id=?");
+      expect(sql).toContain("repo=?");
+    });
+  });
+
+  describe("invalidateCacheByUser", () => {
+    it("binds userId only", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      invalidateCacheByUser(db, 42);
+      // Assert
+      expect(stmts()[0].args).toEqual([42]);
+    });
+
+    it("deletes from user_repo_permission_cache WHERE user_id=? only (no repo filter)", () => {
+      const { db, stmts } = captureDb();
+      invalidateCacheByUser(db, 42);
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("DELETE FROM user_repo_permission_cache");
+      expect(sql).toContain("user_id=?");
+      // no per-repo narrowing (the table name contains "repo", so match the column filter)
+      expect(sql).not.toContain("repo=?");
+    });
+  });
+
+  // ── Session / install-token cleanup ──────────────────────────────────────
+
+  describe("deleteSessionsForTenant", () => {
+    it("binds tenantId only", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      deleteSessionsForTenant(db, 9);
+      // Assert
+      expect(stmts()[0].args).toEqual([9]);
+    });
+
+    it("deletes from sessions WHERE tenant_id=?", () => {
+      const { db, stmts } = captureDb();
+      deleteSessionsForTenant(db, 9);
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("DELETE FROM sessions");
+      expect(sql).toContain("tenant_id=?");
+    });
+  });
+
+  describe("deleteInstallTokensForTenant", () => {
+    it("binds tenantId only", () => {
+      // Arrange
+      const { db, stmts } = captureDb();
+      // Act
+      deleteInstallTokensForTenant(db, 9);
+      // Assert
+      expect(stmts()[0].args).toEqual([9]);
+    });
+
+    it("deletes from install_tokens WHERE tenant_id=?", () => {
+      const { db, stmts } = captureDb();
+      deleteInstallTokensForTenant(db, 9);
+      const sql = stmts()[0].sql;
+      expect(sql).toContain("DELETE FROM install_tokens");
+      expect(sql).toContain("tenant_id=?");
+    });
+  });
+});
