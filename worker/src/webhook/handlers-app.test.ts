@@ -136,6 +136,33 @@ describe("handleInstallation", () => {
       // Bump included
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
     });
+
+    it("created with no repositories still bumps data_version (tenant row created)", async () => {
+      // Arrange
+      const { db, recorded, batched, batchFn } = seededDb({ tenant: activeTenant });
+      const payload = {
+        action: "created",
+        installation: { id: 555, account: { login: "Roxabi", type: "Organization" } },
+        repositories: [],
+      };
+
+      // Act
+      await handleInstallation(payload, db, fakeEnv());
+
+      // Assert — upsertTenant still runs as a standalone .run() (tenant row created/updated)
+      const allSql = recorded().map((s) => s.sql);
+      expect(allSql.some((sql) => /INSERT INTO tenants/.test(sql))).toBe(true);
+
+      // Assert — db.batch IS called exactly once; its sole statement is the data_version bump
+      // (installation.created is a lifecycle event — always bumps regardless of repo count)
+      expect(batchFn()).toHaveBeenCalledOnce();
+      const stmts = allBatchedStmts(batched());
+      expect(stmts).toHaveLength(1);
+      expect(stmts[0].sql).toMatch(/INSERT INTO sync_control|data_version/);
+
+      // No repo-access rows — repositories list was empty
+      expect(stmts.every((s) => !/INSERT INTO tenant_repo_access/.test(s.sql))).toBe(true);
+    });
   });
 
   describe("deleted", () => {
@@ -304,6 +331,9 @@ describe("handleInstallationRepositories", () => {
       expect(deleteStmt!.args).toContain(1); // tenantId
 
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
+
+      // Retention invariant: removing a repo from an installation must NOT purge issues or edges
+      expect(stmts.every((s) => !/FROM issues/.test(s.sql) && !/FROM edges/.test(s.sql))).toBe(true);
     });
   });
 });
@@ -339,10 +369,93 @@ describe("handleRepository", () => {
       expect(sqls.some((sql) => /UPDATE edges SET dst_key = \? \|\| substr/.test(sql))).toBe(true);
       expect(sqls.some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
 
-      // All cascade statements (all but the trailing bump) do not reference sync_control
+      // Mis-bind guard: UPDATE repos must bind BOTH new name (SET) and old name (WHERE)
+      // payload: full_name="Roxabi/new", changes.repository.name.from="old" → oldFullName="Roxabi/old"
       const stmts = allBatchedStmts(batched());
+      const reposUpdateStmt = stmts.find((s) => /UPDATE repos SET repo=\?/.test(s.sql));
+      expect(reposUpdateStmt).toBeDefined();
+      expect(reposUpdateStmt!.args).toContain("Roxabi/new"); // SET value
+      expect(reposUpdateStmt!.args).toContain("Roxabi/old"); // WHERE value
+
+      // All cascade statements (all but the trailing bump) do not reference sync_control
       const cascadeStmts = stmts.slice(0, stmts.length - 1);
       expect(cascadeStmts.every((s) => !/sync_control/.test(s.sql))).toBe(true);
+    });
+  });
+
+  describe("transferred — fallback path (no node_id DB hit)", () => {
+    it("resolves oldFullName via org login and cascades rename + bump", async () => {
+      // Arrange — no repo row so node_id lookup returns null; handler falls back to
+      // changes.owner.from.organization.login
+      const { db, batched, batchFn } = seededDb({ repo: null });
+      const payload = {
+        action: "transferred",
+        repository: { full_name: "NewOwner/repo", node_id: "NID" },
+        changes: { owner: { from: { organization: { login: "OldOwner" } } } },
+      };
+
+      // Act
+      await handleRepository(payload, db);
+
+      // Assert
+      expect(batchFn()).toHaveBeenCalledOnce();
+      const stmts = allBatchedStmts(batched());
+
+      // WHERE arg in repos UPDATE must be the reconstructed old full name
+      const reposStmt = stmts.find((s) => /UPDATE repos SET repo=\?/.test(s.sql));
+      expect(reposStmt).toBeDefined();
+      expect(reposStmt!.args).toContain("NewOwner/repo"); // SET (new)
+      expect(reposStmt!.args).toContain("OldOwner/repo"); // WHERE (old)
+    });
+
+    it("handles combined transfer+rename: uses name.from to reconstruct old full name", async () => {
+      // Arrange — no node_id hit; payload has both owner change and name change
+      const { db, batched, batchFn } = seededDb({ repo: null });
+      const payload = {
+        action: "transferred",
+        repository: { full_name: "NewOwner/new-name", node_id: "NID" },
+        changes: {
+          owner: { from: { organization: { login: "OldOwner" } } },
+          repository: { name: { from: "old-name" } },
+        },
+      };
+
+      // Act
+      await handleRepository(payload, db);
+
+      // Assert
+      expect(batchFn()).toHaveBeenCalledOnce();
+      const stmts = allBatchedStmts(batched());
+
+      // Regression guard: WHERE must use "old-name", not "new-name" (mis-bind bug)
+      const reposStmt = stmts.find((s) => /UPDATE repos SET repo=\?/.test(s.sql));
+      expect(reposStmt).toBeDefined();
+      expect(reposStmt!.args).toContain("NewOwner/new-name"); // SET (new)
+      expect(reposStmt!.args).toContain("OldOwner/old-name"); // WHERE (old — correct reconstruction)
+      // Sanity: the wrong value must NOT appear as WHERE
+      const whereArg = reposStmt!.args[reposStmt!.args.length - 1];
+      expect(whereArg).not.toBe("OldOwner/new-name");
+    });
+
+    it("resolves oldOwner via user.login when org block is absent", async () => {
+      // Arrange — changes.owner.from has user.login but no organization block
+      const { db, batched, batchFn } = seededDb({ repo: null });
+      const payload = {
+        action: "transferred",
+        repository: { full_name: "NewOwner/repo", node_id: "NID" },
+        changes: { owner: { from: { user: { login: "OldUser" } } } },
+      };
+
+      // Act
+      await handleRepository(payload, db);
+
+      // Assert
+      expect(batchFn()).toHaveBeenCalledOnce();
+      const stmts = allBatchedStmts(batched());
+
+      const reposStmt = stmts.find((s) => /UPDATE repos SET repo=\?/.test(s.sql));
+      expect(reposStmt).toBeDefined();
+      expect(reposStmt!.args).toContain("OldUser/repo"); // WHERE (old — from user.login)
     });
   });
 

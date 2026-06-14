@@ -140,6 +140,9 @@ export async function handleInstallation(
   // ── created ───────────────────────────────────────────────────────────────
   if (action === "created") {
     // Phase 1: upsert tenant row (standalone run — we need the PK before batching).
+    // Two-phase write: upsert the tenant standalone so we can read its PK below, then
+    // batch the repo-access rows + bump atomically. If phase 2 fails, GitHub re-delivers
+    // installation.created (ON CONFLICT re-runs idempotently) and the batch heals.
     await upsertTenant(db, {
       installation_id: installationId,
       account_login: accountLogin,
@@ -404,8 +407,12 @@ export async function handleRepository(
       if (oldOwner) {
         const slashIdx = fullName.lastIndexOf("/");
         if (slashIdx >= 0) {
-          const name = fullName.slice(slashIdx + 1);
-          oldFullName = `${oldOwner}/${name}`;
+          // A transfer may also rename: prefer changes.repository.name.from; fall back to the
+          // current name for a pure ownership transfer (name unchanged).
+          const repoChanges = (changes["repository"] as Record<string, unknown> | undefined) ?? {};
+          const nameChanges = (repoChanges["name"] as Record<string, unknown> | undefined) ?? {};
+          const oldName = (nameChanges["from"] as string | undefined) ?? fullName.slice(slashIdx + 1);
+          oldFullName = `${oldOwner}/${oldName}`;
         }
       }
     }

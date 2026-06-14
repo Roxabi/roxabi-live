@@ -127,6 +127,8 @@ describe("getTenantByInstallationId", () => {
       const stmt = recorded.find((s) => /FROM tenants/.test(s.sql));
       expect(stmt).toBeDefined();
       expect(stmt!.args).toContain(99_000);
+      // Column-swap guard: WHERE clause must reference installation_id, not account_login
+      expect(stmt!.sql).toMatch(/WHERE\s+installation_id\s*=\s*\?/);
     });
   });
 
@@ -173,6 +175,8 @@ describe("getTenantByOrgLogin", () => {
       const stmt = recorded.find((s) => /FROM tenants/.test(s.sql));
       expect(stmt).toBeDefined();
       expect(stmt!.args).toContain("Roxabi");
+      // Column-swap guard: WHERE clause must reference account_login, not installation_id
+      expect(stmt!.sql).toMatch(/WHERE\s+account_login\s*=\s*\?/);
     });
   });
 

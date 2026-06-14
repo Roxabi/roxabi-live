@@ -38,6 +38,24 @@ import { handleInstallation, handleInstallationRepositories, handleRepository, h
 
 const MAX_WEBHOOK_BODY_BYTES = 25 * 1024 * 1024; // 25 MB
 
+// Stable event allowlists — hoisted to module level to avoid re-allocation per request.
+const DATA_EVENTS = new Set([
+  "issues",
+  "issue_dependencies",
+  "sub_issues",
+  "create",
+  "delete",
+  "pull_request",
+  "milestone",
+]);
+const APP_EVENTS = new Set([
+  "installation",
+  "installation_repositories",
+  "repository",
+  "member",
+  "membership",
+]);
+
 // ---------------------------------------------------------------------------
 // Local helpers
 // ---------------------------------------------------------------------------
@@ -517,22 +535,6 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
   const db = c.env.DB;
 
   // Unknown events short-circuit here — no data_version bump.
-  const DATA_EVENTS = new Set([
-    "issues",
-    "issue_dependencies",
-    "sub_issues",
-    "create",
-    "delete",
-    "pull_request",
-    "milestone",
-  ]);
-  const APP_EVENTS = new Set([
-    "installation",
-    "installation_repositories",
-    "repository",
-    "member",
-    "membership",
-  ]);
   if (event !== null && !DATA_EVENTS.has(event) && !APP_EVENTS.has(event)) {
     return c.json({ ok: true, ignored: event });
   }
