@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AuthError, api, hasConsent, setConsent, resolveView } from './auth.js';
+import { AuthError, api, hasConsent, setConsent, resolveView, escHtml } from './auth.js';
 
 // ─── resolveView (pure) ───────────────────────────────────────────────────────
 
@@ -150,5 +150,51 @@ describe('api()', () => {
     // Assert
     await expect(rejection).rejects.toBeInstanceOf(Error);
     await expect(rejection).rejects.not.toBeInstanceOf(AuthError);
+  });
+
+  it('forwards opts to fetch', async () => {
+    // Arrange
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{}', { status: 200 }),
+    );
+
+    // Act
+    await api('/y', { method: 'POST' });
+
+    // Assert
+    expect(fetchSpy).toHaveBeenCalledWith('/y', { method: 'POST' });
+  });
+});
+
+// ─── escHtml ──────────────────────────────────────────────────────────────────
+
+describe('escHtml', () => {
+  it('escapes &', () => {
+    expect(escHtml('a&b')).toBe('a&amp;b');
+  });
+
+  it('escapes <', () => {
+    expect(escHtml('a<b')).toBe('a&lt;b');
+  });
+
+  it('escapes >', () => {
+    expect(escHtml('a>b')).toBe('a&gt;b');
+  });
+
+  it('escapes "', () => {
+    expect(escHtml('a"b')).toBe('a&quot;b');
+  });
+
+  it("escapes '", () => {
+    expect(escHtml("a'b")).toBe('a&#x27;b');
+  });
+
+  it('escapes a combined multi-char string', () => {
+    expect(escHtml('a<b>&"\''))
+      .toBe('a&lt;b&gt;&amp;&quot;&#x27;');
+  });
+
+  it('returns a plain string unchanged', () => {
+    expect(escHtml('hello world')).toBe('hello world');
   });
 });

@@ -63,6 +63,7 @@ async function fetchMe() {
 // ─── Internal: render landing ─────────────────────────────────────────────────
 
 function renderLanding() {
+  document.body.classList.add('gated');
   const el = $('auth-landing');
   el.innerHTML = `
     <h2>Welcome to Roxabi Live</h2>
@@ -75,6 +76,7 @@ function renderLanding() {
 // ─── Internal: render install CTA ────────────────────────────────────────────
 
 function renderInstallCta() {
+  document.body.classList.add('gated');
   const el = $('auth-install');
   el.innerHTML = `
     <h2>Install the GitHub App</h2>
@@ -100,6 +102,7 @@ function renderInstallCta() {
  */
 function renderConsentGate(me) {
   return new Promise(resolve => {
+    document.body.classList.add('gated');
     const el = $('consent-gate');
     el.innerHTML = `
       <div class="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="consent-title">
@@ -118,6 +121,10 @@ function renderConsentGate(me) {
           You can revoke access at any time from your
           <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">GitHub App settings</a>.
         </p>
+        <p class="consent-warning">
+          <strong>During this phase, the operator can read the issue data of the organisations you grant.</strong>
+          Don't paste secrets into issue bodies or titles.
+        </p>
         <div class="consent-actions">
           <button class="consent-btn-secondary" id="consent-logout">Sign out</button>
           <button class="consent-btn-primary" id="consent-ack">I understand — continue</button>
@@ -126,14 +133,37 @@ function renderConsentGate(me) {
     `;
     el.removeAttribute('hidden');
 
-    $('consent-ack').addEventListener('click', () => {
+    const ackBtn = $('consent-ack');
+    const logoutBtn = $('consent-logout');
+
+    // F3: focus first interactive element after show
+    ackBtn.focus();
+
+    // F3: Tab trap — cycle between logoutBtn and ackBtn only
+    el.addEventListener('keydown', e => {
+      if (e.key !== 'Tab') return;
+      if (e.shiftKey) {
+        if (document.activeElement === logoutBtn) {
+          e.preventDefault();
+          ackBtn.focus();
+        }
+      } else {
+        if (document.activeElement === ackBtn) {
+          e.preventDefault();
+          logoutBtn.focus();
+        }
+      }
+    });
+
+    ackBtn.addEventListener('click', () => {
       setConsent(me.user.github_login);
       el.setAttribute('hidden', '');
       resolve();
     });
 
-    $('consent-logout').addEventListener('click', async () => {
-      await fetch('/logout', { method: 'POST' });
+    // F6: route through api() instead of bare fetch
+    logoutBtn.addEventListener('click', async () => {
+      await api('/logout', { method: 'POST' }).catch(() => {});
       location.reload();
     });
   });
@@ -151,7 +181,7 @@ function renderOrgPicker(me) {
     opt.textContent = inst.account_login;
     sel.appendChild(opt);
   }
-  sel.value = String(me.active_tenant_id);
+  if (me.active_tenant_id != null) sel.value = String(me.active_tenant_id);
   sel.removeAttribute('hidden');
 
   sel.addEventListener('change', async () => {
@@ -164,7 +194,8 @@ function renderOrgPicker(me) {
       });
       location.reload();
     } catch {
-      // transient — user can retry
+      // revert selection to last known active tenant
+      if (me.active_tenant_id != null) sel.value = String(me.active_tenant_id);
     }
   });
 }
@@ -174,7 +205,8 @@ function renderOrgPicker(me) {
 function renderOperatorNotice() {
   const el = $('operator-notice');
   el.innerHTML = `
-    <strong>Operator read access:</strong> This tool reads your GitHub org data via the Roxabi Live App.
+    <strong>Operator read access (this phase):</strong> the operator can read the issue data of the organisations you grant.
+    Don't paste secrets into issue bodies or titles.
     <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">Manage</a>
   `;
   el.removeAttribute('hidden');
@@ -186,19 +218,20 @@ function wireLogout() {
   const btn = $('logout-btn');
   btn.removeAttribute('hidden');
   btn.addEventListener('click', async () => {
-    await fetch('/logout', { method: 'POST' });
+    await api('/logout', { method: 'POST' }).catch(() => {});
     location.reload();
   });
 }
 
 // ─── Internal: escape HTML ────────────────────────────────────────────────────
 
-function escHtml(str) {
+export function escHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
 }
 
 // ─── requireAuthGate (async orchestrator) ─────────────────────────────────────
@@ -237,7 +270,8 @@ export async function requireAuthGate() {
 
   if (view === 'consent') {
     await renderConsentGate(me);
-    // After ACK, wire persistent UI before returning 'dashboard'
+    // After ACK, remove gate class and wire persistent UI before returning 'dashboard'
+    document.body.classList.remove('gated');
     renderOrgPicker(me);
     renderOperatorNotice();
     wireLogout();
@@ -245,6 +279,7 @@ export async function requireAuthGate() {
   }
 
   // view === 'dashboard': already consented, wire persistent UI immediately
+  document.body.classList.remove('gated');
   renderOrgPicker(me);
   renderOperatorNotice();
   wireLogout();

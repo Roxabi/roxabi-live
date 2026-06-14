@@ -102,6 +102,33 @@
   color: var(--text);
 }
 
+/* ─── Body gate — hide dashboard chrome until auth resolved ──────────────── */
+
+body.gated .sticky-head,
+body.gated #view-table,
+body.gated #view-list,
+body.gated #graph-panel,
+body.gated #error-msg {
+  display: none;
+}
+
+/* ─── Consent warning (beta / secrets notice) ────────────────────────────── */
+
+.consent-warning {
+  background: var(--accent-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+  padding: 10px 14px;
+}
+
+.consent-warning strong {
+  color: var(--text);
+}
+
 /* ─── Consent gate (full-viewport overlay) ───────────────────────────────── */
 
 /* Must exceed z-index 500 (.ms-panel uses 500) */
