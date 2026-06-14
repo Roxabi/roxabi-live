@@ -1,0 +1,10 @@
+# Exclude dev/test files from the public ASSETS bundle.
+# After S7 (#150) narrows CF Access to /admin/* only, everything in frontend/ is
+# served edge-public via the Worker ASSETS binding. These files have no runtime
+# purpose for the frontend and would otherwise leak test logic + the dependency
+# tree to unauthenticated clients. Gitignore-style patterns (wrangler assets).
+*.test.js
+vitest.config.js
+package.json
+package-lock.json
+node_modules/

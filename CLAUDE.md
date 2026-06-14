@@ -9,7 +9,7 @@ Let:
 ## Project
 
 **Roxabi Live** — operations cockpit (Cloudflare Worker + D1, TypeScript)
-- Prod: Cloudflare Worker `roxabi-live` at **https://live.roxabi.dev** behind Cloudflare Access (Email-OTP, mickael@bouly.io)
+- Prod: Cloudflare Worker `roxabi-live` at **https://live.roxabi.dev**; **/admin/* behind Cloudflare Access (Email-OTP, mickael@bouly.io); public app gated by app-level sessions (#141, S7 #150)** — see docs/s7-access-cutover.md
 - Data: D1 `roxabi-live-production` (replaces `~/.roxabi/corpus.db` / aiosqlite)
 - Sync: GitHub GraphQL via `fetch()` in `worker/src/sync/`, driven by Cron Trigger `0 * * * *` + real-time GitHub org webhook → `POST /webhook/github` (HMAC-gated; Access Bypass on `/webhook/*`)
 - Frontend: static dep-graph assets served via Worker ASSETS binding (`frontend/`)
