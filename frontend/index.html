@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="auth.css">
 <link rel="stylesheet" href="graph.css">
 </head>
 <body>
@@ -22,6 +23,8 @@
         <button id="btn-list"  class="seg"    data-v="list"  aria-pressed="false" title="List"><span class="ico">≡</span> List</button>
         <button id="btn-graph" class="seg"    data-v="graph" aria-pressed="false" title="Graph"><span class="ico">⋈</span> Graph</button>
       </div>
+      <select id="org-picker" class="org-picker" aria-label="Active organisation" hidden></select>
+      <button id="logout-btn" class="theme-btn" type="button" hidden>Sign out</button>
       <button id="theme-btn" class="theme-btn" type="button" title="Toggle theme" aria-label="Toggle theme">🌙</button>
     </div>
   </header>
@@ -95,6 +98,7 @@
       <div class="segs" id="graph-edge-segs" role="group" aria-label="Parent visibility"></div>
     </span>
   </div>
+  <div id="operator-notice" class="operator-notice" hidden></div>
 </div>
 
 <main>
@@ -102,14 +106,19 @@
   <div id="view-list"  class="view"             role="region" aria-label="List view"></div>
   <section id="graph-panel" class="view"        role="region" aria-label="Graph view" hidden></section>
   <div id="error-msg" class="error-msg" hidden></div>
+  <div id="auth-landing" class="auth-view" hidden></div>
+  <div id="auth-install" class="auth-view" hidden></div>
 </main>
 
 <footer class="page-footer">
   <span>v6</span>
 </footer>
 
+<div id="consent-gate" class="consent-gate" hidden></div>
+
 <script type="module" src="state.js"></script>
 <script type="module" src="pivot.js"></script>
+<script type="module" src="auth.js"></script>
 <script type="module" src="app.js"></script>
 <script type="module" src="graph.js"></script>
 </body>
