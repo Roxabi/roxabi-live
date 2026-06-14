@@ -29,6 +29,8 @@ import {
 import { BRANCH_ISSUE_RE, canonicalKey, extractFromLabels, syncBranches } from "../sync/sync";
 import { fetchIssueDeps, GraphQLError } from "../sync/graphql";
 import { resolveInstallToken } from "../auth/installToken";
+import { getTenantByInstallationId, getTenantByOrgLogin, type TenantRow } from "./tenant";
+import { handleInstallation, handleInstallationRepositories, handleRepository, handleMember, handleMembership } from "./handlers-app";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -515,16 +517,61 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
   const db = c.env.DB;
 
   // Unknown events short-circuit here — no data_version bump.
-  if (
-    event !== "issues" &&
-    event !== "issue_dependencies" &&
-    event !== "sub_issues" &&
-    event !== "create" &&
-    event !== "delete" &&
-    event !== "pull_request" &&
-    event !== "milestone"
-  ) {
+  const DATA_EVENTS = new Set([
+    "issues",
+    "issue_dependencies",
+    "sub_issues",
+    "create",
+    "delete",
+    "pull_request",
+    "milestone",
+  ]);
+  const APP_EVENTS = new Set([
+    "installation",
+    "installation_repositories",
+    "repository",
+    "member",
+    "membership",
+  ]);
+  if (event !== null && !DATA_EVENTS.has(event) && !APP_EVENTS.has(event)) {
     return c.json({ ok: true, ignored: event });
+  }
+  if (event === null) {
+    return c.json({ ok: true, ignored: event });
+  }
+
+  // ── Tenant routing gate (S4 #147) ──
+  // Resolve installation → tenant for events carrying installation context.
+  // membership payloads may omit `installation` → route via organization.login.
+  const installation = payload["installation"] as Record<string, unknown> | undefined;
+  const installationId =
+    typeof installation?.["id"] === "number" ? (installation["id"] as number) : undefined;
+
+  let tenant: TenantRow | null = null;
+  let hasRoutingContext = false;
+  if (installationId != null) {
+    tenant = await getTenantByInstallationId(db, installationId);
+    hasRoutingContext = true;
+  } else if (event === "membership") {
+    const org = payload["organization"] as Record<string, unknown> | undefined;
+    const login = org?.["login"];
+    if (typeof login === "string") {
+      tenant = await getTenantByOrgLogin(db, login);
+      hasRoutingContext = true;
+    }
+  }
+
+  // Control-plane `installation` events are EXEMPT from the unknown/suspended reject:
+  //   - installation.created bootstraps the tenant (it won't exist yet)
+  //   - suspend / unsuspend / deleted manage tenant lifecycle and must always run.
+  // All other events: when routing context is present, an unknown / suspended /
+  // (soft-)deleted tenant → 200 OK, NO write (GitHub does not retry; no orphan rows).
+  // When no routing context (legacy delivery without installation), fall through to
+  // preserve existing behavior.
+  if (event !== "installation" && hasRoutingContext) {
+    if (tenant === null || tenant.suspended_at !== null || tenant.deleted_at !== null) {
+      return c.json({ ok: true, ignored: event });
+    }
   }
 
   let mutated = false;
@@ -551,6 +598,17 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
     } else if (event === "milestone") {
       await handleMilestone(payload, db);
       mutated = true;
+    // App lifecycle events self-bump data_version inside their atomic batch — do not set `mutated`.
+    } else if (event === "installation") {
+      await handleInstallation(payload, db, c.env);
+    } else if (event === "installation_repositories") {
+      await handleInstallationRepositories(payload, db, c.env);
+    } else if (event === "repository") {
+      await handleRepository(payload, db);
+    } else if (event === "member") {
+      await handleMember(payload, db);
+    } else if (event === "membership") {
+      await handleMembership(payload, db);
     }
   } catch (err) {
     console.error("[webhook] unhandled handler error", err);
