@@ -43,6 +43,7 @@ D1). See `.github/workflows/ci.yml` deploy job.
 [ ] promote staging → main; CI applies 0008 to prod D1 green
 [ ] CF Access: new /admin app added and /admin/sync OTP-challenged  (Phase 3, step 1–2)
 [ ] staging smoke confirmed green before removing App 1  (Phase 3, step 3)
+[ ] ADMIN_TOKEN verified set (wrangler secret list --env … shows it) OR edge-Access-only mode for /admin/* intentionally accepted  (Phase 3, before step 4)
 [ ] CF Access: App 1 (catch-all) removed  (Phase 3, step 4)
 [ ] post-flip verification curls pass  (Phase 3, step 5)
 [ ] SC2 browser-flow: private/incognito → live.roxabi.dev → frontend auth-gate (not raw 401)  (Phase 3, step 5)
@@ -86,15 +87,22 @@ If COUNT > 0: do **not** proceed. Investigate which write path produced a NULL i
 D1 wraps each migration file in an implicit transaction — a mid-file crash rolls back the
 whole migration. Two possible partial-crash states and their recovery commands:
 
+```bash
+export CLOUDFLARE_ACCOUNT_ID=b5e90be971920ce406f7b679c4f1cd33
+cd worker
+# staging (drop --env staging for prod):
+```
+
 - **`no such table: sync_control`** (crash after first rename, before second):
-  ```sql
-  ALTER TABLE sync_control_new RENAME TO sync_control;
-  DROP TABLE IF EXISTS sync_control_old;
+  ```bash
+  npx wrangler d1 execute DB --env staging --remote --config ../wrangler.toml \
+    --command "ALTER TABLE sync_control_new RENAME TO sync_control; DROP TABLE IF EXISTS sync_control_old;"
   ```
 - **`table sync_control_old already exists`** (crash before first rename completed):
-  ```sql
-  DROP TABLE sync_control_old;
-  -- then re-apply migration 0008
+  ```bash
+  npx wrangler d1 execute DB --env staging --remote --config ../wrangler.toml \
+    --command "DROP TABLE sync_control_old;"
+  # then re-apply migration 0008
   ```
 
 In practice the implicit transaction makes these states unreachable in normal operation;
@@ -165,7 +173,10 @@ remains untouched throughout.
 
 ### Step 2 — Verify the new app gates `/admin`
 
-App 1 still guards everything else at this point — nothing is exposed yet.
+App 1 still guards everything else at this point — nothing is exposed yet. Between Step 1
+and Step 4, BOTH Access apps cover `/admin`; CF Access resolves the most-specific path
+match, so the OTP challenge below is answered by the new `/admin`-scoped app — not App 1.
+Step 4 then removes App 1 (the legacy catch-all).
 
 ```bash
 curl -sS -D - -o /dev/null https://live.roxabi.dev/admin/sync \
@@ -230,7 +241,8 @@ Each is intentionally exposed:
 | `/` + static assets | Frontend auth-gate (`frontend/auth.js`, #149) redirects unauthenticated users to login before any data loads |
 | `/api/version` | Returns `data_version` timestamp only — no user or issue data |
 | `/health` | Returns aggregate issue `COUNT(*)` only — no tenant or user data |
-| `/login`, `/oauth/callback`, `/logout` | Auth-flow entry points — required to be reachable |
+| `/login`, `/oauth/callback` | Auth-flow entry points — required to be reachable |
+| `POST /logout` | Session invalidation — ungated by design (null-safe + idempotent, `SameSite=Strict` blocks cross-site submission); clears cookie, exposes no data |
 
 Sensitive reads keep `requireSession` (→ 401 unauth):
 

@@ -48,4 +48,7 @@ INSERT INTO sync_control_new (tenant_id, key, value, updated_at)
   SELECT tenant_id, key, value, updated_at FROM sync_control;
 ALTER TABLE sync_control RENAME TO sync_control_old;
 ALTER TABLE sync_control_new RENAME TO sync_control;
-DROP TABLE sync_control_old;
+-- IF EXISTS for defensive symmetry with the top guard (reached only after the
+-- rename above creates sync_control_old, so a no-op divergence under D1's
+-- implicit per-migration transaction; harmless under a non-transactional re-run).
+DROP TABLE IF EXISTS sync_control_old;

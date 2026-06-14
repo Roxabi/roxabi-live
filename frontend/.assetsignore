@@ -4,7 +4,7 @@
 # purpose for the frontend and would otherwise leak test logic + the dependency
 # tree to unauthenticated clients. Gitignore-style patterns (wrangler assets).
 *.test.js
-vitest.config.js
+vitest.config.*
 package.json
 package-lock.json
 node_modules/
