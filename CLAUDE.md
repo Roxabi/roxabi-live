@@ -16,7 +16,7 @@ Let:
 - `/admin/*` gated by `ADMIN_TOKEN` secret (defense-in-depth, #123) in addition to edge Access
 - M₁ (roxabituwer) **decommissioned 2026-06-08**: `live.service` stopped+disabled, Tailscale Funnel retired, `~/.roxabi/corpus.db` archived
 
-→ `docs/ARCHITECTURE.md` (to be created)
+→ `docs/ARCHITECTURE.md`
 
 ## Plugins
 
