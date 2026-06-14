@@ -1,5 +1,18 @@
 /* auth.css — Login gate, consent overlay, operator notice, org picker, logout btn */
 
+/* ─── hidden-attribute guard (MUST precede the display rules below in intent) ──
+   The `hidden` HTML attribute is UA `[hidden]{display:none}` at specificity
+   (0,1,0) — which TIES with the `.auth-view` / `.consent-gate` class rules that
+   set `display:flex`, and author rules win the tie. Without this, the EMPTY
+   #consent-gate (position:fixed, inset:0, z-index:600, dark backdrop) is painted
+   on page load and buries the landing/install views under a full-screen dark
+   overlay (the user cannot reach "Sign in"). Raising specificity to (0,2,0) via
+   the attribute selector lets `hidden` win until JS removes it. */
+.auth-view[hidden],
+.consent-gate[hidden] {
+  display: none;
+}
+
 /* ─── Auth views (landing + install) ────────────────────────────────────────── */
 
 .auth-view {
