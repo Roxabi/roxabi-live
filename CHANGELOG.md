@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.11.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.10.0...roxabi-live/v0.11.0) (2026-06-14)
+
+
+### Features
+
+* **api:** tenant-filtered reads + active-tenant + private-repo authz ([23c5de5](https://github.com/Roxabi/roxabi-live/commit/23c5de52213faa2ad556be08b28516392111ec0a))
+* **auth:** tenant-filtered reads + active-tenant + private-repo authz ([#148](https://github.com/Roxabi/roxabi-live/issues/148)) ([b8469d5](https://github.com/Roxabi/roxabi-live/commit/b8469d541c8fcb592604b713c6c2b26f8624de79))
+* **deploy:** NOT-NULL migration + CF Access cutover + runbook ([#150](https://github.com/Roxabi/roxabi-live/issues/150)) ([456ec60](https://github.com/Roxabi/roxabi-live/commit/456ec600ce8bf5125128193e935f08ae029fe843))
+* **deploy:** NOT-NULL migration + CF Access cutover runbook ([#150](https://github.com/Roxabi/roxabi-live/issues/150)) ([ae23f09](https://github.com/Roxabi/roxabi-live/commit/ae23f09eae3ab737f1dfe9b508b384ce9e1f8519))
+* **ui:** login + account-link + operator-read consent gate ([5d3ee2d](https://github.com/Roxabi/roxabi-live/commit/5d3ee2d51e2dc9c18d97335f9b3e53e138d392e2))
+* **ui:** login + account-link + operator-read consent gate ([#149](https://github.com/Roxabi/roxabi-live/issues/149)) ([4eec7bd](https://github.com/Roxabi/roxabi-live/commit/4eec7bdd2100bc2453a293a72e2addfe19769171))
+
+
+### Bug Fixes
+
+* **auth:** apply PR [#171](https://github.com/Roxabi/roxabi-live/issues/171) review — tenantId thread, suspended guard, drop installation_id ([#148](https://github.com/Roxabi/roxabi-live/issues/148)) ([0d59a8d](https://github.com/Roxabi/roxabi-live/commit/0d59a8d558414a1588a92c0012fe767c19220db3))
+* **deploy:** apply PR [#173](https://github.com/Roxabi/roxabi-live/issues/173) review findings ([#150](https://github.com/Roxabi/roxabi-live/issues/150)) ([8d7fabc](https://github.com/Roxabi/roxabi-live/commit/8d7fabc168919935094e9146f0a6c72d0469b6e7))
+* promote staging → main — consent-gate overlay hotfix ([#176](https://github.com/Roxabi/roxabi-live/issues/176)) ([5b0b10a](https://github.com/Roxabi/roxabi-live/commit/5b0b10a11965e24da3a521e927d64b2fd32380ab))
+* **ui:** apply review findings — consent copy, gate UX, a11y, logout ([#149](https://github.com/Roxabi/roxabi-live/issues/149)) ([137e580](https://github.com/Roxabi/roxabi-live/commit/137e580a12b2a6f57bc134408ec3b11471847865))
+* **ui:** consent-gate overlay always painted — hidden overridden by display:flex ([852250d](https://github.com/Roxabi/roxabi-live/commit/852250d01a8b6a0ee8c8f14ac2d4c871bfc1edb7))
+* **ui:** consent-gate overlay always visible — hidden attr overridden by display:flex ([14fb090](https://github.com/Roxabi/roxabi-live/commit/14fb090f73d191d17afed4b026d0b69f1bbdbc4f))
+
+
+### Documentation
+
+* **148:** plan + spec amendment (Option-3 self-absorb) ([f504486](https://github.com/Roxabi/roxabi-live/commit/f5044868b134e26479c38c52e33e467178c9715a))
+* **plan:** [#149](https://github.com/Roxabi/roxabi-live/issues/149) login + operator-read consent UI plan (F-lite) ([99a28ce](https://github.com/Roxabi/roxabi-live/commit/99a28ceb09041c1265c8f0f180b69ae213fd99b3))
+
 ## [0.10.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.9.0...roxabi-live/v0.10.0) (2026-06-13)
 
 
