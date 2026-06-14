@@ -1,0 +1,112 @@
+---
+title: "S7 #150 — NOT-NULL migration + CF Access cutover + runbook (Phase-1 final slice)"
+issue: 150
+epic: 141
+tier: S
+status: implementing
+---
+
+# Plan — S7 #150 (epic #141 final slice)
+
+Closes Phase 1 of the multi-tenant rebuild: ship the deferred NOT-NULL migration (M-b)
+and flip CF Access from "gate the whole app" to "gate `/admin/*` only", so app-level
+sessions (built behind the Access wall in S2–S6) take over the public app. This is the
+slice that *actually opens the door to multi-tenancy* — until now every user other than
+`mickael@bouly.io` hit the Access wall.
+
+## Scope (from issue #150 / spec S7)
+
+1. Re-verify `COUNT(*) WHERE … IS NULL = 0` on `sync_control` + new-table required columns.
+2. Commit + apply **M-b `0008_tenant_not_null.sql`** (NOT-NULL ships HERE, never earlier).
+3. Staging smoke-test gate: app sessions return **401 unauth**.
+4. **CF Access narrowing**: App 1 (all-paths OTP) → `/admin/*` only; App 2 (`/webhook/*` bypass) unchanged.
+5. Prod cutover.
+6. Rollback (re-enable full-path Access) documented in a tracked runbook.
+
+## Re-evaluation of the M-b NO-OP candidate (S1 appendix)
+
+The S1 design (plan #144 appendix) flagged M-b as a **NO-OP candidate**: new tables were
+authored with `NOT NULL` inline in 0004, and `issues.payload` / `repos.repo_node_id` stay
+intentionally nullable. **Re-evaluated at S7 entry → not empty:** the 0004 `sync_control`
+rebuild silently dropped `value`'s `NOT NULL` (it was `NOT NULL` in 0001). That is the one
+genuine new-/rebuilt-table required column still loose, and the AC singles out
+"`COUNT NULL=0` on `sync_control`". M-b therefore re-tightens `sync_control.value`.
+
+Full new-table audit (current nullability vs. required):
+
+| Table | Loose required col? |
+|---|---|
+| tenants, users, user_installations, sessions, oauth_state, install_tokens | none (NOT NULL inline; `suspended_at`/`revoked_at`/`redirect_after` nullable by design) |
+| tenant_repo_access (`is_private` NOT NULL via 0007), user_repo_permission_cache, zk_payloads | none |
+| **sync_control** | **`value`** — `NOT NULL` (0001) → nullable (0004 rebuild). Re-tighten. |
+| issues / edges / labels / pr_state / repos | **excluded** — data tables, global PKs, no tenant_id; `payload`/`repo_node_id` stay nullable |
+
+### Write-path safety (verified, read-source not grep-assume)
+
+`sync_control.value` is never written NULL by any path:
+
+| Write | value bound | Non-NULL |
+|---|---|---|
+| `BUMP_DATA_VERSION_SQL` (mutations.ts) | `iso` (`new Date().toISOString()`) | ✓ |
+| `sync_started_at` UPDATE (sync.ts:1189) | `startedAt` ISO | ✓ |
+| `sync_slot` UPDATE (sync.ts:1347) | `String(nextSlot)` | ✓ |
+| lock/breaker UPDATES + seeds | literals `'0'`/`'1'`/`CAST(... AS TEXT)` | ✓ |
+
+→ Tightening cannot break a runtime write. The migration is also **self-guarding**: the
+`INSERT … SELECT` into a `NOT NULL` column throws *before any rename* if a stray NULL
+exists, so a bad state fails the CI migrate step loudly rather than corrupting data.
+
+## Migration design — `0008_tenant_not_null.sql`
+
+Mirror 0004's proven rename-swap (data survives every crash point; `DROP … IF EXISTS`
+recovery guard for partial re-runs). Preserve: `tenant_id INTEGER NOT NULL DEFAULT 0`
+(sentinel rows, **no FK** — deviation D-2), `key TEXT NOT NULL`, PK `(tenant_id, key)`,
+`updated_at` default. Only change: `value TEXT` → `value TEXT NOT NULL`. No secondary
+indexes to recreate (PK-only, same as 0001/0004).
+
+No unit test added: the worker suite mocks D1 (string-match), so a migration test would be
+theater. Validation = self-guard + `--local` apply + CI `--remote` apply + preflight COUNT.
+
+## CF Access cutover — safe ordering (add-specific-before-removing-general)
+
+Mirrors the S9 precedent ("App 2 before App 1"): never leave `/admin` unprotected.
+
+1. **Add** Access app "Roxabi Live Admin" → path `/admin`, policy Allow `mickael@bouly.io` OTP
+   (clone App 1's policy). Verify `/admin/sync` still OTP-challenged.
+2. Confirm staging smoke gate green: `/api/graph` unauth → **401** (Worker `requireSession`).
+3. **Remove** App 1 (the all-paths catch-all). Now: `/admin/*`→OTP (new app), `/webhook/*`→bypass
+   (App 2), everything else→edge-open → Worker `requireSession` (401 unauth / 200 with cookie).
+4. Verify post-flip: `/api/graph` unauth → 401 from Worker (NOT an Access redirect);
+   `/admin/sync` → Access OTP redirect; `/webhook/github` → no challenge.
+
+**Edge-exposed-after-flip routes** (intended): `/` + assets (frontend auth-gate redirects),
+`/api/version` (timestamp), `/health` (aggregate count), `/login`, `/oauth/callback`, `/logout`.
+All non-sensitive or auth-entry. Gated routes (`/api/graph,issues,me,active-tenant`) keep
+`requireSession`. → audited in the adversarial review (route-exposure check).
+
+**Rollback**: re-create App 1 (self-hosted, `live.roxabi.dev`, all paths, Allow
+`mickael@bouly.io` OTP) → whole app behind Access again. Exact policy in the runbook.
+
+## Deliverables
+
+| File | Owner | Notes |
+|---|---|---|
+| `worker/migrations/0008_tenant_not_null.sql` | (this slice) | guarded sync_control rebuild, value NOT NULL |
+| `docs/s7-access-cutover.md` | doc | preflight + smoke gate + Access narrowing + rollback runbook |
+| `CLAUDE.md` | doc | Access line: "behind CF Access (all paths)" → "/admin/* behind Access; public app = app sessions" |
+| this plan | — | artifact |
+
+## Go/No-Go (prod cutover — operator-gated, NOT autonomous)
+
+- [ ] `0008` merged to staging; staging D1 migrated green (CI)
+- [ ] staging preflight `SELECT COUNT(*) FROM sync_control WHERE value IS NULL` = 0
+- [ ] staging smoke: `/api/graph` unauth → 401; with valid cookie → 200
+- [ ] promote staging→main (CI applies `0008` to prod D1) — operator
+- [ ] **prod preflight** COUNT NULL = 0 confirmed before/at promote
+- [ ] CF Access narrowing executed (steps above) — operator, dashboard
+- [ ] post-flip verification curls pass
+- [ ] rollback runbook confirmed actionable
+
+Prod migration apply + CF Access change are **outward-facing / hard-to-reverse** → executed
+by the operator on explicit go, never autonomously. This slice ships the repo artifacts +
+runbook + a green staging PR.
