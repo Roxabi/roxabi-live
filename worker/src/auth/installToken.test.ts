@@ -593,10 +593,13 @@ describe("listInstallationRepos — W2 pagination bound", () => {
 
   it("stops early on a short final page and does NOT warn (normal case)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ repositories: [{ full_name: "o/only" }] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({ repositories: [{ full_name: "o/only", private: true }] }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -604,7 +607,7 @@ describe("listInstallationRepos — W2 pagination bound", () => {
     const repos = await listInstallationRepos("fake-token");
 
     expect(fetchMock).toHaveBeenCalledTimes(1); // short page → single fetch
-    expect(repos).toEqual(["o/only"]);
+    expect(repos).toEqual([{ repo: "o/only", isPrivate: true }]);
     expect(warnSpy).not.toHaveBeenCalled();
   });
 });

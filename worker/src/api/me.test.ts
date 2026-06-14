@@ -210,7 +210,7 @@ describe("meRoute", () => {
 
   it("surfaces installation rows returned by D1 in the response body", async () => {
     // Arrange — FakeD1 returns one installation row
-    const fakeRow = { tenant_id: 9, installation_id: 5, account_login: "Roxabi" };
+    const fakeRow = { tenant_id: 9, account_login: "Roxabi", account_type: "Organization" };
     const { db } = captureDbWithRows([fakeRow]);
     const app = makeApp(db);
 
@@ -223,9 +223,51 @@ describe("meRoute", () => {
     expect(body.installations).toHaveLength(1);
     expect(body.installations[0]).toMatchObject({
       tenant_id: 9,
-      installation_id: 5,
       account_login: "Roxabi",
+      account_type: "Organization",
     });
+  });
+
+  it("installations SELECT does NOT project installation_id (#171 — unnecessary exposure removed)", async () => {
+    // Arrange
+    const { db, stmts } = captureDb();
+    const app = makeApp(db);
+
+    // Act
+    await app.request("/api/me", {}, makeEnv(db));
+
+    // Assert — installation_id is internal infra detail, not surfaced to clients
+    const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
+    expect(installStmt).toBeDefined();
+    expect(installStmt!.sql).not.toContain("installation_id");
+  });
+
+  it("response includes active_tenant_id from the session (#148 SC7)", async () => {
+    // Arrange
+    const { db } = captureDb();
+    const app = makeApp(db);
+
+    // Act
+    const res = await app.request("/api/me", {}, makeEnv(db));
+
+    // Assert — the active tenant is surfaced so the client can render the tenant switcher
+    expect(res.status).toBe(200);
+    const body = await res.json() as { active_tenant_id: number };
+    expect(body.active_tenant_id).toBe(STUB_SESSION.tenantId);
+  });
+
+  it("installations SELECT projects account_type (#148 SC7)", async () => {
+    // Arrange
+    const { db, stmts } = captureDb();
+    const app = makeApp(db);
+
+    // Act
+    await app.request("/api/me", {}, makeEnv(db));
+
+    // Assert — account_type must be selected so User vs Organization tenants are distinguishable
+    const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
+    expect(installStmt).toBeDefined();
+    expect(installStmt!.sql).toContain("account_type");
   });
 
   it("returns 401 when requireSession finds no session cookie (negative guard test)", async () => {

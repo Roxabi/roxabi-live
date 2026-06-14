@@ -1105,7 +1105,7 @@ export async function discoverTenants(
     }
 
     try {
-      let repos: string[];
+      let repos: Array<{ repo: string; isPrivate: boolean }>;
       try {
         const token = await getInstallationToken(db, env, tenantId, installationId);
         repos = await listInstallationRepos(token);
@@ -1115,20 +1115,22 @@ export async function discoverTenants(
         continue;
       }
 
-      // Upsert accessible repos into tenant_repo_access.
+      // Upsert accessible repos into tenant_repo_access (sets is_private on every sync
+      // so public repos converge to is_private=0; DEFAULT 1 = fail-closed for new rows).
       if (repos.length > 0) {
-        const upsertStmts = repos.map((repo) =>
+        const upsertStmts = repos.map((r) =>
           db
             .prepare(
-              `INSERT OR IGNORE INTO tenant_repo_access (tenant_id, repo) VALUES (?, ?)`,
+              `INSERT INTO tenant_repo_access (tenant_id, repo, is_private) VALUES (?, ?, ?)
+               ON CONFLICT(tenant_id, repo) DO UPDATE SET is_private = excluded.is_private`,
             )
-            .bind(tenantId, repo),
+            .bind(tenantId, r.repo, r.isPrivate ? 1 : 0),
         );
         await batchChunked(db, upsertStmts);
       }
 
       // Delete stale rows: repos no longer returned by the installation.
-      const repoSet = new Set(repos);
+      const repoSet = new Set(repos.map((r) => r.repo));
       const existing = await db
         .prepare(`SELECT repo FROM tenant_repo_access WHERE tenant_id = ?`)
         .bind(tenantId)
@@ -1145,7 +1147,7 @@ export async function discoverTenants(
       }
 
       // Merge into global map (sorted ascending by tenantId — maintained by ORDER BY above).
-      for (const repo of repos) {
+      for (const { repo } of repos) {
         const entry = repoMap.get(repo);
         if (entry) {
           entry.push({ tenantId, installationId });

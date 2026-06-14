@@ -23,17 +23,18 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
 
   const rows = await c.env.DB
     .prepare(
-      `SELECT ui.tenant_id AS tenant_id, t.installation_id AS installation_id, t.account_login AS account_login
+      `SELECT ui.tenant_id AS tenant_id, t.account_login AS account_login, t.account_type AS account_type
        FROM user_installations ui JOIN tenants t ON t.id = ui.tenant_id WHERE ui.user_id = ?`,
     )
     .bind(s.userId)
-    .all<{ tenant_id: number; installation_id: number; account_login: string }>();
+    .all<{ tenant_id: number; account_login: string; account_type: string }>();
 
   return c.json({
     user: {
       github_id: s.githubId,
       github_login: s.githubLogin,
     },
+    active_tenant_id: s.tenantId,
     installations: rows.results,
   });
 }

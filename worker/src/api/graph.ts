@@ -5,15 +5,17 @@
  * Response shape MUST stay { nodes: Node[], edges: Edge[] } — byte-compatible
  * with the Python source consumed by the v6 frontend (state.js).
  *
- * Four D1 reads (same logical queries as Python):
+ * Five D1 reads (a)-(e), tenant-scoped to resolveVisibleRepos(c):
  *   (a) labels — grouped into Map<issueKey, string[]>
  *   (b) open pr_state — build Map<issueKey, {has_reviewed_label:number}[]>
  *   (c) issues — one row per issue
  *   (d) edges — all src_key/dst_key/kind rows
+ *   (e) repos — live first (archived=0), then archived (archived=1), both alpha
  */
 
 import type { Context } from "hono";
-import type { Env } from "../types";
+import type { AuthEnv } from "../auth/session";
+import { resolveVisibleRepos } from "../auth/repoAccess";
 import { parseMilestone } from "../sync/parse";
 
 const LANE_LABEL_PREFIX = "graph:lane/";
@@ -113,11 +115,19 @@ interface EdgeRow {
   kind: string;
 }
 
-export const graphRoute = async (c: Context<{ Bindings: Env }>) => {
-  // (a) labels → Map<issueKey, string[]>
+export const graphRoute = async (c: Context<AuthEnv>) => {
+  const visible = await resolveVisibleRepos(c);
+
+  if (visible.length === 0) {
+    return c.json({ nodes: [], edges: [], repos: [] });
+  }
+
+  const ph = visible.map(() => "?").join(",");
+
+  // (a) labels → Map<issueKey, string[]> — scoped to visible issues only
   const labelRows = await c.env.DB.prepare(
-    "SELECT issue_key, name FROM labels",
-  ).all<LabelRow>();
+    `SELECT issue_key, name FROM labels WHERE issue_key IN (SELECT key FROM issues WHERE repo IN (${ph}))`,
+  ).bind(...visible).all<LabelRow>();
   const labelsByIssue = new Map<string, string[]>();
   for (const row of labelRows.results) {
     const existing = labelsByIssue.get(row.issue_key);
@@ -129,9 +139,12 @@ export const graphRoute = async (c: Context<{ Bindings: Env }>) => {
   }
 
   // (b) open pr_state → Map<issueKey, PrInfo[]>
+  // pr_state has a repo column; scope to visible repos so PR metadata for non-visible
+  // repos is excluded. openPrsByIssue is read by key only for visible issues, but
+  // scoping here prevents any row for non-visible repos from entering the map.
   const prRows = await c.env.DB.prepare(
-    "SELECT closing_issue_keys, has_reviewed_label FROM pr_state WHERE state = 'open'",
-  ).all<PrStateRow>();
+    `SELECT closing_issue_keys, has_reviewed_label FROM pr_state WHERE state = 'open' AND repo IN (${ph})`,
+  ).bind(...visible).all<PrStateRow>();
   const openPrsByIssue = new Map<string, PrInfo[]>();
   for (const row of prRows.results) {
     if (!row.closing_issue_keys) continue;
@@ -152,11 +165,11 @@ export const graphRoute = async (c: Context<{ Bindings: Env }>) => {
     }
   }
 
-  // (c) issues
+  // (c) issues — scoped to visible repos
   const issueRows = await c.env.DB.prepare(
     "SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone," +
-      " lane, priority, size, status, is_stub, has_active_branch FROM issues",
-  ).all<IssueRow>();
+      ` lane, priority, size, status, is_stub, has_active_branch FROM issues WHERE repo IN (${ph})`,
+  ).bind(...visible).all<IssueRow>();
 
   const nodes: Node[] = issueRows.results.map((row) => {
     const issueLabels = labelsByIssue.get(row.key) ?? [];
@@ -188,10 +201,13 @@ export const graphRoute = async (c: Context<{ Bindings: Env }>) => {
     };
   });
 
-  // (d) edges
+  // (d) edges — both endpoints must be in visible repos; dangling edges to invisible
+  // nodes are dropped (graph only draws an edge when both nodes are present)
   const edgeRows = await c.env.DB.prepare(
-    "SELECT src_key, dst_key, kind FROM edges",
-  ).all<EdgeRow>();
+    `SELECT src_key, dst_key, kind FROM edges` +
+      ` WHERE src_key IN (SELECT key FROM issues WHERE repo IN (${ph}))` +
+      ` AND dst_key IN (SELECT key FROM issues WHERE repo IN (${ph}))`,
+  ).bind(...visible, ...visible).all<EdgeRow>();
 
   const edges: Edge[] = edgeRows.results.map((row) => ({
     src: row.src_key,
@@ -205,8 +221,8 @@ export const graphRoute = async (c: Context<{ Bindings: Env }>) => {
     archived: number;
   }
   const repoRows = await c.env.DB.prepare(
-    "SELECT repo, archived FROM repos ORDER BY archived ASC, repo ASC",
-  ).all<RepoRow>();
+    `SELECT repo, archived FROM repos WHERE repo IN (${ph}) ORDER BY archived ASC, repo ASC`,
+  ).bind(...visible).all<RepoRow>();
   const repos = (repoRows.results ?? []).map((r) => ({
     repo: r.repo,
     archived: Boolean(r.archived),

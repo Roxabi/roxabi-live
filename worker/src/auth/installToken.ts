@@ -208,6 +208,7 @@ export async function resolveInstallToken(
 
 interface GHRepository {
   full_name: string;
+  private: boolean;
 }
 
 interface GHInstallationReposResponse {
@@ -221,11 +222,13 @@ interface GHInstallationReposResponse {
  * Paginates automatically (100 per page) until all repos are collected.
  *
  * @param token - GitHub installation access token (from getInstallationToken).
- * @returns Array of `"owner/name"` full_name strings.
+ * @returns Array of `{ repo: "owner/name", isPrivate: boolean }` entries.
  */
-export async function listInstallationRepos(token: string): Promise<string[]> {
+export async function listInstallationRepos(
+  token: string,
+): Promise<Array<{ repo: string; isPrivate: boolean }>> {
   const MAX_PAGES = 10;
-  const repos: string[] = [];
+  const repos: Array<{ repo: string; isPrivate: boolean }> = [];
   let lastPageFull = false;
 
   for (let page = 1; page <= MAX_PAGES; page++) {
@@ -258,7 +261,7 @@ export async function listInstallationRepos(token: string): Promise<string[]> {
     const pageRepos = body.repositories ?? [];
 
     for (const r of pageRepos) {
-      repos.push(r.full_name);
+      repos.push({ repo: r.full_name, isPrivate: r.private });
     }
 
     lastPageFull = pageRepos.length === 100;
