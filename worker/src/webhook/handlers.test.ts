@@ -102,7 +102,6 @@ function makeRequest(
 function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
     DB: captureDb().db,
-    GITHUB_ORG: "Roxabi",
     GITHUB_WEBHOOK_SECRET: "test-secret",
     ASSETS: {} as Fetcher,
     GITHUB_APP_ID: "0",

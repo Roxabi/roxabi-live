@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { meRoute, logoutRoute } from "./me";
-import type { AuthEnv, SessionContext } from "../auth/session";
+import type { AuthEnv, SessionContext } from "../auth/types";
 import { requireSession } from "../auth/session";
 import type { FakeResult, FakeStmt } from "../test-utils";
 import { makeFakeStmt, makeFakeDb, captureDb, captureDbWithRows } from "../test-utils";
@@ -27,7 +27,6 @@ function makeEnv(db: D1Database): Env {
   return {
     DB: db,
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) } as unknown as Fetcher,
-    GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
 }

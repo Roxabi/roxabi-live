@@ -2,34 +2,12 @@
  * Session management for GitHub App OAuth sessions.
  *
  * Tokens are stored as SHA-256 hashes (never raw). The __Host- cookie prefix
- * mandates Secure + Path=/ + no Domain — enforced by sessionCookie().
+ * mandates Secure + Path=/ + no Domain — enforced by sessionCookie() in auth/cookies.ts.
  */
 
-import type { MiddlewareHandler, Context } from "hono";
-import type { Env } from "../types";
-
-// ---------------------------------------------------------------------------
-// Public types
-// ---------------------------------------------------------------------------
-
-export interface SessionContext {
-  userId: number;
-  tenantId: number;
-  githubId: number;
-  githubLogin: string;
-}
-
-export type AuthEnv = {
-  Bindings: Env;
-  Variables: { session?: SessionContext };
-};
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-export const SESSION_COOKIE = "__Host-session";
-export const SESSION_TTL_SECONDS = 28800; // 8 hours
+import type { MiddlewareHandler } from "hono";
+import type { SessionContext, AuthEnv } from "./types";
+import { readSessionToken } from "./cookies";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -45,49 +23,6 @@ async function sha256hex(s: string): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-}
-
-// ---------------------------------------------------------------------------
-// Cookie helpers (pure, synchronous)
-// ---------------------------------------------------------------------------
-
-/**
- * Build a Set-Cookie header value for the session token.
- * __Host- prefix requires: Secure, Path=/, no Domain.
- */
-export function sessionCookie(rawToken: string): string {
-  return `${SESSION_COOKIE}=${rawToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}`;
-}
-
-/**
- * Build a Set-Cookie header value that immediately expires the session cookie.
- */
-export function clearSessionCookie(): string {
-  return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
-}
-
-// ---------------------------------------------------------------------------
-// Token reader
-// ---------------------------------------------------------------------------
-
-/**
- * Parse the __Host-session cookie value from the Cookie header.
- * Returns null if the cookie is absent or the header is missing.
- */
-export function readSessionToken(c: Context): string | null {
-  const cookieHeader = c.req.header("Cookie");
-  if (!cookieHeader) return null;
-
-  for (const part of cookieHeader.split(";")) {
-    const trimmed = part.trim();
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx === -1) continue;
-    const name = trimmed.slice(0, eqIdx).trim();
-    if (name === SESSION_COOKIE) {
-      return trimmed.slice(eqIdx + 1).trim() || null;
-    }
-  }
-  return null;
 }
 
 // ---------------------------------------------------------------------------

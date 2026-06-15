@@ -14,7 +14,7 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "../auth/session";
+import type { AuthEnv } from "../auth/types";
 import { resolveVisibleRepos } from "../auth/repoAccess";
 import { parseMilestone } from "../sync/parse";
 

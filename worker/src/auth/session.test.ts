@@ -11,12 +11,10 @@ import {
   validateSession,
   deleteSession,
   requireSession,
-  sessionCookie,
-  clearSessionCookie,
-  SESSION_COOKIE,
-  SESSION_TTL_SECONDS,
 } from "./session";
-import type { AuthEnv, SessionContext } from "./session";
+import { sessionCookie, clearSessionCookie } from "./cookies";
+import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
+import type { AuthEnv, SessionContext } from "./types";
 import type { Env } from "../types";
 
 import type { FakeResult, FakeStmt } from "../test-utils";

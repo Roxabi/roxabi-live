@@ -20,7 +20,6 @@ function mockEnv(adminToken?: string): Env {
       dump: async () => new ArrayBuffer(0),
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
     ...(adminToken !== undefined ? { ADMIN_TOKEN: adminToken } : {}),
   } as unknown as Env;

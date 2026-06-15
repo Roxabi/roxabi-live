@@ -1,6 +1,6 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
-import type { AuthEnv } from "../auth/session";
+import type { AuthEnv } from "../auth/types";
 import type { Env } from "../types";
 import { graphRoute } from "./graph";
 import {

@@ -7,7 +7,7 @@
 
 import { vi } from "vitest";
 import type { Env } from "./types";
-import type { SessionContext } from "./auth/session";
+import type { SessionContext } from "./auth/types";
 
 // ---------------------------------------------------------------------------
 // Core FakeD1 types
@@ -193,7 +193,6 @@ export function makeEnv(db: D1Database): Env {
     ASSETS: {
       fetch: async () => new Response("asset", { status: 200 }),
     } as unknown as Fetcher,
-    GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
 }
