@@ -859,7 +859,6 @@ describe("runSync", () => {
   function makeEnv(overrides: Record<string, unknown> = {}): Env {
     return {
       DB: undefined as unknown as D1Database,
-      GITHUB_ORG: "Roxabi",
       ...overrides,
     } as unknown as Env;
   }
@@ -1175,7 +1174,6 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
   function makeEnv(overrides: Record<string, unknown> = {}): Env {
     return {
       DB: undefined as unknown as D1Database,
-      GITHUB_ORG: "Roxabi",
       ...overrides,
     } as unknown as Env;
   }
@@ -1367,7 +1365,6 @@ describe("runSync — breaker + discovery (#160)", () => {
   function makeEnv(overrides: Record<string, unknown> = {}): Env {
     return {
       DB: undefined as unknown as D1Database,
-      GITHUB_ORG: "Roxabi",
       ...overrides,
     } as unknown as Env;
   }

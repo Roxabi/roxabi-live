@@ -71,7 +71,7 @@ function seededDb(seed: { tenant?: Row | null; user?: Row | null; repo?: Row | n
 }
 
 function fakeEnv(): Env {
-  return { GITHUB_ORG: "Roxabi" } as unknown as Env;
+  return {} as unknown as Env;
 }
 
 const activeTenant: Row = {

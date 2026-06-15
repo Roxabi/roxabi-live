@@ -64,7 +64,6 @@ async function buildFakeEnv(
   const env: Env = {
     DB: null as unknown as D1Database, // overridden per test
     ASSETS: null as unknown as Fetcher,
-    GITHUB_ORG: "TestOrg",
     GITHUB_WEBHOOK_SECRET: "test-webhook-secret",
     GITHUB_APP_ID: "999999",
     GITHUB_APP_CLIENT_ID: "Iv1.test",

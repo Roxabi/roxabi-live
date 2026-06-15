@@ -107,7 +107,6 @@ function makeListEnvWithCapture(
       },
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
 
@@ -134,7 +133,6 @@ function makeListEnv(opts: ListEnvOptions): Env {
       ],
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
 }
@@ -182,7 +180,6 @@ function makeGetEnv(opts: GetEnvOptions): Env {
       batch: async () => [],
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
 }
@@ -227,7 +224,6 @@ function makeGetEnvWithCapture(opts: GetEnvOptions): {
       batch: async () => [],
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
 
@@ -261,7 +257,6 @@ function makeRepoFilteredGetEnv(opts: {
       batch: async () => [],
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
 }
@@ -764,7 +759,6 @@ describe("#148 tenant scoping", () => {
         batch: async () => [],
       },
       ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-      GITHUB_ORG: "",
       GITHUB_WEBHOOK_SECRET: "",
     } as unknown as Env;
 

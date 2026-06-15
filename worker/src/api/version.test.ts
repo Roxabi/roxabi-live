@@ -19,7 +19,6 @@ function mockEnv(row: Record<string, unknown> | null): { env: Env; getCapturedSq
       },
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
-    GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
   return { env, getCapturedSql: () => capturedSql };
