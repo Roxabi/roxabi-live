@@ -1283,11 +1283,14 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       if (sql.includes("sync_running") && sql.includes("UPDATE")) {
-        // Lock bound as [..., tenantId] — tenantId is last arg (a number)
-        const tenantArg = [...args].reverse().find((a) => typeof a === "number");
-        if (tenantArg === 0) return makeFakeStmt(sql, args, [], 1); // global tick lock: acquired
-        if (tenantArg === 1) return makeFakeStmt(sql, args, [], 0); // tenant A: lock held
-        if (tenantArg === 2) {
+        // acquireSyncLock binds: .bind(timestamp, tenantId)
+        // → args[0] = ISO timestamp (string), args[1] = tenantId (number).
+        // CONTRACT: if the SQL param order changes this discriminator will break loudly
+        // because args[1] would be a string and Number("2026-...") would be NaN.
+        const tenantId = Number(args[1]);
+        if (tenantId === 0) return makeFakeStmt(sql, args, [], 1); // global tick lock: acquired
+        if (tenantId === 1) return makeFakeStmt(sql, args, [], 0); // tenant A: lock held
+        if (tenantId === 2) {
           tenantBLockAttempted = true;
           return makeFakeStmt(sql, args, [], 1); // tenant B: lock acquired
         }
