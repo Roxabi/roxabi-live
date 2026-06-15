@@ -44,7 +44,7 @@ export function makeFakeStmt(
 
 export function makeFakeDb(
   stmtFactory: (sql: string, args: unknown[]) => FakeStmt,
-): D1Database {
+): D1Database & { _recorded: FakeStmt[] } {
   const recorded: FakeStmt[] = [];
 
   const db = {
