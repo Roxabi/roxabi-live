@@ -7,7 +7,7 @@
 
 import { vi } from "vitest";
 import type { Env } from "./types";
-import type { SessionContext } from "./auth/session";
+import type { SessionContext } from "./auth/types";
 
 // ---------------------------------------------------------------------------
 // Core FakeD1 types

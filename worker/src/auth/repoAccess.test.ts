@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { Context } from "hono";
-import type { AuthEnv } from "./session";
+import type { AuthEnv } from "./types";
 import {
   resolveVisibleRepos,
   checkPrivateAccess,

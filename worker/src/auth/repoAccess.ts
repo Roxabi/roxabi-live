@@ -9,7 +9,7 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "./session";
+import type { AuthEnv } from "./types";
 import type { Env } from "../types";
 import { getInstallationToken } from "./installToken";
 

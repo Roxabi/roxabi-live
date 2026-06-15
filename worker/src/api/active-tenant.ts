@@ -8,8 +8,9 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "../auth/session";
-import { readSessionToken, setSessionTenant } from "../auth/session";
+import type { AuthEnv } from "../auth/types";
+import { readSessionToken } from "../auth/cookies";
+import { setSessionTenant } from "../auth/session";
 
 export async function activeTenantRoute(c: Context<AuthEnv>): Promise<Response> {
   // Defense-in-depth: requireSession already guards, but fail closed here too.

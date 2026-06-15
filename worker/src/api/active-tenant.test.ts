@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { Hono } from "hono";
-import type { AuthEnv, SessionContext } from "../auth/session";
+import type { AuthEnv, SessionContext } from "../auth/types";
 import { activeTenantRoute } from "./active-tenant";
 import {
   captureDb,

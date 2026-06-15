@@ -8,7 +8,8 @@ import { webhookRoute } from "./webhook/handlers";
 import { checkAdminAuth } from "./api/auth";
 import { loginRoute, callbackRoute } from "./auth/oauth";
 import { meRoute, logoutRoute } from "./api/me";
-import { requireSession, type AuthEnv } from "./auth/session";
+import type { AuthEnv } from "./auth/types";
+import { requireSession } from "./auth/session";
 import { activeTenantRoute } from "./api/active-tenant";
 
 const app = new Hono<AuthEnv>();

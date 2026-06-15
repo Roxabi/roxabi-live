@@ -10,7 +10,8 @@
 
 import type { Context } from "hono";
 import type { Env } from "../types";
-import { mintSession, sessionCookie } from "./session";
+import { mintSession } from "./session";
+import { sessionCookie } from "./cookies";
 
 // ---------------------------------------------------------------------------
 // Internal helpers

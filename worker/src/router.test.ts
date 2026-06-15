@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { Env } from "./types";
-import type { SessionContext } from "./auth/session";
+import type { SessionContext } from "./auth/types";
 import { app } from "./router";
 
 afterEach(() => {
