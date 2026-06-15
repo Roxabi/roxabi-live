@@ -2,7 +2,7 @@
 
 Issue [#100](https://github.com/Roxabi/roxabi-live/issues/100) · epic [#92](https://github.com/Roxabi/roxabi-live/issues/92).
 
-The **code** for S8 shipped in S4 (#96): the hourly Cron trigger, the `scheduled()`
+The **code** for S8 shipped in S4 (#96): the daily Cron trigger, the `scheduled()`
 handler, and the auth-halt → `NOTIFY_URL` alert all exist. This slice adds the
 **observability config** and the **operational steps** that can't live in the repo, plus
 two code hardening changes (typed `Env.NOTIFY_URL`, halt-alert test).
@@ -98,11 +98,11 @@ Unset = alerts disabled (the code no-ops; the breaker still halts the sync).
 
 ## Acceptance verification (Accept criteria, #100)
 
-1. **≥1 successful Cron execution in prod.** After deploy, wait for the top of an hour, then:
+1. **≥1 successful Cron execution in prod.** After deploy, wait for 00:00 UTC, then:
 
    ```bash
    # CF dashboard → Workers & Pages → roxabi-live → Cron → invocation log shows success
-   # OR via D1 (watermark advanced within the last ~65 min):
+   # OR via D1 (watermark advanced within the last ~25 hours):
    wrangler d1 execute roxabi-live-production --remote \
      --command "SELECT key, value, datetime(updated_at) FROM sync_control WHERE key IN ('halted','auth_failures'); SELECT MAX(last_synced_at) AS watermark FROM sync_state;"
    ```
@@ -115,7 +115,7 @@ Unset = alerts disabled (the code no-ops; the breaker still halts the sync).
      -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" | jq '.result[] | select(.name=="roxabi-live-logs") | {last_complete,last_error}'
    ```
 
-3. **`/api/version` timestamp ≤ 65 min old** after one prod hour:
+3. **`/api/version` timestamp ≤ 25 hours old** after one prod day:
 
    ```bash
    curl -sS https://<prod-host>/api/version | jq '.'

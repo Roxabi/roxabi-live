@@ -5,7 +5,8 @@ import type { Env } from "./types";
 export default {
   fetch: app.fetch,
 
-  // Hourly Cron Trigger (wrangler.toml [triggers].crons = "0 * * * *").
+  // Daily Cron Trigger (wrangler.toml [triggers].crons = "0 0 * * *") — runs a
+  // FULL reconcile (since=null) so deps-only edge changes are healed daily (#80).
   scheduled: async (
     _controller: ScheduledController,
     env: Env,

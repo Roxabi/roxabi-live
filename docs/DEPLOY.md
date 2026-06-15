@@ -465,7 +465,7 @@ curl https://<YOUR_DOMAIN>/api/version
 
 ### Trigger a sync
 
-The cron runs hourly at minute 0 (`0 * * * *`). To trigger immediately:
+The cron runs daily at 00:00 UTC (`0 0 * * *`). To trigger immediately:
 
 ```bash
 # Requires ADMIN_TOKEN to be set (step 5):
@@ -514,10 +514,10 @@ export CLOUDFLARE_ACCOUNT_ID=<YOUR_ACCOUNT_ID>
 
 ### Graph is empty after first login
 
-The graph is built from synced data. Either wait for the hourly cron (fires at `:00`) or
+The graph is built from synced data. Either wait for the daily cron (fires at 00:00 UTC) or
 trigger a manual sync via `POST /admin/sync`. After sync, reload the dashboard.
 
-`is_private` values for repos default to `1` (fail-closed, migration 0007). The hourly
+`is_private` values for repos default to `1` (fail-closed, migration 0007). The daily
 sync corrects these from the GitHub API. After the first successful sync, private/public
 status will be accurate.
 

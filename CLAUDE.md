@@ -11,7 +11,7 @@ Let:
 **Roxabi Live** — operations cockpit (Cloudflare Worker + D1, TypeScript)
 - Prod: Cloudflare Worker `roxabi-live` at **https://live.roxabi.dev**; **/admin/* behind Cloudflare Access (Email-OTP, mickael@bouly.io); public app gated by app-level sessions (#141, S7 #150) — pending cutover, see docs/s7-access-cutover.md**
 - Data: D1 `roxabi-live-production` (replaces `~/.roxabi/corpus.db` / aiosqlite)
-- Sync: GitHub GraphQL via `fetch()` in `worker/src/sync/`, driven by Cron Trigger `0 * * * *` + real-time GitHub org webhook → `POST /webhook/github` (HMAC-gated; Access Bypass on `/webhook/*`)
+- Sync: GitHub GraphQL via `fetch()` in `worker/src/sync/`, driven by Cron Trigger `0 0 * * *` (daily full reconcile, #80) + real-time GitHub org webhook → `POST /webhook/github` (HMAC-gated; Access Bypass on `/webhook/*`)
 - Frontend: static dep-graph assets served via Worker ASSETS binding (`frontend/`)
 - `/admin/*` gated by `ADMIN_TOKEN` secret (defense-in-depth, #123) in addition to edge Access
 - M₁ (roxabituwer) **decommissioned 2026-06-08**: `live.service` stopped+disabled, Tailscale Funnel retired, `~/.roxabi/corpus.db` archived
@@ -41,7 +41,7 @@ Let:
 | `worker/src/api/graph.ts` | `GET /api/graph` |
 | `worker/src/api/admin.ts` | `POST /admin/sync` (ADMIN_TOKEN-gated) |
 | `worker/src/api/version.ts` | `GET /api/version` |
-| `worker/src/sync/sync.ts` | Hourly sync orchestrator + R2 audit write |
+| `worker/src/sync/sync.ts` | Daily reconcile orchestrator + R2 audit write |
 | `worker/src/sync/graphql.ts` | GitHub GraphQL client (`fetch()`) |
 | `worker/src/sync/queries.ts` | GraphQL query strings |
 | `worker/src/sync/parse.ts` | Issue/edge parsing |
