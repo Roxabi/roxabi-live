@@ -62,15 +62,20 @@ function getIndexColumns(
 // ---------------------------------------------------------------------------
 
 let db: Database.Database;
+let appliedFiles: string[];
 
 beforeAll(() => {
   db = new Database(":memory:");
 
-  const files = readdirSync(MIGRATIONS_DIR)
+  appliedFiles = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith(".sql"))
     .sort();
 
-  for (const file of files) {
+  if (appliedFiles.length === 0) {
+    throw new Error(`No migration files found in ${MIGRATIONS_DIR}`);
+  }
+
+  for (const file of appliedFiles) {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
     db.exec(sql);
   }
@@ -86,17 +91,17 @@ describe("migration chain", () => {
     const result = db
       .prepare("SELECT COUNT(*) AS cnt FROM sync_control")
       .get() as { cnt: number };
-    expect(result.cnt).toBeGreaterThanOrEqual(0);
+    expect(result.cnt).toBeGreaterThan(0);
   });
 
   it("loads all migration files in lexical order", () => {
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((f) => f.endsWith(".sql"))
-      .sort();
-    // Expect exactly 0001–0009 (9 files)
-    expect(files).toHaveLength(9);
-    expect(files[0]).toMatch(/^0001_/);
-    expect(files[8]).toMatch(/^0009_/);
+    // Uses appliedFiles captured by beforeAll — verifies the actual apply order, not just FS state.
+    expect(appliedFiles.length).toBeGreaterThanOrEqual(9);
+    expect(appliedFiles[0]).toMatch(/^0001_/);
+    // Contiguity check: each file's 4-digit prefix must equal its 1-based position
+    for (let i = 0; i < appliedFiles.length; i++) {
+      expect(parseInt(appliedFiles[i].slice(0, 4), 10)).toBe(i + 1);
+    }
   });
 });
 
@@ -153,7 +158,7 @@ describe("sync_control table", () => {
   it("has value column that is NOT NULL (restored in 0008)", () => {
     const col = getColumns(db, "sync_control").find((c) => c.name === "value");
     expect(col).toBeDefined();
-    expect(col!.notnull).toBe(1);
+    expect(col?.notnull).toBe(1);
   });
 
   it("contains the global sentinel rows with tenant_id=0", () => {
@@ -206,8 +211,8 @@ describe("tenant_repo_access table", () => {
       (c) => c.name === "is_private",
     );
     expect(col).toBeDefined();
-    expect(col!.notnull).toBe(1);
-    expect(col!.dflt_value).toBe("1");
+    expect(col?.notnull).toBe(1);
+    expect(col?.dflt_value).toBe("1");
   });
 });
 
@@ -223,7 +228,7 @@ describe("tenants table", () => {
   it("deleted_at is nullable (NULL = active)", () => {
     const col = getColumns(db, "tenants").find((c) => c.name === "deleted_at");
     expect(col).toBeDefined();
-    expect(col!.notnull).toBe(0);
+    expect(col?.notnull).toBe(0);
   });
 });
 
