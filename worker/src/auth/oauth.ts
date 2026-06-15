@@ -211,6 +211,8 @@ export async function callbackRoute(
   // Upsert all installations as tenants in one batched round-trip (RETURNING id),
   // then link them to the user in a second batch. Replaces the per-installation
   // sequential loop (2N round-trips → 2). #158
+  // Each DB.batch() runs as a single implicit D1 transaction (all-or-nothing), which
+  // also closes the partial-write race the old sequential loop had.
   // installations is guaranteed non-empty here (the length===0 case returned above),
   // so neither batch() is ever called with an empty array.
   const tenantResults = await c.env.DB.batch<{ id: number }>(
@@ -224,18 +226,21 @@ export async function callbackRoute(
     ),
   );
 
-  const tenantIds = tenantResults.map((r) => r.results[0]?.id);
-  if (tenantIds.some((id) => id == null)) {
+  const maybeTenantIds = tenantResults.map((r) => r.results[0]?.id);
+  if (maybeTenantIds.some((id) => id == null)) {
     return c.json({ error: "db_error" }, 500);
   }
-  const firstTenantId = tenantIds[0] as number;
+  // Guard above guarantees every entry is defined; narrow the whole array once
+  // rather than casting each element (.some() does not narrow in TS).
+  const tenantIds = maybeTenantIds as number[];
+  const firstTenantId = tenantIds[0];
 
   // Link each tenant to the user (idempotent) in one batch.
   await c.env.DB.batch(
     tenantIds.map((tid) =>
       c.env.DB.prepare(
         `INSERT OR IGNORE INTO user_installations (user_id, tenant_id) VALUES (?, ?)`,
-      ).bind(userId, tid as number),
+      ).bind(userId, tid),
     ),
   );
 
