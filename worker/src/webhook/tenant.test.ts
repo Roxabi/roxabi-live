@@ -1,77 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { getTenantByInstallationId, getTenantByOrgLogin, type TenantRow } from "./tenant";
+import { makeFakeDb, makeFakeStmt, type FakeStmt } from "../test-utils";
 
-// ---------------------------------------------------------------------------
-// FakeD1 — minimal subset sufficient for single-row .prepare().bind().first()
-// ---------------------------------------------------------------------------
-
+// FakeResult kept local: richer variant ({ value?, changes? }) used in seededDb casts
 type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
-
-interface FakeStmt {
-  sql: string;
-  args: unknown[];
-  run: () => Promise<{ meta: { changes: number } }>;
-  first: <T = FakeResult>() => Promise<T | null>;
-  all: <T = FakeResult>() => Promise<{ results: T[] }>;
-}
-
-function makeFakeStmt(
-  sql: string,
-  args: unknown[],
-  rows: FakeResult[],
-  changes = 0,
-): FakeStmt {
-  return {
-    sql,
-    args,
-    run: vi.fn().mockResolvedValue({ meta: { changes } }),
-    first: vi.fn().mockResolvedValue(rows[0] ?? null),
-    all: vi.fn().mockResolvedValue({ results: rows }),
-  };
-}
-
-function makeFakeDb(
-  stmtFactory: (sql: string, args: unknown[]) => FakeStmt,
-): D1Database & { _recorded: FakeStmt[] } {
-  const recorded: FakeStmt[] = [];
-
-  const db = {
-    prepare(sql: string) {
-      let directStmt: FakeStmt | null = null;
-      const getDirectStmt = (): FakeStmt => {
-        if (!directStmt) {
-          directStmt = stmtFactory(sql, []);
-          recorded.push(directStmt);
-        }
-        return directStmt;
-      };
-
-      return {
-        first<T = FakeResult>(): Promise<T | null> {
-          return getDirectStmt().first<T>();
-        },
-        run(): Promise<{ meta: { changes: number } }> {
-          return getDirectStmt().run();
-        },
-        all<T = FakeResult>(): Promise<{ results: T[] }> {
-          return getDirectStmt().all<T>();
-        },
-        bind(...args: unknown[]) {
-          const stmt = stmtFactory(sql, args);
-          recorded.push(stmt);
-          return stmt;
-        },
-      };
-    },
-    batch: vi.fn(async (stmts: FakeStmt[]) => {
-      await Promise.all(stmts.map((s) => s.run()));
-      return stmts.map(() => ({ results: [], meta: { changes: 1 } }));
-    }),
-    _recorded: recorded,
-  } as unknown as D1Database & { _recorded: FakeStmt[] };
-
-  return db;
-}
 
 // ---------------------------------------------------------------------------
 // Seeded fake-DB — seeds a single tenant row for FROM tenants queries
