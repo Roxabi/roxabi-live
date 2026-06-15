@@ -23,82 +23,10 @@ import {
 import type { EdgeData } from "./sync";
 import type { Env } from "../types";
 
-// ---------------------------------------------------------------------------
-// FakeD1 mock helpers
-// ---------------------------------------------------------------------------
+import { makeFakeDb, makeFakeStmt, type FakeStmt } from "../test-utils";
 
+// FakeResult kept local: richer variant ({ value?, changes? }) used in local helper casts
 type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
-
-interface FakeStmt {
-  sql: string;
-  args: unknown[];
-  run: () => Promise<{ meta: { changes: number } }>;
-  first: <T = FakeResult>() => Promise<T | null>;
-  all: <T = FakeResult>() => Promise<{ results: T[] }>;
-}
-
-function makeFakeStmt(
-  sql: string,
-  args: unknown[],
-  rows: FakeResult[],
-  changes = 0,
-): FakeStmt {
-  return {
-    sql,
-    args,
-    run: vi.fn().mockResolvedValue({ meta: { changes } }),
-    first: vi.fn().mockResolvedValue(rows[0] ?? null),
-    all: vi.fn().mockResolvedValue({ results: rows }),
-  };
-}
-
-/** Simple in-memory FakeD1 builder. */
-function makeFakeDb(
-  stmtFactory: (sql: string, args: unknown[]) => FakeStmt,
-): D1Database & { _recorded: FakeStmt[] } {
-  const recorded: FakeStmt[] = [];
-
-  const db = {
-    prepare(sql: string) {
-      // Lazy direct stmt: stmtFactory is only called (and stmt recorded) when
-      // an action method (.first/.run/.all) is actually invoked.  This supports
-      // the D1 pattern `db.prepare(sql).first()` used by helpers that call
-      // prepare() without .bind() and must not pollute capturedStmts eagerly.
-      let directStmt: FakeStmt | null = null;
-      const getDirectStmt = (): FakeStmt => {
-        if (!directStmt) {
-          directStmt = stmtFactory(sql, []);
-          recorded.push(directStmt);
-        }
-        return directStmt;
-      };
-
-      return {
-        first<T = FakeResult>(): Promise<T | null> {
-          return getDirectStmt().first<T>();
-        },
-        run(): Promise<{ meta: { changes: number } }> {
-          return getDirectStmt().run();
-        },
-        all<T = FakeResult>(): Promise<{ results: T[] }> {
-          return getDirectStmt().all<T>();
-        },
-        bind(...args: unknown[]) {
-          const stmt = stmtFactory(sql, args);
-          recorded.push(stmt);
-          return stmt;
-        },
-      };
-    },
-    batch: vi.fn(async (stmts: FakeStmt[]) => {
-      await Promise.all(stmts.map((s) => s.run()));
-      return stmts.map(() => ({ results: [], meta: { changes: 0 } }));
-    }),
-    _recorded: recorded,
-  } as unknown as D1Database & { _recorded: FakeStmt[] };
-
-  return db;
-}
 
 // ---------------------------------------------------------------------------
 // canonicalKey
