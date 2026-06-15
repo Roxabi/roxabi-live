@@ -242,10 +242,35 @@ describe("getInstallationToken — cache fresh", () => {
       },
     });
 
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
+
     // Act + Assert — suspended tenant must be rejected
     await expect(
       getInstallationToken(db, { ...env, DB: db }, 1, 42),
     ).rejects.toThrow(/suspended/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("throws (not found) when the tenant row does not exist — fail-closed, no fetch", async () => {
+    const { env, installTokenKeyB64 } = await buildFakeEnv();
+    const dek = await importDek(installTokenKeyB64);
+    const { enc, iv } = await encryptToken(dek, "ghs_unused");
+    // Omit tenant so the tenants branch returns null (no row found)
+    const db = buildSeededDb({
+      installToken: {
+        tenant_id: 1,
+        token_enc: enc,
+        token_iv: iv,
+        expires_at: nowPlusSeconds(10 * 60),
+      },
+    });
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
+    await expect(
+      getInstallationToken(db, { ...env, DB: db }, 999, 42),
+    ).rejects.toThrow(/not found/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

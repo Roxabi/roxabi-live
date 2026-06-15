@@ -82,7 +82,10 @@ export async function getInstallationToken(
     .prepare(`SELECT suspended_at FROM tenants WHERE id = ?`)
     .bind(tenantId)
     .first<{ suspended_at: string | null }>();
-  if (tenantRow?.suspended_at != null) {
+  if (!tenantRow) {
+    throw new Error(`Installation for tenant ${tenantId} not found`);
+  }
+  if (tenantRow.suspended_at !== null) {
     throw new Error(`Installation for tenant ${tenantId} is suspended`);
   }
 
