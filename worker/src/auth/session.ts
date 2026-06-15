@@ -2,7 +2,7 @@
  * Session management for GitHub App OAuth sessions.
  *
  * Tokens are stored as SHA-256 hashes (never raw). The __Host- cookie prefix
- * mandates Secure + Path=/ + no Domain — enforced by sessionCookie().
+ * mandates Secure + Path=/ + no Domain — enforced by sessionCookie() in auth/cookies.ts.
  */
 
 import type { MiddlewareHandler } from "hono";

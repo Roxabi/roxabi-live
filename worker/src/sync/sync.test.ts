@@ -1285,8 +1285,9 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
       if (sql.includes("sync_running") && sql.includes("UPDATE")) {
         // acquireSyncLock binds: .bind(timestamp, tenantId)
         // → args[0] = ISO timestamp (string), args[1] = tenantId (number).
-        // CONTRACT: if the SQL param order changes this discriminator will break loudly
-        // because args[1] would be a string and Number("2026-...") would be NaN.
+        // CONTRACT: if the lock UPDATE bind order changes, args[1] becomes the ISO
+        // timestamp string → Number(...) is NaN → none of the tenantId branches match →
+        // tenantBLockAttempted stays false → the final assertion fails loudly.
         const tenantId = Number(args[1]);
         if (tenantId === 0) return makeFakeStmt(sql, args, [], 1); // global tick lock: acquired
         if (tenantId === 1) return makeFakeStmt(sql, args, [], 0); // tenant A: lock held
