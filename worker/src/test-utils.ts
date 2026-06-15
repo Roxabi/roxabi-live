@@ -97,7 +97,7 @@ export function makeFakeDb(
  */
 export function captureDb(
   handler?: (sql: string, args: unknown[]) => FakeResult[],
-): { db: D1Database; stmts: () => FakeStmt[] } {
+): { db: D1Database & { _recorded: FakeStmt[] }; stmts: () => FakeStmt[] } {
   const captured: FakeStmt[] = [];
   const db = makeFakeDb((sql, args) => {
     const rows = handler ? handler(sql, args) : [];
@@ -111,7 +111,7 @@ export function captureDb(
 /** Every query returns the same fixed rows. */
 export function captureDbWithRows(
   rows: FakeResult[],
-): { db: D1Database; stmts: () => FakeStmt[] } {
+): { db: D1Database & { _recorded: FakeStmt[] }; stmts: () => FakeStmt[] } {
   const captured: FakeStmt[] = [];
   const db = makeFakeDb((sql, args) => {
     const stmt = makeFakeStmt(sql, args, rows, 0);

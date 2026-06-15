@@ -16,7 +16,10 @@ export function encode(input: string | ArrayBuffer): string {
   if (typeof input === "string") {
     b64 = btoa(input);
   } else {
-    b64 = btoa(String.fromCharCode(...new Uint8Array(input)));
+    const bytes = new Uint8Array(input);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    b64 = btoa(binary);
   }
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
