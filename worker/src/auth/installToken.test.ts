@@ -550,6 +550,32 @@ describe("listInstallationRepos — W2 pagination bound", () => {
     expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("passes an AbortSignal on the second page fetch too (multi-page pagination)", async () => {
+    // First call returns a full page (100 repos) → pagination continues.
+    // Second call returns a short page → pagination stops.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(fullPage())
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ repositories: [{ full_name: "o/last-repo" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const repos = await listInstallationRepos("fake-token");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2); // exactly two pages
+    expect(repos).toHaveLength(101); // 100 + 1
+
+    // Both fetches must carry a per-page AbortSignal timeout.
+    const opts0 = fetchMock.mock.calls[0][1] as RequestInit;
+    const opts1 = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(opts0.signal).toBeInstanceOf(AbortSignal);
+    expect(opts1.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it("stops early on a short final page and does NOT warn (normal case)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
