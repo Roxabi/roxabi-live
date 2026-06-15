@@ -76,6 +76,16 @@ export async function getInstallationToken(
   tenantId: number,
   installationId: number,
 ): Promise<string> {
+  // Fail-closed on suspended installations: sync.ts calls this directly, bypassing
+  // resolveInstallToken's guard. Covers both the cache-hit and mint paths.
+  const tenantRow = await db
+    .prepare(`SELECT suspended_at FROM tenants WHERE id = ?`)
+    .bind(tenantId)
+    .first<{ suspended_at: string | null }>();
+  if (tenantRow?.suspended_at != null) {
+    throw new Error(`Installation for tenant ${tenantId} is suspended`);
+  }
+
   const installTokenKey = getInstallTokenKey(env);
 
   // Step 1 — Check cache

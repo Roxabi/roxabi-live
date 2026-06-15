@@ -218,6 +218,35 @@ describe("getInstallationToken — cache fresh", () => {
     expect(token).toBe(plaintext);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("throws before cache lookup when tenant is suspended (direct call path)", async () => {
+    // Arrange — tenant suspended, but a valid cached token exists in the DB.
+    // getInstallationToken must reject before ever reaching the cache SELECT.
+    const { env, installTokenKeyB64 } = await buildFakeEnv();
+    const dek = await importDek(installTokenKeyB64);
+    const { enc, iv } = await encryptToken(dek, "ghs_should_not_be_returned");
+
+    const db = buildSeededDb({
+      tenant: {
+        id: 1,
+        installation_id: 42,
+        account_login: "TestOrg",
+        account_type: "Organization",
+        suspended_at: "2026-06-01T00:00:00.000Z", // non-null → suspended
+      },
+      installToken: {
+        tenant_id: 1,
+        token_enc: enc,
+        token_iv: iv,
+        expires_at: nowPlusSeconds(10 * 60),
+      },
+    });
+
+    // Act + Assert — suspended tenant must be rejected
+    await expect(
+      getInstallationToken(db, { ...env, DB: db }, 1, 42),
+    ).rejects.toThrow(/suspended/);
+  });
 });
 
 // ---------------------------------------------------------------------------
