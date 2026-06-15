@@ -404,7 +404,7 @@ describe("callbackRoute", () => {
      */
     function makeHappyPathDb(captured: FakeStmt[], redirectAfter = "/"): D1Database {
       let oauthDeleteCallCount = 0;
-      return makeFakeDb((sql, args) => {
+      const db = makeFakeDb((sql, args) => {
         const isOauthDelete =
           sql.toLowerCase().includes("oauth_state") &&
           sql.toLowerCase().includes("delete");
@@ -451,6 +451,18 @@ describe("callbackRoute", () => {
         captured.push(stmt);
         return stmt;
       });
+      // #158: the default makeFakeDb batch() mock returns empty results; the new
+      // callback reads tenant ids from RETURNING via batch(). Surface each
+      // statement's own rows (from makeFakeStmt) so the tenant id flows through.
+      (db as unknown as { batch: unknown }).batch = vi.fn(async (stmts: FakeStmt[]) =>
+        Promise.all(
+          stmts.map(async (s) => {
+            const { results } = await s.all<FakeResult>();
+            return { results, meta: { changes: results.length } };
+          }),
+        ),
+      );
+      return db;
     }
 
     it("uses atomic DELETE...RETURNING to consume state (closes TOCTOU)", async () => {
@@ -634,6 +646,56 @@ describe("callbackRoute", () => {
       const cookie = res.headers.get("Set-Cookie") ?? "";
       expect(cookie).toContain("__Host-session=");
     });
+
+    it("uses two DB.batch round-trips (tenants + links) instead of a per-install loop", async () => {
+      const stateValue = "h".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+      );
+      const { app, env } = makeApp(db);
+      await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+      expect((db as unknown as { batch: ReturnType<typeof vi.fn> }).batch).toHaveBeenCalledTimes(2);
+    });
+
+    it("handles multiple installations: upserts all tenants + links, returns 302 with session cookie", async () => {
+      const stateValue = "g".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [
+          { id: 9, account: { login: "Roxabi", type: "Organization" } },
+          { id: 11, account: { login: "OtherOrg", type: "Organization" } },
+        ],
+      );
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Set-Cookie")).toContain("__Host-session");
+      const tenantUpserts = captured.filter(
+        (s) =>
+          s.sql.toLowerCase().includes("tenants") &&
+          s.sql.toLowerCase().includes("returning"),
+      );
+      expect(tenantUpserts).toHaveLength(2);
+      const links = captured.filter((s) =>
+        s.sql.toLowerCase().includes("user_installations"),
+      );
+      expect(links).toHaveLength(2);
+    });
   });
 
   describe("replay attack — behavioral single-use enforcement", () => {
@@ -679,6 +741,15 @@ describe("callbackRoute", () => {
         captured.push(stmt);
         return stmt;
       });
+      // #158: override batch() so tenant RETURNING ids surface through batch results
+      (db as unknown as { batch: unknown }).batch = vi.fn(async (stmts: FakeStmt[]) =>
+        Promise.all(
+          stmts.map(async (s) => {
+            const { results } = await s.all<FakeResult>();
+            return { results, meta: { changes: results.length } };
+          }),
+        ),
+      );
 
       // Stub fetch so both calls hit GitHub APIs successfully
       let fetchCallCount = 0;
