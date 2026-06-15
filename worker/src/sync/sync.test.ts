@@ -1358,6 +1358,56 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     // runSync must not read env.GITHUB_TOKEN — install token is used exclusively.
     expect(patAccessCount).toBe(0);
   });
+
+  it("window-past-end: sync_slot beyond repo count → no REPO_BUNDLE_QUERY fetches and runSync resolves", async () => {
+    // WINDOW=20 (sync.ts const), NUM_SLOTS=3.
+    // 21 repos → windowing engages (allRepos.length > WINDOW).
+    // slot=2 → windowStart = 2 * 20 = 40 ≥ 21 → windowedRepos=[] → no bundle fetches.
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
+    // 21 unique repos to exceed WINDOW=20
+    vi.mocked(listInstallationRepos).mockResolvedValue(
+      Array.from({ length: 21 }, (_, i) => ({ repo: `o/r${i}`, isPrivate: false })),
+    );
+
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+    mockGhGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+
+    const db = makeFakeDb((sql, args) => {
+      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("FROM tenants")) {
+        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }]);
+      }
+      // Return slot=2: windowStart = 2*20 = 40 ≥ 21 repos → windowedRepos=[]
+      if (sql.includes("sync_slot") && sql.includes("SELECT")) {
+        return makeFakeStmt(sql, args, [{ value: "2" }]);
+      }
+      return makeFakeStmt(sql, args, [], 1);
+    });
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const env = makeEnv({ DB: db });
+
+    // Must resolve without throwing — windowed-past-end is a valid no-op for Phase 2.
+    await expect(runSync(env)).resolves.toBeUndefined();
+
+    // No REPO_BUNDLE_QUERY calls: Phase 2 was skipped entirely.
+    const bundleCalls = mockGhGraphql.mock.calls.filter((c) => c[0] === "REPO_BUNDLE_QUERY");
+    expect(bundleCalls).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
