@@ -391,6 +391,31 @@ export function setRepoPrivacy(
   return db.prepare(SET_REPO_PRIVACY_SQL).bind(isPrivate, repo);
 }
 
+const UPSERT_REPO_SQL = `
+  INSERT INTO repos (repo, archived, repo_node_id)
+  VALUES (?, ?, ?)
+  ON CONFLICT(repo) DO UPDATE SET
+    archived = excluded.archived,
+    repo_node_id = COALESCE(excluded.repo_node_id, repos.repo_node_id)
+`;
+
+/**
+ * Prepare an upsert into the global `repos` table (the dropdown / graph source).
+ *
+ * Used by the `repository.created` webhook (#160 fallout) so a brand-new repo is
+ * registered in real time rather than waiting up to 24h for the daily cron.
+ * repo_node_id is preserved via COALESCE when the payload omits it (the daily
+ * sync fills it lazily otherwise; the rename cascade relies on it as anchor).
+ */
+export function upsertRepo(
+  db: D1Database,
+  repo: string,
+  archived: 0 | 1,
+  nodeId: string | null,
+): D1PreparedStatement {
+  return db.prepare(UPSERT_REPO_SQL).bind(repo, archived, nodeId);
+}
+
 /**
  * Prepare a cascade rename across all repo-keyed tables.
  *
