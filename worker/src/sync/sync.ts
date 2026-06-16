@@ -1160,6 +1160,8 @@ export async function writeRunAudit(
 export interface TenantDiscovery {
   repoMap: Map<string, Array<{ tenantId: number; installationId: number }>>;
   staleTenantReposRemoved: number;
+  /** Repos the installation reports as archived — drives the repos.archived flag (#160 fallout). */
+  archivedRepos: Set<string>;
 }
 
 export async function discoverTenants(
@@ -1167,6 +1169,7 @@ export async function discoverTenants(
   env: Env,
 ): Promise<TenantDiscovery> {
   const repoMap = new Map<string, Array<{ tenantId: number; installationId: number }>>();
+  const archivedRepos = new Set<string>();
   let staleTenantReposRemoved = 0;
 
   const tenantRows = await db
@@ -1204,7 +1207,7 @@ export async function discoverTenants(
     }
 
     try {
-      let repos: Array<{ repo: string; isPrivate: boolean }>;
+      let repos: Array<{ repo: string; isPrivate: boolean; isArchived?: boolean }>;
       try {
         const token = await getInstallationToken(db, env, tenantId, installationId);
         repos = await listInstallationRepos(token);
@@ -1247,13 +1250,14 @@ export async function discoverTenants(
       }
 
       // Merge into global map (sorted ascending by tenantId — maintained by ORDER BY above).
-      for (const { repo } of repos) {
+      for (const { repo, isArchived } of repos) {
         const entry = repoMap.get(repo);
         if (entry) {
           entry.push({ tenantId, installationId });
         } else {
           repoMap.set(repo, [{ tenantId, installationId }]);
         }
+        if (isArchived) archivedRepos.add(repo);
       }
       console.log(`[sync] tenant ${tenantId} discovered ${repos.length} repo(s)`);
     } finally {
@@ -1261,7 +1265,7 @@ export async function discoverTenants(
     }
   }
 
-  return { repoMap, staleTenantReposRemoved };
+  return { repoMap, staleTenantReposRemoved, archivedRepos };
 }
 
 export async function runSync(env: Env): Promise<void> {
@@ -1307,8 +1311,11 @@ export async function runSync(env: Env): Promise<void> {
     before = { issues: bIssues?.c ?? 0, edges: bEdges?.c ?? 0, prs: bPrs?.c ?? 0 };
 
     // Phase 1 — per-tenant discovery: build Map<repo, [{tenantId,installationId}]>.
-    const { repoMap: repoTenantMap, staleTenantReposRemoved: tenantStale } =
-      await discoverTenants(db, env);
+    const {
+      repoMap: repoTenantMap,
+      staleTenantReposRemoved: tenantStale,
+      archivedRepos,
+    } = await discoverTenants(db, env);
     staleTenantReposRemoved = tenantStale;
 
     // Union of all repos accessible across all tenants.
@@ -1323,13 +1330,15 @@ export async function runSync(env: Env): Promise<void> {
     if (allRepos.length > WINDOW * NUM_SLOTS)
       console.warn(`[sync] ${allRepos.length} repos exceed window capacity ${WINDOW * NUM_SLOTS} — repos beyond index ${WINDOW * NUM_SLOTS} are not synced this cycle`);
 
-    // Upsert repos table from the union.
+    // Upsert repos table from the union. archived is sourced from the installation
+    // repo list (#160 fallout fix): listInstallationRepos now carries isArchived,
+    // so archived repos converge to archived=1 and the repo dropdown re-separates them.
     const repoUpsertStmts = allRepos.map((repo) =>
       db
         .prepare(
-          `INSERT INTO repos (repo, archived) VALUES (?, 0) ON CONFLICT(repo) DO UPDATE SET archived=excluded.archived`,
+          `INSERT INTO repos (repo, archived) VALUES (?, ?) ON CONFLICT(repo) DO UPDATE SET archived=excluded.archived`,
         )
-        .bind(repo),
+        .bind(repo, archivedRepos.has(repo) ? 1 : 0),
     );
     await batchChunked(db, repoUpsertStmts);
     console.log(`[sync] upserted ${allRepos.length} repo(s) from tenant discovery`);

@@ -32,6 +32,7 @@ import {
   deleteRepoAccess,
   deleteAllRepoAccessForTenant,
   setRepoPrivacy,
+  upsertRepo,
   cascadeRepoRename,
   invalidateCacheByRepo,
   invalidateCacheByUserRepo,
@@ -67,6 +68,19 @@ function isPrivateBit(repoObj: unknown): 0 | 1 {
   }
   const priv = (repoObj as Record<string, unknown>)["private"];
   return priv === false ? 0 : 1;
+}
+
+/**
+ * Derive 0|1 from a boolean-ish `archived` field found in GitHub repo objects.
+ * Defaults to 0 (live) on ambiguous input — archived only drives dropdown
+ * grouping, so the safe default is "show as live" rather than fail-closed.
+ */
+function archivedBit(repoObj: unknown): 0 | 1 {
+  if (!repoObj || typeof repoObj !== "object") {
+    return 0;
+  }
+  const arch = (repoObj as Record<string, unknown>)["archived"];
+  return arch === true ? 1 : 0;
 }
 
 /**
@@ -319,6 +333,11 @@ export async function handleInstallationRepositories(
  * Process a GitHub `repository` webhook event.
  *
  * Actions handled:
+ *   created     — register a brand-new repo in real time (#160 fallout): upsert
+ *                 tenant_repo_access (visibility) + repos (dropdown/graph). Under
+ *                 an "all repositories" installation GitHub does not fire
+ *                 installation_repositories.added, so this is the only signal that
+ *                 avoids the up-to-24h wait for the daily reconcile cron.
  *   renamed     — cascade rename across all repo-keyed tables (repos,
  *                 tenant_repo_access, issues, edges, user_repo_permission_cache).
  *   transferred — same cascade as renamed; the repo gets a new owner prefix while
@@ -326,8 +345,9 @@ export async function handleInstallationRepositories(
  *   privatized  — flip is_private=1 in tenant_repo_access; invalidate cache.
  *   publicized  — flip is_private=0 in tenant_repo_access; invalidate cache.
  *
- * These events are not tenant-scoped: privacy changes and renames apply across
- * every tenant that registered the repo. No tenant/org-login lookup is performed.
+ * Only `created` is tenant-scoped (it writes a tenant_repo_access row, so it
+ * resolves the tenant via installation.id). privacy changes and renames apply
+ * across every tenant that registered the repo — no tenant lookup is performed.
  *
  * oldFullName derivation for renamed / transferred (in priority order):
  *   1. node_id anchor — query repos.repo_node_id (stable across renames); if the
@@ -346,6 +366,7 @@ export async function handleRepository(
 ): Promise<void> {
   const action = payload["action"] as string | undefined;
   if (
+    action !== "created" &&
     action !== "renamed" &&
     action !== "transferred" &&
     action !== "privatized" &&
@@ -361,6 +382,34 @@ export async function handleRepository(
     return;
   }
   const nowIso = new Date().toISOString();
+
+  // ── created ───────────────────────────────────────────────────────────────
+  if (action === "created") {
+    const installation =
+      (payload["installation"] as Record<string, unknown> | undefined) ?? {};
+    const installationId = installation["id"] as number | undefined;
+    if (installationId == null) {
+      console.warn(
+        `[webhook/app] repository.created: missing installation.id for repo=${fullName}`,
+      );
+      return;
+    }
+    const tenant = await getTenantByInstallationId(db, installationId);
+    if (!tenant) {
+      console.warn(
+        `[webhook/app] repository.created: no tenant for installation_id=${installationId} — skipping repo=${fullName}`,
+      );
+      return;
+    }
+    const nodeId = (repoObj["node_id"] as string | undefined) ?? null;
+    await db.batch([
+      upsertRepoAccess(db, tenant.id, fullName, isPrivateBit(repoObj)),
+      upsertRepo(db, fullName, archivedBit(repoObj), nodeId),
+      bumpDataVersion(db, nowIso),
+    ]);
+    console.info(`[webhook/app] repository.created: registered repo=${fullName}`);
+    return;
+  }
 
   // ── renamed / transferred ─────────────────────────────────────────────────
   if (action === "renamed" || action === "transferred") {
