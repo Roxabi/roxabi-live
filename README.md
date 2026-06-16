@@ -6,7 +6,7 @@
 |:---:|:---:|:---:|
 | ![Table](docs/images/table-view.png) | ![List](docs/images/list-view.png) | ![Graph](docs/images/graph-view.png) |
 
-Roxabi Live pulls GitHub issues from the entire org into a [Cloudflare D1](https://developers.cloudflare.com/d1/) database and serves a multi-view dashboard at **[live.roxabi.dev](https://live.roxabi.dev)**. It tracks parent/child relationships and blockers, applies real-time updates via a GitHub org webhook, and re-syncs hourly via a Cron Trigger — all on a single Cloudflare Worker.
+Roxabi Live pulls GitHub issues from the entire org into a [Cloudflare D1](https://developers.cloudflare.com/d1/) database and serves a multi-view dashboard at **[live.roxabi.dev](https://live.roxabi.dev)**. It tracks parent/child relationships and blockers, applies real-time updates via a GitHub org webhook, and re-syncs daily via a Cron Trigger — all on a single Cloudflare Worker.
 
 **Multi-user:** any GitHub user with access to the installed GitHub App can sign in via OAuth (`GET /login`). The app is session-gated — `/api/*` requires an active session cookie. `/admin/*` additionally sits behind Cloudflare Access (Email-OTP) as a defense-in-depth layer.
 
@@ -39,7 +39,7 @@ Deploys are CI-driven: push to `staging` → staging Worker; push to `main` → 
 
 ```mermaid
 flowchart LR
-    CRON[Cron Trigger\n0 * * * *]
+    CRON[Cron Trigger\n0 0 * * *]
     GH[GitHub Org\nGraphQL API]
     W[CF Worker\nHono]
     DB[(D1\nroxabi-live-production)]
@@ -47,7 +47,7 @@ flowchart LR
     FE[Dashboard\nlive.roxabi.dev]
     WH[GitHub Webhook\nPOST /webhook/github]
 
-    CRON -->|hourly scheduled| W
+    CRON -->|daily scheduled| W
     GH -->|GraphQL| W
     W -->|upsert| DB
     DB -->|read| W
@@ -57,7 +57,7 @@ flowchart LR
 ```
 
 **Sync flow:**
-1. A Cron Trigger (`0 * * * *`) invokes the Worker's `scheduled` handler hourly; `POST /admin/sync` triggers it out-of-band.
+1. A Cron Trigger (`0 0 * * *`) invokes the Worker's `scheduled` handler daily (full reconcile, #80); `POST /admin/sync` triggers it out-of-band.
 2. The Worker fetches issues via GitHub GraphQL — `subIssues`, `parent`, `blockedBy`, `blocking` fields — and upserts into D1 (tables: `issues`, `edges`, `repos`, `sync_state`).
 3. The Worker serves the corpus over a JSON API; the static frontend (ASSETS binding) builds the views client-side.
 4. The GitHub org webhook (`POST /webhook/github`, HMAC-verified) applies incremental updates in real time; each sync run writes a JSON audit to R2.
@@ -69,7 +69,7 @@ flowchart LR
 | **Views** | Pivot matrix (milestones x lanes), flat list, SVG dependency graph |
 | **Filters** | Multi-select: repo, milestone, priority, status; full-text search |
 | **Dependencies** | Parent/child edges + blocker edges; status propagation (blocked/ready/done) |
-| **Sync** | GitHub GraphQL sync; hourly Cron Trigger; real-time webhook updates |
+| **Sync** | GitHub GraphQL sync; daily Cron Trigger; real-time webhook updates |
 | **Theme** | Light/dark toggle |
 | **Storage** | Cloudflare D1 (serverless SQLite) + R2 per-run audit log |
 
@@ -104,7 +104,7 @@ Bindings live in [`wrangler.toml`](wrangler.toml); secrets are set per-environme
 | `DB` | D1 | Issue corpus + sessions (`roxabi-live-production` / `roxabi-live-staging`) |
 | `ASSETS` | Static | Serves `frontend/` via ASSETS binding |
 | `LOGS` | R2 | Per-run sync audit (`roxabi-live-logs` / `roxabi-live-logs-staging`) |
-| Cron | trigger | `0 * * * *` — hourly sync |
+| Cron | trigger | `0 0 * * *` — daily full reconcile |
 
 ### Secrets
 

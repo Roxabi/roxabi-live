@@ -1,6 +1,6 @@
 # Architecture — Roxabi Live
 
-Roxabi Live is a serverless operations cockpit that syncs GitHub issues and their dependency graph from a GitHub App installation into a Cloudflare D1 database, then serves the graph as a filterable web UI. The entire stack runs on Cloudflare: a single Worker handles HTTP via Hono, a Cron Trigger drives hourly sync, static frontend assets are served through the Worker's ASSETS binding, and R2 stores per-run audit logs. There is no persistent server, no Python runtime, and no local database in production.
+Roxabi Live is a serverless operations cockpit that syncs GitHub issues and their dependency graph from a GitHub App installation into a Cloudflare D1 database, then serves the graph as a filterable web UI. The entire stack runs on Cloudflare: a single Worker handles HTTP via Hono, a Cron Trigger drives a daily full reconcile, static frontend assets are served through the Worker's ASSETS binding, and R2 stores per-run audit logs. There is no persistent server, no Python runtime, and no local database in production.
 
 ---
 
@@ -16,7 +16,7 @@ Roxabi Live is a serverless operations cockpit that syncs GitHub issues and thei
  │                                 │                      │    │
  │  Browser ──────────────────────►│  fetch handler       │    │
  │  GitHub webhook ───────────────►│    Hono router       │    │
- │  Cron (0 * * * *) ────────────►│  scheduled handler   │    │
+ │  Cron (0 0 * * *) ────────────►│  scheduled handler   │    │
  │                                 └──────┬───────────────┘    │
  │                                        │                    │
  │              ┌─────────────────────────┼─────────────┐      │
@@ -184,6 +184,8 @@ Cloudflare Workers have a subrequest limit per invocation. To stay within it wit
 - Watermark tracked in `sync_state.slot` per repo; `sync_control.sync_started_at` seeded by migration 0006
 - Known: with 34+ repos, slot 2 window `[40, 60)` may be empty → that tick is a no-op (expected, tracked #166)
 
+> **Daily full reconcile (#80):** The Cron trigger (`0 0 * * *`) runs `since=null` — all repos, no watermark filter. This heals deps-only edge drift (e.g. `blockedBy`/`blocking` changes that arrive only via the sync path, not webhook events). The webhook still handles real-time intra-day updates.
+
 ### R2 audit
 
 Each sync run writes a JSON audit record to R2 bucket `roxabi-live-logs` (staging: `roxabi-live-logs-staging`). Use D1 `sync_control` / `sync_state` for programmatic audit queries (R2 has no list API in wrangler v3+).
@@ -252,7 +254,7 @@ Applied in order at deploy time (`wrangler d1 migrations apply DB --remote`):
 | `worker/src/api/graph.ts` | `GET /api/graph` |
 | `worker/src/api/admin.ts` | `POST /admin/sync` (ADMIN_TOKEN-gated) |
 | `worker/src/api/version.ts` | `GET /api/version` |
-| `worker/src/sync/sync.ts` | Hourly sync orchestrator + R2 audit write |
+| `worker/src/sync/sync.ts` | Daily reconcile orchestrator + R2 audit write |
 | `worker/src/sync/graphql.ts` | GitHub GraphQL client (`fetch()`) |
 | `worker/src/sync/queries.ts` | GraphQL query strings |
 | `worker/src/sync/parse.ts` | Issue/edge parsing |
