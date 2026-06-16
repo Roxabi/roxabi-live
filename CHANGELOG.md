@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.11.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.10.0...roxabi-live/v0.11.0) (2026-06-16)
+
+
+### Features
+
+* **api:** tenant-filtered reads + active-tenant + private-repo authz ([23c5de5](https://github.com/Roxabi/roxabi-live/commit/23c5de52213faa2ad556be08b28516392111ec0a))
+* **auth:** tenant-filtered reads + active-tenant + private-repo authz ([#148](https://github.com/Roxabi/roxabi-live/issues/148)) ([b8469d5](https://github.com/Roxabi/roxabi-live/commit/b8469d541c8fcb592604b713c6c2b26f8624de79))
+* **deploy:** NOT-NULL migration + CF Access cutover + runbook ([#150](https://github.com/Roxabi/roxabi-live/issues/150)) ([456ec60](https://github.com/Roxabi/roxabi-live/commit/456ec600ce8bf5125128193e935f08ae029fe843))
+* **deploy:** NOT-NULL migration + CF Access cutover runbook ([#150](https://github.com/Roxabi/roxabi-live/issues/150)) ([ae23f09](https://github.com/Roxabi/roxabi-live/commit/ae23f09eae3ab737f1dfe9b508b384ce9e1f8519))
+* **sync:** daily full reconcile + richer run audit, disable staging cron ([#80](https://github.com/Roxabi/roxabi-live/issues/80)) ([dac4c39](https://github.com/Roxabi/roxabi-live/commit/dac4c39d5ea24086d3fe3cd7513256edfaec51d9))
+* **sync:** daily full reconcile + richer run audit, disable staging cron ([#80](https://github.com/Roxabi/roxabi-live/issues/80)) ([d10cba2](https://github.com/Roxabi/roxabi-live/commit/d10cba2d7a349e4dda23faf8af513bdc5e3c19d3))
+* **ui:** login + account-link + operator-read consent gate ([5d3ee2d](https://github.com/Roxabi/roxabi-live/commit/5d3ee2d51e2dc9c18d97335f9b3e53e138d392e2))
+* **ui:** login + account-link + operator-read consent gate ([#149](https://github.com/Roxabi/roxabi-live/issues/149)) ([4eec7bd](https://github.com/Roxabi/roxabi-live/commit/4eec7bdd2100bc2453a293a72e2addfe19769171))
+* **webhook:** tenant routing gate + GitHub-App lifecycle handlers ([#147](https://github.com/Roxabi/roxabi-live/issues/147)) ([6c88174](https://github.com/Roxabi/roxabi-live/commit/6c88174efb6909dc500547a860997485c3716565))
+* **webhook:** tenant routing gate + GitHub-App lifecycle handlers ([#147](https://github.com/Roxabi/roxabi-live/issues/147)) ([69849b1](https://github.com/Roxabi/roxabi-live/commit/69849b1680a0966ea137ed8ce8ea25d603e2e519))
+
+
+### Bug Fixes
+
+* **auth/test:** widen captureDb type + bounded base64url encode per PR [#182](https://github.com/Roxabi/roxabi-live/issues/182) review ([#163](https://github.com/Roxabi/roxabi-live/issues/163)) ([39d7a60](https://github.com/Roxabi/roxabi-live/commit/39d7a60ac6d31e4c922a532ab411b22e3433866b))
+* **auth:** add D1 batch transaction note + narrow tenant id array once ([#158](https://github.com/Roxabi/roxabi-live/issues/158)) ([4944a74](https://github.com/Roxabi/roxabi-live/commit/4944a74de8606c12d69f60b6ccdccaabc71e4a75))
+* **auth:** apply PR [#171](https://github.com/Roxabi/roxabi-live/issues/171) review — tenantId thread, suspended guard, drop installation_id ([#148](https://github.com/Roxabi/roxabi-live/issues/148)) ([0d59a8d](https://github.com/Roxabi/roxabi-live/commit/0d59a8d558414a1588a92c0012fe767c19220db3))
+* **auth:** fail-closed guard for unknown tenant in getInstallationToken ([415c5b0](https://github.com/Roxabi/roxabi-live/commit/415c5b04100c2918cd2c532f8a054c98248d94a5))
+* **auth:** guard getInstallationToken against suspended installs ([#166](https://github.com/Roxabi/roxabi-live/issues/166)) ([6108273](https://github.com/Roxabi/roxabi-live/commit/6108273c627a769711a0f7424d50b936b9da5a62))
+* **deploy:** apply PR [#173](https://github.com/Roxabi/roxabi-live/issues/173) review findings ([#150](https://github.com/Roxabi/roxabi-live/issues/150)) ([8d7fabc](https://github.com/Roxabi/roxabi-live/commit/8d7fabc168919935094e9146f0a6c72d0469b6e7))
+* promote staging → main — consent-gate overlay hotfix ([#176](https://github.com/Roxabi/roxabi-live/issues/176)) ([5b0b10a](https://github.com/Roxabi/roxabi-live/commit/5b0b10a11965e24da3a521e927d64b2fd32380ab))
+* **sync:** 2 slots so daily cron full-reconciles each repo every 2 days ([#80](https://github.com/Roxabi/roxabi-live/issues/80)) ([7350397](https://github.com/Roxabi/roxabi-live/commit/73503978947301b4049de1f10f27b8ef6c40f4e3))
+* **test:** non-tautological asserts + migration-count robustness per PR [#181](https://github.com/Roxabi/roxabi-live/issues/181) review ([#154](https://github.com/Roxabi/roxabi-live/issues/154)) ([8828d69](https://github.com/Roxabi/roxabi-live/commit/8828d6969f715b1377b7dd809bbca65e81917c84))
+* **ui:** apply review findings — consent copy, gate UX, a11y, logout ([#149](https://github.com/Roxabi/roxabi-live/issues/149)) ([137e580](https://github.com/Roxabi/roxabi-live/commit/137e580a12b2a6f57bc134408ec3b11471847865))
+* **ui:** consent-gate overlay always painted — hidden overridden by display:flex ([852250d](https://github.com/Roxabi/roxabi-live/commit/852250d01a8b6a0ee8c8f14ac2d4c871bfc1edb7))
+* **ui:** consent-gate overlay always visible — hidden attr overridden by display:flex ([14fb090](https://github.com/Roxabi/roxabi-live/commit/14fb090f73d191d17afed4b026d0b69f1bbdbc4f))
+* **webhook:** apply PR [#179](https://github.com/Roxabi/roxabi-live/issues/179) review findings ([#147](https://github.com/Roxabi/roxabi-live/issues/147)) ([fee7bed](https://github.com/Roxabi/roxabi-live/commit/fee7bed858c47ef87417624a7b6bc12cb534e7bb))
+
+
+### Documentation
+
+* **148:** plan + spec amendment (Option-3 self-absorb) ([f504486](https://github.com/Roxabi/roxabi-live/commit/f5044868b134e26479c38c52e33e467178c9715a))
+* **plan:** [#147](https://github.com/Roxabi/roxabi-live/issues/147) webhook tenant routing + lifecycle handlers — plan + gap analysis ([2b49ccd](https://github.com/Roxabi/roxabi-live/commit/2b49ccde705e748fab428ba0708699b1a7df5159))
+* **plan:** [#149](https://github.com/Roxabi/roxabi-live/issues/149) login + operator-read consent UI plan (F-lite) ([99a28ce](https://github.com/Roxabi/roxabi-live/commit/99a28ceb09041c1265c8f0f180b69ae213fd99b3))
+* self-hosting deploy guide + CF-era doc refresh ([fd6e2bc](https://github.com/Roxabi/roxabi-live/commit/fd6e2bcd8c11e32fedaeba1d7efcacc5dd29e5f3))
+* self-hosting deploy guide + CF-era doc refresh ([ae5a59f](https://github.com/Roxabi/roxabi-live/commit/ae5a59f7d9960760facfcf04db894c853a8b019d))
+
 ## [0.10.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.9.0...roxabi-live/v0.10.0) (2026-06-13)
 
 
