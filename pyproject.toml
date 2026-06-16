@@ -1,7 +1,7 @@
 [project]
 license = { text = "AGPL-3.0-or-later" }
 name = "roxabi-live"
-version = "0.10.0"
+version = "0.11.0"
 description = "Roxabi operations cockpit — live view of issues corpus, agents, CI/CD"
 requires-python = ">=3.12,<3.13"
 dependencies = [
