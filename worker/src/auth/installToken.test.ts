@@ -617,7 +617,29 @@ describe("listInstallationRepos — W2 pagination bound", () => {
     const repos = await listInstallationRepos("fake-token");
 
     expect(fetchMock).toHaveBeenCalledTimes(1); // short page → single fetch
-    expect(repos).toEqual([{ repo: "o/only", isPrivate: true }]);
+    expect(repos).toEqual([{ repo: "o/only", isPrivate: true, isArchived: undefined }]);
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("maps the GitHub archived flag to isArchived (#160 fallout)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          repositories: [
+            { full_name: "o/live", private: false, archived: false },
+            { full_name: "o/old", private: false, archived: true },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const repos = await listInstallationRepos("fake-token");
+
+    expect(repos).toEqual([
+      { repo: "o/live", isPrivate: false, isArchived: false },
+      { repo: "o/old", isPrivate: false, isArchived: true },
+    ]);
   });
 });

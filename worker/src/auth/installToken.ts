@@ -222,6 +222,7 @@ export async function resolveInstallToken(
 interface GHRepository {
   full_name: string;
   private: boolean;
+  archived: boolean;
 }
 
 interface GHInstallationReposResponse {
@@ -235,13 +236,17 @@ interface GHInstallationReposResponse {
  * Paginates automatically (100 per page) until all repos are collected.
  *
  * @param token - GitHub installation access token (from getInstallationToken).
- * @returns Array of `{ repo: "owner/name", isPrivate: boolean }` entries.
+ * @returns Array of `{ repo: "owner/name", isPrivate, isArchived }` entries.
+ *          `isArchived` is optional in the type (so callers/mocks omitting it
+ *          still typecheck) but the real implementation always sets it from the
+ *          GitHub `archived` field — consumed by the repos-table archived flag.
  */
 export async function listInstallationRepos(
   token: string,
-): Promise<Array<{ repo: string; isPrivate: boolean }>> {
+): Promise<Array<{ repo: string; isPrivate: boolean; isArchived?: boolean }>> {
   const MAX_PAGES = 10;
-  const repos: Array<{ repo: string; isPrivate: boolean }> = [];
+  const repos: Array<{ repo: string; isPrivate: boolean; isArchived?: boolean }> =
+    [];
   let lastPageFull = false;
 
   for (let page = 1; page <= MAX_PAGES; page++) {
@@ -274,7 +279,7 @@ export async function listInstallationRepos(
     const pageRepos = body.repositories ?? [];
 
     for (const r of pageRepos) {
-      repos.push({ repo: r.full_name, isPrivate: r.private });
+      repos.push({ repo: r.full_name, isPrivate: r.private, isArchived: r.archived });
     }
 
     lastPageFull = pageRepos.length === 100;

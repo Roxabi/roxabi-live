@@ -1723,6 +1723,69 @@ describe("runSync — breaker + discovery (#160)", () => {
     expect(insertPub?.args[2]).toBe(0);
   });
 
+  it("B3c: repos table gets archived=1 for an installation-archived repo, 0 for a live one (#160 fallout)", async () => {
+    // Arrange — installation reports one live + one archived repo.
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("tok");
+    vi.mocked(listInstallationRepos).mockResolvedValue([
+      { repo: "o/live", isPrivate: false, isArchived: false },
+      { repo: "o/old", isPrivate: false, isArchived: true },
+    ]);
+
+    const { ghGraphql } = await import("./graphql");
+    vi.mocked(ghGraphql).mockResolvedValue({
+      data: {
+        repository: {
+          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+
+    const db = makeFakeDb((sql, args) => {
+      if (sql.includes("sync_running") && sql.includes("UPDATE") && args[0] === 0) {
+        return makeFakeStmt(sql, args, [], 1);
+      }
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) {
+        return makeFakeStmt(sql, args, [], 1);
+      }
+      if (sql.includes("key='halted'") && sql.includes("SELECT")) {
+        return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      }
+      if (sql.includes("key='auth_failures'") && sql.includes("SELECT") && !sql.includes("UPDATE")) {
+        return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      }
+      if (sql.includes("FROM tenants")) {
+        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }]);
+      }
+      if (sql.includes("SELECT repo FROM tenant_repo_access")) {
+        return makeFakeStmt(sql, args, [{ repo: "o/live" }, { repo: "o/old" }]);
+      }
+      return makeFakeStmt(sql, args, [], 1);
+    });
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const env = makeEnv({ DB: db });
+
+    // Act
+    await runSync(env);
+
+    // Assert — repos upsert binds archived per repo (args = [repo, archived]).
+    const recorded = db._recorded;
+    const insertOld = recorded.find(
+      (s) => s.sql.includes("INSERT INTO repos") && s.args[0] === "o/old",
+    );
+    const insertLive = recorded.find(
+      (s) => s.sql.includes("INSERT INTO repos") && s.args[0] === "o/live",
+    );
+    expect(insertOld?.args[1]).toBe(1);
+    expect(insertLive?.args[1]).toBe(0);
+  });
+
   it("B4: token-exhausted repo is skipped, runSync resolves without throwing", async () => {
     // Arrange — getInstallationToken always rejects for Phase 2 lookups
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
