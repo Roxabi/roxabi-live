@@ -538,11 +538,86 @@ describe("handleRepository", () => {
     });
   });
 
+  describe("created", () => {
+    it("registers a new repo in tenant_repo_access + repos + bump (#160)", async () => {
+      // Arrange
+      const { db, batched, batchFn } = seededDb({ tenant: activeTenant });
+      const payload = {
+        action: "created",
+        installation: { id: 555 },
+        repository: {
+          full_name: "Roxabi/metalyde",
+          private: false,
+          archived: false,
+          node_id: "R_node",
+        },
+      };
+
+      // Act
+      await handleRepository(payload, db);
+
+      // Assert
+      expect(batchFn()).toHaveBeenCalledOnce();
+      const stmts = allBatchedStmts(batched());
+
+      const accessStmt = stmts.find((s) => /INSERT INTO tenant_repo_access/.test(s.sql));
+      expect(accessStmt).toBeDefined();
+      // upsertRepoAccess binds [tenantId, repo, is_private]
+      expect(accessStmt!.args).toEqual([1, "Roxabi/metalyde", 0]);
+
+      const repoStmt = stmts.find((s) => /INSERT INTO repos/.test(s.sql));
+      expect(repoStmt).toBeDefined();
+      // upsertRepo binds [repo, archived, node_id]
+      expect(repoStmt!.args).toEqual(["Roxabi/metalyde", 0, "R_node"]);
+
+      expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
+    });
+
+    it("marks archived=1 when the new repo is created archived", async () => {
+      const { db, batched } = seededDb({ tenant: activeTenant });
+      const payload = {
+        action: "created",
+        installation: { id: 555 },
+        repository: { full_name: "Roxabi/old", private: false, archived: true, node_id: "N" },
+      };
+
+      await handleRepository(payload, db);
+
+      const repoStmt = allBatchedStmts(batched()).find((s) => /INSERT INTO repos/.test(s.sql));
+      expect(repoStmt!.args[1]).toBe(1);
+    });
+
+    it("no-ops (no batch) when no tenant matches the installation", async () => {
+      const { db, batchFn } = seededDb({ tenant: null });
+      const payload = {
+        action: "created",
+        installation: { id: 999 },
+        repository: { full_name: "Roxabi/orphan", private: false, archived: false },
+      };
+
+      await handleRepository(payload, db);
+
+      expect(batchFn()).not.toHaveBeenCalled();
+    });
+
+    it("no-ops (no batch) when installation.id is missing", async () => {
+      const { db, batchFn } = seededDb({ tenant: activeTenant });
+      const payload = {
+        action: "created",
+        repository: { full_name: "Roxabi/r", private: false },
+      };
+
+      await handleRepository(payload, db);
+
+      expect(batchFn()).not.toHaveBeenCalled();
+    });
+  });
+
   describe("unhandled action", () => {
     it("does NOT call db.batch for an unrecognized action", async () => {
-      // Arrange
+      // Arrange — "edited" is a real repository action this handler ignores.
       const { db, batchFn } = seededDb();
-      const payload = { action: "created", repository: { full_name: "Roxabi/r" } };
+      const payload = { action: "edited", repository: { full_name: "Roxabi/r" } };
 
       // Act
       await handleRepository(payload, db);
