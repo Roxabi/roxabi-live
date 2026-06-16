@@ -2,9 +2,22 @@
 
 Issue [#150](https://github.com/Roxabi/roxabi-live/issues/150) · epic [#141](https://github.com/Roxabi/roxabi-live/issues/141).
 
-## Status: NOT YET EXECUTED
+## Status: EXECUTED — verified live 2026-06-16
 
-This is the operator procedure for the S7 go. The repo PR + a green staging deploy are what ships now; the cutover below is operator-gated.
+CF Access for `live.roxabi.dev` is already in the post-S7 end-state. Inventory shows only
+two apps for the host — `/admin` (OTP) and `/webhook` (Bypass) — and **no catch-all app**
+(the "App 1" the procedure below removes does not exist). Verified against prod:
+
+| Endpoint | Observed | Meaning |
+|---|---|---|
+| `/api/graph`, `/api/issues` | `401`, **no** `*.cloudflareaccess.com` redirect | Worker `requireSession` gates (not edge) |
+| `/admin/sync` | `302` → `*.cloudflareaccess.com` | OTP app active |
+| `/api/version` | `200` | public, no session |
+| `/` | `200` | frontend auth-gate served (not raw 401) |
+| `/webhook/github` | `404` (Worker), no redirect | Bypass active |
+
+The operator procedure below is retained for **reference and rollback** only — do not
+re-run it (there is no App 1 to remove; re-adding/removing apps would risk the working state).
 
 ---
 
