@@ -27,12 +27,15 @@ directory = "./frontend"
 binding   = "ASSETS"
 
 [triggers]
-crons = ["0 * * * *"]
+# Daily reconcile (was hourly "0 * * * *", #80). The webhook path handles real-time
+# intra-day changes; this cron is the heal net and runs a FULL reconcile (since=null)
+# so deps-only edge changes — which never bump issue.updatedAt — are healed each day.
+crons = ["0 0 * * *"]
 
 # Workers Logs (S8, #100) — in-dashboard invocation logs (~3-day retention on the
 # Free plan). NOTE: persistent export via Logpush→R2 needs Workers Paid; on Free the
 # persistent audit trail is instead written by the Worker itself (#120, see [[r2_buckets]]
-# below). head_sampling_rate=1 keeps every cron invocation (1/hour — volume is trivial).
+# below). head_sampling_rate=1 keeps every cron invocation (1/day — volume is trivial).
 [observability]
 enabled = true
 head_sampling_rate = 1
@@ -66,7 +69,11 @@ database_id    = "dd96d8cd-db6b-49ed-8218-53c88773aff4"
 migrations_dir = "worker/migrations"
 
 [env.staging.triggers]
-crons = ["0 * * * *"]
+# Staging sync DISABLED (manual/test-only env). An autonomous staging cron would
+# fire a redundant 2nd full GitHub sync + D1 writes every tick against the shared
+# Free-plan quota for no prod benefit. Deploy `--env staging` to test sync manually,
+# or hit POST /admin/sync. Re-enable by restoring a cron expr here if needed.
+crons = []
 
 # Named environments do not inherit top-level [observability] — repeat per env.
 [env.staging.observability]

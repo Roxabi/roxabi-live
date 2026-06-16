@@ -6,77 +6,8 @@ import {
 } from "./installToken";
 import type { Env } from "../types";
 
-// ---------------------------------------------------------------------------
-// FakeD1 — local copy of the project pattern (see session.test.ts)
-// ---------------------------------------------------------------------------
-
-type FakeResult = { [k: string]: unknown };
-
-interface FakeStmt {
-  sql: string;
-  args: unknown[];
-  run: () => Promise<{ meta: { changes: number } }>;
-  first: <T = FakeResult>() => Promise<T | null>;
-  all: <T = FakeResult>() => Promise<{ results: T[] }>;
-}
-
-function makeFakeStmt(
-  sql: string,
-  args: unknown[],
-  rows: FakeResult[],
-  changes = 0,
-): FakeStmt {
-  return {
-    sql,
-    args,
-    run: vi.fn().mockResolvedValue({ meta: { changes } }),
-    first: vi.fn().mockResolvedValue(rows[0] ?? null),
-    all: vi.fn().mockResolvedValue({ results: rows }),
-  };
-}
-
-function makeFakeDb(
-  stmtFactory: (sql: string, args: unknown[]) => FakeStmt,
-): D1Database {
-  const recorded: FakeStmt[] = [];
-
-  const db = {
-    prepare(sql: string) {
-      let directStmt: FakeStmt | null = null;
-      const getDirectStmt = (): FakeStmt => {
-        if (!directStmt) {
-          directStmt = stmtFactory(sql, []);
-          recorded.push(directStmt);
-        }
-        return directStmt;
-      };
-
-      return {
-        first<T = FakeResult>(): Promise<T | null> {
-          return getDirectStmt().first<T>();
-        },
-        run(): Promise<{ meta: { changes: number } }> {
-          return getDirectStmt().run();
-        },
-        all<T = FakeResult>(): Promise<{ results: T[] }> {
-          return getDirectStmt().all<T>();
-        },
-        bind(...args: unknown[]) {
-          const stmt = stmtFactory(sql, args);
-          recorded.push(stmt);
-          return stmt;
-        },
-      };
-    },
-    batch: vi.fn(async (stmts: FakeStmt[]) => {
-      await Promise.all(stmts.map((s) => s.run()));
-      return stmts.map(() => ({ results: [], meta: { changes: 0 } }));
-    }),
-    _recorded: recorded,
-  } as unknown as D1Database & { _recorded: FakeStmt[] };
-
-  return db;
-}
+import type { FakeResult, FakeStmt } from "../test-utils";
+import { makeFakeStmt, makeFakeDb } from "../test-utils";
 
 // ---------------------------------------------------------------------------
 // Test key generation helpers (mirrors jwt.test.ts pattern)
@@ -133,7 +64,6 @@ async function buildFakeEnv(
   const env: Env = {
     DB: null as unknown as D1Database, // overridden per test
     ASSETS: null as unknown as Fetcher,
-    GITHUB_ORG: "TestOrg",
     GITHUB_WEBHOOK_SECRET: "test-webhook-secret",
     GITHUB_APP_ID: "999999",
     GITHUB_APP_CLIENT_ID: "Iv1.test",
@@ -286,6 +216,60 @@ describe("getInstallationToken — cache fresh", () => {
 
     // Assert
     expect(token).toBe(plaintext);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("throws before cache lookup when tenant is suspended (direct call path)", async () => {
+    // Arrange — tenant suspended, but a valid cached token exists in the DB.
+    // getInstallationToken must reject before ever reaching the cache SELECT.
+    const { env, installTokenKeyB64 } = await buildFakeEnv();
+    const dek = await importDek(installTokenKeyB64);
+    const { enc, iv } = await encryptToken(dek, "ghs_should_not_be_returned");
+
+    const db = buildSeededDb({
+      tenant: {
+        id: 1,
+        installation_id: 42,
+        account_login: "TestOrg",
+        account_type: "Organization",
+        suspended_at: "2026-06-01T00:00:00.000Z", // non-null → suspended
+      },
+      installToken: {
+        tenant_id: 1,
+        token_enc: enc,
+        token_iv: iv,
+        expires_at: nowPlusSeconds(10 * 60),
+      },
+    });
+
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    // Act + Assert — suspended tenant must be rejected
+    await expect(
+      getInstallationToken(db, { ...env, DB: db }, 1, 42),
+    ).rejects.toThrow(/suspended/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("throws (not found) when the tenant row does not exist — fail-closed, no fetch", async () => {
+    const { env, installTokenKeyB64 } = await buildFakeEnv();
+    const dek = await importDek(installTokenKeyB64);
+    const { enc, iv } = await encryptToken(dek, "ghs_unused");
+    // Omit tenant so the tenants branch returns null (no row found)
+    const db = buildSeededDb({
+      installToken: {
+        tenant_id: 1,
+        token_enc: enc,
+        token_iv: iv,
+        expires_at: nowPlusSeconds(10 * 60),
+      },
+    });
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
+    await expect(
+      getInstallationToken(db, { ...env, DB: db }, 999, 42),
+    ).rejects.toThrow(/not found/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -589,6 +573,32 @@ describe("listInstallationRepos — W2 pagination bound", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const opts = fetchMock.mock.calls[0][1] as RequestInit;
     expect(opts.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("passes an AbortSignal on the second page fetch too (multi-page pagination)", async () => {
+    // First call returns a full page (100 repos) → pagination continues.
+    // Second call returns a short page → pagination stops.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(fullPage())
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ repositories: [{ full_name: "o/last-repo" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const repos = await listInstallationRepos("fake-token");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2); // exactly two pages
+    expect(repos).toHaveLength(101); // 100 + 1
+
+    // Both fetches must carry a per-page AbortSignal timeout.
+    const opts0 = fetchMock.mock.calls[0][1] as RequestInit;
+    const opts1 = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(opts0.signal).toBeInstanceOf(AbortSignal);
+    expect(opts1.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("stops early on a short final page and does NOT warn (normal case)", async () => {

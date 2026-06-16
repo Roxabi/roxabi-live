@@ -3,87 +3,23 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { loginRoute, callbackRoute } from "./oauth";
 
-// ---------------------------------------------------------------------------
-// FakeD1 — cloned from src/webhook/mutations.test.ts
-// ---------------------------------------------------------------------------
+import type { FakeResult, FakeStmt } from "../test-utils";
+import { makeFakeStmt, makeFakeDb, captureDb } from "../test-utils";
 
-type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
-
-interface FakeStmt {
-  sql: string;
-  args: unknown[];
-  run: () => Promise<{ meta: { changes: number } }>;
-  first: <T = FakeResult>() => Promise<T | null>;
-  all: <T = FakeResult>() => Promise<{ results: T[] }>;
-}
-
-function makeFakeStmt(
-  sql: string,
-  args: unknown[],
-  rows: FakeResult[],
-  changes = 0,
-): FakeStmt {
-  return {
-    sql,
-    args,
-    run: vi.fn().mockResolvedValue({ meta: { changes } }),
-    first: vi.fn().mockResolvedValue(rows[0] ?? null),
-    all: vi.fn().mockResolvedValue({ results: rows }),
-  };
-}
-
-function makeFakeDb(
-  stmtFactory: (sql: string, args: unknown[]) => FakeStmt,
-): D1Database {
-  const recorded: FakeStmt[] = [];
-
-  const db = {
-    prepare(sql: string) {
-      let directStmt: FakeStmt | null = null;
-      const getDirectStmt = (): FakeStmt => {
-        if (!directStmt) {
-          directStmt = stmtFactory(sql, []);
-          recorded.push(directStmt);
-        }
-        return directStmt;
-      };
-
-      return {
-        first<T = FakeResult>(): Promise<T | null> {
-          return getDirectStmt().first<T>();
-        },
-        run(): Promise<{ meta: { changes: number } }> {
-          return getDirectStmt().run();
-        },
-        all<T = FakeResult>(): Promise<{ results: T[] }> {
-          return getDirectStmt().all<T>();
-        },
-        bind(...args: unknown[]) {
-          const stmt = stmtFactory(sql, args);
-          recorded.push(stmt);
-          return stmt;
-        },
-      };
-    },
-    batch: vi.fn(async (stmts: FakeStmt[]) => {
-      await Promise.all(stmts.map((s) => s.run()));
-      return stmts.map(() => ({ results: [], meta: { changes: 0 } }));
-    }),
-    _recorded: recorded,
-  } as unknown as D1Database & { _recorded: FakeStmt[] };
-
-  return db;
-}
-
-/** Capture all statements produced via bind() calls on the FakeDb. */
-function captureDb(): { db: D1Database; stmts: () => FakeStmt[] } {
-  const captured: FakeStmt[] = [];
-  const db = makeFakeDb((sql, args) => {
-    const stmt = makeFakeStmt(sql, args, [], 0);
-    captured.push(stmt);
-    return stmt;
-  });
-  return { db, stmts: () => captured };
+/**
+ * #158: the default makeFakeDb batch() mock returns empty results. This override
+ * surfaces each batched statement's own RETURNING rows (via stmt.all()) so tenant
+ * ids flow through batch results. Shared test-utils.ts is intentionally untouched.
+ */
+function applyBatchOverride(db: D1Database): void {
+  (db as unknown as { batch: unknown }).batch = vi.fn(async (stmts: FakeStmt[]) =>
+    Promise.all(
+      stmts.map(async (s) => {
+        const { results } = await s.all<FakeResult>();
+        return { results, meta: { changes: results.length } };
+      }),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +31,6 @@ function makeEnv(db: D1Database): Env {
   return {
     DB: db,
     ASSETS: {} as Fetcher,
-    GITHUB_ORG: "Roxabi",
     GITHUB_WEBHOOK_SECRET: "webhook-secret",
     GITHUB_APP_ID: "12345",
     GITHUB_APP_CLIENT_ID: "Iv1.abc123",
@@ -485,7 +420,7 @@ describe("callbackRoute", () => {
      */
     function makeHappyPathDb(captured: FakeStmt[], redirectAfter = "/"): D1Database {
       let oauthDeleteCallCount = 0;
-      return makeFakeDb((sql, args) => {
+      const db = makeFakeDb((sql, args) => {
         const isOauthDelete =
           sql.toLowerCase().includes("oauth_state") &&
           sql.toLowerCase().includes("delete");
@@ -532,6 +467,9 @@ describe("callbackRoute", () => {
         captured.push(stmt);
         return stmt;
       });
+      // #158: surface each statement's RETURNING rows through batch results.
+      applyBatchOverride(db);
+      return db;
     }
 
     it("uses atomic DELETE...RETURNING to consume state (closes TOCTOU)", async () => {
@@ -715,6 +653,100 @@ describe("callbackRoute", () => {
       const cookie = res.headers.get("Set-Cookie") ?? "";
       expect(cookie).toContain("__Host-session=");
     });
+
+    it("uses two DB.batch round-trips (tenants + links) instead of a per-install loop", async () => {
+      const stateValue = "h".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+      );
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+      // Behavioral outcome, not just call shape: the two batches must yield 302 + cookie.
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Set-Cookie")).toContain("__Host-session");
+      expect((db as unknown as { batch: ReturnType<typeof vi.fn> }).batch).toHaveBeenCalledTimes(2);
+    });
+
+    it("handles multiple installations: distinct tenant ids route to the correct links + 302", async () => {
+      const stateValue = "g".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
+      const idByInstall: Record<number, number> = { 9: 100, 11: 101 };
+      (db as unknown as { batch: unknown }).batch = vi.fn(async (stmts: FakeStmt[]) =>
+        stmts.map((s) => {
+          const isTenantUpsert =
+            s.sql.toLowerCase().includes("tenants") &&
+            s.sql.toLowerCase().includes("returning");
+          if (isTenantUpsert) {
+            return {
+              results: [{ id: idByInstall[s.args[0] as number] }],
+              meta: { changes: 1 },
+            };
+          }
+          return { results: [], meta: { changes: 0 } };
+        }),
+      );
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [
+          { id: 9, account: { login: "Roxabi", type: "Organization" } },
+          { id: 11, account: { login: "OtherOrg", type: "Organization" } },
+        ],
+      );
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Set-Cookie")).toContain("__Host-session");
+      const tenantUpserts = captured.filter(
+        (s) =>
+          s.sql.toLowerCase().includes("tenants") &&
+          s.sql.toLowerCase().includes("returning"),
+      );
+      expect(tenantUpserts).toHaveLength(2);
+      const links = captured.filter((s) =>
+        s.sql.toLowerCase().includes("user_installations"),
+      );
+      expect(links).toHaveLength(2);
+      expect(links.map((s) => s.args[1])).toEqual([100, 101]);
+    });
+
+    it("returns 500 db_error when a tenant upsert batch returns no RETURNING row", async () => {
+      const stateValue = "j".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeHappyPathDb(captured);
+      // Simulate D1 returning empty .results for the tenant upsert (no RETURNING row)
+      // → tenantIds contains undefined → the some(id == null) guard must 500.
+      (db as unknown as { batch: unknown }).batch = vi.fn(async (stmts: FakeStmt[]) =>
+        stmts.map(() => ({ results: [], meta: { changes: 0 } })),
+      );
+      stubFetchSequence(
+        "t",
+        { id: 42, login: "alice" },
+        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+      );
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "db_error" });
+      expect(res.headers.get("Set-Cookie")).toBeNull();
+    });
   });
 
   describe("replay attack — behavioral single-use enforcement", () => {
@@ -760,6 +792,8 @@ describe("callbackRoute", () => {
         captured.push(stmt);
         return stmt;
       });
+      // #158: surface tenant RETURNING ids through batch results.
+      applyBatchOverride(db);
 
       // Stub fetch so both calls hit GitHub APIs successfully
       let fetchCallCount = 0;

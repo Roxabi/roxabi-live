@@ -11,106 +11,14 @@ import {
   validateSession,
   deleteSession,
   requireSession,
-  sessionCookie,
-  clearSessionCookie,
-  SESSION_COOKIE,
-  SESSION_TTL_SECONDS,
 } from "./session";
-import type { AuthEnv, SessionContext } from "./session";
+import { sessionCookie, clearSessionCookie } from "./cookies";
+import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
+import type { AuthEnv, SessionContext } from "./types";
 import type { Env } from "../types";
 
-// ---------------------------------------------------------------------------
-// FakeD1 — cloned from src/webhook/mutations.test.ts (captureDb pattern)
-// ---------------------------------------------------------------------------
-
-type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
-
-interface FakeStmt {
-  sql: string;
-  args: unknown[];
-  run: () => Promise<{ meta: { changes: number } }>;
-  first: <T = FakeResult>() => Promise<T | null>;
-  all: <T = FakeResult>() => Promise<{ results: T[] }>;
-}
-
-function makeFakeStmt(
-  sql: string,
-  args: unknown[],
-  rows: FakeResult[],
-  changes = 0,
-): FakeStmt {
-  return {
-    sql,
-    args,
-    run: vi.fn().mockResolvedValue({ meta: { changes } }),
-    first: vi.fn().mockResolvedValue(rows[0] ?? null),
-    all: vi.fn().mockResolvedValue({ results: rows }),
-  };
-}
-
-function makeFakeDb(
-  stmtFactory: (sql: string, args: unknown[]) => FakeStmt,
-): D1Database {
-  const recorded: FakeStmt[] = [];
-
-  const db = {
-    prepare(sql: string) {
-      let directStmt: FakeStmt | null = null;
-      const getDirectStmt = (): FakeStmt => {
-        if (!directStmt) {
-          directStmt = stmtFactory(sql, []);
-          recorded.push(directStmt);
-        }
-        return directStmt;
-      };
-
-      return {
-        first<T = FakeResult>(): Promise<T | null> {
-          return getDirectStmt().first<T>();
-        },
-        run(): Promise<{ meta: { changes: number } }> {
-          return getDirectStmt().run();
-        },
-        all<T = FakeResult>(): Promise<{ results: T[] }> {
-          return getDirectStmt().all<T>();
-        },
-        bind(...args: unknown[]) {
-          const stmt = stmtFactory(sql, args);
-          recorded.push(stmt);
-          return stmt;
-        },
-      };
-    },
-    batch: vi.fn(async (stmts: FakeStmt[]) => {
-      await Promise.all(stmts.map((s) => s.run()));
-      return stmts.map(() => ({ results: [], meta: { changes: 0 } }));
-    }),
-    _recorded: recorded,
-  } as unknown as D1Database & { _recorded: FakeStmt[] };
-
-  return db;
-}
-
-/** Capture all statements produced via bind() calls on the FakeDb. */
-function captureDb(): { db: D1Database; stmts: () => FakeStmt[] } {
-  const captured: FakeStmt[] = [];
-  const db = makeFakeDb((sql, args) => {
-    const stmt = makeFakeStmt(sql, args, [], 0);
-    captured.push(stmt);
-    return stmt;
-  });
-  return { db, stmts: () => captured };
-}
-
-/**
- * Build a FakeD1 where `first()` always resolves with the provided row.
- * Used to test the "found" path of validateSession.
- */
-function fixedFirstDb(row: FakeResult | null): D1Database {
-  return makeFakeDb((sql, args) =>
-    makeFakeStmt(sql, args, row !== null ? [row] : [], 0),
-  );
-}
+import type { FakeResult, FakeStmt } from "../test-utils";
+import { makeFakeStmt, makeFakeDb, captureDb, fixedFirstDb } from "../test-utils";
 
 // ---------------------------------------------------------------------------
 // Helpers

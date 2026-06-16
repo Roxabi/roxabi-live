@@ -2,108 +2,14 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { meRoute, logoutRoute } from "./me";
-import type { AuthEnv, SessionContext } from "../auth/session";
+import type { AuthEnv, SessionContext } from "../auth/types";
 import { requireSession } from "../auth/session";
+import type { FakeResult, FakeStmt } from "../test-utils";
+import { makeFakeStmt, makeFakeDb, captureDb, captureDbWithRows } from "../test-utils";
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
-
-// ---------------------------------------------------------------------------
-// FakeD1 — cloned from src/webhook/mutations.test.ts
-// ---------------------------------------------------------------------------
-
-type FakeResult = { [k: string]: unknown };
-
-interface FakeStmt {
-  sql: string;
-  args: unknown[];
-  run: () => Promise<{ meta: { changes: number } }>;
-  first: <T = FakeResult>() => Promise<T | null>;
-  all: <T = FakeResult>() => Promise<{ results: T[] }>;
-}
-
-function makeFakeStmt(
-  sql: string,
-  args: unknown[],
-  rows: FakeResult[],
-  changes = 0,
-): FakeStmt {
-  return {
-    sql,
-    args,
-    run: vi.fn().mockResolvedValue({ meta: { changes } }),
-    first: vi.fn().mockResolvedValue(rows[0] ?? null),
-    all: vi.fn().mockResolvedValue({ results: rows }),
-  };
-}
-
-function makeFakeDb(
-  stmtFactory: (sql: string, args: unknown[]) => FakeStmt,
-): D1Database {
-  const recorded: FakeStmt[] = [];
-
-  const db = {
-    prepare(sql: string) {
-      let directStmt: FakeStmt | null = null;
-      const getDirectStmt = (): FakeStmt => {
-        if (!directStmt) {
-          directStmt = stmtFactory(sql, []);
-          recorded.push(directStmt);
-        }
-        return directStmt;
-      };
-
-      return {
-        first<T = FakeResult>(): Promise<T | null> {
-          return getDirectStmt().first<T>();
-        },
-        run(): Promise<{ meta: { changes: number } }> {
-          return getDirectStmt().run();
-        },
-        all<T = FakeResult>(): Promise<{ results: T[] }> {
-          return getDirectStmt().all<T>();
-        },
-        bind(...args: unknown[]) {
-          const stmt = stmtFactory(sql, args);
-          recorded.push(stmt);
-          return stmt;
-        },
-      };
-    },
-    batch: vi.fn(async (stmts: FakeStmt[]) => {
-      await Promise.all(stmts.map((s) => s.run()));
-      return stmts.map(() => ({ results: [], meta: { changes: 0 } }));
-    }),
-    _recorded: recorded,
-  } as unknown as D1Database & { _recorded: FakeStmt[] };
-
-  return db;
-}
-
-/** Capture all statements — returns empty rows for every query. */
-function captureDb(): { db: D1Database; stmts: () => FakeStmt[] } {
-  const captured: FakeStmt[] = [];
-  const db = makeFakeDb((sql, args) => {
-    const stmt = makeFakeStmt(sql, args, [], 0);
-    captured.push(stmt);
-    return stmt;
-  });
-  return { db, stmts: () => captured };
-}
-
-/** Capture variant — every query returns the provided rows. */
-function captureDbWithRows(
-  rows: FakeResult[],
-): { db: D1Database; stmts: () => FakeStmt[] } {
-  const captured: FakeStmt[] = [];
-  const db = makeFakeDb((sql, args) => {
-    const stmt = makeFakeStmt(sql, args, rows, 0);
-    captured.push(stmt);
-    return stmt;
-  });
-  return { db, stmts: () => captured };
-}
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -121,7 +27,6 @@ function makeEnv(db: D1Database): Env {
   return {
     DB: db,
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) } as unknown as Fetcher,
-    GITHUB_ORG: "",
     GITHUB_WEBHOOK_SECRET: "",
   } as unknown as Env;
 }

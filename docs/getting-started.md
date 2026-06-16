@@ -1,157 +1,104 @@
-# Getting Started
+# Getting Started — Local Development
 
-> [!NOTE]
-> **Production (2026-06-08+):** Roxabi Live runs as a **Cloudflare Worker** at
-> `https://live.roxabi.dev` (CF Access Email-OTP). Python/systemd/M₁ is decommissioned.
-> For Worker local dev: `cd worker && npm ci && npx wrangler dev`.
-> The Python setup below applies to the legacy app only.
+This guide covers running **roxabi-live** locally as a Cloudflare Worker. For production and self-hosted deployment, see [docs/DEPLOY.md](DEPLOY.md).
 
 ## Prerequisites
 
-**Worker dev (active):**
-- Node.js (for `wrangler`) — `npx wrangler dev` works without a global install
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) — `npm ci` in `worker/`
+- **Node.js 20** — verify with `node --version` (should print `v20.x`)
+- **npm** — bundled with Node; no global wrangler install required
 
-**Legacy Python app (decommissioned — reference only):**
-- Python 3.12 (managed via `.python-version` — `pyenv` or system install)
-- [uv](https://docs.astral.sh/uv/) — package manager
-- [GitHub CLI](https://cli.github.com/) (`gh`) — authenticated via `gh auth login` (needs `read:org`, `repo` scopes)
-- A GitHub org webhook secret (for real-time updates — optional for dev)
+No Python, no `uv`, no system-level dependencies beyond Node 20.
 
-## Installation
+## Clone and Install
 
 ```bash
-git clone https://github.com/Roxabi/roxabi-live.git
+git clone https://github.com/<YOUR_ORG>/<YOUR_FORK>.git
+# <!-- TODO: replace with your fork URL -->
 cd roxabi-live
-make install        # uv sync --group dev
+cd worker && npm ci
 ```
 
-## Configuration
+## Local Secrets
+
+Wrangler reads secrets from `worker/.dev.vars` automatically during `wrangler dev`. Create the file — it is gitignored and must never be committed:
+
+```ini
+# worker/.dev.vars
+GITHUB_WEBHOOK_SECRET=<your-org-level-webhook-secret>
+GITHUB_APP_ID=<your-app-numeric-id>
+GITHUB_APP_CLIENT_ID=<your-app-oauth-client-id>
+GITHUB_APP_CLIENT_SECRET=<your-app-oauth-client-secret>
+GITHUB_APP_PRIVATE_KEY=<base64-encoded-pkcs8-der-rsa-private-key>
+GITHUB_APP_WEBHOOK_SECRET=<your-app-level-webhook-secret>
+INSTALL_TOKEN_KEY=<base64-encoded-32-byte-aes-gcm-key>
+GITHUB_ORG=<your-github-org-slug>
+ADMIN_TOKEN=<optional-bearer-token-for-admin-sync>
+NOTIFY_URL=<optional-alert-webhook-url>
+```
+
+### Which secrets you actually need
+
+| Goal | Required secrets |
+|---|---|
+| Browse `/health`, `/api/version`, static frontend — no auth | None — wrangler dev works with an empty `.dev.vars` |
+| Exercise the OAuth login flow end-to-end | `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_ORG` |
+| Receive and verify org webhooks locally | `GITHUB_WEBHOOK_SECRET` (plus a tunnel to expose `localhost:8787`) |
+| Encrypt/decrypt install tokens | `INSTALL_TOKEN_KEY` |
+| Trigger manual sync via `POST /admin/sync` | `ADMIN_TOKEN` (omitting it disables the Worker-level Bearer check; CF Access guards prod) |
+
+> For most contributors, read-only local dev without any secrets is sufficient. The production deployment is the reference deployment for auth flows.
+
+### Where to obtain each value
+
+| Secret | How to obtain |
+|---|---|
+| `GITHUB_APP_ID` | GitHub App settings page → **App ID** (numeric) |
+| `GITHUB_APP_CLIENT_ID` | GitHub App settings page → **Client ID** |
+| `GITHUB_APP_CLIENT_SECRET` | GitHub App settings page → **Generate a new client secret** |
+| `GITHUB_APP_PRIVATE_KEY` | GitHub App settings → **Generate a private key** → convert to PKCS#8 DER → `base64 -w0` |
+| `GITHUB_APP_WEBHOOK_SECRET` | GitHub App settings → **Webhook secret** (App-level, distinct from org webhook) |
+| `GITHUB_WEBHOOK_SECRET` | GitHub org → Settings → Webhooks → your webhook entry → **Secret** |
+| `INSTALL_TOKEN_KEY` | Generate locally: `openssl rand -base64 32` |
+| `GITHUB_ORG` | Your GitHub org slug (e.g. `acme`) |
+| `ADMIN_TOKEN` | Any opaque string; generate with `openssl rand -hex 32` |
+| `NOTIFY_URL` | Optional — any webhook URL for circuit-breaker alerts (e.g. Discord incoming webhook) |
+
+## Run the Dev Server
 
 ```bash
-cp .env.example .env
+cd worker && npx wrangler dev
 ```
 
-Edit `.env`:
+The Worker starts at **http://localhost:8787**. Wrangler provisions a local D1 preview automatically — no external database setup is needed.
 
-```env
-CORPUS_DB_PATH=~/.roxabi/corpus.db
-GITHUB_WEBHOOK_SECRET=your-secret-here
-CORPUS_SYNC_INTERVAL_SECONDS=3600
-```
+Verify the setup:
 
-The corpus DB directory is created automatically on first sync.
+| Endpoint | Auth | What to expect |
+|---|---|---|
+| `GET /health` | public | `{"status":"ok","issues":<count>}` |
+| `GET /api/version` | public | build/version JSON |
+| `GET /login` | public | redirects to GitHub OAuth (requires App secrets) |
 
-## Initial Corpus Sync
+## Apply Migrations Locally
 
-Fetch all issues from the GitHub org into the local SQLite corpus:
+On first run the local D1 preview is empty. Apply all migrations once:
 
 ```bash
-make sync
-# or: uv run roxabi-corpus sync
+cd worker && npx wrangler d1 migrations apply DB --local --config ../wrangler.toml
 ```
 
-For a full re-sync (clears incremental sync state):
+Subsequent `wrangler dev` runs reuse the persisted local DB state.
 
-```bash
-make full-sync
-```
+## Production / Self-Hosting
 
-To scope to a single repo:
+See [docs/DEPLOY.md](DEPLOY.md) for:
 
-```bash
-uv run roxabi-corpus sync --repo Roxabi/lyra
-```
+- Cloudflare account and Worker setup
+- D1 database and R2 bucket provisioning
+- GitHub App creation, wrangler secret injection, and CI repo secrets
+- `wrangler deploy` flows for staging and production
+- Cloudflare Access configuration for `/admin/*`
 
-The sync uses `gh api graphql` — make sure `gh` is authenticated:
+## Legacy Note
 
-```bash
-gh auth login
-make sync
-```
-
-## Starting the Dev Server
-
-```bash
-uv run roxabi-live
-```
-
-Starts uvicorn on `http://localhost:8000`.
-
-Endpoints:
-- `http://localhost:8000/v6/` — dashboard
-- `http://localhost:8000/health` — health check + DB stats
-- `http://localhost:8000/api/graph` — raw graph JSON
-
-## Webhook Setup (optional for dev)
-
-For real-time updates, configure a GitHub org webhook:
-
-1. Go to **GitHub org → Settings → Webhooks → Add webhook**.
-2. Set the payload URL to your public endpoint, e.g. `https://your-host/webhook/github`.
-3. Content type: `application/json`.
-4. Set a secret and copy it to `GITHUB_WEBHOOK_SECRET` in `.env`.
-5. Subscribe to: **Issues**, **Sub-issues**.
-
-For local dev, use a tunnel (e.g. `ngrok http 8000`) to expose the local server.
-
-See [GitHub docs — Creating webhooks](https://docs.github.com/en/webhooks/using-webhooks/creating-webhooks) for details.
-
-## Production Deployment (Cloudflare Worker — CI-driven)
-
-> **Decommissioned (2026-06-08):** The Python/systemd/M₁ deployment described below has been retired. See the archived sections.
-
-Production is a Cloudflare Worker deployed via CI. Push to `main` → `wrangler deploy` (prod, `live.roxabi.dev`). Push to `staging` → `wrangler deploy --env staging`.
-
-### Local Worker dev
-
-```bash
-cd worker && npm ci && npx wrangler dev
-```
-
-Worker binds a local D1 preview. No Python/uvicorn needed.
-
-### Secrets (set once per environment)
-
-```bash
-printf %s '<value>' | wrangler secret put SECRET_NAME           # prod
-printf %s '<value>' | wrangler secret put SECRET_NAME --env staging
-```
-
-Required secrets: `GITHUB_TOKEN`, `GITHUB_WEBHOOK_SECRET`, `ADMIN_TOKEN`.
-
----
-
-## Legacy: Production Deployment via systemd (decommissioned 2026-06-08)
-
-> [!WARNING]
-> M₁ (`roxabituwer`) `live.service` was stopped and disabled on 2026-06-08. The
-> Python FastAPI app (`src/roxabi_live/`) is kept in the repo as a historical reference
-> but is no longer deployed. `~/.roxabi/corpus.db` was archived as `.bak` on M₁.
-> The sections below are preserved for reference only.
-
-Roxabi Live was deployed as a systemd user service on M1 (`roxabituwer`). The unit is at `deploy/systemd/live.service`.
-
-### Install (historical)
-
-```bash
-cp deploy/systemd/live.service ~/.config/systemd/user/live.service
-systemctl --user daemon-reload
-systemctl --user enable live.service
-systemctl --user start live.service
-```
-
-### Service control (historical)
-
-```bash
-systemctl --user status live.service
-journalctl --user -u live.service -f   # follow logs
-```
-
-Logs were written to `~/.local/state/roxabi-live/logs/` (archived on M₁).
-
-### Tailscale Funnel (retired)
-
-The Tailscale Funnel (`tailscale funnel --bg 8000`) that fronted M₁ has been retired
-(`tailscale funnel --https=443 off`). Ingress is now `https://live.roxabi.dev` via
-Cloudflare Access (Email-OTP).
+The pre-2026-06 Python/FastAPI app (`src/roxabi_live/`) is decommissioned; its `live.service` systemd unit is stopped and disabled. The code remains in git history for reference only — do not use `uv`, `make install`, `make sync`, or `uv run roxabi-live`.

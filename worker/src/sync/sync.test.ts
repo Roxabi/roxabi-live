@@ -23,82 +23,10 @@ import {
 import type { EdgeData } from "./sync";
 import type { Env } from "../types";
 
-// ---------------------------------------------------------------------------
-// FakeD1 mock helpers
-// ---------------------------------------------------------------------------
+import { makeFakeDb, makeFakeStmt, type FakeStmt } from "../test-utils";
 
+// FakeResult kept local: richer variant ({ value?, changes? }) used in local helper casts
 type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
-
-interface FakeStmt {
-  sql: string;
-  args: unknown[];
-  run: () => Promise<{ meta: { changes: number } }>;
-  first: <T = FakeResult>() => Promise<T | null>;
-  all: <T = FakeResult>() => Promise<{ results: T[] }>;
-}
-
-function makeFakeStmt(
-  sql: string,
-  args: unknown[],
-  rows: FakeResult[],
-  changes = 0,
-): FakeStmt {
-  return {
-    sql,
-    args,
-    run: vi.fn().mockResolvedValue({ meta: { changes } }),
-    first: vi.fn().mockResolvedValue(rows[0] ?? null),
-    all: vi.fn().mockResolvedValue({ results: rows }),
-  };
-}
-
-/** Simple in-memory FakeD1 builder. */
-function makeFakeDb(
-  stmtFactory: (sql: string, args: unknown[]) => FakeStmt,
-): D1Database & { _recorded: FakeStmt[] } {
-  const recorded: FakeStmt[] = [];
-
-  const db = {
-    prepare(sql: string) {
-      // Lazy direct stmt: stmtFactory is only called (and stmt recorded) when
-      // an action method (.first/.run/.all) is actually invoked.  This supports
-      // the D1 pattern `db.prepare(sql).first()` used by helpers that call
-      // prepare() without .bind() and must not pollute capturedStmts eagerly.
-      let directStmt: FakeStmt | null = null;
-      const getDirectStmt = (): FakeStmt => {
-        if (!directStmt) {
-          directStmt = stmtFactory(sql, []);
-          recorded.push(directStmt);
-        }
-        return directStmt;
-      };
-
-      return {
-        first<T = FakeResult>(): Promise<T | null> {
-          return getDirectStmt().first<T>();
-        },
-        run(): Promise<{ meta: { changes: number } }> {
-          return getDirectStmt().run();
-        },
-        all<T = FakeResult>(): Promise<{ results: T[] }> {
-          return getDirectStmt().all<T>();
-        },
-        bind(...args: unknown[]) {
-          const stmt = stmtFactory(sql, args);
-          recorded.push(stmt);
-          return stmt;
-        },
-      };
-    },
-    batch: vi.fn(async (stmts: FakeStmt[]) => {
-      await Promise.all(stmts.map((s) => s.run()));
-      return stmts.map(() => ({ results: [], meta: { changes: 0 } }));
-    }),
-    _recorded: recorded,
-  } as unknown as D1Database & { _recorded: FakeStmt[] };
-
-  return db;
-}
 
 // ---------------------------------------------------------------------------
 // canonicalKey
@@ -921,6 +849,57 @@ describe("syncRepoBundle", () => {
     const batchMock = (db as unknown as { batch: ReturnType<typeof vi.fn> }).batch;
     expect(batchMock).toHaveBeenCalled();
   });
+
+  it("fullSync=true forces since=null without reading the watermark, and returns stale PRs closed (#80)", async () => {
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        rateLimit: { cost: 1, remaining: 4999 },
+        repository: {
+          issues: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+          refs: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+          pullRequests: {
+            nodes: [
+              {
+                number: 5,
+                state: "OPEN",
+                closingIssuesReferences: { nodes: [] },
+                labels: { nodes: [] },
+              },
+            ],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      },
+    });
+
+    const db = makeFakeDb((sql, args) => {
+      // Watermark present — must be ignored when fullSync=true.
+      if (sql.includes("SELECT last_synced_at")) {
+        return makeFakeStmt(sql, args, [{ last_synced_at: "2026-01-01T00:00:00Z" }]);
+      }
+      // pr_state: #5 and #6 open in D1; GitHub reports only #5 → #6 is stale.
+      if (sql.includes("SELECT number FROM pr_state") && sql.includes("state='open'")) {
+        return makeFakeStmt(sql, args, [{ number: 5 }, { number: 6 }]);
+      }
+      return makeFakeStmt(sql, args, [], 1);
+    });
+
+    const closed = await syncRepoBundle(db, "fake-token", "Roxabi", "lyra", new Map(), true);
+
+    // since passed as null (full reconcile) despite the watermark being present
+    expect(mockGhGraphql).toHaveBeenCalledWith(
+      "REPO_BUNDLE_QUERY",
+      expect.objectContaining({ owner: "Roxabi", name: "lyra", since: null }),
+      "fake-token",
+    );
+    // watermark SELECT never issued when fullSync=true
+    expect(db._recorded.find((s) => s.sql.includes("SELECT last_synced_at"))).toBeUndefined();
+    // PR #6 (open in D1, absent from GitHub) closed → count returned
+    expect(closed).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -931,7 +910,6 @@ describe("runSync", () => {
   function makeEnv(overrides: Record<string, unknown> = {}): Env {
     return {
       DB: undefined as unknown as D1Database,
-      GITHUB_ORG: "Roxabi",
       ...overrides,
     } as unknown as Env;
   }
@@ -1216,6 +1194,53 @@ describe("writeRunAudit", () => {
     });
   });
 
+  it("records net deltas + corrections when before-snapshot + corrections supplied (#80)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const put = vi.fn().mockResolvedValue(undefined);
+    const db = auditDb();
+    const env = { DB: db, LOGS: { put } } as unknown as Env;
+
+    await writeRunAudit(env, db, {
+      outcome: "success",
+      stubs: 2,
+      durationMs: 500,
+      before: { issues: 2600, edges: 2400, prs: 370 },
+      reposSynced: 8,
+      reposSkipped: 1,
+      corrections: { stalePrsClosed: 3, staleReposPruned: 1, staleTenantReposRemoved: 2 },
+    });
+
+    const snap = JSON.parse(put.mock.calls[0][1] as string);
+    // after (auditDb) = {2650, 2432, 373}; before = {2600, 2400, 370}
+    expect(snap.deltas).toEqual({ issues: 50, edges: 32, prs: 3 });
+    expect(snap.reposSynced).toBe(8);
+    expect(snap.reposSkipped).toBe(1);
+    expect(snap.corrections).toEqual({
+      stubsCreated: 2,
+      stalePrsClosed: 3,
+      staleReposPruned: 1,
+      staleTenantReposRemoved: 2,
+    });
+  });
+
+  it("emits zero deltas when no before-snapshot is supplied", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const put = vi.fn().mockResolvedValue(undefined);
+    const db = auditDb();
+    const env = { DB: db, LOGS: { put } } as unknown as Env;
+
+    await writeRunAudit(env, db, { outcome: "success", stubs: 0, durationMs: 1 });
+
+    const snap = JSON.parse(put.mock.calls[0][1] as string);
+    expect(snap.deltas).toEqual({ issues: 0, edges: 0, prs: 0 });
+    expect(snap.corrections).toEqual({
+      stubsCreated: 0,
+      stalePrsClosed: 0,
+      staleReposPruned: 0,
+      staleTenantReposRemoved: 0,
+    });
+  });
+
   it("swallows R2 put failures (audit must not fail the sync)", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const put = vi.fn().mockRejectedValue(new Error("R2 down"));
@@ -1247,7 +1272,6 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
   function makeEnv(overrides: Record<string, unknown> = {}): Env {
     return {
       DB: undefined as unknown as D1Database,
-      GITHUB_ORG: "Roxabi",
       ...overrides,
     } as unknown as Env;
   }
@@ -1357,11 +1381,15 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       if (sql.includes("sync_running") && sql.includes("UPDATE")) {
-        // Lock bound as [..., tenantId] — tenantId is last arg (a number)
-        const tenantArg = [...args].reverse().find((a) => typeof a === "number");
-        if (tenantArg === 0) return makeFakeStmt(sql, args, [], 1); // global tick lock: acquired
-        if (tenantArg === 1) return makeFakeStmt(sql, args, [], 0); // tenant A: lock held
-        if (tenantArg === 2) {
+        // acquireSyncLock binds: .bind(timestamp, tenantId)
+        // → args[0] = ISO timestamp (string), args[1] = tenantId (number).
+        // CONTRACT: if the lock UPDATE bind order changes, args[1] becomes the ISO
+        // timestamp string → Number(...) is NaN → none of the tenantId branches match →
+        // tenantBLockAttempted stays false → the final assertion fails loudly.
+        const tenantId = Number(args[1]);
+        if (tenantId === 0) return makeFakeStmt(sql, args, [], 1); // global tick lock: acquired
+        if (tenantId === 1) return makeFakeStmt(sql, args, [], 0); // tenant A: lock held
+        if (tenantId === 2) {
           tenantBLockAttempted = true;
           return makeFakeStmt(sql, args, [], 1); // tenant B: lock acquired
         }
@@ -1429,6 +1457,58 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     // runSync must not read env.GITHUB_TOKEN — install token is used exclusively.
     expect(patAccessCount).toBe(0);
   });
+
+  it("window-past-end: sync_slot beyond repo count → no REPO_BUNDLE_QUERY fetches and runSync resolves", async () => {
+    // WINDOW=20 (sync.ts const), NUM_SLOTS=2 → code only persists slots {0,1}.
+    // slot=2 here is a FORCED out-of-range value to exercise the slice-past-end
+    // guard defensively (a stale/garbage persisted slot must not crash Phase 2).
+    // 21 repos → windowing engages (allRepos.length > WINDOW).
+    // slot=2 → windowStart = 2 * 20 = 40 ≥ 21 → windowedRepos=[] → no bundle fetches.
+    const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
+    vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
+    // 21 unique repos to exceed WINDOW=20
+    vi.mocked(listInstallationRepos).mockResolvedValue(
+      Array.from({ length: 21 }, (_, i) => ({ repo: `o/r${i}`, isPrivate: false })),
+    );
+
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+    mockGhGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-01-01T00:00:00Z" },
+      },
+    });
+
+    const db = makeFakeDb((sql, args) => {
+      if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
+      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("FROM tenants")) {
+        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }]);
+      }
+      // Return slot=2: windowStart = 2*20 = 40 ≥ 21 repos → windowedRepos=[]
+      if (sql.includes("sync_slot") && sql.includes("SELECT")) {
+        return makeFakeStmt(sql, args, [{ value: "2" }]);
+      }
+      return makeFakeStmt(sql, args, [], 1);
+    });
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const env = makeEnv({ DB: db });
+
+    // Must resolve without throwing — windowed-past-end is a valid no-op for Phase 2.
+    await expect(runSync(env)).resolves.toBeUndefined();
+
+    // No REPO_BUNDLE_QUERY calls: Phase 2 was skipped entirely.
+    const bundleCalls = mockGhGraphql.mock.calls.filter((c) => c[0] === "REPO_BUNDLE_QUERY");
+    expect(bundleCalls).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1439,7 +1519,6 @@ describe("runSync — breaker + discovery (#160)", () => {
   function makeEnv(overrides: Record<string, unknown> = {}): Env {
     return {
       DB: undefined as unknown as D1Database,
-      GITHUB_ORG: "Roxabi",
       ...overrides,
     } as unknown as Env;
   }

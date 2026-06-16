@@ -25,10 +25,20 @@ import { getInstallationToken, listInstallationRepos } from "../auth/installToke
 // ---------------------------------------------------------------------------
 
 export const MAX_PAGES = 500;
-/** Repos synced per slot per tick. Coverage ceiling: WINDOW * NUM_SLOTS = 60 repos. */
+/**
+ * Repos synced per cron tick. Capped at 20 to stay under the Workers Free
+ * 50-subrequest/invocation budget: a FULL reconcile (#80, since=null) costs
+ * ~1 subrequest per issue page, and the largest repo (roxabi-factory, ~1k
+ * issues) alone is ~11 pages — so a single run cannot reconcile all repos.
+ */
 export const WINDOW = 20;
-/** Number of rotation slots. Coverage ceiling: WINDOW * NUM_SLOTS = 60 repos. */
-export const NUM_SLOTS = 3;
+/**
+ * Rotation slots. Coverage ceiling = WINDOW * NUM_SLOTS = 40 repos; with the
+ * daily cron each repo is full-reconciled every NUM_SLOTS days (= 2). 36 repos
+ * today → fits in 2 slots, no wasted tick. Beyond 40 repos, raise this / WINDOW
+ * (watch the subreq budget) or migrate to the dormant Queues fan-out (wrangler.toml).
+ */
+export const NUM_SLOTS = 2;
 
 /** Verbatim port of sync.py UPSERT_ISSUE_SQL — full sync path (sets status=null). */
 export const UPSERT_ISSUE_SQL = `
@@ -316,17 +326,22 @@ export async function syncRepoIssues(
   owner: string,
   name: string,
   collectedEdges: Map<string, EdgeData>,
+  fullSync = false,
 ): Promise<void> {
   const repo = `${owner}/${name}`;
   let cursor: string | null = null;
   let pages = 0;
 
-  // Read watermark from previous sync (null on first run → full fetch)
-  const syncStateRow = await db
-    .prepare("SELECT last_synced_at FROM sync_state WHERE repo=?")
-    .bind(repo)
-    .first<{ last_synced_at: string | null }>();
-  const since: string | null = syncStateRow?.last_synced_at ?? null;
+  // Read watermark from previous sync (null on first run → full fetch).
+  // fullSync (#80) forces since=null to reconcile deps-only changes.
+  let since: string | null = null;
+  if (!fullSync) {
+    const syncStateRow = await db
+      .prepare("SELECT last_synced_at FROM sync_state WHERE repo=?")
+      .bind(repo)
+      .first<{ last_synced_at: string | null }>();
+    since = syncStateRow?.last_synced_at ?? null;
+  }
 
   while (true) {
     const response: { data: IssuesData } & Record<string, unknown> = await ghGraphql<IssuesData>(
@@ -590,7 +605,7 @@ export async function applyPrState(
   repo: string,
   upsertStmts: D1PreparedStatement[],
   seenPrNumbers: number[],
-): Promise<void> {
+): Promise<number> {
   await batchChunked(db, upsertStmts);
 
   if (seenPrNumbers.length > 0) {
@@ -611,11 +626,13 @@ export async function applyPrState(
         .bind(repo, ...chunk)
         .run();
     }
+    return stale.length;
   } else {
-    await db
+    const res = await db
       .prepare(`UPDATE pr_state SET state='closed' WHERE repo=? AND state='open'`)
       .bind(repo)
       .run();
+    return res.meta.changes ?? 0;
   }
 }
 
@@ -718,15 +735,22 @@ export async function syncRepoBundle(
   owner: string,
   name: string,
   collectedEdges: Map<string, EdgeData>,
-): Promise<void> {
+  fullSync = false,
+): Promise<number> {
   const repo = `${owner}/${name}`;
 
-  // Read watermark (null on first run → full fetch)
-  const syncStateRow = await db
-    .prepare("SELECT last_synced_at FROM sync_state WHERE repo=?")
-    .bind(repo)
-    .first<{ last_synced_at: string | null }>();
-  const since: string | null = syncStateRow?.last_synced_at ?? null;
+  // Watermark gates the incremental fetch. fullSync (#80) forces since=null so a
+  // complete re-fetch reconciles edges even for deps-only changes — which never
+  // bump issue.updatedAt and are therefore invisible to an incremental `since`
+  // query (only the webhook path catches them otherwise).
+  let since: string | null = null;
+  if (!fullSync) {
+    const syncStateRow = await db
+      .prepare("SELECT last_synced_at FROM sync_state WHERE repo=?")
+      .bind(repo)
+      .first<{ last_synced_at: string | null }>();
+    since = syncStateRow?.last_synced_at ?? null;
+  }
 
   // Per-connection cursor state
   let issuesCursor: string | null = null;
@@ -868,9 +892,10 @@ export async function syncRepoBundle(
     .bind(repo, nowIso)
     .run();
 
-  // Apply branch + PR state (deferred so all pages are fetched first)
+  // Apply branch + PR state (deferred so all pages are fetched first).
+  // Returns the count of stale open PRs closed, surfaced into the run audit.
   await applyActiveBranches(db, repo, matchedBranchNumbers);
-  await applyPrState(db, repo, prUpsertStmts, seenPrNumbers);
+  return applyPrState(db, repo, prUpsertStmts, seenPrNumbers);
 }
 
 // ---------------------------------------------------------------------------
@@ -1001,13 +1026,33 @@ export type RunOutcome = "success" | "empty" | "halted" | "auth_error" | "error"
  * Best-effort: no-op when LOGS is unbound, and never throws into runSync — a
  * failed audit must not fail the sync. Free-plan alternative to Logpush→R2.
  */
+/** Correction counters surfaced by a single reconcile run (#80). */
+export interface RunCorrections {
+  /** Open PRs in D1 closed because GitHub no longer reports them open. */
+  stalePrsClosed: number;
+  /** Repos whose rows were pruned (no longer accessible via any installation). */
+  staleReposPruned: number;
+  /** tenant_repo_access rows deleted (repo dropped from an installation). */
+  staleTenantReposRemoved: number;
+}
+
+/** Input to writeRunAudit. New fields are optional → callers may omit them. */
+export interface RunAuditInfo {
+  outcome: RunOutcome;
+  stubs: number;
+  durationMs: number;
+  /** Table COUNT(*) snapshot taken at the start of the run (enables net deltas). */
+  before?: { issues: number; edges: number; prs: number };
+  reposSynced?: number;
+  reposSkipped?: number;
+  corrections?: RunCorrections;
+}
+
 export async function writeRunAudit(
   env: Env,
   db: D1Database,
-  info: { outcome: RunOutcome; stubs: number; durationMs: number },
+  info: RunAuditInfo,
 ): Promise<void> {
-  const bucket = env.LOGS;
-  if (!bucket) return;
   try {
     const [issues, edges, prs, wm, ctrl] = await Promise.all([
       db.prepare("SELECT COUNT(*) AS c FROM issues").first<{ c: number }>(),
@@ -1026,18 +1071,66 @@ export async function writeRunAudit(
       (ctrl.results ?? []).map((r) => [r.key, r.value] as const),
     );
     const ts = new Date().toISOString();
+
+    const after = {
+      issues: issues?.c ?? 0,
+      edges: edges?.c ?? 0,
+      prs: prs?.c ?? 0,
+    };
+    // No before-snapshot → report zero deltas (don't fabricate churn).
+    const before = info.before ?? after;
+    const corrections: RunCorrections = info.corrections ?? {
+      stalePrsClosed: 0,
+      staleReposPruned: 0,
+      staleTenantReposRemoved: 0,
+    };
+    const reposSynced = info.reposSynced ?? 0;
+    const reposSkipped = info.reposSkipped ?? 0;
+    // Net delta per table — the meaningful "what changed this run" signal.
+    // (flushEdges always wipes+rewrites, so raw insert/delete row counts are
+    // churn noise; the after-before net is the real correction.)
+    const deltas = {
+      issues: after.issues - before.issues,
+      edges: after.edges - before.edges,
+      prs: after.prs - before.prs,
+    };
+
     const summary = {
       ts,
       outcome: info.outcome,
       durationMs: info.durationMs,
       stubs: info.stubs,
-      issues: issues?.c ?? 0,
-      edges: edges?.c ?? 0,
-      prs: prs?.c ?? 0,
+      // after-run snapshot (kept top-level for backward compatibility)
+      issues: after.issues,
+      edges: after.edges,
+      prs: after.prs,
       watermark: wm?.w ?? null,
       halted: ctrlMap.get("halted") === "1",
       authFailures: Number(ctrlMap.get("auth_failures") ?? 0),
+      // #80 — durable trace of what this reconcile run corrected
+      reposSynced,
+      reposSkipped,
+      deltas,
+      corrections: {
+        stubsCreated: info.stubs,
+        stalePrsClosed: corrections.stalePrsClosed,
+        staleReposPruned: corrections.staleReposPruned,
+        staleTenantReposRemoved: corrections.staleTenantReposRemoved,
+      },
     };
+
+    // Human-readable one-liner for Workers Logs (~3-day retention on Free) —
+    // logged even when R2 is unbound so the cadence is always observable.
+    const d = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
+    console.log(
+      `[sync] reconcile: repos=${reposSynced}/${reposSynced + reposSkipped} ` +
+        `issuesΔ${d(deltas.issues)} edgesΔ${d(deltas.edges)} prsΔ${d(deltas.prs)} ` +
+        `stubs=${info.stubs} prs-closed=${corrections.stalePrsClosed} ` +
+        `pruned=${corrections.staleReposPruned} tenant-repos-removed=${corrections.staleTenantReposRemoved}`,
+    );
+
+    const bucket = env.LOGS;
+    if (!bucket) return;
     const key = `runs/${ts.slice(0, 10)}/${ts}.json`;
     await bucket.put(key, JSON.stringify(summary), {
       httpMetadata: { contentType: "application/json" },
@@ -1064,11 +1157,17 @@ export async function writeRunAudit(
  *   5. Accumulate Map<repo, Array<{tenantId, installationId}>> sorted by tenantId
  *      (lowest = owning; used for token fallback in Phase 2).
  */
+export interface TenantDiscovery {
+  repoMap: Map<string, Array<{ tenantId: number; installationId: number }>>;
+  staleTenantReposRemoved: number;
+}
+
 export async function discoverTenants(
   db: D1Database,
   env: Env,
-): Promise<Map<string, Array<{ tenantId: number; installationId: number }>>> {
+): Promise<TenantDiscovery> {
   const repoMap = new Map<string, Array<{ tenantId: number; installationId: number }>>();
+  let staleTenantReposRemoved = 0;
 
   const tenantRows = await db
     .prepare(`SELECT id, installation_id FROM tenants WHERE installation_id IS NOT NULL ORDER BY id ASC`)
@@ -1143,6 +1242,7 @@ export async function discoverTenants(
             .bind(tenantId, repo),
         );
         await batchChunked(db, deleteStmts);
+        staleTenantReposRemoved += stale.length;
         console.log(`[sync] tenant ${tenantId} removed ${stale.length} stale repo(s)`);
       }
 
@@ -1161,7 +1261,7 @@ export async function discoverTenants(
     }
   }
 
-  return repoMap;
+  return { repoMap, staleTenantReposRemoved };
 }
 
 export async function runSync(env: Env): Promise<void> {
@@ -1181,6 +1281,13 @@ export async function runSync(env: Env): Promise<void> {
   const t0 = Date.now();
   let outcome: RunOutcome = "error";
   let stubsCount = 0;
+  // #80 — reconcile observability: before-snapshot (for net deltas) + correction counters.
+  let before = { issues: 0, edges: 0, prs: 0 };
+  let staleReposPruned = 0;
+  let stalePrsClosed = 0;
+  let staleTenantReposRemoved = 0;
+  let reposSynced = 0;
+  let reposSkipped = 0;
 
   try {
     const startedAt = new Date().toISOString();
@@ -1191,8 +1298,18 @@ export async function runSync(env: Env): Promise<void> {
       .bind(startedAt, startedAt)
       .run();
 
+    // Capture table sizes before the run so the audit records true net deltas (#80).
+    const [bIssues, bEdges, bPrs] = await Promise.all([
+      db.prepare("SELECT COUNT(*) AS c FROM issues").first<{ c: number }>(),
+      db.prepare("SELECT COUNT(*) AS c FROM edges").first<{ c: number }>(),
+      db.prepare("SELECT COUNT(*) AS c FROM pr_state").first<{ c: number }>(),
+    ]);
+    before = { issues: bIssues?.c ?? 0, edges: bEdges?.c ?? 0, prs: bPrs?.c ?? 0 };
+
     // Phase 1 — per-tenant discovery: build Map<repo, [{tenantId,installationId}]>.
-    const repoTenantMap = await discoverTenants(db, env);
+    const { repoMap: repoTenantMap, staleTenantReposRemoved: tenantStale } =
+      await discoverTenants(db, env);
+    staleTenantReposRemoved = tenantStale;
 
     // Union of all repos accessible across all tenants.
     const allRepos = [...repoTenantMap.keys()].sort();
@@ -1270,13 +1387,13 @@ export async function runSync(env: Env): Promise<void> {
 
     if (pruneStmts.length > 0) {
       await batchChunked(db, pruneStmts);
-      const totalStale = new Set([
+      staleReposPruned = new Set([
         ...staleIssueRepos,
         ...staleEdgeReposUniq,
         ...stalePrStateRepos,
         ...staleSyncStateRepos,
       ]).size;
-      console.log(`[sync] pruned data for ${totalStale} stale repo(s)`);
+      console.log(`[sync] pruned data for ${staleReposPruned} stale repo(s)`);
     }
 
     // Phase 2 — deduped windowed fan-out.
@@ -1319,12 +1436,16 @@ export async function runSync(env: Env): Promise<void> {
       const resolveToken = makeRepoResolver(repoTenants);
       try {
         const token = await resolveToken();
-        await syncRepoBundle(db, token, owner, name, collectedEdges);
+        // Daily cron = full reconcile (#80): fullSync forces a complete re-fetch
+        // (since=null) so deps-only edge changes are healed regardless of updatedAt.
+        stalePrsClosed += await syncRepoBundle(db, token, owner, name, collectedEdges, true);
       } catch (err) {
         console.error(`[sync] skipping ${repo}:`, err);
         skippedCount++;
       }
     }
+    reposSynced = windowedRepos.length - skippedCount;
+    reposSkipped = skippedCount;
 
     // Pass 2: flush all edges (deferred to avoid cross-repo FK hazard).
     await flushEdges(db, collectedEdges);
@@ -1384,6 +1505,14 @@ export async function runSync(env: Env): Promise<void> {
       outcome,
       stubs: stubsCount,
       durationMs: Date.now() - t0,
+      before,
+      reposSynced,
+      reposSkipped,
+      corrections: {
+        stalePrsClosed,
+        staleReposPruned,
+        staleTenantReposRemoved,
+      },
     });
   }
 }

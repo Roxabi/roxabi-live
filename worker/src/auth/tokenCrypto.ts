@@ -5,27 +5,7 @@
  * Never logs or surfaces plaintext tokens.
  */
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Encode an ArrayBuffer as base64url (no padding, URL-safe chars).
- * Reuses the same approach as b64url in jwt.ts.
- */
-function toBase64url(buf: ArrayBuffer): string {
-  const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-/**
- * Decode a base64url string to Uint8Array.
- */
-function fromBase64url(s: string): Uint8Array {
-  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), "=");
-  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
-}
+import { encode, decode } from "./base64url";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -68,8 +48,8 @@ export async function encryptToken(
   const encoded = new TextEncoder().encode(plaintext);
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, dek, encoded);
   return {
-    enc: toBase64url(ct),
-    iv: toBase64url(iv.buffer),
+    enc: encode(ct),
+    iv: encode(iv.buffer),
   };
 }
 
@@ -90,8 +70,8 @@ export async function decryptToken(
   enc: string,
   iv: string,
 ): Promise<string> {
-  const ctBytes = fromBase64url(enc);
-  const ivBytes = fromBase64url(iv);
+  const ctBytes = decode(enc);
+  const ivBytes = decode(iv);
   const plainBuffer = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: ivBytes },
     dek,

@@ -10,7 +10,8 @@
 
 import type { Context } from "hono";
 import type { Env } from "../types";
-import { mintSession, sessionCookie } from "./session";
+import { mintSession } from "./session";
+import { sessionCookie } from "./cookies";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -207,38 +208,41 @@ export async function callbackRoute(
   }
   const userId = userRow.id;
 
-  // Upsert each installation as a tenant and link to user
-  let firstTenantId: number | null = null;
+  // Upsert all installations as tenants in one batched round-trip (RETURNING id),
+  // then link them to the user in a second batch. Replaces the per-installation
+  // sequential loop (2N round-trips → 2). #158
+  // Each DB.batch() runs as a single implicit D1 transaction (all-or-nothing), which
+  // also closes the partial-write race the old sequential loop had.
+  // installations is guaranteed non-empty here (the length===0 case returned above),
+  // so neither batch() is ever called with an empty array.
+  const tenantResults = await c.env.DB.batch<{ id: number }>(
+    installations.map((inst) =>
+      c.env.DB.prepare(
+        `INSERT INTO tenants (installation_id, account_login, account_type) VALUES (?, ?, ?)
+         ON CONFLICT(installation_id) DO UPDATE SET account_login=excluded.account_login,
+           account_type=excluded.account_type, updated_at=datetime('now')
+         RETURNING id`,
+      ).bind(inst.id, inst.account.login, inst.account.type),
+    ),
+  );
 
-  for (const inst of installations) {
-    const tenantRow = await c.env.DB.prepare(
-      `INSERT INTO tenants (installation_id, account_login, account_type) VALUES (?, ?, ?)
-       ON CONFLICT(installation_id) DO UPDATE SET account_login=excluded.account_login,
-         account_type=excluded.account_type, updated_at=datetime('now')
-       RETURNING id`,
-    )
-      .bind(inst.id, inst.account.login, inst.account.type)
-      .first<{ id: number }>();
-
-    if (!tenantRow) {
-      return c.json({ error: "db_error" }, 500);
-    }
-    const tenantId = tenantRow.id;
-
-    await c.env.DB.prepare(
-      `INSERT OR IGNORE INTO user_installations (user_id, tenant_id) VALUES (?, ?)`,
-    )
-      .bind(userId, tenantId)
-      .run();
-
-    if (firstTenantId === null) {
-      firstTenantId = tenantId;
-    }
-  }
-
-  if (firstTenantId === null) {
+  const maybeTenantIds = tenantResults.map((r) => r.results[0]?.id);
+  if (maybeTenantIds.some((id) => id == null)) {
     return c.json({ error: "db_error" }, 500);
   }
+  // Guard above guarantees every entry is defined; narrow the whole array once
+  // rather than casting each element (.some() does not narrow in TS).
+  const tenantIds = maybeTenantIds as number[];
+  const firstTenantId = tenantIds[0];
+
+  // Link each tenant to the user (idempotent) in one batch.
+  await c.env.DB.batch(
+    tenantIds.map((tid) =>
+      c.env.DB.prepare(
+        `INSERT OR IGNORE INTO user_installations (user_id, tenant_id) VALUES (?, ?)`,
+      ).bind(userId, tid),
+    ),
+  );
 
   // Mint session tied to the first installation's tenant
   const rawToken = await mintSession(c.env.DB, userId, firstTenantId);

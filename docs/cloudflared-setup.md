@@ -276,4 +276,4 @@ Webhook delivery:
 - Rotate the identity-provider allowlist: edit the `Allow owner` policy (Step A.5).
 - After a `_halted` reconciler event (CRITICAL log emitted due to repeated auth failures): rotate the GitHub token, then restart the live service to clear the sticky halt state: `systemctl --user restart live.service`. The reconciler will resume on the next hourly tick.
 
-> **Note (2026-06-08 — decommissioned):** `live.service` no longer runs on M₁. The CF Worker handles sync via `ADMIN_TOKEN`-gated `/admin/sync` (manual) or hourly Cron Trigger. To clear a halted sync on the Worker: rotate `GITHUB_TOKEN` via `wrangler secret put`, then trigger `POST /admin/sync` with `Authorization: Bearer <ADMIN_TOKEN>`.
+> **Note (2026-06-08 — decommissioned):** `live.service` no longer runs on M₁. The CF Worker handles sync via `ADMIN_TOKEN`-gated `/admin/sync` (manual) or daily Cron Trigger. To clear a halted sync on the Worker: rotate `GITHUB_TOKEN` via `wrangler secret put`, then trigger `POST /admin/sync` with `Authorization: Bearer <ADMIN_TOKEN>`.

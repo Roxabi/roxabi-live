@@ -1,0 +1,118 @@
+---
+title: "S4 webhook tenant routing — implementation gap analysis"
+issue: 147
+parent_spec: "artifacts/specs/147-webhook-tenant-routing-spec.mdx"
+status: grounding
+tier: F-lite
+created: 2026-06-14
+method: "6-reader parallel gap-analysis workflow + manual schema verification against migrations 0001-0008"
+---
+
+> **Purpose:** ground `/plan` for #147. Maps the spec's 17 requirements (R1–R4, H1–H12, N1)
+> against current code (post S3a/S3b/S5/S6). Schema claims **verified directly** against
+> `worker/migrations/`. Two reconcile drifts corrected (see §0).
+
+## 0. Corrections applied to the raw analysis
+
+- **R3 is the suspended-tenant gate, NOT dual-secret.** The spec ([routing](../specs/147-webhook-tenant-routing-spec.mdx))
+  states *"Reuses the existing single-secret HMAC (`webhook/hmac.ts`)."* A reader hallucinated a
+  `GITHUB_APP_WEBHOOK_SECRET` / `GITHUB_WEBHOOK_SECRET` split. **Dual-secret verification is OUT OF SCOPE.**
+  R3 = *suspended tenant → log, 200, no write.*
+- **`repository` handler scope = spec's 4 actions only:** `renamed`, `transferred`, `privatized`,
+  `publicized`. The raw analysis expanded to `created/deleted/archived/unarchived` — not in spec, dropped.
+- Handler numbering below follows the **spec's exact 12-handler enumeration**.
+
+## 1. Summary
+
+Current webhook (`worker/src/webhook/handlers.ts`, 566 lines; `mutations.ts`, 257 lines) dispatches
+**7 events** — `issues`, `issue_dependencies`, `sub_issues`, `create`, `delete`, `pull_request`,
+`milestone` — with **zero tenant routing** and **zero installation/repository/member lifecycle handling**.
+
+Of 17 requirements: **EXISTS 2** (R4, N1) · **MISSING 15** (R1–R3, H1–H12). No partials.
+
+The schema substrate (S1 #144) is ready: `tenants`, `tenant_repo_access` (+`is_private`),
+`user_repo_permission_cache`, `users`, `user_installations`, `sessions`, `install_tokens` all exist.
+**One new column required** (`tenants.deleted_at` → migration 0009).
+
+## 2. Schema ground-truth (verified against migrations)
+
+| Table | Key columns (actual) | Notes for #147 |
+|---|---|---|
+| `tenants` | `id` PK · `installation_id` UNIQUE NOT NULL · `account_login` · `account_type` · `suspended_at` (nullable) · `created_at` · `updated_at` | **No `deleted_at`/`app_id`/`installed_at`.** Route key = `installation_id`. Membership fallback key = `account_login`. |
+| `tenant_repo_access` | PK `(tenant_id, repo)` · `is_private` NOT NULL DEFAULT 1 (0007) | `repo` = `owner/name`. Upsert: `ON CONFLICT(tenant_id,repo) DO UPDATE SET is_private`. |
+| `user_repo_permission_cache` | PK `(user_id, repo)` · `user_id`→`users.id` · `has_access` · `checked_at` | **Keyed `user_id`, not `github_id`.** H11/H12 must resolve `github_id → users.id` first. |
+| `users` | `id` PK · `github_id` UNIQUE · `github_login` | `github_id → users.id` resolution source. May return zero rows (user never logged in). |
+| `repos` | `repo` · `repo_node_id` TEXT + UNIQUE index `ux_repos_node_id` (0004, nullable, lazy-filled) | **`repo_node_id` exists** → valid rename/transfer anchor (H7/H8). Tolerate NULL on legacy rows. |
+| `sessions` | links to tenant (verify exact FK at impl) · `suspended_at` NOT-EXISTS guard in `validateSession` | H2 deletes sessions for tenant; H3/H4 rely on the guard, no immediate flush. |
+| `install_tokens` | per-tenant | H2 deletes for tenant. |
+| `issues` / `edges` | **no `tenant_id`** | R4 baseline (repo-canonical). `edges` embed repo in `key`. |
+| `sync_control` | PK `(tenant_id, key)` · sentinel `tenant_id=0` (Deviation D-2, no FK) | `bumpDataVersion` writes `tenant_id=0`. Cascades must NOT touch sentinel rows. |
+
+## 3. Gap matrix (spec-aligned)
+
+| Req | Spec requirement | Status | Tables / helpers | Notes |
+|---|---|---|---|---|
+| **R1** | `payload.installation.id → tenants` lookup before any write | MISSING | new `getTenantByInstallationId` | gate at top of dispatch |
+| **R2** | unknown installation → 200, no write | MISSING | — | `getTenant…` returns null → 200 `{ok,ignored}` |
+| **R3** | suspended tenant → log, 200, no write | MISSING | `tenants.suspended_at` | single-secret HMAC unchanged |
+| **R4** | issues/edges stay repo-canonical (no tenant_id filter) | EXISTS | — | preserved |
+| **H1** | `installation.created`: upsert tenant + tenant_repo_access per repo + enqueue sync | MISSING | `tenants`, `tenant_repo_access`, `sync_control` | reuse oauth.ts upsert + sync.ts access upsert |
+| **H2** | `installation.deleted`: delete access+install_tokens+sessions; retain issues/edges; set `deleted_at` | MISSING | + **migration 0009** `deleted_at` | soft-delete tenant row |
+| **H3** | `installation.suspend`: `suspended_at=now` | MISSING | `tenants` | |
+| **H4** | `installation.unsuspend`: `suspended_at=NULL` | MISSING | `tenants` | |
+| **H5** | `installation_repositories.added`: upsert access + trigger sync | MISSING | `tenant_repo_access`, `sync_control` | `payload.repositories_added[]` |
+| **H6** | `installation_repositories.removed`: delete access; retain issues/edges | MISSING | `tenant_repo_access` | `payload.repositories_removed[]` |
+| **H7** | `repository.renamed`: cascade rename anchored on `repo_node_id` | MISSING | `repos`,`tenant_repo_access`,`issues`,`edges` (key) | fallback `previous_repository.full_name`; transactional `db.batch` |
+| **H8** | `repository.transferred`: same cascade as H7 | MISSING | same | node_id stable across transfer |
+| **H9** | `repository.privatized`: `is_private=1` + invalidate cache `WHERE repo=?` | MISSING | `tenant_repo_access`, `user_repo_permission_cache` | reuse repoAccess.ts DELETE-by-repo |
+| **H10** | `repository.publicized`: `is_private=0` + invalidate cache `WHERE repo=?` | MISSING | same | |
+| **H11** | `member.removed`: invalidate cache for `(github_id→user_id, repo)` | MISSING | `user_repo_permission_cache` + `users` JOIN | `payload.member.id`, `payload.repository.full_name` |
+| **H12** | `membership.removed`: invalidate ALL cache rows for `github_id→user_id` | MISSING | same | **membership payload may lack `installation`** → route via `payload.organization.login → account_login` |
+| **N1** | no cross-tenant stub logic | EXISTS | — | superseded by repo-canonical |
+
+## 4. Reuse map (do NOT re-implement)
+
+| Existing | Location | For |
+|---|---|---|
+| `verifyHmac(body, header, secret)` | `webhook/hmac.ts` | unchanged single-secret gate |
+| `upsertIssueFromWebhook`/`deleteIssue`/`addEdge`/`removeEdge` | `webhook/mutations.ts` | H7/H8 cascade re-key/delete |
+| `bumpDataVersion(db, iso)` | `webhook/mutations.ts` | any mutating handler |
+| tenant upsert pattern `ON CONFLICT(installation_id) DO UPDATE` | `auth/oauth.ts` | H1 |
+| `tenant_repo_access` upsert `ON CONFLICT(tenant_id,repo) DO UPDATE SET is_private` | `sync/sync.ts` | H1/H5 |
+| `listInstallationRepos(token)` · `getInstallationToken(db,env,tenantId,installationId)` | `auth/installToken.ts` | H1 repo enumeration |
+| `deleteSession` + `suspended_at` NOT-EXISTS guard | `auth/session.ts` | H2/H3/H4 |
+| `user_repo_permission_cache` DELETE by `repo` / `(user_id,repo)` / `user_id` | `auth/repoAccess.ts` | H9/H10 / H11 / H12 |
+| `FakeD1`/`captureDb()`/`makeEnv()`/`makeContext()` harness | `webhook/handlers.test.ts` | all new tests |
+
+**New helper required:** `getTenantByInstallationId(db, installationId): Promise<TenantRow | null>`
+(+ `getTenantByOrgLogin(db, login)` for H12). Grep confirms neither exists.
+
+## 5. Risks / decisions for the plan
+
+1. **`handlers.ts` is 566 lines (>300 gate).** New lifecycle handlers → **new file**
+   `worker/src/webhook/handlers-app.ts`; `handlers.ts` dispatch delegates. Keep both <300 if possible.
+2. **Migration 0009** (`tenants.deleted_at TEXT`) required before H2. Small ALTER; follows 0007 pattern.
+3. **H12 routing:** `membership` payload may omit `installation` → must resolve tenant via
+   `payload.organization.login → tenants.account_login`. Single-path rule has this documented fallback.
+4. **H7/H8 cascade** touches `repos`+`tenant_repo_access`+`issues`+`edges`(key component); transactional
+   `db.batch`; must not disturb `sync_control` `tenant_id=0` sentinel. Edge-key rewrite is the trickiest unit.
+5. **`github_id → users.id` may be zero rows** (user never logged in) → H11/H12 handle gracefully (no-op).
+6. **H1 `listInstallationRepos` pagination** — large orgs vs 30s CPU. Bound it / lean on cron reconcile.
+7. **R3/dual-secret OUT OF SCOPE** — single-secret HMAC reused verbatim.
+
+## 6. Recommended decomposition (for /plan, F-lite)
+
+Group by GitHub event type (= dispatch branch), spec-action-complete inside each:
+
+| # | Unit | Covers | Files |
+|---|---|---|---|
+| T0 | migration 0009 `tenants.deleted_at` | H2 substrate | `worker/migrations/0009_tenant_deleted_at.sql` |
+| T1 | tenant-lookup helpers + types | R1/R2, all H | new `worker/src/webhook/tenant.ts` (or `auth/tenantLookup.ts`) + test |
+| T2 | routing gate (resolve installation→tenant; unknown/suspended → 200 no-write) | R1/R2/R3 | `handlers.ts` dispatch + test |
+| T3 | `installation` handler | H1/H2/H3/H4 | new `handlers-app.ts` + test |
+| T4 | `installation_repositories` handler | H5/H6 | `handlers-app.ts` + test |
+| T5 | `repository` handler (privatize/publicize cache + rename/transfer cascade) | H7/H8/H9/H10 | `handlers-app.ts` (+ cascade helper in `mutations.ts`) + test |
+| T6 | `member` + `membership` handlers (cache invalidation, github_id→user_id) | H11/H12 | `handlers-app.ts` + test |
+| T7 | dispatch wiring + allowlist extension + data_version bump integration | R1, all H | `handlers.ts` + test |
+
+**Critical path:** T0 → T1 → T2 → {T3, T4, T5, T6} (parallelizable) → T7.

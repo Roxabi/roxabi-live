@@ -6,20 +6,7 @@
  * and the vitest test environment.
  */
 
-/**
- * Encode a string or ArrayBuffer as base64url (no padding, URL-safe chars).
- * - Strings are encoded directly via btoa.
- * - ArrayBuffers are converted to binary string first.
- */
-function b64url(input: string | ArrayBuffer): string {
-  let b64: string;
-  if (typeof input === "string") {
-    b64 = btoa(input);
-  } else {
-    b64 = btoa(String.fromCharCode(...new Uint8Array(input)));
-  }
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
+import { encode } from "./base64url";
 
 /**
  * Import a base64-encoded PKCS#8 DER private key for use with RS256.
@@ -53,12 +40,12 @@ export async function signAppJwt(
 ): Promise<string> {
   const now = nowSec ?? Math.floor(Date.now() / 1000);
 
-  const headerB64 = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const payloadB64 = b64url(JSON.stringify({ iss: appId, iat: now - 60, exp: now + 540 }));
+  const headerB64 = encode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payloadB64 = encode(JSON.stringify({ iss: appId, iat: now - 60, exp: now + 540 }));
 
   const signingInput = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
   const sigBuffer = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, signingInput);
-  const sigB64 = b64url(sigBuffer);
+  const sigB64 = encode(sigBuffer);
 
   return `${headerB64}.${payloadB64}.${sigB64}`;
 }
