@@ -1459,7 +1459,9 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
   });
 
   it("window-past-end: sync_slot beyond repo count → no REPO_BUNDLE_QUERY fetches and runSync resolves", async () => {
-    // WINDOW=20 (sync.ts const), NUM_SLOTS=3.
+    // WINDOW=20 (sync.ts const), NUM_SLOTS=2 → code only persists slots {0,1}.
+    // slot=2 here is a FORCED out-of-range value to exercise the slice-past-end
+    // guard defensively (a stale/garbage persisted slot must not crash Phase 2).
     // 21 repos → windowing engages (allRepos.length > WINDOW).
     // slot=2 → windowStart = 2 * 20 = 40 ≥ 21 → windowedRepos=[] → no bundle fetches.
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
