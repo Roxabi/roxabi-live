@@ -68,7 +68,6 @@ Let:
 | `src/roxabi_live/reconciler.py` | ~~Hourly corpus sync heal loop~~ |
 | `src/roxabi_live/api/issues.py` | ~~`GET /api/issues`~~ |
 | `src/roxabi_live/webhook/` | ~~GitHub webhook handlers~~ |
-| `deploy/systemd/live.service` | ~~systemd user unit (M₁ boot)~~ |
 | `.env.example` | Env var reference (legacy Python env; CF secrets via `wrangler secret put`) |
 
 ## Dep-graph versions
