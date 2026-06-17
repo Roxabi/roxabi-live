@@ -60,7 +60,7 @@ export async function mintSession(
 /**
  * Validate a raw session token.
  * Returns the SessionContext if the session is valid (not expired, not revoked,
- * tenant not suspended), or null otherwise.
+ * tenant not suspended, user still linked to the installation), or null otherwise.
  */
 export async function validateSession(
   db: D1Database,
@@ -75,7 +75,11 @@ export async function validateSession(
        WHERE s.token_hash = ?
          AND s.expires_at > datetime('now')
          AND s.revoked_at IS NULL
-         AND NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = s.tenant_id AND t.suspended_at IS NOT NULL)`,
+         AND NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = s.tenant_id AND t.suspended_at IS NOT NULL)
+         AND EXISTS (
+           SELECT 1 FROM user_installations ui
+           WHERE ui.user_id = s.user_id AND ui.tenant_id = s.tenant_id
+         )`,
     )
     .bind(hash)
     .first<SessionContext>();
