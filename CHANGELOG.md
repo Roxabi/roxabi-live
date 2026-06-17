@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.12.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.11.0...roxabi-live/v0.12.0) (2026-06-17)
+
+
+### Features
+
+* **webhook:** handle repository.created to register new repos ([fd5e6d3](https://github.com/Roxabi/roxabi-live/commit/fd5e6d3f0b9c123283a4d0c1cd3092d72f19b390))
+* **webhook:** real-time repo.created discovery + restore archived flag ([#160](https://github.com/Roxabi/roxabi-live/issues/160) fallout) ([9b6a24e](https://github.com/Roxabi/roxabi-live/commit/9b6a24e1684eb1bfb596e678b5433eb36e2f4ac6))
+
+
+### Bug Fixes
+
+* **auth:** re-verify user_installations in validateSession ([#185](https://github.com/Roxabi/roxabi-live/issues/185)) ([6398eb9](https://github.com/Roxabi/roxabi-live/commit/6398eb9610f9c42d6c9c682af732cddb33f30e30))
+* **auth:** re-verify user_installations in validateSession ([#185](https://github.com/Roxabi/roxabi-live/issues/185)) ([fccd515](https://github.com/Roxabi/roxabi-live/commit/fccd51563de0fec1abf52e91a00bee6146eefef0))
+* **sync:** restore archived repo flag lost in [#160](https://github.com/Roxabi/roxabi-live/issues/160) cutover ([75fcfe0](https://github.com/Roxabi/roxabi-live/commit/75fcfe0ea5e7184d38275f7b757264416fa79a3a))
+
 ## [0.11.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.10.0...roxabi-live/v0.11.0) (2026-06-16)
 
 
