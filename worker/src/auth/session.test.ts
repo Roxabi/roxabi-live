@@ -143,6 +143,17 @@ describe("validateSession — SQL guard clauses", () => {
     expect(stmts()[0].sql).toContain("suspended_at IS NOT NULL");
   });
 
+  it("SQL contains EXISTS guard on user_installations membership (#185)", async () => {
+    // Arrange
+    const { db, stmts } = captureDb();
+    // Act
+    await validateSession(db, "g".repeat(64));
+    // Assert
+    expect(stmts()[0].sql).toContain("user_installations");
+    expect(stmts()[0].sql).toContain("ui.user_id = s.user_id");
+    expect(stmts()[0].sql).toContain("ui.tenant_id = s.tenant_id");
+  });
+
   it("passes the hash of rawToken as the bound arg (¬raw token itself)", async () => {
     // Arrange
     const { db, stmts } = captureDb();
@@ -229,6 +240,33 @@ describe("validateSession — suspended-tenant behavioral guard", () => {
     const result = await validateSession(db, "a".repeat(64));
 
     // Assert — suspended tenant session must be filtered out → null
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateSession — revoked membership behavioral guard (#185)
+// ---------------------------------------------------------------------------
+
+describe("validateSession — user_installations membership guard", () => {
+  it("returns null when user_installations link is absent (guard is mutation-catching)", async () => {
+    const validRow: FakeResult = {
+      userId: 7,
+      tenantId: 9,
+      githubId: 42,
+      githubLogin: "alice",
+    };
+
+    const db = makeFakeDb((sql, args) => {
+      const membershipGuardPresent =
+        sql.includes("user_installations") &&
+        sql.includes("ui.user_id = s.user_id") &&
+        sql.includes("ui.tenant_id = s.tenant_id");
+      return makeFakeStmt(sql, args, membershipGuardPresent ? [] : [validRow], 0);
+    });
+
+    const result = await validateSession(db, "a".repeat(64));
+
     expect(result).toBeNull();
   });
 });
