@@ -11,8 +11,10 @@ import { consumeZkHandoffFromUrl, getGithubUserToken } from './zk-github.js';
 import {
   applyZkDecryption,
   ensurePrivateMode,
+  ensureAccountKeySealing,
   syncZkContentFromGitHub,
 } from './zk-sync.js';
+import { requireZkEnrollmentGate } from './zk-enroll.js';
 
 const $ = id => document.getElementById(id);
 
@@ -343,12 +345,25 @@ async function init() {
     await consumeZkHandoffFromUrl();
     const me = await getSessionProfile();
     sessionGithubLogin = me.user?.github_login ?? '';
-    // PR 1b: account-key enrollment UI gated on this flag (PR 4); no-op when off.
     const zkAccountKeyEnabled = isZkAccountKeyEnabled(me);
-    void zkAccountKeyEnabled;
-    await ensurePrivateMode(sessionGithubLogin);
-    sessionZkOptIn = true;
+
+    if (zkAccountKeyEnabled) {
+      const zkReady = await requireZkEnrollmentGate(me, sessionGithubLogin);
+      if (!zkReady) return;
+      sessionZkOptIn = true;
+    } else {
+      await ensurePrivateMode(sessionGithubLogin);
+      sessionZkOptIn = true;
+    }
+
     await loadAndRender(sessionZkOptIn, sessionGithubLogin);
+
+    if (zkAccountKeyEnabled) {
+      await ensureAccountKeySealing(sessionGithubLogin, state.nodes);
+      await applyZkDecryption(state.nodes, sessionGithubLogin);
+      state.nodesByKey = new Map(state.nodes.map((n) => [n.key, n]));
+      render();
+    }
     if (getGithubUserToken()) {
       try {
         const { synced } = await syncZkContentFromGitHub(

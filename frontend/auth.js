@@ -224,6 +224,7 @@ function renderOperatorNotice(_me) {
     <p class="zk-opt-in-hint">
       <a href="/login?zk=1" id="zk-github-link">Link GitHub</a>
       to sync issue bodies on this device (token is kept in this tab only).
+      When passphrase backup is enabled, unlock first to seal or decrypt content.
     </p>
   `;
   el.removeAttribute('hidden');

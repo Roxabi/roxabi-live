@@ -1,0 +1,81 @@
+// zk-session.js — in-memory accountKey session (#216 PR 4)
+
+const IDLE_MS = 15 * 60 * 1000;
+
+/** @type {CryptoKey|null} */
+let sessionKey = null;
+/** @type {string|null} */
+let sessionKeyFp = null;
+let idleTimer = null;
+let idleWired = false;
+let pageHideWired = false;
+
+/** @type {(() => void)|null} */
+let onAutoLock = null;
+
+export function isZkUnlocked() {
+  return sessionKey !== null;
+}
+
+/** @returns {CryptoKey} */
+export function getSessionAccountKey() {
+  if (!sessionKey) throw new Error('ZK locked');
+  return sessionKey;
+}
+
+export function getSessionKeyFp() {
+  return sessionKeyFp;
+}
+
+export function setZkSession(accountKey, keyFp) {
+  sessionKey = accountKey;
+  sessionKeyFp = keyFp;
+  resetIdleTimer();
+}
+
+export function clearZkSession() {
+  sessionKey = null;
+  sessionKeyFp = null;
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+}
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer);
+  if (!sessionKey) return;
+  idleTimer = setTimeout(() => {
+    clearZkSession();
+    console.info('[zk]', { event: 'zk.lock.idle' });
+    onAutoLock?.();
+  }, IDLE_MS);
+}
+
+/** Register callback when idle lock fires (e.g. show unlock gate). */
+export function setZkAutoLockHandler(fn) {
+  onAutoLock = fn;
+}
+
+export function wireIdleLock() {
+  if (idleWired) return;
+  idleWired = true;
+  const bump = () => {
+    if (sessionKey) resetIdleTimer();
+  };
+  for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
+    document.addEventListener(ev, bump, { passive: true });
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && sessionKey) {
+      resetIdleTimer();
+    }
+  });
+}
+
+export function wirePageHideLock() {
+  if (pageHideWired) return;
+  pageHideWired = true;
+  window.addEventListener('pagehide', clearZkSession);
+  window.addEventListener('beforeunload', clearZkSession);
+}

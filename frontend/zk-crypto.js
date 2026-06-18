@@ -8,6 +8,8 @@ export { ARGON2_PARAMS };
 
 const DB_NAME = 'roxabi-zk-v1';
 const STORE_NAME = 'keypairs';
+const META_DB_NAME = 'roxabi-zk-v2';
+const META_STORE_NAME = 'account_meta';
 const HKDF_INFO = new TextEncoder().encode('roxabi-zk-ecies-v1');
 const HKDF_SALT = new Uint8Array(32);
 
@@ -50,6 +52,15 @@ function parseEnvelope(envelopeJson) {
   return typeof envelopeJson === 'string' ? JSON.parse(envelopeJson) : envelopeJson;
 }
 
+/** Return envelope version (1 = ECIES, 2 = accountKey) or null if unparseable. */
+export function parseEnvelopeVersion(envelopeJson) {
+  try {
+    return parseEnvelope(envelopeJson).v ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -79,6 +90,66 @@ async function idbPut(login, record) {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+async function idbDelete(login) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(login);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function openMetaDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(META_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(META_STORE_NAME);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function metaIdbGet(login) {
+  const db = await openMetaDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(META_STORE_NAME, 'readonly');
+    const req = tx.objectStore(META_STORE_NAME).get(login);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function metaIdbPut(login, record) {
+  const db = await openMetaDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(META_STORE_NAME, 'readwrite');
+    tx.objectStore(META_STORE_NAME).put(record, login);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** True when a per-device ECDH key pair exists in IndexedDB. */
+export async function hasZkKeyPair(githubLogin) {
+  const existing = await idbGet(githubLogin);
+  return Boolean(existing?.publicKey && existing?.privateKey);
+}
+
+/**
+ * Persist enrollment metadata only — never raw key or passphrase (#216).
+ * @param {{ key_fp: string, enrolled_at: string }} meta
+ */
+export async function saveAccountMeta(githubLogin, meta) {
+  await metaIdbPut(githubLogin, meta);
+}
+
+/** @returns {Promise<{ key_fp: string, enrolled_at: string }|null>} */
+export async function getAccountMeta(githubLogin) {
+  return metaIdbGet(githubLogin);
 }
 
 async function generateKeyPair() {
