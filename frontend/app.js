@@ -164,7 +164,10 @@ function buildGraphSegs() {
   closedSeg.addEventListener('click', () => {
     setState({ showClosedUnderOpenEpic: !state.showClosedUnderOpenEpic });
     buildGraphSegs();
-    render();
+    loadAndRender(sessionZkOptIn, sessionGithubLogin).catch(e => {
+      errorMsg.hidden = false;
+      errorMsg.textContent = `Failed to load graph: ${e.message}`;
+    });
   });
   container.appendChild(closedSeg);
 }
@@ -253,9 +256,16 @@ function restoreControls() {
 }
 
 function graphStatusQuery() {
+  const params = new URLSearchParams();
   const statuses = state.status;
-  if (!statuses?.length || statuses.length >= 3) return '';
-  return `?status=${encodeURIComponent(statuses.join(','))}`;
+  if (statuses?.length && statuses.length < 3) {
+    params.set('status', statuses.join(','));
+  }
+  if (state.showClosedUnderOpenEpic) {
+    params.set('closed_under_open_epic', '1');
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
 }
 
 async function loadGraphData() {

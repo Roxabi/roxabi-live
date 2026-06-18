@@ -38,7 +38,7 @@ Let:
 | `worker/src/router.ts` | Request routing |
 | `worker/src/types.ts` | `Env` interface + shared types |
 | `worker/src/api/issues.ts` | `GET /api/issues`, `GET /api/issues/:key` |
-| `worker/src/api/graph.ts` | `GET /api/graph` (optional `?status=ready,blocked`) |
+| `worker/src/api/graph.ts` | `GET /api/graph` (optional `?status=ready,blocked`, `?closed_under_open_epic=1`) |
 | `worker/src/graph/status.ts` | Graph status compute + server-side filter |
 | `worker/src/api/admin.ts` | `POST /admin/sync` (ADMIN_TOKEN-gated) |
 | `worker/src/api/version.ts` | `GET /api/version` |

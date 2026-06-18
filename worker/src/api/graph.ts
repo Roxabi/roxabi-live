@@ -17,7 +17,11 @@ import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { resolveVisibleRepos } from "../auth/repoAccess";
 import { userZkOptIn } from "../auth/zk";
-import { filterNodesByStatus, parseStatusQuery } from "../graph/status";
+import {
+  filterNodesByStatus,
+  parseClosedUnderOpenEpicQuery,
+  parseStatusQuery,
+} from "../graph/status";
 import { parseMilestone } from "../sync/parse";
 
 const LANE_LABEL_PREFIX = "graph:lane/";
@@ -177,7 +181,11 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
       ` lane, priority, size, status, is_stub, has_active_branch FROM issues WHERE repo IN (${ph})`,
   ).bind(...visible).all<IssueRow>();
 
-  const statusFilter = parseStatusQuery(new URL(c.req.url).searchParams.get("status"));
+  const searchParams = new URL(c.req.url).searchParams;
+  const statusFilter = parseStatusQuery(searchParams.get("status"));
+  const closedUnderOpenEpic = parseClosedUnderOpenEpicQuery(
+    searchParams.get("closed_under_open_epic"),
+  );
 
   let nodes: Node[] = issueRows.results.map((row) => {
     const issueLabels = labelsByIssue.get(row.key) ?? [];
@@ -224,7 +232,7 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
   }));
 
   if (statusFilter !== null) {
-    nodes = filterNodesByStatus(nodes, edges, statusFilter);
+    nodes = filterNodesByStatus(nodes, edges, statusFilter, { closedUnderOpenEpic });
     const keys = new Set(nodes.map((n) => n.key));
     edges = edges.filter((e) => keys.has(e.src) && keys.has(e.dst));
   }

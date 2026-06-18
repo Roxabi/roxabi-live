@@ -687,6 +687,22 @@ describe("GET /api/graph", () => {
       ]);
     });
 
+    it("includes done child under open epic when closed_under_open_epic=1", async () => {
+      const env = makeGraphEnv([], [], issues, edges);
+      const res = await testApp.request(
+        "/api/graph?status=ready,blocked&closed_under_open_epic=1",
+        {},
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json<{ nodes: { key: string }[] }>();
+      expect(body.nodes.map((n) => n.key).sort()).toEqual([
+        `${repo}#1`,
+        `${repo}#2`,
+        `${repo}#3`,
+      ]);
+    });
+
     it("omits status param returns all nodes", async () => {
       const env = makeGraphEnv([], [], issues, edges);
       const res = await testApp.request("/api/graph", {}, env);
