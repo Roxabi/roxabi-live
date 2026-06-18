@@ -115,6 +115,28 @@
   color: var(--text);
 }
 
+.zk-opt-in-panel {
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 6px;
+  text-align: left;
+}
+
+.zk-opt-in-label {
+  align-items: center;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.zk-opt-in-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 6px 0 0;
+  max-width: 720px;
+}
+
 /* ─── Body gate — hide dashboard chrome until auth resolved ──────────────── */
 
 body.gated .sticky-head,

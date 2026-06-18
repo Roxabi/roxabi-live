@@ -22,6 +22,11 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
     return c.json({ error: "unauthorized" }, 401);
   }
 
+  const userRow = await c.env.DB
+    .prepare(`SELECT zk_opt_in FROM users WHERE id = ?`)
+    .bind(s.userId)
+    .first<{ zk_opt_in: number }>();
+
   const rows = await c.env.DB
     .prepare(
       `SELECT ui.tenant_id AS tenant_id, t.account_login AS account_login, t.account_type AS account_type
@@ -34,6 +39,7 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
     user: {
       github_id: s.githubId,
       github_login: s.githubLogin,
+      zk_opt_in: userRow?.zk_opt_in === 1,
     },
     active_tenant_id: s.tenantId,
     installations: rows.results,

@@ -202,14 +202,43 @@ function renderOrgPicker(me) {
 
 // ─── Internal: render operator notice ────────────────────────────────────────
 
-function renderOperatorNotice() {
+function renderOperatorNotice(me) {
   const el = $('operator-notice');
+  const zkOn = Boolean(me.user.zk_opt_in);
   el.innerHTML = `
-    <strong>Operator read access (this phase):</strong> the operator can read the issue data of the organisations you grant.
-    Don't paste secrets into issue bodies or titles.
-    <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">Manage</a>
+    <div class="operator-notice-main">
+      <strong>Operator read access (this phase):</strong> the operator can read the issue data of the organisations you grant.
+      Don't paste secrets into issue bodies or titles.
+      <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">Manage</a>
+    </div>
+    <div class="zk-opt-in-panel">
+      <label class="zk-opt-in-label">
+        <input type="checkbox" id="zk-opt-in-toggle" ${zkOn ? 'checked' : ''} />
+        Private mode (beta) — encrypt issue content client-side
+      </label>
+      <p class="zk-opt-in-hint" id="zk-opt-in-hint" ${zkOn ? '' : 'hidden'}>
+        <strong>Scope:</strong> content only, not structure. Issue state, blocker edges, and counts stay visible to the operator.
+        Full encryption pipeline ships in a follow-up; this toggle saves your preference.
+      </p>
+    </div>
   `;
   el.removeAttribute('hidden');
+
+  const toggle = $('zk-opt-in-toggle');
+  const hint = $('zk-opt-in-hint');
+  toggle.addEventListener('change', async () => {
+    const enabled = toggle.checked;
+    try {
+      await api('/api/zk-opt-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      hint.toggleAttribute('hidden', !enabled);
+    } catch {
+      toggle.checked = !enabled;
+    }
+  });
 }
 
 // ─── Internal: wire logout ────────────────────────────────────────────────────
@@ -273,7 +302,7 @@ export async function requireAuthGate() {
     // After ACK, remove gate class and wire persistent UI before returning 'dashboard'
     document.body.classList.remove('gated');
     renderOrgPicker(me);
-    renderOperatorNotice();
+    renderOperatorNotice(me);
     wireLogout();
     return 'dashboard';
   }
@@ -281,7 +310,7 @@ export async function requireAuthGate() {
   // view === 'dashboard': already consented, wire persistent UI immediately
   document.body.classList.remove('gated');
   renderOrgPicker(me);
-  renderOperatorNotice();
+  renderOperatorNotice(me);
   wireLogout();
   return 'dashboard';
 }
