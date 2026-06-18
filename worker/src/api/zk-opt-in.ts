@@ -3,7 +3,8 @@
  *
  * Body: { enabled: boolean }
  *
- * Stores intent only; ciphertext pipeline is a follow-up slice. When enabled,
+ * When enabled, graph titles are redacted server-side; client decrypts via
+ * zk_payloads. When enabling, the UI seals titles first (see frontend/zk-sync.js).
  * the UI must surface the residual trust gap (metadata leaks, XSS, etc.).
  */
 
