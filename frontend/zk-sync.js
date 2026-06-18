@@ -20,6 +20,9 @@ import { fetchIssueContentMap, getGithubUserToken } from './zk-github.js';
 
 const BULK = 200;
 
+/** Label when graph title was redacted and this user has no ciphertext row (#216 hybrid multi-user). */
+export const SEALED_TITLE_LABEL = '(sealed)';
+
 async function putPayloadBatches(payloads) {
   for (let i = 0; i < payloads.length; i += BULK) {
     await api('/api/zk/payloads', {
@@ -202,7 +205,7 @@ export async function applyZkDecryption(nodes, githubLogin) {
     for (const node of nodes) {
       const row = byKey.get(node.key);
       if (!row) {
-        if (node.title == null) node.title = '(sealed)';
+        if (node.title == null) node.title = SEALED_TITLE_LABEL;
         continue;
       }
       const v = parseEnvelopeVersion(row.encrypted_payload);
@@ -212,7 +215,7 @@ export async function applyZkDecryption(nodes, githubLogin) {
       }
       try {
         const content = await openContentDual(keys, row.encrypted_payload);
-        node.title = content.title ?? '(sealed)';
+        node.title = content.title ?? SEALED_TITLE_LABEL;
         if (content.body != null) node.body = content.body;
       } catch {
         node.title = '(decrypt error)';
@@ -226,12 +229,12 @@ export async function applyZkDecryption(nodes, githubLogin) {
   for (const node of nodes) {
     const row = byKey.get(node.key);
     if (!row) {
-      if (node.title == null) node.title = '(sealed)';
+      if (node.title == null) node.title = SEALED_TITLE_LABEL;
       continue;
     }
     try {
       const content = await openContent(privateKey, row.encrypted_payload);
-      node.title = content.title ?? '(sealed)';
+      node.title = content.title ?? SEALED_TITLE_LABEL;
       if (content.body != null) node.body = content.body;
     } catch {
       node.title = '(decrypt error)';

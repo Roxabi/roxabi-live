@@ -226,6 +226,10 @@ function renderOperatorNotice(_me) {
       to sync issue bodies on this device (token is kept in this tab only).
       When passphrase backup is enabled, unlock first to seal or decrypt content.
     </p>
+    <p class="zk-opt-in-hint">
+      Each teammate encrypts their own view of issue titles.
+      You will see <strong>(sealed)</strong> on issues another teammate sealed until you link GitHub and sync.
+    </p>
   `;
   el.removeAttribute('hidden');
 }
