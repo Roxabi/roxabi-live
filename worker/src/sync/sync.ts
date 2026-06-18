@@ -11,15 +11,16 @@
 
 import { ghGraphql, GraphQLError } from "./graphql";
 import {
-  ISSUES_QUERY,
   PRS_QUERY,
   REFS_QUERY,
-  REPO_BUNDLE_QUERY,
-  STUB_ISSUE_QUERY,
+  pickIssuesQuery,
+  pickRepoBundleQuery,
+  pickStubIssueQuery,
 } from "./queries";
 import type { Env } from "../types";
 import { getInstallationToken, listInstallationRepos } from "../auth/installToken";
 import { d1PayloadTitle, loadZkSealedIssueKeys } from "../auth/zk";
+import { zkStructureOnlyEnabled } from "../auth/zk-flags";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -66,6 +67,107 @@ export const UPSERT_ISSUE_SQL = `
       status            = excluded.status,
       has_active_branch = excluded.has_active_branch
 `;
+
+/** Structure-only upsert — empty payload, one fewer bind arg (#216 PR 6). */
+export const UPSERT_ISSUE_SQL_STRUCTURE = `
+  INSERT INTO issues
+      (key, repo, number, payload, state, url, created_at, updated_at,
+       closed_at, milestone, is_stub, lane, priority, size, status,
+       has_active_branch)
+  VALUES
+      (?, ?, ?, json_object(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(key) DO UPDATE SET
+      repo              = excluded.repo,
+      number            = excluded.number,
+      payload           = excluded.payload,
+      state             = excluded.state,
+      url               = excluded.url,
+      created_at        = excluded.created_at,
+      updated_at        = excluded.updated_at,
+      closed_at         = excluded.closed_at,
+      milestone         = excluded.milestone,
+      is_stub           = excluded.is_stub,
+      lane              = excluded.lane,
+      priority          = excluded.priority,
+      size              = excluded.size,
+      status            = excluded.status,
+      has_active_branch = excluded.has_active_branch
+`;
+
+function logStructureOnlyTitleSkipped(key: string, repo: string): void {
+  console.log(
+    JSON.stringify({
+      prefix: "[zk]",
+      event: "structure_only.title_skipped",
+      key,
+      repo,
+    }),
+  );
+}
+
+interface IssueUpsertFields {
+  key: string;
+  repo: string;
+  number: number;
+  title?: string | null;
+  state: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  milestone: string | null;
+  isStub: number;
+  lane: string | null;
+  priority: string | null;
+  size: string | null;
+}
+
+function prepareIssueUpsert(
+  db: D1Database,
+  structureOnly: boolean,
+  sealedKeys: ReadonlySet<string>,
+  fields: IssueUpsertFields,
+): D1PreparedStatement {
+  if (structureOnly) {
+    logStructureOnlyTitleSkipped(fields.key, fields.repo);
+    return db.prepare(UPSERT_ISSUE_SQL_STRUCTURE).bind(
+      fields.key,
+      fields.repo,
+      fields.number,
+      fields.state.toLowerCase(),
+      fields.url,
+      fields.createdAt,
+      fields.updatedAt,
+      fields.closedAt,
+      fields.milestone,
+      fields.isStub,
+      fields.lane,
+      fields.priority,
+      fields.size,
+      null, // status — managed by Project v2 board
+      0, // has_active_branch — set by branch pass
+    );
+  }
+
+  return db.prepare(UPSERT_ISSUE_SQL).bind(
+    fields.key,
+    fields.repo,
+    fields.number,
+    d1PayloadTitle(fields.title, fields.key, sealedKeys),
+    fields.state.toLowerCase(),
+    fields.url,
+    fields.createdAt,
+    fields.updatedAt,
+    fields.closedAt,
+    fields.milestone,
+    fields.isStub,
+    fields.lane,
+    fields.priority,
+    fields.size,
+    null, // status — managed by Project v2 board
+    0, // has_active_branch — set by branch pass
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Regex constants (verbatim from sync.py)
@@ -294,7 +396,7 @@ export async function resetAuthFailures(db: D1Database, tenantId: number = 0): P
 
 interface IssueNodeFull {
   number: number;
-  title: string;
+  title?: string;
   state: string;
   url: string;
   createdAt: string;
@@ -329,6 +431,7 @@ export async function syncRepoIssues(
   collectedEdges: Map<string, EdgeData>,
   fullSync = false,
   sealedKeys: ReadonlySet<string> = new Set(),
+  structureOnly = false,
 ): Promise<void> {
   const repo = `${owner}/${name}`;
   let cursor: string | null = null;
@@ -347,7 +450,7 @@ export async function syncRepoIssues(
 
   while (true) {
     const response: { data: IssuesData } & Record<string, unknown> = await ghGraphql<IssuesData>(
-      ISSUES_QUERY,
+      pickIssuesQuery(structureOnly),
       { owner, name, cursor, since },
       token,
     );
@@ -369,24 +472,22 @@ export async function syncRepoIssues(
       const derived = extractFromLabels(labels);
 
       pageStmts.push(
-        db.prepare(UPSERT_ISSUE_SQL).bind(
+        prepareIssueUpsert(db, structureOnly, sealedKeys, {
           key,
           repo,
-          node.number,
-          d1PayloadTitle(node.title, key, sealedKeys),
-          node.state.toLowerCase(),
-          node.url,
-          node.createdAt,
-          node.updatedAt,
-          node.closedAt ?? null,
-          node.milestone?.title ?? null,
-          0, // is_stub
-          derived.lane,
-          derived.priority,
-          derived.size,
-          null, // status — managed by Project v2 board
-          0, // has_active_branch — set by branch pass
-        ),
+          number: node.number,
+          title: node.title,
+          state: node.state,
+          url: node.url,
+          createdAt: node.createdAt,
+          updatedAt: node.updatedAt,
+          closedAt: node.closedAt ?? null,
+          milestone: node.milestone?.title ?? null,
+          isStub: 0,
+          lane: derived.lane,
+          priority: derived.priority,
+          size: derived.size,
+        }),
       );
 
       // Label wipe + rewrite
@@ -739,6 +840,7 @@ export async function syncRepoBundle(
   collectedEdges: Map<string, EdgeData>,
   fullSync = false,
   sealedKeys: ReadonlySet<string> = new Set(),
+  structureOnly = false,
 ): Promise<number> {
   const repo = `${owner}/${name}`;
 
@@ -776,7 +878,7 @@ export async function syncRepoBundle(
 
     const response: { data: BundleData } & Record<string, unknown> =
       await ghGraphql<BundleData>(
-        REPO_BUNDLE_QUERY,
+        pickRepoBundleQuery(structureOnly),
         {
           owner,
           name,
@@ -805,24 +907,22 @@ export async function syncRepoBundle(
         const derived = extractFromLabels(labels);
 
         pageStmts.push(
-          db.prepare(UPSERT_ISSUE_SQL).bind(
+          prepareIssueUpsert(db, structureOnly, sealedKeys, {
             key,
             repo,
-            node.number,
-            d1PayloadTitle(node.title, key, sealedKeys),
-            node.state.toLowerCase(),
-            node.url,
-            node.createdAt,
-            node.updatedAt,
-            node.closedAt ?? null,
-            node.milestone?.title ?? null,
-            0, // is_stub
-            derived.lane,
-            derived.priority,
-            derived.size,
-            null, // status
-            0, // has_active_branch — set by applyActiveBranches after loop
-          ),
+            number: node.number,
+            title: node.title,
+            state: node.state,
+            url: node.url,
+            createdAt: node.createdAt,
+            updatedAt: node.updatedAt,
+            closedAt: node.closedAt ?? null,
+            milestone: node.milestone?.title ?? null,
+            isStub: 0,
+            lane: derived.lane,
+            priority: derived.priority,
+            size: derived.size,
+          }),
         );
         pageStmts.push(db.prepare("DELETE FROM labels WHERE issue_key=?").bind(key));
         for (const lbl of labels) {
@@ -909,7 +1009,7 @@ interface StubIssueData {
   repository: {
     issue: {
       number: number;
-      title: string;
+      title?: string;
       state: string;
       url: string;
       createdAt: string;
@@ -928,6 +1028,7 @@ export async function closedHopPass(
   db: D1Database,
   resolveToken: (owner: string, name: string) => Promise<string>,
   sealedKeys: ReadonlySet<string> = new Set(),
+  structureOnly = false,
 ): Promise<number> {
   const missingRows = await db
     .prepare(
@@ -965,7 +1066,7 @@ export async function closedHopPass(
     let response: { data: StubIssueData } & Record<string, unknown>;
     try {
       response = await ghGraphql<StubIssueData>(
-        STUB_ISSUE_QUERY,
+        pickStubIssueQuery(structureOnly),
         { owner, name, number: parseInt(numberStr, 10) },
         token,
       );
@@ -988,24 +1089,22 @@ export async function closedHopPass(
     }
 
     stubStmts.push(
-      db.prepare(UPSERT_ISSUE_SQL).bind(
+      prepareIssueUpsert(db, structureOnly, sealedKeys, {
         key,
-        ownerRepo,
-        node.number,
-        d1PayloadTitle(node.title, key, sealedKeys),
-        node.state.toLowerCase(),
-        node.url,
-        node.createdAt,
-        node.updatedAt,
-        node.closedAt ?? null,
-        null, // milestone
-        1, // is_stub
-        null, // lane
-        null, // priority
-        null, // size
-        null, // status
-        0, // has_active_branch
-      ),
+        repo: ownerRepo,
+        number: node.number,
+        title: node.title,
+        state: node.state,
+        url: node.url,
+        createdAt: node.createdAt,
+        updatedAt: node.updatedAt,
+        closedAt: node.closedAt ?? null,
+        milestone: null,
+        isStub: 1,
+        lane: null,
+        priority: null,
+        size: null,
+      }),
     );
     inserted++;
   }
@@ -1439,6 +1538,7 @@ export async function runSync(env: Env): Promise<void> {
       };
 
     // Pass 1: bundled issues + refs + PRs per repo in window.
+    const structureOnly = zkStructureOnlyEnabled(env);
     const sealedKeys = await loadZkSealedIssueKeys(db);
     const collectedEdges = new Map<string, EdgeData>();
     let skippedCount = 0;
@@ -1460,6 +1560,7 @@ export async function runSync(env: Env): Promise<void> {
           collectedEdges,
           true,
           sealedKeys,
+          structureOnly,
         );
       } catch (err) {
         console.error(`[sync] skipping ${repo}:`, err);
@@ -1484,6 +1585,7 @@ export async function runSync(env: Env): Promise<void> {
         return makeRepoResolver(repoTenants)();
       },
       sealedKeys,
+      structureOnly,
     );
     console.log(`[sync] completed — stubs=${stubsCount}`);
 

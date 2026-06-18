@@ -173,6 +173,8 @@ function makeIssuePayload(action: string, issueOverrides: Record<string, unknown
 // ---------------------------------------------------------------------------
 
 describe("handleIssues", () => {
+  const baseEnv = makeEnv();
+
   afterEach(() => vi.clearAllMocks());
 
   describe("opened / edited (upsert path)", () => {
@@ -182,7 +184,7 @@ describe("handleIssues", () => {
       const payload = makeIssuePayload("opened");
 
       // Act
-      await handleIssues(payload, db);
+      await handleIssues(payload, db, baseEnv);
 
       // Assert — batch was called (SC9 atomic requirement)
       expect(vi.mocked(db.batch)).toHaveBeenCalledOnce();
@@ -202,7 +204,18 @@ describe("handleIssues", () => {
       });
       const payload = makeIssuePayload("edited", { title: "Plaintext from GitHub" });
 
-      await handleIssues(payload, db);
+      await handleIssues(payload, db, baseEnv);
+
+      const batchArgs = vi.mocked(db.batch).mock.calls[0][0] as unknown as FakeStmt[];
+      expect(batchArgs[0].args[3]).toBeNull();
+    });
+
+    it("binds null title when ZK_STRUCTURE_ONLY is enabled", async () => {
+      const { db } = captureDb();
+      const payload = makeIssuePayload("edited", { title: "Plaintext from GitHub" });
+      const env = makeEnv({ ZK_STRUCTURE_ONLY: "1" });
+
+      await handleIssues(payload, db, env);
 
       const batchArgs = vi.mocked(db.batch).mock.calls[0][0] as unknown as FakeStmt[];
       expect(batchArgs[0].args[3]).toBeNull();
@@ -216,7 +229,7 @@ describe("handleIssues", () => {
       });
 
       // Act
-      await handleIssues(payload, db);
+      await handleIssues(payload, db, baseEnv);
 
       // Assert
       const batchArgs = vi.mocked(db.batch).mock.calls[0][0] as unknown as FakeStmt[];
@@ -233,7 +246,7 @@ describe("handleIssues", () => {
       const payload = makeIssuePayload("deleted");
 
       // Act
-      await handleIssues(payload, db);
+      await handleIssues(payload, db, baseEnv);
 
       // Assert
       expect(vi.mocked(db.batch)).not.toHaveBeenCalled();
@@ -247,7 +260,7 @@ describe("handleIssues", () => {
       const payload = makeIssuePayload("deleted");
 
       // Act
-      await handleIssues(payload, db);
+      await handleIssues(payload, db, baseEnv);
 
       // Assert — a stmt with DELETE FROM issues was run
       const deletedStmt = stmts().find((s) => s.sql.includes("DELETE FROM issues"));
@@ -262,7 +275,7 @@ describe("handleIssues", () => {
       const payload = makeIssuePayload("transferred");
 
       // Act
-      await handleIssues(payload, db);
+      await handleIssues(payload, db, baseEnv);
 
       // Assert
       const deletedStmt = stmts().find((s) => s.sql.includes("DELETE FROM issues"));
@@ -273,7 +286,7 @@ describe("handleIssues", () => {
     it("guard: deleting the deleted/transferred check would break test — no batch called", async () => {
       // Negative: batch must NOT be called on deleted action
       const { db } = captureDb();
-      await handleIssues(makeIssuePayload("deleted"), db);
+      await handleIssues(makeIssuePayload("deleted"), db, baseEnv);
       expect(vi.mocked(db.batch)).not.toHaveBeenCalled();
     });
   });
