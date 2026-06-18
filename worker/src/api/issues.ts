@@ -11,7 +11,7 @@
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { resolveVisibleRepos } from "../auth/repoAccess";
-import { userZkOptIn } from "../auth/zk";
+import { loadZkSealedIssueKeys, redactIssueTitle } from "../auth/zk";
 
 const ISSUE_KEY_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+#[0-9]+$/;
 
@@ -45,9 +45,7 @@ interface EdgeJoinRow {
 }
 
 export const listIssuesRoute = async (c: Context<AuthEnv>) => {
-  const s = c.get("session");
-  const redactTitles =
-    s !== undefined && (await userZkOptIn(c.env.DB, s.userId));
+  const sealedKeys = await loadZkSealedIssueKeys(c.env.DB);
 
   const visible = await resolveVisibleRepos(c);
 
@@ -130,7 +128,7 @@ export const listIssuesRoute = async (c: Context<AuthEnv>) => {
     key: row.key,
     repo: row.repo,
     number: row.number,
-    title: redactTitles ? null : row.title,
+    title: redactIssueTitle(row.title, row.key, sealedKeys),
     state: row.state,
     url: row.url,
     labels: labelsByKey.get(row.key) ?? [],
@@ -145,9 +143,7 @@ export const listIssuesRoute = async (c: Context<AuthEnv>) => {
 };
 
 export const getIssueRoute = async (c: Context<AuthEnv>) => {
-  const s = c.get("session");
-  const redactTitles =
-    s !== undefined && (await userZkOptIn(c.env.DB, s.userId));
+  const sealedKeys = await loadZkSealedIssueKeys(c.env.DB);
 
   const visible = await resolveVisibleRepos(c);
 
@@ -221,7 +217,7 @@ export const getIssueRoute = async (c: Context<AuthEnv>) => {
     key: row.key,
     repo: row.repo,
     number: row.number,
-    title: redactTitles ? null : row.title,
+    title: redactIssueTitle(row.title, row.key, sealedKeys),
     state: row.state,
     url: row.url,
     labels,

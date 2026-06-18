@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   d1PayloadTitle,
+  redactIssueTitle,
   loadZkSealedIssueKeys,
   isIssueZkSealed,
   scrubIssuePayloads,
@@ -12,6 +13,12 @@ describe("zk D1 redaction helpers", () => {
     const sealed = new Set(["Roxabi/live#1"]);
     expect(d1PayloadTitle("Secret", "Roxabi/live#1", sealed)).toBeNull();
     expect(d1PayloadTitle("Visible", "Roxabi/live#2", sealed)).toBe("Visible");
+  });
+
+  it("redactIssueTitle mirrors d1PayloadTitle for API responses", () => {
+    const sealed = new Set(["Roxabi/live#1"]);
+    expect(redactIssueTitle("Secret", "Roxabi/live#1", sealed)).toBeNull();
+    expect(redactIssueTitle("Visible", "Roxabi/live#2", sealed)).toBe("Visible");
   });
 
   it("loadZkSealedIssueKeys returns distinct issue_key set", async () => {

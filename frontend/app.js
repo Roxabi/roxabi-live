@@ -7,8 +7,12 @@ import { MultiSelect } from './multi_select.js';
 import { clearPinned } from './hover.js';
 import { repoTone } from './tone.js';
 import { api, AuthError, requireAuthGate, getSessionProfile } from './auth.js';
-import { applyZkDecryption, syncZkContentFromGitHub } from './zk-sync.js';
 import { consumeZkHandoffFromUrl, getGithubUserToken } from './zk-github.js';
+import {
+  applyZkDecryption,
+  ensurePrivateMode,
+  syncZkContentFromGitHub,
+} from './zk-sync.js';
 
 const $ = id => document.getElementById(id);
 
@@ -338,10 +342,11 @@ async function init() {
   try {
     await consumeZkHandoffFromUrl();
     const me = await getSessionProfile();
-    sessionZkOptIn = Boolean(me.user?.zk_opt_in);
     sessionGithubLogin = me.user?.github_login ?? '';
+    await ensurePrivateMode(sessionGithubLogin);
+    sessionZkOptIn = true;
     await loadAndRender(sessionZkOptIn, sessionGithubLogin);
-    if (sessionZkOptIn && getGithubUserToken()) {
+    if (getGithubUserToken()) {
       try {
         const { synced } = await syncZkContentFromGitHub(
           state.nodes,

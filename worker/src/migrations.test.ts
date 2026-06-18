@@ -269,6 +269,29 @@ describe("tenants table", () => {
 // Suite 8 — edges and indexes
 // ---------------------------------------------------------------------------
 
+describe("0013_zk_always_on", () => {
+  it("sets zk_opt_in = 1 for all users", () => {
+    const migDb = new Database(":memory:");
+    const pre = appliedFiles.filter((f) => !f.startsWith("0013_"));
+    for (const file of pre) {
+      migDb.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    migDb.exec(`
+      INSERT INTO users (id, github_id, github_login, zk_opt_in)
+      VALUES (1, 1, 'off', 0), (2, 2, 'on', 1);
+    `);
+    migDb.exec(readFileSync(join(MIGRATIONS_DIR, "0013_zk_always_on.sql"), "utf8"));
+    const rows = migDb
+      .prepare(`SELECT github_login, zk_opt_in FROM users ORDER BY id`)
+      .all() as Array<{ github_login: string; zk_opt_in: number }>;
+    expect(rows).toEqual([
+      { github_login: "off", zk_opt_in: 1 },
+      { github_login: "on", zk_opt_in: 1 },
+    ]);
+    migDb.close();
+  });
+});
+
 describe("0012_scrub_zk_sealed_payloads", () => {
   it("clears issues.payload for keys present in zk_payloads", () => {
     const scrubDb = new Database(":memory:");
