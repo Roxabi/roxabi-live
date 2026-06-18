@@ -42,6 +42,16 @@ export function d1PayloadTitle(
   return title ?? null;
 }
 
+/** API title field — null once a zk_payloads row exists for the issue. */
+export function redactIssueTitle(
+  title: string | null | undefined,
+  issueKey: string,
+  sealedKeys: ReadonlySet<string>,
+): string | null {
+  if (sealedKeys.has(issueKey)) return null;
+  return title ?? null;
+}
+
 /** Wipe plaintext content from issues.payload after sealing. */
 export async function scrubIssuePayloads(
   db: D1Database,

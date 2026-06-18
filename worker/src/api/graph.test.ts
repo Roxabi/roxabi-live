@@ -57,6 +57,7 @@ function makeGraphEnv(
   repos: unknown[] = [],
   overrideVisible?: string[],
   zkOptIn = false,
+  sealedIssueKeys: string[] = [],
 ): Env {
   const visibleRepos =
     overrideVisible ??
@@ -68,6 +69,7 @@ function makeGraphEnv(
       args,
       dispatchByTable(sql, {
         "zk_opt_in": [{ zk_opt_in: zkOptIn ? 1 : 0 }],
+        "from zk_payloads": sealedIssueKeys.map((issue_key) => ({ issue_key })),
         "tenant_repo_access": visibleRepos.map((repo) => ({
           repo,
           is_private: 0,
@@ -161,7 +163,7 @@ describe("GET /api/graph", () => {
       expect(Array.isArray(body.repos)).toBe(true);
     });
 
-    it("redacts titles when zk_opt_in is enabled", async () => {
+    it("redacts titles when issue is zk-sealed", async () => {
       const issue = {
         key: "Roxabi/roxabi-live#7",
         repo: "Roxabi/roxabi-live",
@@ -180,7 +182,9 @@ describe("GET /api/graph", () => {
       const res = await testApp.request(
         "/api/graph",
         {},
-        makeGraphEnv([], [], [issue], [], [], undefined, true),
+        makeGraphEnv([], [], [issue], [], [], undefined, false, [
+          "Roxabi/roxabi-live#7",
+        ]),
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].title).toBeNull();

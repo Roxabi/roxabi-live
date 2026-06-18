@@ -22,6 +22,10 @@ routes = [
   { pattern = "live.roxabi.dev", custom_domain = true },
 ]
 
+[vars]
+ZK_ACCOUNT_KEY = "0"
+ZK_STRUCTURE_ONLY = "0"
+
 [assets]
 directory = "./frontend"
 binding   = "ASSETS"
@@ -57,6 +61,10 @@ bucket_name = "roxabi-live-logs"
 [env.staging]
 name = "roxabi-live-staging"
 workers_dev = true
+
+[env.staging.vars]
+ZK_ACCOUNT_KEY = "0"
+ZK_STRUCTURE_ONLY = "0"
 # `routes` is inheritable — without this explicit empty override a staging
 # deploy would inherit the top-level live.roxabi.dev custom domain (#101) and
 # bind it to the staging Worker. Keep this even though staging has no routes.

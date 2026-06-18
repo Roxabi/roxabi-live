@@ -27,6 +27,7 @@ import {
   type WebhookIssue,
 } from "./mutations";
 import { isIssueZkSealed } from "../auth/zk";
+import { zkStructureOnlyEnabled } from "../auth/zk-flags";
 import { BRANCH_ISSUE_RE, canonicalKey, extractFromLabels, syncBranches } from "../sync/sync";
 import { fetchIssueDeps, GraphQLError } from "../sync/graphql";
 import { resolveInstallToken } from "../auth/installToken";
@@ -85,7 +86,11 @@ function issueKey(
  * deleted, transferred.
  * Issue upsert + label replacement are committed atomically via db.batch (SC9).
  */
-export async function handleIssues(payload: Record<string, unknown>, db: D1Database): Promise<void> {
+export async function handleIssues(
+  payload: Record<string, unknown>,
+  db: D1Database,
+  env: Env,
+): Promise<void> {
   const action = payload["action"] as string | undefined;
   const issue = payload["issue"] as Record<string, unknown>;
   const repo = ((payload["repository"] as Record<string, unknown> | undefined) ?? {})["full_name"] as string | undefined ?? "";
@@ -113,8 +118,10 @@ export async function handleIssues(payload: Record<string, unknown>, db: D1Datab
 
   const derived = extractFromLabels(names);
 
+  const structureOnly = zkStructureOnlyEnabled(env);
   const sealed = await isIssueZkSealed(db, key);
-  const title = sealed ? null : ((issue["title"] as string | undefined) ?? null);
+  const title =
+    structureOnly || sealed ? null : ((issue["title"] as string | undefined) ?? null);
 
   const issuePartial: WebhookIssue = {
     key,
@@ -584,7 +591,7 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
 
   try {
     if (event === "issues") {
-      await handleIssues(payload, db);
+      await handleIssues(payload, db, c.env);
       mutated = true;
     } else if (event === "issue_dependencies") {
       const changed = await handleDeps(payload, db, c.env);

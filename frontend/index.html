@@ -24,6 +24,7 @@
         <button id="btn-graph" class="seg"    data-v="graph" aria-pressed="false" title="Graph"><span class="ico">⋈</span> Graph</button>
       </div>
       <select id="org-picker" class="org-picker" aria-label="Active organisation" hidden></select>
+      <button id="zk-lock-btn" class="theme-btn" type="button" hidden title="Lock encryption">Lock</button>
       <button id="logout-btn" class="theme-btn" type="button" hidden>Sign out</button>
       <button id="theme-btn" class="theme-btn" type="button" title="Toggle theme" aria-label="Toggle theme">🌙</button>
     </div>
@@ -115,6 +116,7 @@
 </footer>
 
 <div id="consent-gate" class="consent-gate" hidden></div>
+<div id="zk-gate" class="zk-gate" hidden></div>
 
 <script type="module" src="state.js"></script>
 <script type="module" src="pivot.js"></script>
