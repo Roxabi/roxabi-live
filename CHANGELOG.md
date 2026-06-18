@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.13.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.12.0...roxabi-live/v0.13.0) (2026-06-18)
+
+
+### Features
+
+* **zk:** account-key multi-device encryption — passphrase backup, enroll/unlock UI, structure-only sync ([#216](https://github.com/Roxabi/roxabi-live/issues/216), [#217](https://github.com/Roxabi/roxabi-live/pull/217))
+* **zk:** private mode always on, redact graph titles by sealed keys ([#216](https://github.com/Roxabi/roxabi-live/issues/216))
+* **security:** ZK mode opt-in preference — API + UI ([#142](https://github.com/Roxabi/roxabi-live/issues/142) S1, [#202](https://github.com/Roxabi/roxabi-live/pull/202))
+* **security:** ZK ciphertext pipeline — seal titles client-side ([#142](https://github.com/Roxabi/roxabi-live/issues/142) S2, [#207](https://github.com/Roxabi/roxabi-live/pull/207))
+* **security:** ZK user token handoff + GitHub body sync ([#142](https://github.com/Roxabi/roxabi-live/issues/142) S3, [#209](https://github.com/Roxabi/roxabi-live/pull/209))
+* **worker:** scrub D1 plaintext titles for zk-sealed issues ([#142](https://github.com/Roxabi/roxabi-live/issues/142), [#211](https://github.com/Roxabi/roxabi-live/pull/211))
+* **graph:** server param for closed-under-open-epic filter ([#214](https://github.com/Roxabi/roxabi-live/pull/214))
+* **graph:** default ready/blocked server filter and flat grouping
+
+
+### Bug Fixes
+
+* **zk:** address PR [#217](https://github.com/Roxabi/roxabi-live/pull/217) review blockers (flag gate, reauth, CAS, migration safety)
+* **ci:** Node 22 for worker/deploy (wrangler 4) ([#205](https://github.com/Roxabi/roxabi-live/pull/205))
+
+
+### Documentation
+
+* **zk:** approved account-key design spec + `ZK_ENCRYPTION.md` ([#216](https://github.com/Roxabi/roxabi-live/issues/216))
+
+
+### Chores
+
+* **ci:** repoint file_length gate to worker TS ([#180](https://github.com/Roxabi/roxabi-live/issues/180), [#199](https://github.com/Roxabi/roxabi-live/pull/199))
+* **deps:** upgrade vitest 3.2.6 + wrangler 4.101.0 ([#156](https://github.com/Roxabi/roxabi-live/issues/156), [#200](https://github.com/Roxabi/roxabi-live/pull/200))
+* **test:** extract FakeD1 harness to `worker/test/fake-d1.ts` ([#159](https://github.com/Roxabi/roxabi-live/issues/159), [#201](https://github.com/Roxabi/roxabi-live/pull/201))
+
 ## [0.12.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.11.0...roxabi-live/v0.12.0) (2026-06-17)
 
 
