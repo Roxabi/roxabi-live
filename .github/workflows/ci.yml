@@ -53,7 +53,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Install worker deps
         run: cd worker && npm ci
       - name: Typecheck (tsc)
@@ -112,7 +112,7 @@ jobs:
         name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - if: steps.guard.outputs.enabled == 'true'
         name: Install worker deps
         run: cd worker && npm ci
