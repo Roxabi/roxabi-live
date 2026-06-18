@@ -89,4 +89,28 @@ describe("putZkPayloadsRoute", () => {
     expect(upsert!.args[0]).toBe(7);
     expect(upsert!.args[1]).toBe("Roxabi/live#42");
   });
+
+  it("scrubs plaintext titles from issues.payload after upsert", async () => {
+    const { db, stmts } = captureDb(() => []);
+    await makeApp(db).request(
+      "/api/zk/payloads",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payloads: [{
+            issue_key: "Roxabi/live#99",
+            pubkey_fp: "deadbeef",
+            encrypted_payload: "envelope-json",
+          }],
+        }),
+      },
+      makeEnv(db),
+    );
+    const scrub = stmts().find(
+      (s) => s.sql.includes("UPDATE issues SET payload = json_object()"),
+    );
+    expect(scrub).toBeDefined();
+    expect(scrub!.args).toContain("Roxabi/live#99");
+  });
 });

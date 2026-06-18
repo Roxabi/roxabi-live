@@ -269,6 +269,35 @@ describe("tenants table", () => {
 // Suite 8 — edges and indexes
 // ---------------------------------------------------------------------------
 
+describe("0012_scrub_zk_sealed_payloads", () => {
+  it("clears issues.payload for keys present in zk_payloads", () => {
+    const scrubDb = new Database(":memory:");
+    const preScrub = appliedFiles.filter((f) => !f.startsWith("0012_"));
+    for (const file of preScrub) {
+      scrubDb.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    scrubDb.exec(`
+      INSERT INTO users (id, github_id, github_login)
+      VALUES (1, 1, 'tester');
+      INSERT INTO issues (key, repo, number, payload, state)
+      VALUES ('Roxabi/live#1', 'Roxabi/live', 1, json_object('title', 'secret'), 'open'),
+             ('Roxabi/live#2', 'Roxabi/live', 2, json_object('title', 'visible'), 'open');
+      INSERT INTO zk_payloads (user_id, issue_key, pubkey_fp, encrypted_payload, updated_at)
+      VALUES (1, 'Roxabi/live#1', 'fp1', 'cipher', datetime('now'));
+    `);
+    scrubDb.exec(readFileSync(join(MIGRATIONS_DIR, "0012_scrub_zk_sealed_payloads.sql"), "utf8"));
+    const row1 = scrubDb
+      .prepare(`SELECT json_extract(payload, '$.title') AS title FROM issues WHERE key = ?`)
+      .get("Roxabi/live#1") as { title: string | null };
+    const row2 = scrubDb
+      .prepare(`SELECT json_extract(payload, '$.title') AS title FROM issues WHERE key = ?`)
+      .get("Roxabi/live#2") as { title: string | null };
+    expect(row1.title).toBeNull();
+    expect(row2.title).toBe("visible");
+    scrubDb.close();
+  });
+});
+
 describe("edges table and indexes", () => {
   it("has composite primary key (src_key, dst_key, kind)", () => {
     expect(getPkColumns(db, "edges")).toEqual(["src_key", "dst_key", "kind"]);

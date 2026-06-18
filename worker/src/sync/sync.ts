@@ -19,6 +19,7 @@ import {
 } from "./queries";
 import type { Env } from "../types";
 import { getInstallationToken, listInstallationRepos } from "../auth/installToken";
+import { d1PayloadTitle, loadZkSealedIssueKeys } from "../auth/zk";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -327,6 +328,7 @@ export async function syncRepoIssues(
   name: string,
   collectedEdges: Map<string, EdgeData>,
   fullSync = false,
+  sealedKeys: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   const repo = `${owner}/${name}`;
   let cursor: string | null = null;
@@ -371,7 +373,7 @@ export async function syncRepoIssues(
           key,
           repo,
           node.number,
-          node.title,
+          d1PayloadTitle(node.title, key, sealedKeys),
           node.state.toLowerCase(),
           node.url,
           node.createdAt,
@@ -736,6 +738,7 @@ export async function syncRepoBundle(
   name: string,
   collectedEdges: Map<string, EdgeData>,
   fullSync = false,
+  sealedKeys: ReadonlySet<string> = new Set(),
 ): Promise<number> {
   const repo = `${owner}/${name}`;
 
@@ -806,7 +809,7 @@ export async function syncRepoBundle(
             key,
             repo,
             node.number,
-            node.title,
+            d1PayloadTitle(node.title, key, sealedKeys),
             node.state.toLowerCase(),
             node.url,
             node.createdAt,
@@ -924,6 +927,7 @@ interface StubIssueData {
 export async function closedHopPass(
   db: D1Database,
   resolveToken: (owner: string, name: string) => Promise<string>,
+  sealedKeys: ReadonlySet<string> = new Set(),
 ): Promise<number> {
   const missingRows = await db
     .prepare(
@@ -988,7 +992,7 @@ export async function closedHopPass(
         key,
         ownerRepo,
         node.number,
-        node.title,
+        d1PayloadTitle(node.title, key, sealedKeys),
         node.state.toLowerCase(),
         node.url,
         node.createdAt,
@@ -1435,6 +1439,7 @@ export async function runSync(env: Env): Promise<void> {
       };
 
     // Pass 1: bundled issues + refs + PRs per repo in window.
+    const sealedKeys = await loadZkSealedIssueKeys(db);
     const collectedEdges = new Map<string, EdgeData>();
     let skippedCount = 0;
     for (const repo of windowedRepos) {
@@ -1447,7 +1452,15 @@ export async function runSync(env: Env): Promise<void> {
         const token = await resolveToken();
         // Daily cron = full reconcile (#80): fullSync forces a complete re-fetch
         // (since=null) so deps-only edge changes are healed regardless of updatedAt.
-        stalePrsClosed += await syncRepoBundle(db, token, owner, name, collectedEdges, true);
+        stalePrsClosed += await syncRepoBundle(
+          db,
+          token,
+          owner,
+          name,
+          collectedEdges,
+          true,
+          sealedKeys,
+        );
       } catch (err) {
         console.error(`[sync] skipping ${repo}:`, err);
         skippedCount++;
@@ -1460,14 +1473,18 @@ export async function runSync(env: Env): Promise<void> {
     await flushEdges(db, collectedEdges);
 
     // Closed-hop pass with per-(owner,name) resolver.
-    stubsCount = await closedHopPass(db, async (owner: string, name: string) => {
-      const repo = `${owner}/${name}`;
-      const repoTenants = repoTenantMap.get(repo);
-      if (!repoTenants || repoTenants.length === 0) {
-        throw new Error(`no tenant for ${repo}`);
-      }
-      return makeRepoResolver(repoTenants)();
-    });
+    stubsCount = await closedHopPass(
+      db,
+      async (owner: string, name: string) => {
+        const repo = `${owner}/${name}`;
+        const repoTenants = repoTenantMap.get(repo);
+        if (!repoTenants || repoTenants.length === 0) {
+          throw new Error(`no tenant for ${repo}`);
+        }
+        return makeRepoResolver(repoTenants)();
+      },
+      sealedKeys,
+    );
     console.log(`[sync] completed — stubs=${stubsCount}`);
 
     // Advance slot.
