@@ -1,5 +1,10 @@
-// zk-crypto.js — ECIES P-256 + IndexedDB key storage (#142 S2)
-// Ephemeral ECDH-P256 → HKDF-SHA256 → AES-GCM-256
+// zk-crypto.js — ECIES P-256 + accountKey AES-GCM (#142 S2, #216 PR 3)
+// v1: Ephemeral ECDH-P256 → HKDF-SHA256 → AES-GCM-256
+// v2: accountKey (AES-256-GCM) with passphrase-wrapped D1 backup
+
+import { deriveWrappingKey, ARGON2_PARAMS } from './zk-kdf.js';
+
+export { ARGON2_PARAMS };
 
 const DB_NAME = 'roxabi-zk-v1';
 const STORE_NAME = 'keypairs';
@@ -27,6 +32,22 @@ function b64Decode(str) {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+
+function hexEncode(buf) {
+  return [...toBytes(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function hexDecode(hex) {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+function parseEnvelope(envelopeJson) {
+  return typeof envelopeJson === 'string' ? JSON.parse(envelopeJson) : envelopeJson;
 }
 
 function openDb() {
@@ -192,4 +213,139 @@ export async function sealTitle(publicKey, title) {
 export async function openTitle(privateKey, envelopeJson) {
   const obj = await openContent(privateKey, envelopeJson);
   return obj.title ?? null;
+}
+
+// --- accountKey hierarchy (#216) ---
+
+/** Generate a random AES-256-GCM accountKey (extractable for wrapping). */
+export async function generateAccountKey() {
+  return crypto.subtle.generateKey(
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+/** SHA-256(rawAccountKey)[0:16] hex — stored in zk_payloads.key_fp / zk_key_backups.key_fp. */
+export async function fingerprintAccountKey(accountKey) {
+  const raw = await crypto.subtle.exportKey('raw', accountKey);
+  return fingerprintAccountKeyRaw(raw);
+}
+
+/** Fingerprint from raw 32-byte account key material. */
+export async function fingerprintAccountKeyRaw(rawAccountKey) {
+  const hash = await crypto.subtle.digest('SHA-256', toBytes(rawAccountKey));
+  return hexEncode(new Uint8Array(hash).slice(0, 16));
+}
+
+/** Re-import accountKey as non-extractable session key after wrapping. */
+export async function sessionAccountKey(accountKey) {
+  const raw = await crypto.subtle.exportKey('raw', accountKey);
+  return crypto.subtle.importKey(
+    'raw',
+    raw,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+/**
+ * Wrap accountKey with passphrase-derived wrapping key.
+ * @returns {{ kdf_alg: string, kdf_params: string, wrap_iv: string, wrapped_key: string, key_fp: string }}
+ */
+export async function wrapAccountKey(passphrase, accountKey) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const wrappingKey = await deriveWrappingKey(passphrase, salt, ARGON2_PARAMS);
+  const wrapIv = crypto.getRandomValues(new Uint8Array(12));
+  const rawAccountKey = await crypto.subtle.exportKey('raw', accountKey);
+  const wrapped = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: wrapIv },
+    wrappingKey,
+    rawAccountKey,
+  );
+  return {
+    kdf_alg: 'argon2id',
+    kdf_params: JSON.stringify({
+      m: ARGON2_PARAMS.m,
+      t: ARGON2_PARAMS.t,
+      p: ARGON2_PARAMS.p,
+      salt: hexEncode(salt),
+    }),
+    wrap_iv: b64Encode(wrapIv),
+    wrapped_key: b64Encode(wrapped),
+    key_fp: await fingerprintAccountKeyRaw(rawAccountKey),
+  };
+}
+
+/**
+ * Unwrap accountKey backup blob with passphrase.
+ * @param {string} passphrase
+ * @param {{ kdf_params: string|object, wrap_iv: string, wrapped_key: string }} backup
+ * @returns {Promise<CryptoKey>} non-extractable session accountKey
+ */
+export async function unwrapAccountKey(passphrase, backup) {
+  const params =
+    typeof backup.kdf_params === 'string'
+      ? JSON.parse(backup.kdf_params)
+      : backup.kdf_params;
+  const salt = hexDecode(params.salt);
+  const wrappingKey = await deriveWrappingKey(passphrase, salt, params);
+  const rawAccountKey = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: b64Decode(backup.wrap_iv) },
+    wrappingKey,
+    b64Decode(backup.wrapped_key),
+  );
+  return crypto.subtle.importKey(
+    'raw',
+    rawAccountKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+/** v2 envelope encrypt `{ title, body? }` with accountKey. */
+export async function sealWithAccountKey(accountKey, content) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    accountKey,
+    new TextEncoder().encode(JSON.stringify(content)),
+  );
+  return JSON.stringify({
+    v: 2,
+    alg: 'AES-GCM-256',
+    iv: b64Encode(iv),
+    ct: b64Encode(ct),
+  });
+}
+
+/** v2 envelope decrypt to `{ title, body? }`. */
+export async function openWithAccountKey(accountKey, envelopeJson) {
+  const env = parseEnvelope(envelopeJson);
+  if (env.v !== 2) throw new Error('unsupported envelope version');
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: b64Decode(env.iv) },
+    accountKey,
+    b64Decode(env.ct),
+  );
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+/**
+ * Dual-read decrypt: v2 accountKey or v1 ECDH privateKey.
+ * @param {{ accountKey?: CryptoKey, privateKey?: CryptoKey }} keys
+ */
+export async function openContentDual(keys, envelopeJson) {
+  const env = parseEnvelope(envelopeJson);
+  if (env.v === 2) {
+    if (!keys.accountKey) throw new Error('accountKey required for v2 envelope');
+    return openWithAccountKey(keys.accountKey, env);
+  }
+  if (env.v === 1) {
+    if (!keys.privateKey) throw new Error('privateKey required for v1 envelope');
+    return openContent(keys.privateKey, envelopeJson);
+  }
+  throw new Error('unsupported envelope version');
 }
