@@ -88,6 +88,30 @@ describe("putZkPayloadsRoute", () => {
     expect(upsert).toBeDefined();
     expect(upsert!.args[0]).toBe(7);
     expect(upsert!.args[1]).toBe("Roxabi/live#42");
+    expect(upsert!.sql).toContain("key_fp");
+  });
+
+  it("accepts key_fp alias and dual-writes pubkey_fp", async () => {
+    const { db, stmts } = captureDb(() => []);
+    const res = await makeApp(db).request(
+      "/api/zk/payloads",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payloads: [{
+            issue_key: "Roxabi/live#7",
+            key_fp: "cafebabe12345678",
+            encrypted_payload: "v2-envelope",
+          }],
+        }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(200);
+    const upsert = stmts().find((s) => s.sql.includes("INSERT INTO zk_payloads"));
+    expect(upsert!.args[2]).toBe("cafebabe12345678");
+    expect(upsert!.args[3]).toBe("cafebabe12345678");
   });
 
   it("scrubs plaintext titles from issues.payload after upsert", async () => {
