@@ -220,6 +220,19 @@ describe("tenant_repo_access table", () => {
 // Suite 7 — tenants table
 // ---------------------------------------------------------------------------
 
+describe("users table", () => {
+  it("has zk_opt_in column (Phase 2 opt-in, added in 0010)", () => {
+    expect(getColumnNames(db, "users")).toContain("zk_opt_in");
+  });
+
+  it("zk_opt_in defaults to 0 (server-readable mode)", () => {
+    const col = getColumns(db, "users").find((c) => c.name === "zk_opt_in");
+    expect(col).toBeDefined();
+    expect(col?.notnull).toBe(1);
+    expect(col?.dflt_value).toBe("0");
+  });
+});
+
 describe("tenants table", () => {
   it("has deleted_at column (soft-delete, added in 0009)", () => {
     expect(getColumnNames(db, "tenants")).toContain("deleted_at");

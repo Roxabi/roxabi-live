@@ -11,6 +11,7 @@ import { meRoute, logoutRoute } from "./api/me";
 import type { AuthEnv } from "./auth/types";
 import { requireSession } from "./auth/session";
 import { activeTenantRoute } from "./api/active-tenant";
+import { zkOptInRoute } from "./api/zk-opt-in";
 
 const app = new Hono<AuthEnv>();
 
@@ -71,6 +72,7 @@ app.get("/oauth/callback", callbackRoute);
 app.use("/api/me", requireSession);
 app.get("/api/me", meRoute);
 app.post("/api/active-tenant", requireSession, activeTenantRoute);
+app.post("/api/zk-opt-in", requireSession, zkOptInRoute);
 // /logout is intentionally ungated: logoutRoute is null-safe + idempotent, and SameSite=Strict
 // blocks cross-site cookie submission — gating it would make a stale/expired cookie impossible to clear.
 app.post("/logout", logoutRoute);

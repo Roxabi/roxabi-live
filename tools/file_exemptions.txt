@@ -1,10 +1,21 @@
-# File size exemptions (<=300 lines per file)
-# Each entry must have a tracking issue.
-# Format: <path>  # <lines> lines — <issue> <description>
-src/roxabi_live/dep_graph/v1/fetch.py  # 474 lines — legacy v1, frozen for v6 migration
-src/roxabi_live/dep_graph/v1/milestone.py  # 580 lines — legacy v1, frozen for v6 migration
-src/roxabi_live/dep_graph/v1/audit.py  # 419 lines — legacy v1, frozen for v6 migration
-src/roxabi_live/dep_graph/v1/derive.py  # 308 lines — legacy v1, frozen for v6 migration
-src/roxabi_live/corpus/sync.py  # 746 lines — #75 adds run_single_repo_sync; #872 adds _parse_project_fields + upsert 11->15; #82 adds sync_branches + sync_prs
-src/roxabi_live/reconciler.py  # 335 lines — #82 adds heal_pr_branch_state + run_repo_once sync_branches/sync_prs restore
-src/roxabi_live/webhook/handlers.py  # 436 lines — #82 adds handle_ref_create/delete + handle_pull_request; handle_milestone
+# Exemptions — file_length gate (worker TS, #180)
+# Format: <path>  # <N> lines — <issue> <rationale>
+# Counts are SLOC (sloc-npm source lines), not raw wc -l.
+# The declared count is a local cap — exceeding it fails the gate.
+
+# Production sources above QG_FILE_MAX=300 (split deferred; cap prevents growth)
+worker/src/sync/sync.ts  # 1171 lines — #180 sync orchestrator; split tracked separately
+worker/src/webhook/handlers.ts  # 445 lines — #180 issue webhook dispatch surface
+worker/src/webhook/handlers-app.ts  # 369 lines — #180 GitHub App lifecycle handlers
+worker/src/webhook/mutations.ts  # 339 lines — #180 D1 write helpers for webhooks
+
+# Test files (colocated *.test.ts — exempt with local caps, not production code)
+worker/src/sync/sync.test.ts  # 1570 lines — #180 integration harness for runSync
+worker/src/webhook/handlers.test.ts  # 920 lines — #180 webhook handler contract tests
+worker/src/auth/oauth.test.ts  # 864 lines — #180 OAuth callback + batch tests
+worker/src/api/issues.test.ts  # 632 lines — #180 tenant-scoped issues API tests
+worker/src/api/graph.test.ts  # 626 lines — #180 tenant-scoped graph API tests
+worker/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
+worker/src/webhook/handlers-app.test.ts  # 498 lines — #180 app lifecycle handler tests
+worker/src/auth/installToken.test.ts  # 470 lines — #180 install token + pagination tests
+worker/src/auth/session.test.ts  # 318 lines — #180 session middleware contract tests

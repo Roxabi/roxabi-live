@@ -50,19 +50,18 @@ quality_gates:
     enabled: true
     metric: sloc
     max_lines: 300
-    # NOTE: tools/qg.conf (CI-authoritative) still scopes this gate to src/**/*.py (legacy Python,
-    # frozen for reference). Regenerating qg.conf for worker/ requires /release-setup and is
-    # deferred to a follow-up — see #136. CI stays green: src/ exists, Python files pass.
-    # Worker TS file length is governed by tsc + code review until qg.conf is regenerated.
-    globs: ["src/**/*.py"]
+    # CI-authoritative config in tools/qg.conf (regenerated from this block, #180).
+    # Scans worker/src/**/*.ts via sloc-npm; legacy frozen Python (src/) is out of scope.
+    # Files above the cap are listed in tools/file_exemptions.txt with local SLOC ceilings.
+    globs: ["worker/src/**/*.ts"]
     exemptions_file: tools/file_exemptions.txt
 
   folder_size:
-    enabled: true
+    enabled: false
     max_files: 12
-    # Same note as file_length: qg.conf + check_folder_size.sh both target src/**/*.py.
-    # tools/qg.conf left unchanged to preserve CI green baseline — see #136 follow-up.
-    globs: ["src/**"]
+    # Node runtime: canonical check_folder_size.sh counts *.py only (dev-core N1).
+    # worker/src subdirs are all ≤9 non-test .ts files — no gate needed until a TS folder counter exists.
+    globs: ["worker/src/**"]
     exemptions_file: tools/folder_exemptions.txt
 
   duplicate_test_basenames:
