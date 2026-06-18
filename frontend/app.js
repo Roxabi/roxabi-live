@@ -6,7 +6,7 @@ import { initGraph, clearSearchHighlight }   from './graph.js';
 import { MultiSelect } from './multi_select.js';
 import { clearPinned } from './hover.js';
 import { repoTone } from './tone.js';
-import { api, AuthError, requireAuthGate, getSessionProfile } from './auth.js';
+import { api, AuthError, requireAuthGate, getSessionProfile, isZkAccountKeyEnabled } from './auth.js';
 import { consumeZkHandoffFromUrl, getGithubUserToken } from './zk-github.js';
 import {
   applyZkDecryption,
@@ -343,6 +343,9 @@ async function init() {
     await consumeZkHandoffFromUrl();
     const me = await getSessionProfile();
     sessionGithubLogin = me.user?.github_login ?? '';
+    // PR 1b: account-key enrollment UI gated on this flag (PR 4); no-op when off.
+    const zkAccountKeyEnabled = isZkAccountKeyEnabled(me);
+    void zkAccountKeyEnabled;
     await ensurePrivateMode(sessionGithubLogin);
     sessionZkOptIn = true;
     await loadAndRender(sessionZkOptIn, sessionGithubLogin);

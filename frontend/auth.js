@@ -65,6 +65,11 @@ export async function getSessionProfile() {
   return fetchMe();
 }
 
+/** True when server exposes ZK_ACCOUNT_KEY feature (#216 PR 1b). */
+export function isZkAccountKeyEnabled(me) {
+  return me?.user?.zk_account_key_enabled === true;
+}
+
 // ─── Internal: render landing ─────────────────────────────────────────────────
 
 function renderLanding() {

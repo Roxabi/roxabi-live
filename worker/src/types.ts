@@ -42,4 +42,8 @@ export interface Env {
   // Consumed by auth/tokenCrypto + auth/installToken. Set via `wrangler secret put INSTALL_TOKEN_KEY`.
   // Optional at type-level (provisioned at deploy-time via CI); runtime guard in auth/installToken.ts getInstallTokenKey().
   INSTALL_TOKEN_KEY?: string;
+  /** Feature flag: passphrase account-key enrollment (#216 PR 1b). Default off. */
+  ZK_ACCOUNT_KEY?: string;
+  /** Feature flag: structure-only server sync (#216 PR 6). Default off. */
+  ZK_STRUCTURE_ONLY?: string;
 }

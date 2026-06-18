@@ -7,6 +7,7 @@ import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { readSessionToken, clearSessionCookie } from "../auth/cookies";
 import { deleteSession } from "../auth/session";
+import { zkAccountKeyEnabled } from "../auth/zk-flags";
 
 // ---------------------------------------------------------------------------
 // GET /api/me
@@ -27,6 +28,13 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
     .bind(s.userId)
     .first<{ zk_opt_in: number }>();
 
+  const enrolledRow = await c.env.DB
+    .prepare(
+      `SELECT 1 AS ok FROM zk_key_backups WHERE user_id = ? LIMIT 1`,
+    )
+    .bind(s.userId)
+    .first<{ ok: number }>();
+
   const rows = await c.env.DB
     .prepare(
       `SELECT ui.tenant_id AS tenant_id, t.account_login AS account_login, t.account_type AS account_type
@@ -40,6 +48,8 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
       github_id: s.githubId,
       github_login: s.githubLogin,
       zk_opt_in: userRow?.zk_opt_in === 1,
+      zk_enrolled: enrolledRow != null,
+      zk_account_key_enabled: zkAccountKeyEnabled(c.env),
     },
     active_tenant_id: s.tenantId,
     installations: rows.results,
