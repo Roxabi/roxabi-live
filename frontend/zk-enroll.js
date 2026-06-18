@@ -18,6 +18,7 @@ import {
   wirePageHideLock,
   setZkAutoLockHandler,
 } from './zk-session.js';
+import { migrateV1PayloadsToAccountKey } from './zk-sync.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -80,12 +81,20 @@ export async function enrollAccountKey(passphrase, githubLogin) {
     key_fp: wrapped.key_fp,
     enrolled_at: new Date().toISOString(),
   });
+
+  const migrated = await migrateV1PayloadsToAccountKey(
+    githubLogin,
+    session,
+    wrapped.key_fp,
+  );
+
   setZkSession(session, wrapped.key_fp);
   zkLog('zk.enroll.success', {
     key_fp: wrapped.key_fp,
     kdf_duration_ms: Math.round(performance.now() - t0),
+    migrated,
   });
-  return { key_fp: wrapped.key_fp };
+  return { key_fp: wrapped.key_fp, migrated };
 }
 
 export async function unlockAccountKey(passphrase) {

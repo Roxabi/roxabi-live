@@ -162,4 +162,21 @@ describe('zk-crypto ECIES v1 dual-read', () => {
     const content = await openContentDual({ accountKey: session }, envelope);
     expect(content.title).toBe('v2 dual-read');
   });
+
+  it('migrates v1 ECIES envelope to v2 accountKey envelope', async () => {
+    const v1Envelope = await sealContent(publicKey, {
+      title: 'Legacy title',
+      body: 'Legacy body',
+    });
+    expect(JSON.parse(v1Envelope).v).toBe(1);
+
+    const plaintext = await openContent(privateKey, v1Envelope);
+    const v2Envelope = await sealWithAccountKey(accountKey, plaintext);
+    expect(JSON.parse(v2Envelope).v).toBe(2);
+
+    const session = await sessionAccountKey(accountKey);
+    const migrated = await openContentDual({ accountKey: session }, v2Envelope);
+    expect(migrated.title).toBe('Legacy title');
+    expect(migrated.body).toBe('Legacy body');
+  });
 });

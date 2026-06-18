@@ -139,6 +139,11 @@ export async function hasZkKeyPair(githubLogin) {
   return Boolean(existing?.publicKey && existing?.privateKey);
 }
 
+/** Delete legacy ECDH key pair after v1→v2 migration (#216 PR 5). */
+export async function deleteZkKeyPair(githubLogin) {
+  await idbDelete(githubLogin);
+}
+
 /**
  * Persist enrollment metadata only — never raw key or passphrase (#216).
  * @param {{ key_fp: string, enrolled_at: string }} meta

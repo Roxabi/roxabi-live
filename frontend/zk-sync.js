@@ -9,6 +9,7 @@ import {
   openContentDual,
   parseEnvelopeVersion,
   hasZkKeyPair,
+  deleteZkKeyPair,
 } from './zk-crypto.js';
 import {
   isZkUnlocked,
@@ -75,6 +76,43 @@ async function sealNodes(nodes, githubLogin, contentByKey) {
   if (payloads.length > 0) {
     await putPayloadBatches(payloads);
   }
+}
+
+/**
+ * On first enroll: decrypt v1 ECIES payloads with local ECDH key, re-seal v2,
+ * upload with key_fp, then delete roxabi-zk-v1 keypair (#216 PR 5).
+ * @returns {Promise<number>} count of migrated rows
+ */
+export async function migrateV1PayloadsToAccountKey(githubLogin, accountKey, key_fp) {
+  if (!(await hasZkKeyPair(githubLogin))) return 0;
+
+  const resp = await api('/api/zk/payloads');
+  const { payloads } = await resp.json();
+  const { privateKey } = await ensureZkKeyPair(githubLogin);
+  const migrated = [];
+
+  for (const row of payloads ?? []) {
+    if (parseEnvelopeVersion(row.encrypted_payload) !== 1) continue;
+    try {
+      const content = await openContent(privateKey, row.encrypted_payload);
+      const encrypted_payload = await sealWithAccountKey(accountKey, content);
+      migrated.push({
+        issue_key: row.issue_key,
+        key_fp,
+        encrypted_payload,
+      });
+    } catch {
+      /* skip undecryptable rows */
+    }
+  }
+
+  if (migrated.length > 0) {
+    await putPayloadBatches(migrated);
+    console.info('[zk]', { event: 'zk.migrate.v1_to_v2.count', count: migrated.length });
+  }
+
+  await deleteZkKeyPair(githubLogin);
+  return migrated.length;
 }
 
 /**
