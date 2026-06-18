@@ -50,6 +50,31 @@ export async function sealGraphTitles(nodes, githubLogin) {
 }
 
 /**
+ * Ensure private mode is active: zk_opt_in on server + seal any unsealed issues.
+ * Safe to call on every dashboard load (idempotent).
+ */
+export async function ensurePrivateMode(githubLogin) {
+  await api('/api/zk-opt-in', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: true }),
+  });
+
+  const [graphData, payloadResp] = await Promise.all([
+    api('/api/graph').then(r => r.json()),
+    api('/api/zk/payloads').then(r => r.json()).catch(() => ({ payloads: [] })),
+  ]);
+
+  const sealed = new Set((payloadResp.payloads ?? []).map(p => p.issue_key));
+  const toSeal = (graphData.nodes ?? []).filter(
+    n => n.title != null && !sealed.has(n.key),
+  );
+  if (toSeal.length > 0) {
+    await sealGraphTitles(toSeal, githubLogin);
+  }
+}
+
+/**
  * Fetch title+body from GitHub and re-seal zk_payloads (ZK users with user token).
  */
 export async function syncZkContentFromGitHub(nodes, githubLogin, githubToken) {

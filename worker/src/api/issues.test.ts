@@ -61,11 +61,28 @@ interface ListEnvOptions {
   rows: unknown[];
   labels?: unknown[];
   zkOptIn?: boolean;
+  sealedIssueKeys?: string[];
 }
 
 interface CapturedCall {
   sql: string;
   args: unknown[];
+}
+
+/** D1 prepare() supports .all()/.first() without .bind() — mirror that in fakes. */
+function d1Prepare(stmt: {
+  first?: () => Promise<unknown>;
+  all?: () => Promise<{ results: unknown[] }>;
+}) {
+  const bound = {
+    first: stmt.first ?? (async () => null),
+    all: stmt.all ?? (async () => ({ results: [] })),
+  };
+  return {
+    bind: (..._args: unknown[]) => bound,
+    first: bound.first,
+    all: bound.all,
+  };
 }
 
 /**
@@ -84,21 +101,36 @@ function makeListEnvWithCapture(
 
   const env = {
     DB: {
-      prepare: (sql: string) => ({
-        bind: (...args: unknown[]) => {
-          // Capture immediately for direct .bind().all() calls (e.g. labels query)
+      prepare: (sql: string) => {
+        const makeBound = (args: unknown[]) => {
           captured.push({ sql, args });
           return {
             _sql: sql,
             _args: args,
             first: async () => null,
             all: async () => {
+              if (sql.includes("FROM zk_payloads")) return { results: [] };
               if (sql.includes("FROM labels")) return { results: labels };
               return { results: [] };
             },
           };
-        },
-      }),
+        };
+        let directCaptured = false;
+        const directAll = async () => {
+          if (!directCaptured) {
+            captured.push({ sql, args: [] });
+            directCaptured = true;
+          }
+          if (sql.includes("FROM zk_payloads")) return { results: [] };
+          if (sql.includes("FROM labels")) return { results: labels };
+          return { results: [] };
+        };
+        return {
+          bind: (...args: unknown[]) => makeBound(args),
+          first: async () => null,
+          all: directAll,
+        };
+      },
       batch: async (_stmts: unknown[]) => {
         // sql/args already captured in bind() above
         return [
@@ -115,22 +147,24 @@ function makeListEnvWithCapture(
 }
 
 function makeListEnv(opts: ListEnvOptions): Env {
-  const { countN, rows, labels = [], zkOptIn = false } = opts;
+  const { countN, rows, labels = [], zkOptIn = false, sealedIssueKeys = [] } = opts;
 
   return {
     DB: {
-      prepare: (sql: string) => ({
-        bind: (..._args: unknown[]) => ({
+      prepare: (sql: string) =>
+        d1Prepare({
           first: async () => {
             if (sql.includes("zk_opt_in")) return { zk_opt_in: zkOptIn ? 1 : 0 };
             return null;
           },
           all: async () => {
+            if (sql.includes("FROM zk_payloads")) {
+              return { results: sealedIssueKeys.map((issue_key) => ({ issue_key })) };
+            }
             if (sql.includes("FROM labels")) return { results: labels };
             return { results: [] };
           },
         }),
-      }),
       batch: async (_stmts: unknown[]) => [
         { results: [{ n: countN }] },
         { results: rows },
@@ -147,6 +181,7 @@ interface GetEnvOptions {
   blocking?: unknown[];
   blockedBy?: unknown[];
   zkOptIn?: boolean;
+  sealedIssueKeys?: string[];
 }
 
 function makeGetEnv(opts: GetEnvOptions): Env {
@@ -156,6 +191,7 @@ function makeGetEnv(opts: GetEnvOptions): Env {
     blocking = [],
     blockedBy = [],
     zkOptIn = false,
+    sealedIssueKeys = [],
   } = opts;
 
   // Dispatch by SQL content — robust to query reordering:
@@ -166,24 +202,23 @@ function makeGetEnv(opts: GetEnvOptions): Env {
 
   return {
     DB: {
-      prepare: (sql: string) => ({
-        bind: (..._args: unknown[]) => ({
+      prepare: (sql: string) =>
+        d1Prepare({
           first: async () => {
             if (sql.includes("zk_opt_in")) return { zk_opt_in: zkOptIn ? 1 : 0 };
             if (sql.includes("FROM issues WHERE key")) return issueRow;
             return null;
           },
           all: async () => {
+            if (sql.includes("FROM zk_payloads")) {
+              return { results: sealedIssueKeys.map((issue_key) => ({ issue_key })) };
+            }
             if (sql.includes("FROM labels WHERE issue_key")) return { results: labels };
             if (sql.includes("e.src_key = ?")) return { results: blocking };
             if (sql.includes("e.dst_key = ?")) return { results: blockedBy };
             return { results: [] };
           },
         }),
-        // fallback — should not be called for getIssue
-        first: async () => null,
-        all: async () => ({ results: [] }),
-      }),
       batch: async () => [],
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
@@ -211,22 +246,19 @@ function makeGetEnvWithCapture(opts: GetEnvOptions): {
     DB: {
       prepare: (sql: string) => {
         capturedSqls.push(sql);
-        return {
-          bind: (..._args: unknown[]) => ({
-            first: async () => {
-              if (sql.includes("FROM issues WHERE key")) return issueRow;
-              return null;
-            },
-            all: async () => {
-              if (sql.includes("FROM labels WHERE issue_key")) return { results: labels };
-              if (sql.includes("e.src_key = ?")) return { results: blocking };
-              if (sql.includes("e.dst_key = ?")) return { results: blockedBy };
-              return { results: [] };
-            },
-          }),
-          first: async () => null,
-          all: async () => ({ results: [] }),
-        };
+        return d1Prepare({
+          first: async () => {
+            if (sql.includes("FROM issues WHERE key")) return issueRow;
+            return null;
+          },
+          all: async () => {
+            if (sql.includes("FROM zk_payloads")) return { results: [] };
+            if (sql.includes("FROM labels WHERE issue_key")) return { results: labels };
+            if (sql.includes("e.src_key = ?")) return { results: blocking };
+            if (sql.includes("e.dst_key = ?")) return { results: blockedBy };
+            return { results: [] };
+          },
+        });
       },
       batch: async () => [],
     },
@@ -256,10 +288,16 @@ function makeRepoFilteredGetEnv(opts: {
             }
             return null;
           },
-          all: async () => ({ results: [] }),
+          all: async () => {
+            if (sql.includes("FROM zk_payloads")) return { results: [] };
+            return { results: [] };
+          },
         }),
         first: async () => null,
-        all: async () => ({ results: [] }),
+        all: async () => {
+          if (sql.includes("FROM zk_payloads")) return { results: [] };
+          return { results: [] };
+        },
       }),
       batch: async () => [],
     },
@@ -379,12 +417,16 @@ describe("GET /api/issues", () => {
       expect(body.issues[0].is_stub).toBe(false);
     });
 
-    it("redacts titles when zk_opt_in is enabled", async () => {
+    it("redacts titles when issue is zk-sealed", async () => {
       const row = makeIssueRow({ title: "Secret title" });
       const res = await app.request(
         "/api/issues",
         {},
-        makeListEnv({ countN: 1, rows: [row], zkOptIn: true }),
+        makeListEnv({
+          countN: 1,
+          rows: [row],
+          sealedIssueKeys: [row.key as string],
+        }),
       );
       const body = await res.json<{ issues: Record<string, unknown>[] }>();
       expect(body.issues[0].title).toBeNull();
@@ -514,12 +556,12 @@ describe("GET /api/issues/:key", () => {
       expect(Array.isArray(body.blocked_by)).toBe(true);
     });
 
-    it("redacts title when zk_opt_in is enabled", async () => {
+    it("redacts title when issue is zk-sealed", async () => {
       const row = makeIssueRow({ title: "Secret title" });
       const res = await app.request(
         "/api/issues/Roxabi/roxabi-live%231",
         {},
-        makeGetEnv({ issueRow: row, zkOptIn: true }),
+        makeGetEnv({ issueRow: row, sealedIssueKeys: [row.key as string] }),
       );
       const body = await res.json<Record<string, unknown>>();
       expect(body.title).toBeNull();
@@ -776,6 +818,7 @@ describe("#148 tenant scoping", () => {
             first: async () =>
               sql.includes("FROM issues WHERE key") ? makeIssueRow() : null,
             all: async () => {
+              if (sql.includes("FROM zk_payloads")) return { results: [] };
               if (sql.includes("e.dst_key = ?")) {
                 return { results: args.includes(hiddenBlocker.repo) ? [hiddenBlocker] : [] };
               }
@@ -783,7 +826,10 @@ describe("#148 tenant scoping", () => {
             },
           }),
           first: async () => null,
-          all: async () => ({ results: [] }),
+          all: async () => {
+            if (sql.includes("FROM zk_payloads")) return { results: [] };
+            return { results: [] };
+          },
         }),
         batch: async () => [],
       },

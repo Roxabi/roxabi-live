@@ -96,7 +96,7 @@ describe("migration chain", () => {
 
   it("loads all migration files in lexical order", () => {
     // Uses appliedFiles captured by beforeAll — verifies the actual apply order, not just FS state.
-    expect(appliedFiles.length).toBeGreaterThanOrEqual(9);
+    expect(appliedFiles.length).toBeGreaterThanOrEqual(14);
     expect(appliedFiles[0]).toMatch(/^0001_/);
     // Contiguity check: each file's 4-digit prefix must equal its 1-based position
     for (let i = 0; i < appliedFiles.length; i++) {
@@ -189,8 +189,66 @@ describe("zk_payloads table", () => {
     expect(cols).toContain("user_id");
     expect(cols).toContain("issue_key");
     expect(cols).toContain("pubkey_fp");
+    expect(cols).toContain("key_fp");
     expect(cols).toContain("encrypted_payload");
     expect(cols).toContain("updated_at");
+  });
+
+  it("key_fp is nullable (0014)", () => {
+    const col = getColumns(db, "zk_payloads").find((c) => c.name === "key_fp");
+    expect(col).toBeDefined();
+    expect(col?.notnull).toBe(0);
+  });
+});
+
+describe("zk_key_backups table", () => {
+  it("has user_id primary key (0014)", () => {
+    expect(getPkColumns(db, "zk_key_backups")).toEqual(["user_id"]);
+  });
+
+  it("has expected columns", () => {
+    const cols = getColumnNames(db, "zk_key_backups");
+    expect(cols).toContain("user_id");
+    expect(cols).toContain("backup_version");
+    expect(cols).toContain("kdf_alg");
+    expect(cols).toContain("kdf_params");
+    expect(cols).toContain("wrap_iv");
+    expect(cols).toContain("wrapped_key");
+    expect(cols).toContain("key_fp");
+    expect(cols).toContain("created_at");
+    expect(cols).toContain("updated_at");
+  });
+
+  it("backup_version defaults to 1", () => {
+    const col = getColumns(db, "zk_key_backups").find(
+      (c) => c.name === "backup_version",
+    );
+    expect(col).toBeDefined();
+    expect(col?.notnull).toBe(1);
+    expect(col?.dflt_value).toBe("1");
+  });
+});
+
+describe("0014_zk_key_backups", () => {
+  it("backfills key_fp from pubkey_fp on existing rows", () => {
+    const migDb = new Database(":memory:");
+    const pre = appliedFiles.filter((f) => !f.startsWith("0014_"));
+    for (const file of pre) {
+      migDb.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    migDb.exec(`
+      INSERT INTO users (id, github_id, github_login)
+      VALUES (1, 1, 'tester');
+      INSERT INTO zk_payloads (user_id, issue_key, pubkey_fp, encrypted_payload, updated_at)
+      VALUES (1, 'Roxabi/live#1', 'abc12345', 'cipher', datetime('now'));
+    `);
+    migDb.exec(readFileSync(join(MIGRATIONS_DIR, "0014_zk_key_backups.sql"), "utf8"));
+    const row = migDb
+      .prepare(`SELECT pubkey_fp, key_fp FROM zk_payloads WHERE issue_key = ?`)
+      .get("Roxabi/live#1") as { pubkey_fp: string; key_fp: string | null };
+    expect(row.pubkey_fp).toBe("abc12345");
+    expect(row.key_fp).toBe("abc12345");
+    migDb.close();
   });
 });
 
@@ -268,6 +326,29 @@ describe("tenants table", () => {
 // ---------------------------------------------------------------------------
 // Suite 8 — edges and indexes
 // ---------------------------------------------------------------------------
+
+describe("0013_zk_always_on", () => {
+  it("sets zk_opt_in = 1 for all users", () => {
+    const migDb = new Database(":memory:");
+    const pre = appliedFiles.filter((f) => !f.startsWith("0013_"));
+    for (const file of pre) {
+      migDb.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    migDb.exec(`
+      INSERT INTO users (id, github_id, github_login, zk_opt_in)
+      VALUES (1, 1, 'off', 0), (2, 2, 'on', 1);
+    `);
+    migDb.exec(readFileSync(join(MIGRATIONS_DIR, "0013_zk_always_on.sql"), "utf8"));
+    const rows = migDb
+      .prepare(`SELECT github_login, zk_opt_in FROM users ORDER BY id`)
+      .all() as Array<{ github_login: string; zk_opt_in: number }>;
+    expect(rows).toEqual([
+      { github_login: "off", zk_opt_in: 1 },
+      { github_login: "on", zk_opt_in: 1 },
+    ]);
+    migDb.close();
+  });
+});
 
 describe("0012_scrub_zk_sealed_payloads", () => {
   it("clears issues.payload for keys present in zk_payloads", () => {

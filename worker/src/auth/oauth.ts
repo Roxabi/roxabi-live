@@ -200,8 +200,8 @@ export async function callbackRoute(
 
   // Upsert user — get internal id
   const userRow = await c.env.DB.prepare(
-    `INSERT INTO users (github_id, github_login) VALUES (?, ?)
-     ON CONFLICT(github_id) DO UPDATE SET github_login=excluded.github_login, updated_at=datetime('now')
+    `INSERT INTO users (github_id, github_login, zk_opt_in) VALUES (?, ?, 1)
+     ON CONFLICT(github_id) DO UPDATE SET github_login=excluded.github_login, zk_opt_in=1, updated_at=datetime('now')
      RETURNING id`,
   )
     .bind(ghUser.id, ghUser.login)
