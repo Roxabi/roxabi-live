@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeGraphStatuses,
   filterNodesByStatus,
+  parseClosedUnderOpenEpicQuery,
   parseStatusQuery,
 } from "./status";
 
@@ -19,6 +20,20 @@ describe("parseStatusQuery", () => {
 
   it("ignores invalid tokens", () => {
     expect(parseStatusQuery("ready,invalid")).toEqual(new Set(["ready"]));
+  });
+});
+
+describe("parseClosedUnderOpenEpicQuery", () => {
+  it("is false when absent or empty", () => {
+    expect(parseClosedUnderOpenEpicQuery(null)).toBe(false);
+    expect(parseClosedUnderOpenEpicQuery("")).toBe(false);
+    expect(parseClosedUnderOpenEpicQuery("0")).toBe(false);
+  });
+
+  it("accepts truthy tokens", () => {
+    expect(parseClosedUnderOpenEpicQuery("1")).toBe(true);
+    expect(parseClosedUnderOpenEpicQuery("true")).toBe(true);
+    expect(parseClosedUnderOpenEpicQuery("TRUE")).toBe(true);
   });
 });
 
@@ -73,6 +88,26 @@ describe("filterNodesByStatus", () => {
 
   it("keeps only matching statuses", () => {
     const filtered = filterNodesByStatus(nodes, edges, new Set(["ready", "blocked"]));
+    expect(filtered.map((n) => n.key).sort()).toEqual(["O/r#1", "O/r#2"]);
+  });
+
+  it("includes done children under open parent when closedUnderOpenEpic", () => {
+    const allNodes = [
+      { key: "O/r#1", state: "open" },
+      { key: "O/r#2", state: "closed" },
+      { key: "O/r#3", state: "closed" },
+      { key: "O/r#4", state: "closed" },
+    ];
+    const parentEdges = [
+      { src: "O/r#1", dst: "O/r#2", kind: "parent" },
+      { src: "O/r#4", dst: "O/r#3", kind: "parent" },
+    ];
+    const filtered = filterNodesByStatus(
+      allNodes,
+      parentEdges,
+      new Set(["ready", "blocked"]),
+      { closedUnderOpenEpic: true },
+    );
     expect(filtered.map((n) => n.key).sort()).toEqual(["O/r#1", "O/r#2"]);
   });
 });

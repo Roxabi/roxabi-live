@@ -16,6 +16,13 @@ export function parseStatusQuery(raw: string | null): Set<GraphStatus> | null {
   return out.size > 0 ? out : null;
 }
 
+/** Truthy when `closed_under_open_epic=1` or `true` (graph "Closed" toggle). */
+export function parseClosedUnderOpenEpicQuery(raw: string | null): boolean {
+  if (raw === null) return false;
+  const v = raw.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
 interface StatusNode {
   key: string;
   state: string;
@@ -84,12 +91,32 @@ export function computeGraphStatuses(
   return statuses;
 }
 
+export interface StatusFilterOptions {
+  /** Keep closed (`done`) issues whose parent epic is still open. */
+  closedUnderOpenEpic?: boolean;
+}
+
 export function filterNodesByStatus<T extends { key: string; state: string }>(
   nodes: T[],
   edges: StatusEdge[],
   allowed: Set<GraphStatus> | null,
+  options: StatusFilterOptions = {},
 ): T[] {
   if (allowed === null) return nodes;
   const statuses = computeGraphStatuses(nodes, edges);
-  return nodes.filter((n) => allowed.has(statuses.get(n.key)!));
+  const nodesByKey = new Map(nodes.map((n) => [n.key, n]));
+  const parentByDst = new Map<string, string>();
+  for (const e of edges) {
+    if (e.kind === "parent") parentByDst.set(e.dst, e.src);
+  }
+
+  return nodes.filter((n) => {
+    const status = statuses.get(n.key)!;
+    if (allowed.has(status)) return true;
+    if (!options.closedUnderOpenEpic || status !== "done") return false;
+    const parentKey = parentByDst.get(n.key);
+    if (!parentKey) return false;
+    const parent = nodesByKey.get(parentKey);
+    return parent?.state === "open";
+  });
 }
