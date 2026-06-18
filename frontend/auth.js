@@ -236,7 +236,8 @@ function renderOperatorNotice(me) {
       </label>
       <p class="zk-opt-in-hint" id="zk-opt-in-hint" ${zkOn ? '' : 'hidden'}>
         <strong>Scope:</strong> content only, not structure. Issue state, blocker edges, and counts stay visible to the operator.
-        Titles are encrypted client-side; your private key stays in this browser.
+        Titles and bodies are encrypted client-side; keys stay in this browser.
+        <a href="/login?zk=1" id="zk-github-link">Link GitHub</a> to sync issue bodies.
       </p>
     </div>
   `;

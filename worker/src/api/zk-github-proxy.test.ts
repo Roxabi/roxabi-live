@@ -1,0 +1,88 @@
+import { describe, expect, it, afterEach, vi } from "vitest";
+import { Hono } from "hono";
+import type { Env } from "../types";
+import { zkGithubGraphqlRoute } from "./zk-github-proxy";
+import type { AuthEnv, SessionContext } from "../auth/types";
+import { captureDb } from "../test-utils";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+const STUB_SESSION: SessionContext = {
+  userId: 7,
+  tenantId: 9,
+  githubId: 42,
+  githubLogin: "alice",
+};
+
+function makeEnv(db: D1Database): Env {
+  return {
+    DB: db,
+    ASSETS: { fetch: async () => new Response("asset", { status: 200 }) } as unknown as Fetcher,
+    GITHUB_WEBHOOK_SECRET: "",
+  } as unknown as Env;
+}
+
+function makeApp(db: D1Database): Hono<AuthEnv> {
+  const app = new Hono<AuthEnv>();
+  app.use("*", async (c, next) => {
+    c.set("session", STUB_SESSION);
+    await next();
+  });
+  app.post("/api/zk/github/graphql", zkGithubGraphqlRoute);
+  return app;
+}
+
+describe("zkGithubGraphqlRoute", () => {
+  it("returns 403 when zk_opt_in is off", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("zk_opt_in")) return [{ zk_opt_in: 0 }];
+      return [];
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/github/graphql",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-GitHub-User-Token": "gho_test",
+        },
+        body: JSON.stringify({ query: "{ viewer { login } }" }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("forwards GraphQL to GitHub when zk_opt_in is on", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: { viewer: { login: "alice" } } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const { db } = captureDb((sql) => {
+      if (sql.includes("zk_opt_in")) return [{ zk_opt_in: 1 }];
+      return [];
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/github/graphql",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-GitHub-User-Token": "gho_test_token",
+        },
+        body: JSON.stringify({ query: "{ viewer { login } }" }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalled();
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.github.com/graphql");
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer gho_test_token");
+  });
+});
