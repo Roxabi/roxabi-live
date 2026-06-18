@@ -56,6 +56,27 @@ function makeApp(db: D1Database): Hono<AuthEnv> {
 // ---------------------------------------------------------------------------
 
 describe("meRoute", () => {
+  it("includes zk_opt_in on user (defaults false when users row missing)", async () => {
+    const { db } = captureDb();
+    const app = makeApp(db);
+    const res = await app.request("/api/me", {}, makeEnv(db));
+    const body = await res.json() as { user: { zk_opt_in: boolean } };
+    expect(body.user.zk_opt_in).toBe(false);
+  });
+
+  it("returns zk_opt_in true when users row has flag set", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.toLowerCase().includes("zk_opt_in")) {
+        return [{ zk_opt_in: 1 }];
+      }
+      return [];
+    });
+    const app = makeApp(db);
+    const res = await app.request("/api/me", {}, makeEnv(db));
+    const body = await res.json() as { user: { zk_opt_in: boolean } };
+    expect(body.user.zk_opt_in).toBe(true);
+  });
+
   it("returns 200 with user fields from injected session", async () => {
     // Arrange
     const { db } = captureDb();
