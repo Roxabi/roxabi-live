@@ -91,11 +91,18 @@ export async function migrateV1PayloadsToAccountKey(githubLogin, accountKey, key
 
   const resp = await api('/api/zk/payloads');
   const { payloads } = await resp.json();
+  const v1Rows = (payloads ?? []).filter(
+    (row) => parseEnvelopeVersion(row.encrypted_payload) === 1,
+  );
+  if (v1Rows.length === 0) {
+    await deleteZkKeyPair(githubLogin);
+    return 0;
+  }
+
   const { privateKey } = await ensureZkKeyPair(githubLogin);
   const migrated = [];
 
-  for (const row of payloads ?? []) {
-    if (parseEnvelopeVersion(row.encrypted_payload) !== 1) continue;
+  for (const row of v1Rows) {
     try {
       const content = await openContent(privateKey, row.encrypted_payload);
       const encrypted_payload = await sealWithAccountKey(accountKey, content);
@@ -114,7 +121,9 @@ export async function migrateV1PayloadsToAccountKey(githubLogin, accountKey, key
     console.info('[zk]', { event: 'zk.migrate.v1_to_v2.count', count: migrated.length });
   }
 
-  await deleteZkKeyPair(githubLogin);
+  if (migrated.length === v1Rows.length) {
+    await deleteZkKeyPair(githubLogin);
+  }
   return migrated.length;
 }
 

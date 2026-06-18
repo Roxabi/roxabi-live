@@ -172,7 +172,7 @@ function buildGraphSegs() {
   closedSeg.addEventListener('click', () => {
     setState({ showClosedUnderOpenEpic: !state.showClosedUnderOpenEpic });
     buildGraphSegs();
-    loadAndRender(sessionZkOptIn, sessionGithubLogin).catch(e => {
+    loadAndRender(sessionZkOptIn, sessionGithubLogin, sessionZkAccountKeyEnabled).catch(e => {
       errorMsg.hidden = false;
       errorMsg.textContent = `Failed to load graph: ${e.message}`;
     });

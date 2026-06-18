@@ -17,6 +17,7 @@ import {
   wireIdleLock,
   wirePageHideLock,
   setZkAutoLockHandler,
+  setZkPageRestoreHandler,
 } from './zk-session.js';
 import { migrateV1PayloadsToAccountKey } from './zk-sync.js';
 
@@ -328,6 +329,12 @@ export async function requireZkEnrollmentGate(me, githubLogin) {
   setZkAutoLockHandler(() => {
     updateLockButton();
     showUnlockGate().catch(() => {});
+  });
+  setZkPageRestoreHandler(() => {
+    if (me.user?.zk_enrolled === true && !isZkUnlocked()) {
+      updateLockButton();
+      showUnlockGate().catch(() => {});
+    }
   });
 
   const enrolled = me.user?.zk_enrolled === true;

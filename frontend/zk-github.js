@@ -33,15 +33,18 @@ export async function consumeZkReauthFromUrl() {
   const next = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
   window.history.replaceState({}, '', next);
 
-  const resp = await api('/api/zk/consume-reauth', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
-  });
-  if (!resp.ok) return false;
-  const { reauth_proof } = await resp.json();
-  if (reauth_proof) sessionStorage.setItem(REAUTH_KEY, reauth_proof);
-  return true;
+  try {
+    const resp = await api('/api/zk/consume-reauth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const { reauth_proof } = await resp.json();
+    if (reauth_proof) sessionStorage.setItem(REAUTH_KEY, reauth_proof);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Consume ?zk_handoff= from URL after OAuth redirect. */

@@ -10,7 +10,7 @@ import type { AuthEnv, SessionContext } from "../auth/types";
 import { putZkKeyBackupRoute } from "./zk-key-backup";
 import { putZkPayloadsRoute } from "./zk-payloads";
 import { graphRoute } from "./graph";
-import { makeFakeDb, makeFakeStmt } from "../test-utils";
+import { makeFakeDb, makeFakeStmt, type FakeStmt } from "../test-utils";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -126,11 +126,14 @@ function makeIntegrationDb(state: IntegrationState): D1Database {
     }
 
     if (lower.includes("insert into zk_key_backups")) {
-      const stmt = makeFakeStmt(sql, args, [], 1);
-      stmt.run = vi.fn(async () => {
-        state.backup = { backup_version: 1, key_fp: String(args[5]) };
-        return { meta: { changes: 1 } };
-      });
+      const userId = Number(args[0]);
+      const keyFp = String(args[5]);
+      const stmt = makeFakeStmt(sql, args, [{ user_id: userId }], 1);
+      stmt.first = vi.fn(async () => {
+        if (state.backup) return null;
+        state.backup = { backup_version: 1, key_fp: keyFp };
+        return { user_id: userId };
+      }) as FakeStmt["first"];
       return stmt;
     }
 

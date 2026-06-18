@@ -46,7 +46,7 @@ describe('consumeZkReauthFromUrl', () => {
 
   it('does not store proof when consume-reauth fails', async () => {
     window.history.replaceState({}, '', '/?zk_reauth=bad');
-    apiMock.mockResolvedValue({ ok: false });
+    apiMock.mockRejectedValue(new Error('/api/zk/consume-reauth 410'));
 
     const result = await consumeZkReauthFromUrl();
 

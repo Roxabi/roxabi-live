@@ -9,9 +9,12 @@ let sessionKeyFp = null;
 let idleTimer = null;
 let idleWired = false;
 let pageHideWired = false;
+let pageShowWired = false;
 
 /** @type {(() => void)|null} */
 let onAutoLock = null;
+/** @type {(() => void)|null} */
+let onPageRestore = null;
 
 export function isZkUnlocked() {
   return sessionKey !== null;
@@ -57,6 +60,11 @@ export function setZkAutoLockHandler(fn) {
   onAutoLock = fn;
 }
 
+/** Register callback when BFCache restores a page after session was cleared. */
+export function setZkPageRestoreHandler(fn) {
+  onPageRestore = fn;
+}
+
 export function wireIdleLock() {
   if (idleWired) return;
   idleWired = true;
@@ -78,4 +86,12 @@ export function wirePageHideLock() {
   pageHideWired = true;
   window.addEventListener('pagehide', clearZkSession);
   window.addEventListener('beforeunload', clearZkSession);
+  if (!pageShowWired) {
+    pageShowWired = true;
+    window.addEventListener('pageshow', (ev) => {
+      if (ev.persisted && !sessionKey) {
+        onPageRestore?.();
+      }
+    });
+  }
 }

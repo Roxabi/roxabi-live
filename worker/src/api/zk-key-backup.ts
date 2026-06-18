@@ -13,8 +13,12 @@ const MAX_WRAPPED_BYTES = 8 * 1024;
 const MAX_PUT_PER_HOUR = 5;
 const KDF_ALG = "argon2id";
 const KDF_M_MIN = 65536;
+const KDF_M_MAX = 65536;
 const KDF_T_MIN = 3;
+const KDF_T_MAX = 3;
 const KDF_P_MIN = 1;
+const KDF_P_MAX = 1;
+const REAUTH_PROOF_RE = /^[0-9a-f]{32}$/;
 
 function validateKdfParams(
   kdf_alg: string,
@@ -36,12 +40,15 @@ function validateKdfParams(
     typeof m === "number" &&
     Number.isInteger(m) &&
     m >= KDF_M_MIN &&
+    m <= KDF_M_MAX &&
     typeof t === "number" &&
     Number.isInteger(t) &&
     t >= KDF_T_MIN &&
+    t <= KDF_T_MAX &&
     typeof par === "number" &&
     Number.isInteger(par) &&
-    par >= KDF_P_MIN
+    par >= KDF_P_MIN &&
+    par <= KDF_P_MAX
   );
 }
 
@@ -238,23 +245,25 @@ export async function putZkKeyBackupRoute(
     if (expected_backup_version != null && expected_backup_version !== 1) {
       return c.json({ error: "backup_version_conflict" }, 409);
     }
-    await c.env.DB
+    const inserted = await c.env.DB
       .prepare(
         `INSERT INTO zk_key_backups
          (user_id, backup_version, kdf_alg, kdf_params, wrap_iv, wrapped_key, key_fp)
-         VALUES (?, 1, ?, ?, ?, ?, ?)`,
+         VALUES (?, 1, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id) DO NOTHING
+         RETURNING user_id`,
       )
       .bind(s.userId, kdf_alg, kdf_params, wrap_iv, wrapped_key, key_fp)
-      .run();
+      .first<{ user_id: number }>();
+    if (!inserted) {
+      return c.json({ error: "enrolled" }, 409);
+    }
     await recordBackupPutSuccess(c.env.DB, s.userId);
     await logBackupEvent(c.env, "zk.backup.enrolled", s.userId, key_fp, 1, false);
     return c.json({ backup_version: 1, key_fp });
   }
 
   if (!reauth_proof) {
-    return c.json({ error: "reauth_required" }, 403);
-  }
-  if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
     return c.json({ error: "reauth_required" }, 403);
   }
 
@@ -265,8 +274,30 @@ export async function putZkKeyBackupRoute(
     if (expected_backup_version !== existing.backup_version) {
       return c.json({ error: "backup_version_conflict" }, 409);
     }
-    const nextVersion = existing.backup_version + 1;
-    await c.env.DB
+  } else {
+    if (key_fp !== existing.key_fp) {
+      return c.json({ error: "enrolled" }, 409);
+    }
+    if (expected_backup_version == null) {
+      return c.json({ error: "backup_version_conflict" }, 409);
+    }
+    if (expected_backup_version !== existing.backup_version) {
+      return c.json({ error: "backup_version_conflict" }, 409);
+    }
+  }
+
+  if (!REAUTH_PROOF_RE.test(reauth_proof)) {
+    return c.json({ error: "reauth_required" }, 403);
+  }
+  if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
+    return c.json({ error: "reauth_required" }, 403);
+  }
+
+  const casVersion = existing.backup_version;
+  const nextVersion = existing.backup_version + 1;
+
+  if (rotation) {
+    const result = await c.env.DB
       .prepare(
         `UPDATE zk_key_backups SET
            backup_version = ?,
@@ -276,7 +307,7 @@ export async function putZkKeyBackupRoute(
            wrapped_key = ?,
            key_fp = ?,
            updated_at = datetime('now')
-         WHERE user_id = ?`,
+         WHERE user_id = ? AND backup_version = ?`,
       )
       .bind(
         nextVersion,
@@ -286,26 +317,18 @@ export async function putZkKeyBackupRoute(
         wrapped_key,
         key_fp,
         s.userId,
+        casVersion,
       )
       .run();
+    if (result.meta.changes === 0) {
+      return c.json({ error: "backup_version_conflict" }, 409);
+    }
     await recordBackupPutSuccess(c.env.DB, s.userId);
     await logBackupEvent(c.env, "zk.backup.rotated", s.userId, key_fp, nextVersion, true);
     return c.json({ backup_version: nextVersion, key_fp });
   }
 
-  if (key_fp !== existing.key_fp) {
-    return c.json({ error: "enrolled" }, 409);
-  }
-
-  if (expected_backup_version == null) {
-    return c.json({ error: "backup_version_conflict" }, 409);
-  }
-  if (expected_backup_version !== existing.backup_version) {
-    return c.json({ error: "backup_version_conflict" }, 409);
-  }
-
-  const nextVersion = existing.backup_version + 1;
-  await c.env.DB
+  const result = await c.env.DB
     .prepare(
       `UPDATE zk_key_backups SET
          backup_version = ?,
@@ -314,7 +337,7 @@ export async function putZkKeyBackupRoute(
          wrap_iv = ?,
          wrapped_key = ?,
          updated_at = datetime('now')
-       WHERE user_id = ?`,
+       WHERE user_id = ? AND backup_version = ?`,
     )
     .bind(
       nextVersion,
@@ -323,8 +346,12 @@ export async function putZkKeyBackupRoute(
       wrap_iv,
       wrapped_key,
       s.userId,
+      casVersion,
     )
     .run();
+  if (result.meta.changes === 0) {
+    return c.json({ error: "backup_version_conflict" }, 409);
+  }
   await recordBackupPutSuccess(c.env.DB, s.userId);
   await logBackupEvent(c.env, "zk.backup.updated", s.userId, key_fp, nextVersion, false);
   return c.json({ backup_version: nextVersion, key_fp });
