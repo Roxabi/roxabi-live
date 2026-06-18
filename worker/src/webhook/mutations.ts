@@ -85,7 +85,7 @@ export interface WebhookIssue {
   key: string;
   repo: string;
   number: number;
-  title: string;
+  title: string | null;
   state: string;
   url: string | null;
   created_at?: string | null;

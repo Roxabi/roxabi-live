@@ -26,6 +26,7 @@ import {
   bumpDataVersion,
   type WebhookIssue,
 } from "./mutations";
+import { isIssueZkSealed } from "../auth/zk";
 import { BRANCH_ISSUE_RE, canonicalKey, extractFromLabels, syncBranches } from "../sync/sync";
 import { fetchIssueDeps, GraphQLError } from "../sync/graphql";
 import { resolveInstallToken } from "../auth/installToken";
@@ -112,11 +113,14 @@ export async function handleIssues(payload: Record<string, unknown>, db: D1Datab
 
   const derived = extractFromLabels(names);
 
+  const sealed = await isIssueZkSealed(db, key);
+  const title = sealed ? null : ((issue["title"] as string | undefined) ?? null);
+
   const issuePartial: WebhookIssue = {
     key,
     repo,
     number: issue["number"] as number,
-    title: issue["title"] as string,
+    title,
     state: issue["state"] as string,
     url: (issue["html_url"] as string | undefined) ?? null,
     created_at: (issue["created_at"] as string | null | undefined) ?? null,
