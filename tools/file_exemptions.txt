@@ -4,16 +4,16 @@
 # The declared count is a local cap — exceeding it fails the gate.
 
 # Production sources above QG_FILE_MAX=300 (split deferred; cap prevents growth)
-worker/src/sync/sync.ts  # 1171 lines — #180 sync orchestrator; split tracked separately
-worker/src/webhook/handlers.ts  # 445 lines — #180 issue webhook dispatch surface
+worker/src/sync/sync.ts  # 1188 lines — #180 sync orchestrator; split tracked separately
+worker/src/webhook/handlers.ts  # 448 lines — #180 issue webhook dispatch surface
 worker/src/webhook/handlers-app.ts  # 369 lines — #180 GitHub App lifecycle handlers
 worker/src/webhook/mutations.ts  # 339 lines — #180 D1 write helpers for webhooks
 
 # Test files (colocated *.test.ts — exempt with local caps, not production code)
 worker/src/sync/sync.test.ts  # 1570 lines — #180 integration harness for runSync
-worker/src/webhook/handlers.test.ts  # 920 lines — #180 webhook handler contract tests
+worker/src/webhook/handlers.test.ts  # 930 lines — #180 webhook handler contract tests
 worker/src/auth/oauth.test.ts  # 864 lines — #180 OAuth callback + batch tests
-worker/src/api/issues.test.ts  # 632 lines — #180 tenant-scoped issues API tests
+worker/src/api/issues.test.ts  # 659 lines — #180 tenant-scoped issues API tests
 worker/src/api/graph.test.ts  # 652 lines — #180 tenant-scoped graph + #142 S2 zk title redaction
 worker/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
 worker/src/webhook/handlers-app.test.ts  # 498 lines — #180 app lifecycle handler tests

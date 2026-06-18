@@ -43,7 +43,7 @@ vi.mock("../auth/installToken", () => ({
 import { fetchIssueDeps } from "../sync/graphql";
 import { syncBranches } from "../sync/sync";
 import { resolveInstallToken } from "../auth/installToken";
-import { makeFakeDb, makeFakeStmt, type FakeStmt } from "../test-utils";
+import { makeFakeDb, makeFakeStmt, captureDb as dispatchCaptureDb, type FakeStmt } from "../test-utils";
 
 // FakeResult kept local: richer variant ({ value?, changes? }) used in captureDb casts
 type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
@@ -193,6 +193,19 @@ describe("handleIssues", () => {
       expect(batchArgs.length).toBeGreaterThan(1);
       const labelSqls = batchArgs.slice(1).map((s) => s.sql);
       expect(labelSqls.some((s) => s.includes("DELETE FROM labels"))).toBe(true);
+    });
+
+    it("binds null title when issue is zk-sealed", async () => {
+      const { db } = dispatchCaptureDb((sql) => {
+        if (sql.includes("zk_payloads")) return [{ one: 1 }];
+        return [];
+      });
+      const payload = makeIssuePayload("edited", { title: "Plaintext from GitHub" });
+
+      await handleIssues(payload, db);
+
+      const batchArgs = vi.mocked(db.batch).mock.calls[0][0] as unknown as FakeStmt[];
+      expect(batchArgs[0].args[3]).toBeNull();
     });
 
     it("batch contains label INSERT stmts for each label name", async () => {

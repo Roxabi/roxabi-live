@@ -11,6 +11,7 @@
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { resolveVisibleRepos } from "../auth/repoAccess";
+import { userZkOptIn } from "../auth/zk";
 
 const ISSUE_KEY_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+#[0-9]+$/;
 
@@ -44,6 +45,10 @@ interface EdgeJoinRow {
 }
 
 export const listIssuesRoute = async (c: Context<AuthEnv>) => {
+  const s = c.get("session");
+  const redactTitles =
+    s !== undefined && (await userZkOptIn(c.env.DB, s.userId));
+
   const visible = await resolveVisibleRepos(c);
 
   const url = new URL(c.req.url);
@@ -125,7 +130,7 @@ export const listIssuesRoute = async (c: Context<AuthEnv>) => {
     key: row.key,
     repo: row.repo,
     number: row.number,
-    title: row.title,
+    title: redactTitles ? null : row.title,
     state: row.state,
     url: row.url,
     labels: labelsByKey.get(row.key) ?? [],
@@ -140,6 +145,10 @@ export const listIssuesRoute = async (c: Context<AuthEnv>) => {
 };
 
 export const getIssueRoute = async (c: Context<AuthEnv>) => {
+  const s = c.get("session");
+  const redactTitles =
+    s !== undefined && (await userZkOptIn(c.env.DB, s.userId));
+
   const visible = await resolveVisibleRepos(c);
 
   // Extract key from path: /api/issues/<owner>/<repo>#<number>
@@ -212,7 +221,7 @@ export const getIssueRoute = async (c: Context<AuthEnv>) => {
     key: row.key,
     repo: row.repo,
     number: row.number,
-    title: row.title,
+    title: redactTitles ? null : row.title,
     state: row.state,
     url: row.url,
     labels,

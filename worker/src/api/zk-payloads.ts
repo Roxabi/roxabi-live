@@ -7,7 +7,7 @@
 
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
-import { userZkOptIn } from "../auth/zk";
+import { scrubIssuePayloads, userZkOptIn } from "../auth/zk";
 
 const ISSUE_KEY_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+#[0-9]+$/;
 const MAX_BULK = 200;
@@ -111,6 +111,11 @@ export async function putZkPayloadsRoute(
            updated_at = datetime('now')`,
       ).bind(s.userId, e.issue_key, e.pubkey_fp, e.encrypted_payload),
     ),
+  );
+
+  await scrubIssuePayloads(
+    c.env.DB,
+    entries.map((e) => e.issue_key),
   );
 
   return c.json({ upserted: entries.length });

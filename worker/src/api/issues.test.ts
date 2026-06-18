@@ -60,6 +60,7 @@ interface ListEnvOptions {
   countN: number;
   rows: unknown[];
   labels?: unknown[];
+  zkOptIn?: boolean;
 }
 
 interface CapturedCall {
@@ -114,13 +115,16 @@ function makeListEnvWithCapture(
 }
 
 function makeListEnv(opts: ListEnvOptions): Env {
-  const { countN, rows, labels = [] } = opts;
+  const { countN, rows, labels = [], zkOptIn = false } = opts;
 
   return {
     DB: {
       prepare: (sql: string) => ({
         bind: (..._args: unknown[]) => ({
-          first: async () => null,
+          first: async () => {
+            if (sql.includes("zk_opt_in")) return { zk_opt_in: zkOptIn ? 1 : 0 };
+            return null;
+          },
           all: async () => {
             if (sql.includes("FROM labels")) return { results: labels };
             return { results: [] };
@@ -142,6 +146,7 @@ interface GetEnvOptions {
   labels?: unknown[];
   blocking?: unknown[];
   blockedBy?: unknown[];
+  zkOptIn?: boolean;
 }
 
 function makeGetEnv(opts: GetEnvOptions): Env {
@@ -150,6 +155,7 @@ function makeGetEnv(opts: GetEnvOptions): Env {
     labels = [],
     blocking = [],
     blockedBy = [],
+    zkOptIn = false,
   } = opts;
 
   // Dispatch by SQL content — robust to query reordering:
@@ -163,6 +169,7 @@ function makeGetEnv(opts: GetEnvOptions): Env {
       prepare: (sql: string) => ({
         bind: (..._args: unknown[]) => ({
           first: async () => {
+            if (sql.includes("zk_opt_in")) return { zk_opt_in: zkOptIn ? 1 : 0 };
             if (sql.includes("FROM issues WHERE key")) return issueRow;
             return null;
           },
@@ -371,6 +378,17 @@ describe("GET /api/issues", () => {
       const body = await res.json<{ issues: Record<string, unknown>[] }>();
       expect(body.issues[0].is_stub).toBe(false);
     });
+
+    it("redacts titles when zk_opt_in is enabled", async () => {
+      const row = makeIssueRow({ title: "Secret title" });
+      const res = await app.request(
+        "/api/issues",
+        {},
+        makeListEnv({ countN: 1, rows: [row], zkOptIn: true }),
+      );
+      const body = await res.json<{ issues: Record<string, unknown>[] }>();
+      expect(body.issues[0].title).toBeNull();
+    });
   });
 
   describe("labels per issue", () => {
@@ -494,6 +512,17 @@ describe("GET /api/issues/:key", () => {
       expect(Array.isArray(body.labels)).toBe(true);
       expect(Array.isArray(body.blocking)).toBe(true);
       expect(Array.isArray(body.blocked_by)).toBe(true);
+    });
+
+    it("redacts title when zk_opt_in is enabled", async () => {
+      const row = makeIssueRow({ title: "Secret title" });
+      const res = await app.request(
+        "/api/issues/Roxabi/roxabi-live%231",
+        {},
+        makeGetEnv({ issueRow: row, zkOptIn: true }),
+      );
+      const body = await res.json<Record<string, unknown>>();
+      expect(body.title).toBeNull();
     });
 
     it("issues SELECT uses JSON_EXTRACT(payload,'$.title') AS title", async () => {
