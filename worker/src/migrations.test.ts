@@ -220,6 +220,26 @@ describe("tenant_repo_access table", () => {
 // Suite 7 — tenants table
 // ---------------------------------------------------------------------------
 
+describe("user_token_handoffs table", () => {
+  it("has code primary key (0011)", () => {
+    expect(getPkColumns(db, "user_token_handoffs")).toEqual(["code"]);
+  });
+
+  it("has expected columns", () => {
+    const cols = getColumnNames(db, "user_token_handoffs");
+    expect(cols).toContain("user_id");
+    expect(cols).toContain("token_enc");
+    expect(cols).toContain("token_iv");
+    expect(cols).toContain("expires_at");
+  });
+});
+
+describe("oauth_state zk_token_handoff", () => {
+  it("has zk_token_handoff column (0011)", () => {
+    expect(getColumnNames(db, "oauth_state")).toContain("zk_token_handoff");
+  });
+});
+
 describe("users table", () => {
   it("has zk_opt_in column (Phase 2 opt-in, added in 0010)", () => {
     expect(getColumnNames(db, "users")).toContain("zk_opt_in");

@@ -7,7 +7,8 @@ import { MultiSelect } from './multi_select.js';
 import { clearPinned } from './hover.js';
 import { repoTone } from './tone.js';
 import { api, AuthError, requireAuthGate, getSessionProfile } from './auth.js';
-import { applyZkDecryption } from './zk-sync.js';
+import { applyZkDecryption, syncZkContentFromGitHub } from './zk-sync.js';
+import { consumeZkHandoffFromUrl, getGithubUserToken } from './zk-github.js';
 
 const $ = id => document.getElementById(id);
 
@@ -312,10 +313,24 @@ async function init() {
   }
   restoreControls();
   try {
+    await consumeZkHandoffFromUrl();
     const me = await getSessionProfile();
     sessionZkOptIn = Boolean(me.user?.zk_opt_in);
     sessionGithubLogin = me.user?.github_login ?? '';
     await loadAndRender(sessionZkOptIn, sessionGithubLogin);
+    if (sessionZkOptIn && getGithubUserToken()) {
+      try {
+        const { synced } = await syncZkContentFromGitHub(
+          state.nodes,
+          sessionGithubLogin,
+        );
+        if (synced > 0) {
+          await applyZkDecryption(state.nodes, sessionGithubLogin);
+          state.nodesByKey = new Map(state.nodes.map(n => [n.key, n]));
+          render();
+        }
+      } catch { /* GitHub sync is best-effort */ }
+    }
     try { lastVersion = await fetchVersion(); } catch { /* poller will retry */ }
     startPolling();
   } catch (e) {
