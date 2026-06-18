@@ -1,0 +1,43 @@
+---
+title: "Plan: ZK account-key implementation (#216)"
+issue: 216
+spec: artifacts/specs/216-zk-account-key-spec.mdx
+complexity: 9/10
+tier: F-full
+generated: 2026-06-18T00:00:00Z
+design: docs/zk-account-key-design.md
+---
+
+## Summary
+
+11-PR stack from approved design. Current branch `feat/zk-always-on` already ships always-on private mode + sealed-key redaction. This plan continues on the same branch for #216 implementation.
+
+## Micro-tasks (active slice: PR 1)
+
+### T1 — Migration `0014_zk_key_backups.sql`
+- Create `zk_key_backups` (user_id PK, backup_version, kdf_alg, kdf_params, wrap_iv, wrapped_key, key_fp, timestamps)
+- `ALTER TABLE zk_payloads ADD COLUMN key_fp TEXT`
+- `UPDATE zk_payloads SET key_fp = pubkey_fp WHERE key_fp IS NULL AND pubkey_fp IS NOT NULL`
+
+### T2 — `migrations.test.ts`
+- Assert `zk_key_backups` schema
+- Assert `zk_payloads.key_fp` column + backfill behaviour
+- Update migration count contiguity (14 files)
+
+## Task IDs
+
+| Task | Description | Status |
+|------|-------------|--------|
+| T1 | Migration 0014 | pending |
+| T2 | Migration tests | pending |
+
+## Dependencies
+
+- PR 1 → PR 1b, PR 2, PR 7 (parallel 1b/3 after 1)
+- Full order per design doc PR Plan section
+
+## Quality gates
+
+```bash
+cd worker && npm run typecheck && npm test
+```
