@@ -172,14 +172,24 @@ export async function eciesDecrypt(privateKey, envelopeJson) {
   return new TextDecoder().decode(plain);
 }
 
-/** Encrypt issue title payload `{ title }`. */
-export async function sealTitle(publicKey, title) {
-  return eciesEncrypt(publicKey, JSON.stringify({ title }));
+/** Encrypt issue content `{ title, body? }`. */
+export async function sealContent(publicKey, content) {
+  return eciesEncrypt(publicKey, JSON.stringify(content));
 }
 
-/** Decrypt issue title from envelope. */
-export async function openTitle(privateKey, envelopeJson) {
+/** Decrypt issue content envelope. */
+export async function openContent(privateKey, envelopeJson) {
   const plain = await eciesDecrypt(privateKey, envelopeJson);
-  const obj = JSON.parse(plain);
+  return JSON.parse(plain);
+}
+
+/** Encrypt issue title payload `{ title }`. */
+export async function sealTitle(publicKey, title) {
+  return sealContent(publicKey, { title });
+}
+
+/** Decrypt issue title from envelope (legacy + content payloads). */
+export async function openTitle(privateKey, envelopeJson) {
+  const obj = await openContent(privateKey, envelopeJson);
   return obj.title ?? null;
 }

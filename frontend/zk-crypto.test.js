@@ -4,6 +4,8 @@ import {
   eciesDecrypt,
   sealTitle,
   openTitle,
+  sealContent,
+  openContent,
   fingerprintPublicKey,
 } from './zk-crypto.js';
 
@@ -32,6 +34,16 @@ describe('zk-crypto ECIES', () => {
   it('sealTitle/openTitle extracts title', async () => {
     const envelope = await sealTitle(publicKey, 'Fix the bug');
     expect(await openTitle(privateKey, envelope)).toBe('Fix the bug');
+  });
+
+  it('sealContent/openContent roundtrips title and body', async () => {
+    const envelope = await sealContent(publicKey, {
+      title: 'Secret',
+      body: 'Private body text',
+    });
+    const content = await openContent(privateKey, envelope);
+    expect(content.title).toBe('Secret');
+    expect(content.body).toBe('Private body text');
   });
 
   it('fingerprintPublicKey returns 32 hex chars', async () => {

@@ -12,6 +12,7 @@ import type { Context } from "hono";
 import type { Env } from "../types";
 import { mintSession } from "./session";
 import { sessionCookie } from "./cookies";
+import { createUserTokenHandoff } from "./userTokenHandoff";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -53,6 +54,7 @@ export async function loginRoute(
   c: Context<{ Bindings: Env }>,
 ): Promise<Response> {
   const redirectAfter = sanitizeRedirect(c.req.query("redirect") ?? undefined);
+  const zkTokenHandoff = c.req.query("zk") === "1" ? 1 : 0;
 
   // 16 random bytes → 32 hex chars
   const stateBytes = new Uint8Array(16);
@@ -61,10 +63,10 @@ export async function loginRoute(
 
   // Store state in D1 — single-use, expires in 10 minutes
   await c.env.DB.prepare(
-    `INSERT INTO oauth_state (state, redirect_after, expires_at)
-     VALUES (?, ?, datetime('now', '+10 minutes'))`,
+    `INSERT INTO oauth_state (state, redirect_after, expires_at, zk_token_handoff)
+     VALUES (?, ?, datetime('now', '+10 minutes'), ?)`,
   )
-    .bind(state, redirectAfter)
+    .bind(state, redirectAfter, zkTokenHandoff)
     .run();
 
   // Build GitHub authorize URL — redirect_uri derived from origin only (D-6)
@@ -111,16 +113,18 @@ export async function callbackRoute(
 
   // Consume state — single-use + expiry guard in one atomic statement (closes TOCTOU)
   const stateRow = await c.env.DB.prepare(
-    `DELETE FROM oauth_state WHERE state = ? AND expires_at > datetime('now') RETURNING redirect_after`,
+    `DELETE FROM oauth_state WHERE state = ? AND expires_at > datetime('now')
+     RETURNING redirect_after, zk_token_handoff`,
   )
     .bind(state)
-    .first<{ redirect_after: string | null }>();
+    .first<{ redirect_after: string | null; zk_token_handoff: number }>();
 
   if (!stateRow) {
     return c.json({ error: "bad_request" }, 400);
   }
 
-  const redirectAfter = stateRow.redirect_after ?? "/";
+  let redirectAfter = stateRow.redirect_after ?? "/";
+  const wantsZkHandoff = stateRow.zk_token_handoff === 1;
 
   // Build redirect_uri from origin (D-6)
   const origin = new URL(c.req.url).origin;
@@ -246,6 +250,21 @@ export async function callbackRoute(
 
   // Mint session tied to the first installation's tenant
   const rawToken = await mintSession(c.env.DB, userId, firstTenantId);
+
+  if (wantsZkHandoff) {
+    try {
+      const handoffCode = await createUserTokenHandoff(
+        c.env,
+        userId,
+        access_token,
+      );
+      const dest = new URL(redirectAfter, origin);
+      dest.searchParams.set("zk_handoff", handoffCode);
+      redirectAfter = `${dest.pathname}${dest.search}`;
+    } catch {
+      // INSTALL_TOKEN_KEY unset — skip handoff, user can retry /login?zk=1
+    }
+  }
 
   return new Response(null, {
     status: 302,
