@@ -14,7 +14,7 @@ worker/src/sync/sync.test.ts  # 1570 lines — #180 integration harness for runS
 worker/src/webhook/handlers.test.ts  # 920 lines — #180 webhook handler contract tests
 worker/src/auth/oauth.test.ts  # 864 lines — #180 OAuth callback + batch tests
 worker/src/api/issues.test.ts  # 632 lines — #180 tenant-scoped issues API tests
-worker/src/api/graph.test.ts  # 626 lines — #180 tenant-scoped graph API tests
+worker/src/api/graph.test.ts  # 652 lines — #180 tenant-scoped graph + #142 S2 zk title redaction
 worker/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
 worker/src/webhook/handlers-app.test.ts  # 498 lines — #180 app lifecycle handler tests
 worker/src/auth/installToken.test.ts  # 470 lines — #180 install token + pagination tests
