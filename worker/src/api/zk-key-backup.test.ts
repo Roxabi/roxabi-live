@@ -27,11 +27,13 @@ const VALID_BODY = {
   backup_version: 1,
 };
 
-function makeEnv(db: D1Database): Env {
+function makeEnv(db: D1Database, overrides: Partial<Env> = {}): Env {
   return {
     DB: db,
     ASSETS: { fetch: async () => new Response("ok") } as unknown as Fetcher,
     GITHUB_WEBHOOK_SECRET: "",
+    ZK_ACCOUNT_KEY: "1",
+    ...overrides,
   } as unknown as Env;
 }
 
@@ -47,6 +49,18 @@ function makeApp(db: D1Database): Hono<AuthEnv> {
 }
 
 describe("getZkKeyBackupRoute", () => {
+  it("returns 403 when ZK_ACCOUNT_KEY flag is off", async () => {
+    const { db } = captureDb(() => []);
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {},
+      makeEnv(db, { ZK_ACCOUNT_KEY: "0" }),
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("zk_account_key_disabled");
+  });
+
   it("returns 404 when not enrolled", async () => {
     const { db } = captureDb(() => []);
     const res = await makeApp(db).request("/api/zk/key-backup", {}, makeEnv(db));
@@ -77,6 +91,66 @@ describe("getZkKeyBackupRoute", () => {
 });
 
 describe("putZkKeyBackupRoute", () => {
+  it("returns 403 when ZK_ACCOUNT_KEY flag is off", async () => {
+    const { db } = captureDb(() => []);
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(VALID_BODY),
+      },
+      makeEnv(db, { ZK_ACCOUNT_KEY: "0" }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects weak kdf_params", async () => {
+    const { db } = captureDb(() => []);
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...VALID_BODY,
+          kdf_params: JSON.stringify({ m: 8192, t: 3, p: 1 }),
+        }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("invalid kdf_params");
+  });
+
+  it("does not increment rate limit on validation failure", async () => {
+    const { db, stmts } = captureDb((sql) => {
+      if (sql.includes("zk_key_backups") && sql.includes("SELECT")) {
+        return [{ backup_version: 1, key_fp: VALID_BODY.key_fp }];
+      }
+      return [];
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...VALID_BODY,
+          kdf_params: JSON.stringify({ m: 1024, t: 1, p: 1 }),
+          expected_backup_version: 1,
+        }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(400);
+    const rateStmt = stmts().find(
+      (s) => s.sql.includes("sync_control") && s.sql.includes("INSERT"),
+    );
+    expect(rateStmt).toBeUndefined();
+  });
+
   it("inserts on first enroll", async () => {
     const { db, stmts } = captureDb((sql) => {
       if (sql.includes("zk_key_backups") && sql.includes("SELECT")) return [];

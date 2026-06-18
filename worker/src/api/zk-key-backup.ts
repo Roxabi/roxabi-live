@@ -4,12 +4,46 @@
 
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
+import { zkAccountKeyEnabled } from "../auth/zk-flags";
 import { consumeReauthProof } from "../auth/zk-reauth";
 import { writeZkAudit } from "../observability/zk-events";
 
 const KEY_FP_RE = /^[0-9a-f]{8,64}$/;
 const MAX_WRAPPED_BYTES = 8 * 1024;
 const MAX_PUT_PER_HOUR = 5;
+const KDF_ALG = "argon2id";
+const KDF_M_MIN = 65536;
+const KDF_T_MIN = 3;
+const KDF_P_MIN = 1;
+
+function validateKdfParams(
+  kdf_alg: string,
+  kdf_params: string,
+): boolean {
+  if (kdf_alg !== KDF_ALG) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(kdf_params);
+  } catch {
+    return false;
+  }
+  if (parsed === null || typeof parsed !== "object") return false;
+  const p = parsed as Record<string, unknown>;
+  const m = p.m;
+  const t = p.t;
+  const par = p.p;
+  return (
+    typeof m === "number" &&
+    Number.isInteger(m) &&
+    m >= KDF_M_MIN &&
+    typeof t === "number" &&
+    Number.isInteger(t) &&
+    t >= KDF_T_MIN &&
+    typeof par === "number" &&
+    Number.isInteger(par) &&
+    par >= KDF_P_MIN
+  );
+}
 
 interface BackupRow {
   backup_version: number;
@@ -22,10 +56,10 @@ interface BackupRow {
   updated_at: string;
 }
 
-async function checkBackupPutRateLimit(
+async function readBackupPutCount(
   db: D1Database,
   userId: number,
-): Promise<boolean> {
+): Promise<{ hourKey: string; count: number }> {
   const hourKey = new Date().toISOString().slice(0, 13);
   const rowKey = `zk_backup_put:${userId}`;
   const row = await db
@@ -50,10 +84,23 @@ async function checkBackupPutRateLimit(
   if (storedHour !== hourKey) {
     count = 0;
   }
-  if (count >= MAX_PUT_PER_HOUR) {
-    return false;
-  }
+  return { hourKey, count };
+}
 
+async function isBackupPutRateLimited(
+  db: D1Database,
+  userId: number,
+): Promise<boolean> {
+  const { count } = await readBackupPutCount(db, userId);
+  return count >= MAX_PUT_PER_HOUR;
+}
+
+async function recordBackupPutSuccess(
+  db: D1Database,
+  userId: number,
+): Promise<void> {
+  const { hourKey, count } = await readBackupPutCount(db, userId);
+  const rowKey = `zk_backup_put:${userId}`;
   await db
     .prepare(
       `INSERT INTO sync_control (tenant_id, key, value, updated_at)
@@ -64,8 +111,6 @@ async function checkBackupPutRateLimit(
     )
     .bind(rowKey, JSON.stringify({ hour: hourKey, count: count + 1 }))
     .run();
-
-  return true;
 }
 
 async function logBackupEvent(
@@ -90,6 +135,9 @@ export async function getZkKeyBackupRoute(
 ): Promise<Response> {
   const s = c.get("session");
   if (!s) return c.json({ error: "unauthorized" }, 401);
+  if (!zkAccountKeyEnabled(c.env)) {
+    return c.json({ error: "zk_account_key_disabled" }, 403);
+  }
 
   const row = await c.env.DB
     .prepare(
@@ -121,9 +169,8 @@ export async function putZkKeyBackupRoute(
 ): Promise<Response> {
   const s = c.get("session");
   if (!s) return c.json({ error: "unauthorized" }, 401);
-
-  if (!(await checkBackupPutRateLimit(c.env.DB, s.userId))) {
-    return c.json({ error: "rate_limited" }, 429);
+  if (!zkAccountKeyEnabled(c.env)) {
+    return c.json({ error: "zk_account_key_disabled" }, 403);
   }
 
   let body: unknown;
@@ -172,6 +219,13 @@ export async function putZkKeyBackupRoute(
   ) {
     return c.json({ error: "invalid wrapped_key" }, 400);
   }
+  if (!validateKdfParams(kdf_alg, kdf_params)) {
+    return c.json({ error: "invalid kdf_params" }, 400);
+  }
+
+  if (await isBackupPutRateLimited(c.env.DB, s.userId)) {
+    return c.json({ error: "rate_limited" }, 429);
+  }
 
   const existing = await c.env.DB
     .prepare(
@@ -192,6 +246,7 @@ export async function putZkKeyBackupRoute(
       )
       .bind(s.userId, kdf_alg, kdf_params, wrap_iv, wrapped_key, key_fp)
       .run();
+    await recordBackupPutSuccess(c.env.DB, s.userId);
     await logBackupEvent(c.env, "zk.backup.enrolled", s.userId, key_fp, 1, false);
     return c.json({ backup_version: 1, key_fp });
   }
@@ -233,6 +288,7 @@ export async function putZkKeyBackupRoute(
         s.userId,
       )
       .run();
+    await recordBackupPutSuccess(c.env.DB, s.userId);
     await logBackupEvent(c.env, "zk.backup.rotated", s.userId, key_fp, nextVersion, true);
     return c.json({ backup_version: nextVersion, key_fp });
   }
@@ -269,6 +325,7 @@ export async function putZkKeyBackupRoute(
       s.userId,
     )
     .run();
+  await recordBackupPutSuccess(c.env.DB, s.userId);
   await logBackupEvent(c.env, "zk.backup.updated", s.userId, key_fp, nextVersion, false);
   return c.json({ backup_version: nextVersion, key_fp });
 }

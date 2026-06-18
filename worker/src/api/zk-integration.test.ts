@@ -215,6 +215,7 @@ function makeEnv(db: D1Database): Env {
     DB: db,
     ASSETS: { fetch: async () => new Response("ok") } as unknown as Fetcher,
     GITHUB_WEBHOOK_SECRET: "",
+    ZK_ACCOUNT_KEY: "1",
   } as unknown as Env;
 }
 

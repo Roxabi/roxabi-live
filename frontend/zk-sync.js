@@ -188,8 +188,19 @@ export async function syncZkContentFromGitHub(nodes, githubLogin, githubToken) {
 /**
  * Decrypt server-redacted titles for the current user.
  * @param {Array<{ key: string, title: string|null }>} nodes
+ * @param {string} githubLogin
+ * @param {{ accountKeyMode?: boolean }} [opts]
  */
-export async function applyZkDecryption(nodes, githubLogin) {
+export async function applyZkDecryption(nodes, githubLogin, opts = {}) {
+  const { accountKeyMode = false } = opts;
+
+  if (accountKeyMode && !isZkUnlocked()) {
+    for (const node of nodes) {
+      if (node.title == null) node.title = SEALED_TITLE_LABEL;
+    }
+    return;
+  }
+
   const resp = await api('/api/zk/payloads');
   const { payloads } = await resp.json();
   const byKey = new Map((payloads ?? []).map((p) => [p.issue_key, p]));
