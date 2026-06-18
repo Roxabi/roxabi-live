@@ -173,7 +173,14 @@ function buildGraphSegs() {
 msRepo.onChange      = vals => { clearPinned(); setState({ repo:      vals }); render(); };
 msMilestone.onChange = vals => { clearPinned(); setState({ milestone: vals }); render(); };
 msPriority.onChange  = vals => { clearPinned(); setState({ priority:  vals }); render(); };
-msStatus.onChange    = vals => { clearPinned(); setState({ status:    vals }); render(); };
+msStatus.onChange    = vals => {
+  clearPinned();
+  setState({ status: vals });
+  loadAndRender(sessionZkOptIn, sessionGithubLogin).catch(e => {
+    errorMsg.hidden = false;
+    errorMsg.textContent = `Failed to load graph: ${e.message}`;
+  });
+};
 msLabel.onChange     = vals => { clearPinned(); setState({ label:     vals }); render(); };
 
 // ─── Populate filter options after data load ──────────────────────────────
@@ -245,8 +252,14 @@ function restoreControls() {
   buildGraphSegs();
 }
 
+function graphStatusQuery() {
+  const statuses = state.status;
+  if (!statuses?.length || statuses.length >= 3) return '';
+  return `?status=${encodeURIComponent(statuses.join(','))}`;
+}
+
 async function loadGraphData() {
-  const resp = await api('/api/graph');
+  const resp = await api(`/api/graph${graphStatusQuery()}`);
   return resp.json();
 }
 
