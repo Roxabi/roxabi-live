@@ -6,7 +6,8 @@ import { initGraph, clearSearchHighlight }   from './graph.js';
 import { MultiSelect } from './multi_select.js';
 import { clearPinned } from './hover.js';
 import { repoTone } from './tone.js';
-import { api, AuthError, requireAuthGate } from './auth.js';
+import { api, AuthError, requireAuthGate, getSessionProfile } from './auth.js';
+import { applyZkDecryption } from './zk-sync.js';
 
 const $ = id => document.getElementById(id);
 
@@ -250,10 +251,16 @@ async function loadGraphData() {
 
 // Re-fetch graph data and re-render, preserving view/filters (held in state).
 // Uses data.repos (Array<{repo,archived}>) from /api/graph; falls back to nodes-derived if absent.
-async function loadAndRender() {
+let sessionZkOptIn = false;
+let sessionGithubLogin = '';
+
+async function loadAndRender(zkOptIn, githubLogin) {
   const data  = await loadGraphData();
   const nodes = data.nodes || [];
   const edges = data.edges || [];
+  if (zkOptIn) {
+    await applyZkDecryption(nodes, githubLogin);
+  }
   annotateNodes(nodes, edges);
   setState({ nodes, edges });
   state.nodesByKey = new Map(nodes.map(n => [n.key, n]));
@@ -283,7 +290,9 @@ function startPolling() {
     if (document.hidden) return;  // skip while tab is backgrounded
     try {
       const v = await fetchVersion();
-      if (lastVersion !== null && v !== lastVersion) await loadAndRender();
+      if (lastVersion !== null && v !== lastVersion) {
+        await loadAndRender(sessionZkOptIn, sessionGithubLogin);
+      }
       lastVersion = v;
     } catch { /* transient — retry next tick */ }
   }, POLL_MS);
@@ -303,7 +312,10 @@ async function init() {
   }
   restoreControls();
   try {
-    await loadAndRender();
+    const me = await getSessionProfile();
+    sessionZkOptIn = Boolean(me.user?.zk_opt_in);
+    sessionGithubLogin = me.user?.github_login ?? '';
+    await loadAndRender(sessionZkOptIn, sessionGithubLogin);
     try { lastVersion = await fetchVersion(); } catch { /* poller will retry */ }
     startPolling();
   } catch (e) {

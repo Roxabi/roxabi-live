@@ -1,5 +1,5 @@
 // auth.js — Auth gate state machine, consent persistence, API wrapper
-// Exports: AuthError, api, hasConsent, setConsent, resolveView, requireAuthGate
+// Exports: AuthError, api, hasConsent, setConsent, resolveView, requireAuthGate, getSessionProfile
 
 const $ = id => document.getElementById(id);
 
@@ -58,6 +58,11 @@ export function resolveView(me, consented) {
 async function fetchMe() {
   const resp = await api('/api/me');
   return resp.json();
+}
+
+/** Session profile from /api/me — for dashboard bootstrap after auth gate. */
+export async function getSessionProfile() {
+  return fetchMe();
 }
 
 // ─── Internal: render landing ─────────────────────────────────────────────────
@@ -202,6 +207,19 @@ function renderOrgPicker(me) {
 
 // ─── Internal: render operator notice ────────────────────────────────────────
 
+async function enableZkMode(me) {
+  const graphResp = await api('/api/graph');
+  const { nodes } = await graphResp.json();
+  const { sealGraphTitles } = await import('./zk-sync.js');
+  await sealGraphTitles(nodes ?? [], me.user.github_login);
+  await api('/api/zk-opt-in', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: true }),
+  });
+  location.reload();
+}
+
 function renderOperatorNotice(me) {
   const el = $('operator-notice');
   const zkOn = Boolean(me.user.zk_opt_in);
@@ -218,7 +236,7 @@ function renderOperatorNotice(me) {
       </label>
       <p class="zk-opt-in-hint" id="zk-opt-in-hint" ${zkOn ? '' : 'hidden'}>
         <strong>Scope:</strong> content only, not structure. Issue state, blocker edges, and counts stay visible to the operator.
-        Full encryption pipeline ships in a follow-up; this toggle saves your preference.
+        Titles are encrypted client-side; your private key stays in this browser.
       </p>
     </div>
   `;
@@ -228,15 +246,21 @@ function renderOperatorNotice(me) {
   const hint = $('zk-opt-in-hint');
   toggle.addEventListener('change', async () => {
     const enabled = toggle.checked;
+    toggle.disabled = true;
     try {
+      if (enabled) {
+        await enableZkMode(me);
+        return;
+      }
       await api('/api/zk-opt-in', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify({ enabled: false }),
       });
-      hint.toggleAttribute('hidden', !enabled);
+      location.reload();
     } catch {
       toggle.checked = !enabled;
+      toggle.disabled = false;
     }
   });
 }
