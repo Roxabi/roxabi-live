@@ -16,6 +16,7 @@
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { resolveVisibleRepos } from "../auth/repoAccess";
+import { userZkOptIn } from "../auth/zk";
 import { parseMilestone } from "../sync/parse";
 
 const LANE_LABEL_PREFIX = "graph:lane/";
@@ -116,6 +117,10 @@ interface EdgeRow {
 }
 
 export const graphRoute = async (c: Context<AuthEnv>) => {
+  const s = c.get("session");
+  const redactTitles =
+    s !== undefined && (await userZkOptIn(c.env.DB, s.userId));
+
   const visible = await resolveVisibleRepos(c);
 
   if (visible.length === 0) {
@@ -184,7 +189,7 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
       key: row.key,
       repo: row.repo,
       number: row.number,
-      title: row.title,
+      title: redactTitles ? null : row.title,
       state: row.state,
       dev_state: devState,
       url: row.url,
