@@ -96,7 +96,7 @@ describe("migration chain", () => {
 
   it("loads all migration files in lexical order", () => {
     // Uses appliedFiles captured by beforeAll — verifies the actual apply order, not just FS state.
-    expect(appliedFiles.length).toBeGreaterThanOrEqual(14);
+    expect(appliedFiles.length).toBeGreaterThanOrEqual(15);
     expect(appliedFiles[0]).toMatch(/^0001_/);
     // Contiguity check: each file's 4-digit prefix must equal its 1-based position
     for (let i = 0; i < appliedFiles.length; i++) {
@@ -295,6 +295,16 @@ describe("user_token_handoffs table", () => {
 describe("oauth_state zk_token_handoff", () => {
   it("has zk_token_handoff column (0011)", () => {
     expect(getColumnNames(db, "oauth_state")).toContain("zk_token_handoff");
+  });
+
+  it("has reauth column (0015)", () => {
+    expect(getColumnNames(db, "oauth_state")).toContain("reauth");
+  });
+});
+
+describe("zk_reauth_proofs table", () => {
+  it("has code primary key (0015)", () => {
+    expect(getPkColumns(db, "zk_reauth_proofs")).toEqual(["code"]);
   });
 });
 

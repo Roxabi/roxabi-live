@@ -14,6 +14,11 @@ import { activeTenantRoute } from "./api/active-tenant";
 import { zkOptInRoute } from "./api/zk-opt-in";
 import { listZkPayloadsRoute, putZkPayloadsRoute } from "./api/zk-payloads";
 import { consumeZkHandoffRoute } from "./api/zk-handoff";
+import { consumeZkReauthRoute } from "./api/zk-reauth";
+import {
+  getZkKeyBackupRoute,
+  putZkKeyBackupRoute,
+} from "./api/zk-key-backup";
 import { zkGithubGraphqlRoute } from "./api/zk-github-proxy";
 
 const app = new Hono<AuthEnv>();
@@ -80,6 +85,10 @@ app.use("/api/zk/payloads", requireSession);
 app.get("/api/zk/payloads", listZkPayloadsRoute);
 app.put("/api/zk/payloads", putZkPayloadsRoute);
 app.post("/api/zk/consume-handoff", requireSession, consumeZkHandoffRoute);
+app.post("/api/zk/consume-reauth", requireSession, consumeZkReauthRoute);
+app.use("/api/zk/key-backup", requireSession);
+app.get("/api/zk/key-backup", getZkKeyBackupRoute);
+app.put("/api/zk/key-backup", putZkKeyBackupRoute);
 app.post("/api/zk/github/graphql", requireSession, zkGithubGraphqlRoute);
 // /logout is intentionally ungated: logoutRoute is null-safe + idempotent, and SameSite=Strict
 // blocks cross-site cookie submission — gating it would make a stale/expired cookie impossible to clear.
