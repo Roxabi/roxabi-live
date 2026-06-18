@@ -5,6 +5,7 @@
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { consumeReauthProof } from "../auth/zk-reauth";
+import { writeZkAudit } from "../observability/zk-events";
 
 const KEY_FP_RE = /^[0-9a-f]{8,64}$/;
 const MAX_WRAPPED_BYTES = 8 * 1024;
@@ -67,23 +68,21 @@ async function checkBackupPutRateLimit(
   return true;
 }
 
-function logBackupEvent(
+async function logBackupEvent(
+  env: Context<AuthEnv>["env"],
   event: string,
   userId: number,
   keyFp: string,
   backupVersion: number,
   rotation: boolean,
-): void {
-  console.log(
-    JSON.stringify({
-      prefix: "[zk]",
-      event,
-      user_id: userId,
-      key_fp: keyFp,
-      backup_version: backupVersion,
-      rotation,
-    }),
-  );
+): Promise<void> {
+  await writeZkAudit(env, {
+    event,
+    user_id: userId,
+    key_fp: keyFp,
+    backup_version: backupVersion,
+    rotation,
+  });
 }
 
 export async function getZkKeyBackupRoute(
@@ -193,7 +192,7 @@ export async function putZkKeyBackupRoute(
       )
       .bind(s.userId, kdf_alg, kdf_params, wrap_iv, wrapped_key, key_fp)
       .run();
-    logBackupEvent("zk.backup.enrolled", s.userId, key_fp, 1, false);
+    await logBackupEvent(c.env, "zk.backup.enrolled", s.userId, key_fp, 1, false);
     return c.json({ backup_version: 1, key_fp });
   }
 
@@ -234,7 +233,7 @@ export async function putZkKeyBackupRoute(
         s.userId,
       )
       .run();
-    logBackupEvent("zk.backup.rotated", s.userId, key_fp, nextVersion, true);
+    await logBackupEvent(c.env, "zk.backup.rotated", s.userId, key_fp, nextVersion, true);
     return c.json({ backup_version: nextVersion, key_fp });
   }
 
@@ -270,6 +269,6 @@ export async function putZkKeyBackupRoute(
       s.userId,
     )
     .run();
-  logBackupEvent("zk.backup.updated", s.userId, key_fp, nextVersion, false);
+  await logBackupEvent(c.env, "zk.backup.updated", s.userId, key_fp, nextVersion, false);
   return c.json({ backup_version: nextVersion, key_fp });
 }
