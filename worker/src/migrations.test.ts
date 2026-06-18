@@ -232,7 +232,12 @@ describe("zk_key_backups table", () => {
 describe("0014_zk_key_backups", () => {
   it("backfills key_fp from pubkey_fp on existing rows", () => {
     const migDb = new Database(":memory:");
-    const pre = appliedFiles.filter((f) => !f.startsWith("0014_"));
+    const pre = appliedFiles.filter(
+      (f) =>
+        !f.startsWith("0014_") &&
+        !f.startsWith("0015_") &&
+        !f.startsWith("0016_"),
+    );
     for (const file of pre) {
       migDb.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
     }

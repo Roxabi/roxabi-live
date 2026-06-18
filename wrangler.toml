@@ -23,7 +23,7 @@ routes = [
 ]
 
 [vars]
-ZK_ACCOUNT_KEY = "0"
+ZK_ACCOUNT_KEY = "1"
 ZK_STRUCTURE_ONLY = "0"
 
 [assets]
