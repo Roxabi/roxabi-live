@@ -5,7 +5,7 @@
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { zkAccountKeyEnabled } from "../auth/zk-flags";
-import { consumeReauthProof } from "../auth/zk-reauth";
+import { consumeReauthProof, issueReauthProof } from "../auth/zk-reauth";
 import { writeZkAudit } from "../observability/zk-events";
 
 const KEY_FP_RE = /^[0-9a-f]{8,64}$/;
@@ -289,7 +289,7 @@ export async function putZkKeyBackupRoute(
   if (!REAUTH_PROOF_RE.test(reauth_proof)) {
     return c.json({ error: "reauth_required" }, 403);
   }
-  if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
+  if (!(await issueReauthProof(c.env, s.userId, reauth_proof))) {
     return c.json({ error: "reauth_required" }, 403);
   }
 
@@ -323,6 +323,9 @@ export async function putZkKeyBackupRoute(
     if (result.meta.changes === 0) {
       return c.json({ error: "backup_version_conflict" }, 409);
     }
+    if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
+      return c.json({ error: "reauth_required" }, 403);
+    }
     await recordBackupPutSuccess(c.env.DB, s.userId);
     await logBackupEvent(c.env, "zk.backup.rotated", s.userId, key_fp, nextVersion, true);
     return c.json({ backup_version: nextVersion, key_fp });
@@ -351,6 +354,9 @@ export async function putZkKeyBackupRoute(
     .run();
   if (result.meta.changes === 0) {
     return c.json({ error: "backup_version_conflict" }, 409);
+  }
+  if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
+    return c.json({ error: "reauth_required" }, 403);
   }
   await recordBackupPutSuccess(c.env.DB, s.userId);
   await logBackupEvent(c.env, "zk.backup.updated", s.userId, key_fp, nextVersion, false);

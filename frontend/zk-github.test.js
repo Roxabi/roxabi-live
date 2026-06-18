@@ -26,10 +26,9 @@ describe('consumeZkReauthFromUrl', () => {
     expect(apiMock).not.toHaveBeenCalled();
   });
 
-  it('strips zk_reauth from URL and stores reauth_proof', async () => {
+  it('strips zk_reauth from URL and stores reauth_proof on success', async () => {
     window.history.replaceState({}, '', '/?zk_reauth=abc123&foo=bar');
     apiMock.mockResolvedValue({
-      ok: true,
       json: async () => ({ reauth_proof: 'proof-token' }),
     });
 
@@ -45,13 +44,25 @@ describe('consumeZkReauthFromUrl', () => {
   });
 
   it('does not store proof when consume-reauth fails', async () => {
-    window.history.replaceState({}, '', '/?zk_reauth=bad');
+    window.history.replaceState({}, '', '/?zk_reauth=bad&foo=bar');
     apiMock.mockRejectedValue(new Error('/api/zk/consume-reauth 410'));
 
     const result = await consumeZkReauthFromUrl();
 
     expect(result).toBe(false);
     expect(getZkReauthProof()).toBeNull();
+    expect(window.location.search).toBe('?zk_reauth=bad&foo=bar');
+  });
+
+  it('returns false when response omits reauth_proof', async () => {
+    window.history.replaceState({}, '', '/?zk_reauth=abc');
+    apiMock.mockResolvedValue({ json: async () => ({}) });
+
+    const result = await consumeZkReauthFromUrl();
+
+    expect(result).toBe(false);
+    expect(getZkReauthProof()).toBeNull();
+    expect(window.location.search).toBe('?zk_reauth=abc');
   });
 
   it('clearZkReauthProof removes stored proof', () => {

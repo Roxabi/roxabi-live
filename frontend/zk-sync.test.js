@@ -80,6 +80,29 @@ describe('migrateV1PayloadsToAccountKey', () => {
     expect(deleteZkKeyPairMock).not.toHaveBeenCalled();
   });
 
+  it('retains keypair on partial v1 migration', async () => {
+    hasZkKeyPairMock.mockResolvedValue(true);
+    parseEnvelopeVersionMock.mockReturnValue(1);
+    openContentMock
+      .mockResolvedValueOnce({ title: 'ok', body: null })
+      .mockRejectedValueOnce(new Error('decrypt failed'));
+    sealWithAccountKeyMock.mockResolvedValue('v2-payload');
+    ensureZkKeyPairMock.mockResolvedValue({ privateKey: {} });
+    apiMock.mockResolvedValue({
+      json: async () => ({
+        payloads: [
+          { issue_key: 'Roxabi/live#1', encrypted_payload: 'v1a' },
+          { issue_key: 'Roxabi/live#2', encrypted_payload: 'v1b' },
+        ],
+      }),
+    });
+
+    const count = await migrateV1PayloadsToAccountKey('alice', {}, 'fp12345678');
+
+    expect(count).toBe(1);
+    expect(deleteZkKeyPairMock).not.toHaveBeenCalled();
+  });
+
   it('deletes keypair when all v1 rows migrate successfully', async () => {
     hasZkKeyPairMock.mockResolvedValue(true);
     parseEnvelopeVersionMock.mockReturnValue(1);

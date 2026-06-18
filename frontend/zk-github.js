@@ -22,16 +22,20 @@ export function clearZkReauthProof() {
   sessionStorage.removeItem(REAUTH_KEY);
 }
 
+function stripZkReauthFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('zk_reauth')) return;
+  params.delete('zk_reauth');
+  const qs = params.toString();
+  const next = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
+  window.history.replaceState({}, '', next);
+}
+
 /** Consume ?zk_reauth= from URL after OAuth step-up redirect. */
 export async function consumeZkReauthFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('zk_reauth');
   if (!code) return false;
-
-  params.delete('zk_reauth');
-  const qs = params.toString();
-  const next = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
-  window.history.replaceState({}, '', next);
 
   try {
     const resp = await api('/api/zk/consume-reauth', {
@@ -40,11 +44,18 @@ export async function consumeZkReauthFromUrl() {
       body: JSON.stringify({ code }),
     });
     const { reauth_proof } = await resp.json();
-    if (reauth_proof) sessionStorage.setItem(REAUTH_KEY, reauth_proof);
+    if (!reauth_proof) return false;
+    sessionStorage.setItem(REAUTH_KEY, reauth_proof);
+    stripZkReauthFromUrl();
     return true;
   } catch {
     return false;
   }
+}
+
+export function zkReauthLoginUrl(redirect = '/') {
+  const dest = encodeURIComponent(redirect);
+  return `/login?reauth=1&redirect=${dest}`;
 }
 
 /** Consume ?zk_handoff= from URL after OAuth redirect. */

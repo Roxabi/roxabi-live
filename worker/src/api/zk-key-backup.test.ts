@@ -228,6 +228,8 @@ describe("putZkKeyBackupRoute", () => {
       let changes = 0;
       if (sql.includes("zk_key_backups") && sql.includes("SELECT")) {
         rows = [{ backup_version: 1, key_fp: VALID_BODY.key_fp }];
+      } else if (sql.includes("zk_reauth_proofs") && sql.includes("SELECT")) {
+        rows = [{ ok: 1 }];
       } else if (sql.includes("zk_reauth_proofs") && sql.includes("DELETE")) {
         rows = [{ code: proof }];
         changes = 1;
@@ -262,6 +264,113 @@ describe("putZkKeyBackupRoute", () => {
     const update = captured.find((s) => s.sql.includes("UPDATE zk_key_backups"));
     expect(update?.sql).toContain("backup_version = ?");
     expect(update?.args).toContain(1);
+    const deleteProof = captured.find(
+      (s) => s.sql.includes("zk_reauth_proofs") && s.sql.includes("DELETE"),
+    );
+    expect(deleteProof).toBeDefined();
+    const updateIdx = captured.findIndex((s) => s.sql.includes("UPDATE zk_key_backups"));
+    const deleteIdx = captured.findIndex(
+      (s) => s.sql.includes("zk_reauth_proofs") && s.sql.includes("DELETE"),
+    );
+    expect(deleteIdx).toBeGreaterThan(updateIdx);
+  });
+
+  it("returns 409 backup_version_conflict without consuming reauth on CAS miss", async () => {
+    const proof = "0123456789abcdef0123456789abcdef";
+    const { db, stmts } = captureDb((sql) => {
+      if (sql.includes("zk_key_backups") && sql.includes("SELECT")) {
+        return [{ backup_version: 1, key_fp: VALID_BODY.key_fp }];
+      }
+      if (sql.includes("zk_reauth_proofs") && sql.includes("SELECT")) {
+        return [{ ok: 1 }];
+      }
+      return [];
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...VALID_BODY,
+          expected_backup_version: 1,
+          reauth_proof: proof,
+        }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(409);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("backup_version_conflict");
+    const deleteProof = stmts().find(
+      (s) => s.sql.includes("zk_reauth_proofs") && s.sql.includes("DELETE"),
+    );
+    expect(deleteProof).toBeUndefined();
+  });
+
+  it("rotates key_fp when rotation=true and reauth valid", async () => {
+    const proof = "0123456789abcdef0123456789abcdef";
+    const newFp = "cafebabe12345678";
+    const captured: ReturnType<typeof makeFakeStmt>[] = [];
+    const db = makeFakeDb((sql, args) => {
+      let rows: Record<string, unknown>[] = [];
+      let changes = 0;
+      if (sql.includes("zk_key_backups") && sql.includes("SELECT")) {
+        rows = [{ backup_version: 2, key_fp: VALID_BODY.key_fp }];
+      } else if (sql.includes("zk_reauth_proofs") && sql.includes("SELECT")) {
+        rows = [{ ok: 1 }];
+      } else if (sql.includes("zk_reauth_proofs") && sql.includes("DELETE")) {
+        rows = [{ code: proof }];
+        changes = 1;
+      } else if (sql.includes("UPDATE zk_key_backups")) {
+        changes = 1;
+      } else if (sql.includes("sync_control")) {
+        changes = 1;
+      }
+      const stmt = makeFakeStmt(sql, args, rows, changes);
+      captured.push(stmt);
+      return stmt;
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...VALID_BODY,
+          key_fp: newFp,
+          rotation: true,
+          expected_backup_version: 2,
+          reauth_proof: proof,
+        }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as { backup_version: number; key_fp: string };
+    expect(body.backup_version).toBe(3);
+    expect(body.key_fp).toBe(newFp);
+  });
+
+  it("returns 429 when rate limited", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("sync_control") && sql.includes("SELECT")) {
+        return [{ value: JSON.stringify({ hour: new Date().toISOString().slice(0, 13), count: 5 }) }];
+      }
+      return [];
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(VALID_BODY),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(429);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("rate_limited");
   });
 
   it("returns 403 reauth_required on update without proof", async () => {

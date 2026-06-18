@@ -18,11 +18,13 @@ const STUB_SESSION: SessionContext = {
 
 const CODE = "0123456789abcdef0123456789abcdef";
 
-function makeEnv(db: D1Database): Env {
+function makeEnv(db: D1Database, overrides: Partial<Env> = {}): Env {
   return {
     DB: db,
     ASSETS: { fetch: async () => new Response("ok") } as unknown as Fetcher,
     GITHUB_WEBHOOK_SECRET: "",
+    ZK_ACCOUNT_KEY: "1",
+    ...overrides,
   } as unknown as Env;
 }
 
@@ -54,6 +56,20 @@ describe("consumeZkReauthRoute", () => {
     expect(res.status).toBe(200);
     const body = await res.json() as { reauth_proof: string };
     expect(body.reauth_proof).toBe(CODE);
+  });
+
+  it("returns 403 when ZK_ACCOUNT_KEY flag is off", async () => {
+    const { db } = captureDb(() => []);
+    const res = await makeApp(db).request(
+      "/api/zk/consume-reauth",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: CODE }),
+      },
+      makeEnv(db, { ZK_ACCOUNT_KEY: "0" }),
+    );
+    expect(res.status).toBe(403);
   });
 
   it("returns 410 when code expired", async () => {

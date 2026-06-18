@@ -20,8 +20,15 @@ import {
   setZkPageRestoreHandler,
 } from './zk-session.js';
 import { migrateV1PayloadsToAccountKey } from './zk-sync.js';
+import {
+  getZkReauthProof,
+  clearZkReauthProof,
+} from './zk-github.js';
 
 const $ = (id) => document.getElementById(id);
+
+/** Set during requireZkEnrollmentGate for migration retry on unlock. */
+let gateGithubLogin = '';
 
 function zkLog(event, extra = {}) {
   console.info('[zk]', { event, ...extra });
@@ -49,6 +56,20 @@ async function putKeyBackup(body) {
     body: JSON.stringify(body),
   });
   return resp.json();
+}
+
+/**
+ * PUT backup update (passphrase change or rotation) — attaches OAuth reauth_proof
+ * from sessionStorage after /login?reauth=1 flow.
+ */
+export async function updateKeyBackup(body) {
+  const reauth_proof = getZkReauthProof();
+  if (!reauth_proof) {
+    throw new Error('reauth_required');
+  }
+  const result = await putKeyBackup({ ...body, reauth_proof });
+  clearZkReauthProof();
+  return result;
 }
 
 function payloadsHaveV1(payloads) {
@@ -104,6 +125,16 @@ export async function unlockAccountKey(passphrase) {
   try {
     const accountKey = await unwrapAccountKey(passphrase, backup);
     setZkSession(accountKey, backup.key_fp);
+    if (gateGithubLogin) {
+      const payloads = await fetchPayloadRows();
+      if (payloadsHaveV1(payloads) && (await hasZkKeyPair(gateGithubLogin))) {
+        await migrateV1PayloadsToAccountKey(
+          gateGithubLogin,
+          accountKey,
+          backup.key_fp,
+        );
+      }
+    }
     zkLog('zk.unlock.success', {
       key_fp: backup.key_fp,
       kdf_duration_ms: Math.round(performance.now() - t0),
@@ -323,6 +354,7 @@ export function wireZkLockButton() {
  * @returns {Promise<boolean>} false when permanently blocked (Device 2 pre-enroll)
  */
 export async function requireZkEnrollmentGate(me, githubLogin) {
+  gateGithubLogin = githubLogin;
   wireIdleLock();
   wirePageHideLock();
   wireZkLockButton();
