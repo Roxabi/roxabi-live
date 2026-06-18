@@ -65,6 +65,11 @@ export async function getSessionProfile() {
   return fetchMe();
 }
 
+/** True when server exposes ZK_ACCOUNT_KEY feature (#216 PR 1b). */
+export function isZkAccountKeyEnabled(me) {
+  return me?.user?.zk_account_key_enabled === true;
+}
+
 // ─── Internal: render landing ─────────────────────────────────────────────────
 
 function renderLanding() {
@@ -127,8 +132,8 @@ function renderConsentGate(me) {
           <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">GitHub App settings</a>.
         </p>
         <p class="consent-warning">
-          <strong>During this phase, the operator can read the issue data of the organisations you grant.</strong>
-          Don't paste secrets into issue bodies or titles.
+          <strong>Issue titles and bodies are encrypted client-side before storage.</strong>
+          Graph structure (state, blockers, labels) remains visible to the operator.
         </p>
         <div class="consent-actions">
           <button class="consent-btn-secondary" id="consent-logout">Sign out</button>
@@ -207,63 +212,26 @@ function renderOrgPicker(me) {
 
 // ─── Internal: render operator notice ────────────────────────────────────────
 
-async function enableZkMode(me) {
-  const graphResp = await api('/api/graph');
-  const { nodes } = await graphResp.json();
-  const { sealGraphTitles } = await import('./zk-sync.js');
-  await sealGraphTitles(nodes ?? [], me.user.github_login);
-  await api('/api/zk-opt-in', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled: true }),
-  });
-  location.reload();
-}
-
-function renderOperatorNotice(me) {
+function renderOperatorNotice(_me) {
   const el = $('operator-notice');
-  const zkOn = Boolean(me.user.zk_opt_in);
   el.innerHTML = `
     <div class="operator-notice-main">
-      <strong>Operator read access (this phase):</strong> the operator can read the issue data of the organisations you grant.
-      Don't paste secrets into issue bodies or titles.
-      <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">Manage</a>
+      <strong>Private mode is always on.</strong>
+      Issue titles and bodies are encrypted in your browser before they are stored.
+      Graph structure (state, blockers, milestones) stays visible to the operator.
+      <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">Manage app access</a>
     </div>
-    <div class="zk-opt-in-panel">
-      <label class="zk-opt-in-label">
-        <input type="checkbox" id="zk-opt-in-toggle" ${zkOn ? 'checked' : ''} />
-        Private mode (beta) — encrypt issue content client-side
-      </label>
-      <p class="zk-opt-in-hint" id="zk-opt-in-hint" ${zkOn ? '' : 'hidden'}>
-        <strong>Scope:</strong> content only, not structure. Issue state, blocker edges, and counts stay visible to the operator.
-        Titles and bodies are encrypted client-side; keys stay in this browser.
-        <a href="/login?zk=1" id="zk-github-link">Link GitHub</a> to sync issue bodies.
-      </p>
-    </div>
+    <p class="zk-opt-in-hint">
+      <a href="/login?zk=1" id="zk-github-link">Link GitHub</a>
+      to sync issue bodies on this device (token is kept in this tab only).
+      When passphrase backup is enabled, unlock first to seal or decrypt content.
+    </p>
+    <p class="zk-opt-in-hint">
+      Each teammate encrypts their own view of issue titles.
+      You will see <strong>(sealed)</strong> on issues another teammate sealed until you link GitHub and sync.
+    </p>
   `;
   el.removeAttribute('hidden');
-
-  const toggle = $('zk-opt-in-toggle');
-  const hint = $('zk-opt-in-hint');
-  toggle.addEventListener('change', async () => {
-    const enabled = toggle.checked;
-    toggle.disabled = true;
-    try {
-      if (enabled) {
-        await enableZkMode(me);
-        return;
-      }
-      await api('/api/zk-opt-in', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: false }),
-      });
-      location.reload();
-    } catch {
-      toggle.checked = !enabled;
-      toggle.disabled = false;
-    }
-  });
 }
 
 // ─── Internal: wire logout ────────────────────────────────────────────────────

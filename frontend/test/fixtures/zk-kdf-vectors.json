@@ -1,0 +1,6 @@
+{
+  "passphrase": "test-passphrase-roxabi",
+  "salt_hex": "0123456789abcdef0123456789abcdef",
+  "params": { "m": 65536, "t": 3, "p": 1 },
+  "output_hex": "393129b988be5445dc701ce6901813357b507550eff59d7dae0c023dc1a47a3c"
+}

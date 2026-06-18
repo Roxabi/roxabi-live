@@ -64,6 +64,36 @@ describe("meRoute", () => {
     expect(body.user.zk_opt_in).toBe(false);
   });
 
+  it("includes zk_account_key_enabled and zk_enrolled defaults", async () => {
+    const { db } = captureDb();
+    const app = makeApp(db);
+    const res = await app.request("/api/me", {}, makeEnv(db));
+    const body = await res.json() as {
+      user: { zk_account_key_enabled: boolean; zk_enrolled: boolean };
+    };
+    expect(body.user.zk_account_key_enabled).toBe(false);
+    expect(body.user.zk_enrolled).toBe(false);
+  });
+
+  it("returns zk_enrolled true when backup row exists", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("zk_key_backups")) return [{ ok: 1 }];
+      if (sql.includes("zk_opt_in")) return [{ zk_opt_in: 1 }];
+      return [];
+    });
+    const res = await makeApp(db).request("/api/me", {}, makeEnv(db));
+    const body = await res.json() as { user: { zk_enrolled: boolean } };
+    expect(body.user.zk_enrolled).toBe(true);
+  });
+
+  it("returns zk_account_key_enabled when env flag set", async () => {
+    const { db } = captureDb();
+    const env = { ...makeEnv(db), ZK_ACCOUNT_KEY: "1" };
+    const res = await makeApp(db).request("/api/me", {}, env);
+    const body = await res.json() as { user: { zk_account_key_enabled: boolean } };
+    expect(body.user.zk_account_key_enabled).toBe(true);
+  });
+
   it("returns zk_opt_in true when users row has flag set", async () => {
     const { db } = captureDb((sql) => {
       if (sql.toLowerCase().includes("zk_opt_in")) {

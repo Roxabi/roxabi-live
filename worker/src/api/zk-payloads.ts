@@ -16,6 +16,7 @@ const MAX_CIPHERTEXT_BYTES = 64 * 1024;
 interface PayloadRow {
   issue_key: string;
   pubkey_fp: string;
+  key_fp: string | null;
   encrypted_payload: string;
   updated_at: string;
 }
@@ -23,6 +24,7 @@ interface PayloadRow {
 interface PutEntry {
   issue_key: string;
   pubkey_fp: string;
+  key_fp: string;
   encrypted_payload: string;
 }
 
@@ -38,7 +40,7 @@ export async function listZkPayloadsRoute(
 
   const rows = await c.env.DB
     .prepare(
-      `SELECT issue_key, pubkey_fp, encrypted_payload, updated_at
+      `SELECT issue_key, pubkey_fp, key_fp, encrypted_payload, updated_at
        FROM zk_payloads WHERE user_id = ?`,
     )
     .bind(s.userId)
@@ -82,14 +84,25 @@ export async function putZkPayloadsRoute(
     }
     const e = raw as Record<string, unknown>;
     const issue_key = e.issue_key;
-    const pubkey_fp = e.pubkey_fp;
+    const key_fp_raw =
+      typeof e.key_fp === "string"
+        ? e.key_fp
+        : typeof e.pubkey_fp === "string"
+          ? e.pubkey_fp
+          : null;
     const encrypted_payload = e.encrypted_payload;
     if (typeof issue_key !== "string" || !ISSUE_KEY_RE.test(issue_key)) {
       return c.json({ error: "invalid issue_key" }, 400);
     }
-    if (typeof pubkey_fp !== "string" || pubkey_fp.length < 8 || pubkey_fp.length > 128) {
-      return c.json({ error: "invalid pubkey_fp" }, 400);
+    if (
+      typeof key_fp_raw !== "string" ||
+      key_fp_raw.length < 8 ||
+      key_fp_raw.length > 128
+    ) {
+      return c.json({ error: "invalid key_fp" }, 400);
     }
+    const key_fp = key_fp_raw;
+    const pubkey_fp = key_fp;
     if (
       typeof encrypted_payload !== "string" ||
       encrypted_payload.length === 0 ||
@@ -97,19 +110,20 @@ export async function putZkPayloadsRoute(
     ) {
       return c.json({ error: "invalid encrypted_payload" }, 400);
     }
-    entries.push({ issue_key, pubkey_fp, encrypted_payload });
+    entries.push({ issue_key, pubkey_fp, key_fp, encrypted_payload });
   }
 
   await c.env.DB.batch(
     entries.map((e) =>
       c.env.DB.prepare(
-        `INSERT INTO zk_payloads (user_id, issue_key, pubkey_fp, encrypted_payload, updated_at)
-         VALUES (?, ?, ?, ?, datetime('now'))
+        `INSERT INTO zk_payloads (user_id, issue_key, pubkey_fp, key_fp, encrypted_payload, updated_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT(user_id, issue_key) DO UPDATE SET
-           pubkey_fp = excluded.pubkey_fp,
+           pubkey_fp = excluded.key_fp,
+           key_fp = excluded.key_fp,
            encrypted_payload = excluded.encrypted_payload,
            updated_at = datetime('now')`,
-      ).bind(s.userId, e.issue_key, e.pubkey_fp, e.encrypted_payload),
+      ).bind(s.userId, e.issue_key, e.pubkey_fp, e.key_fp, e.encrypted_payload),
     ),
   );
 

@@ -1,0 +1,43 @@
+---
+title: "ZK account-key: passphrase backup + structure-only sync (#216)"
+issue: 216
+status: approved
+tier: F-full
+date: 2026-06-18
+design: docs/zk-account-key-design.md
+---
+
+## Problem
+
+Private mode is always on (#142 / `0013`), but ECDH keys are per-device IndexedDB only — no cross-device recovery. Server sync still fetches `title` from GitHub (operator sees plaintext at sync time). Legacy plaintext remains in `issues.payload` for unsealed issues.
+
+## Who
+
+- **Primary:** Roxabi Live users who seal issue titles client-side and need multi-device unlock.
+- **Secondary:** teammates on the same org installation (hybrid model: shared graph, per-user ciphertext).
+
+## Constraints
+
+- **Client-side encryption** framing — not strict zero-knowledge (metadata + JS supply chain residual trust).
+- **No team/org shared key** — per-user `accountKey` + `zk_key_backups`.
+- **Passphrase never on server** — D1 stores wrapped blob only.
+- **Structure-only server sync** — App token path never persists title/body.
+- **Incremental PRs** behind `ZK_ACCOUNT_KEY` / `ZK_STRUCTURE_ONLY` flags.
+- **Migration 0015** (global title scrub) gated separately from PR 6 (CI auto-applies on `main` merge).
+
+## Out of Scope
+
+- WebAuthn PRF, QR pairing, `.roxabi-recovery` export (Phase 2 / PR 10).
+- Org/team shared encryption key, Gist backup.
+
+## Premise Validity
+
+**Success:** User enrolls passphrase on Device 1, unlocks on Device 2, sees decrypted titles; cron/webhook never writes titles to D1 when structure-only flag on; User B can independently seal after Link GitHub.
+
+**Failure:** Enrollment breaks existing seals; structure-only ships before client sealing path; backup overwrite via stolen session without re-auth.
+
+## References
+
+- Approved design: `docs/zk-account-key-design.md`
+- Parent epic: #142 (closed)
+- Branch: `feat/zk-always-on` (always-on baseline landed)

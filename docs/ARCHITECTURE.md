@@ -214,6 +214,19 @@ Each sync run writes a JSON audit record to R2 bucket `roxabi-live-logs` (stagin
 
 **Repo-canonical invariant:** `issues.key` is globally unique (`org/repo#number`). No `tenant_id` on `issues`, `edges`, or `repos`. Authorization enforced at query time via `tenant_repo_access`. `issues.payload` is the ZK seam for title (Phase 1: populated; future phases may encrypt).
 
+### Client-side encryption (account key, #216)
+
+Per-user **account keys** replace per-device ECDH for content encryption. Passphrase-wrapped backups live in D1 (`zk_key_backups`); ciphertext in `zk_payloads` is keyed by `(user_id, issue_key)`. Graph structure stays shared; titles are redacted API-side once any user seals an issue.
+
+| Piece | Role |
+|-------|------|
+| `zk_key_backups` | Passphrase-wrapped `accountKey` per user (enrollment / multi-device unlock) |
+| `zk_payloads` | Per-user AES-GCM ciphertext for issue content |
+| `ZK_ACCOUNT_KEY` | Feature flag — enrollment + unlock gate when on |
+| `ZK_STRUCTURE_ONLY` | Sync/webhook omit title/body from GitHub on server path |
+
+User-facing behavior, multi-device recovery, and hybrid multi-user flows: **`docs/ZK_ENCRYPTION.md`**. Full design: `docs/zk-account-key-design.md`.
+
 ### Migrations
 
 Applied in order at deploy time (`wrangler d1 migrations apply DB --remote`):

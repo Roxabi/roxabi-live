@@ -3,6 +3,7 @@
 import { api } from './auth.js';
 
 const TOKEN_KEY = 'roxabi:gh-user-token';
+const REAUTH_KEY = 'roxabi:zk-reauth-proof';
 
 export function getGithubUserToken() {
   return sessionStorage.getItem(TOKEN_KEY);
@@ -11,6 +12,50 @@ export function getGithubUserToken() {
 export function setGithubUserToken(token) {
   if (token) sessionStorage.setItem(TOKEN_KEY, token);
   else sessionStorage.removeItem(TOKEN_KEY);
+}
+
+export function getZkReauthProof() {
+  return sessionStorage.getItem(REAUTH_KEY);
+}
+
+export function clearZkReauthProof() {
+  sessionStorage.removeItem(REAUTH_KEY);
+}
+
+function stripZkReauthFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('zk_reauth')) return;
+  params.delete('zk_reauth');
+  const qs = params.toString();
+  const next = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
+  window.history.replaceState({}, '', next);
+}
+
+/** Consume ?zk_reauth= from URL after OAuth step-up redirect. */
+export async function consumeZkReauthFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('zk_reauth');
+  if (!code) return false;
+
+  try {
+    const resp = await api('/api/zk/consume-reauth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const { reauth_proof } = await resp.json();
+    if (!reauth_proof) return false;
+    sessionStorage.setItem(REAUTH_KEY, reauth_proof);
+    stripZkReauthFromUrl();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function zkReauthLoginUrl(redirect = '/') {
+  const dest = encodeURIComponent(redirect);
+  return `/login?reauth=1&redirect=${dest}`;
 }
 
 /** Consume ?zk_handoff= from URL after OAuth redirect. */

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BRANCH_ISSUE_RE,
   UPSERT_ISSUE_SQL,
+  UPSERT_ISSUE_SQL_STRUCTURE,
   batchChunked,
   canonicalKey,
   collectEdges,
@@ -398,6 +399,17 @@ describe("UPSERT_ISSUE_SQL", () => {
   });
 });
 
+describe("UPSERT_ISSUE_SQL_STRUCTURE", () => {
+  it("uses empty json_object() payload with no title bind arg", () => {
+    expect(UPSERT_ISSUE_SQL_STRUCTURE).toMatch(/json_object\(\)/);
+    expect(UPSERT_ISSUE_SQL_STRUCTURE).not.toMatch(/json_object\('title', \?\)/);
+  });
+
+  it("updates payload via excluded.payload on conflict", () => {
+    expect(UPSERT_ISSUE_SQL_STRUCTURE).toMatch(/payload\s*=\s*excluded\.payload/);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // acquireSyncLock
 // ---------------------------------------------------------------------------
@@ -579,11 +591,20 @@ vi.mock("./graphql", () => ({
 vi.mock("./queries", () => ({
   ARCHIVED_REPOS_QUERY: "ARCHIVED_REPOS_QUERY",
   ISSUES_QUERY: "ISSUES_QUERY",
+  ISSUES_QUERY_STRUCTURE_ONLY: "ISSUES_QUERY_STRUCTURE_ONLY",
   PRS_QUERY: "PRS_QUERY",
   REFS_QUERY: "REFS_QUERY",
   REPO_BUNDLE_QUERY: "REPO_BUNDLE_QUERY",
+  REPO_BUNDLE_QUERY_STRUCTURE_ONLY: "REPO_BUNDLE_QUERY_STRUCTURE_ONLY",
   REPOS_QUERY: "REPOS_QUERY",
   STUB_ISSUE_QUERY: "STUB_ISSUE_QUERY",
+  STUB_ISSUE_QUERY_STRUCTURE_ONLY: "STUB_ISSUE_QUERY_STRUCTURE_ONLY",
+  pickIssuesQuery: (structureOnly: boolean) =>
+    structureOnly ? "ISSUES_QUERY_STRUCTURE_ONLY" : "ISSUES_QUERY",
+  pickRepoBundleQuery: (structureOnly: boolean) =>
+    structureOnly ? "REPO_BUNDLE_QUERY_STRUCTURE_ONLY" : "REPO_BUNDLE_QUERY",
+  pickStubIssueQuery: (structureOnly: boolean) =>
+    structureOnly ? "STUB_ISSUE_QUERY_STRUCTURE_ONLY" : "STUB_ISSUE_QUERY",
 }));
 
 vi.mock("../auth/installToken", () => ({
@@ -659,6 +680,72 @@ describe("syncRepoIssues", () => {
 
     // Edge collection
     expect(edges.has("Roxabi/lyra#42")).toBe(true);
+  });
+
+  it("structureOnly=true uses structure query and empty payload upsert", async () => {
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        rateLimit: { cost: 1, remaining: 4999 },
+        repository: {
+          issues: {
+            nodes: [
+              {
+                number: 7,
+                state: "OPEN",
+                url: "https://github.com/Roxabi/lyra/issues/7",
+                createdAt: "2024-01-01T00:00:00Z",
+                updatedAt: "2024-01-02T00:00:00Z",
+                closedAt: null,
+                milestone: null,
+                labels: { nodes: [] },
+                subIssues: { nodes: [] },
+                parent: null,
+                blockedBy: { nodes: [] },
+                blocking: { nodes: [] },
+              },
+            ],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      },
+    });
+
+    const capturedStmts: FakeStmt[] = [];
+    const db = makeFakeDb((sql, args) => {
+      if (sql.includes("SELECT last_synced_at")) {
+        return makeFakeStmt(sql, args, []);
+      }
+      const stmt = makeFakeStmt(sql, args, [], 1);
+      capturedStmts.push(stmt);
+      return stmt;
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await syncRepoIssues(db, "fake-token", "Roxabi", "lyra", new Map(), false, new Set(), true);
+
+    expect(mockGhGraphql).toHaveBeenCalledWith(
+      "ISSUES_QUERY_STRUCTURE_ONLY",
+      { owner: "Roxabi", name: "lyra", cursor: null, since: null },
+      "fake-token",
+    );
+
+    const upsertStmt = capturedStmts.find((s) => s.sql.includes("INSERT INTO issues"));
+    expect(upsertStmt).toBeDefined();
+    expect(upsertStmt!.sql).toContain("json_object()");
+    expect(upsertStmt!.args).not.toContain("Test issue");
+
+    expect(logSpy).toHaveBeenCalledWith(
+      JSON.stringify({
+        prefix: "[zk]",
+        event: "structure_only.title_skipped",
+        key: "Roxabi/lyra#7",
+        repo: "Roxabi/lyra",
+      }),
+    );
+    logSpy.mockRestore();
   });
 });
 
@@ -848,6 +935,73 @@ describe("syncRepoBundle", () => {
     // Branch apply: batch called (reset+set for issue 10)
     const batchMock = (db as unknown as { batch: ReturnType<typeof vi.fn> }).batch;
     expect(batchMock).toHaveBeenCalled();
+  });
+
+  it("structureOnly=true uses structure bundle query and empty payload upsert", async () => {
+    const { ghGraphql } = await import("./graphql");
+    const mockGhGraphql = vi.mocked(ghGraphql);
+
+    mockGhGraphql.mockResolvedValueOnce({
+      data: {
+        rateLimit: { cost: 3, remaining: 4997 },
+        repository: {
+          issues: {
+            nodes: [
+              {
+                number: 11,
+                state: "OPEN",
+                url: "https://github.com/Roxabi/lyra/issues/11",
+                createdAt: "2024-01-01T00:00:00Z",
+                updatedAt: "2024-01-02T00:00:00Z",
+                closedAt: null,
+                milestone: null,
+                labels: { nodes: [] },
+                subIssues: { nodes: [] },
+                parent: null,
+                blockedBy: { nodes: [] },
+                blocking: { nodes: [] },
+              },
+            ],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+          refs: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+          pullRequests: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+        },
+      },
+    });
+
+    const capturedStmts: FakeStmt[] = [];
+    const db = makeFakeDb((sql, args) => {
+      if (sql.includes("SELECT last_synced_at")) {
+        return makeFakeStmt(sql, args, []);
+      }
+      const stmt = makeFakeStmt(sql, args, [], 1);
+      capturedStmts.push(stmt);
+      return stmt;
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await syncRepoBundle(db, "fake-token", "Roxabi", "lyra", new Map(), false, new Set(), true);
+
+    expect(mockGhGraphql).toHaveBeenCalledWith(
+      "REPO_BUNDLE_QUERY_STRUCTURE_ONLY",
+      expect.objectContaining({ owner: "Roxabi", name: "lyra", since: null }),
+      "fake-token",
+    );
+
+    const upsertStmt = capturedStmts.find((s) => s.sql.includes("INSERT INTO issues"));
+    expect(upsertStmt).toBeDefined();
+    expect(upsertStmt!.sql).toContain("json_object()");
+
+    expect(logSpy).toHaveBeenCalledWith(
+      JSON.stringify({
+        prefix: "[zk]",
+        event: "structure_only.title_skipped",
+        key: "Roxabi/lyra#11",
+        repo: "Roxabi/lyra",
+      }),
+    );
+    logSpy.mockRestore();
   });
 
   it("fullSync=true forces since=null without reading the watermark, and returns stale PRs closed (#80)", async () => {

@@ -6,9 +6,17 @@ import { initGraph, clearSearchHighlight }   from './graph.js';
 import { MultiSelect } from './multi_select.js';
 import { clearPinned } from './hover.js';
 import { repoTone } from './tone.js';
-import { api, AuthError, requireAuthGate, getSessionProfile } from './auth.js';
-import { applyZkDecryption, syncZkContentFromGitHub } from './zk-sync.js';
-import { consumeZkHandoffFromUrl, getGithubUserToken } from './zk-github.js';
+import { api, AuthError, requireAuthGate, getSessionProfile, isZkAccountKeyEnabled } from './auth.js';
+import { consumeZkHandoffFromUrl, consumeZkReauthFromUrl, getGithubUserToken } from './zk-github.js';
+import { isZkUnlocked } from './zk-enroll.js';
+import {
+  applyZkDecryption,
+  ensurePrivateMode,
+  ensureAccountKeySealing,
+  syncZkContentFromGitHub,
+  SEALED_TITLE_LABEL,
+} from './zk-sync.js';
+import { requireZkEnrollmentGate } from './zk-enroll.js';
 
 const $ = id => document.getElementById(id);
 
@@ -164,7 +172,7 @@ function buildGraphSegs() {
   closedSeg.addEventListener('click', () => {
     setState({ showClosedUnderOpenEpic: !state.showClosedUnderOpenEpic });
     buildGraphSegs();
-    loadAndRender(sessionZkOptIn, sessionGithubLogin).catch(e => {
+    loadAndRender(sessionZkOptIn, sessionGithubLogin, sessionZkAccountKeyEnabled).catch(e => {
       errorMsg.hidden = false;
       errorMsg.textContent = `Failed to load graph: ${e.message}`;
     });
@@ -276,14 +284,22 @@ async function loadGraphData() {
 // Re-fetch graph data and re-render, preserving view/filters (held in state).
 // Uses data.repos (Array<{repo,archived}>) from /api/graph; falls back to nodes-derived if absent.
 let sessionZkOptIn = false;
+let sessionZkAccountKeyEnabled = false;
 let sessionGithubLogin = '';
 
-async function loadAndRender(zkOptIn, githubLogin) {
+async function loadAndRender(zkOptIn, githubLogin, zkAccountKeyEnabled = false) {
   const data  = await loadGraphData();
   const nodes = data.nodes || [];
   const edges = data.edges || [];
   if (zkOptIn) {
-    await applyZkDecryption(nodes, githubLogin);
+    const skipDecrypt = zkAccountKeyEnabled && !isZkUnlocked();
+    if (!skipDecrypt) {
+      await applyZkDecryption(nodes, githubLogin, { accountKeyMode: zkAccountKeyEnabled });
+    } else {
+      for (const node of nodes) {
+        if (node.title == null) node.title = SEALED_TITLE_LABEL;
+      }
+    }
   }
   annotateNodes(nodes, edges);
   setState({ nodes, edges });
@@ -315,7 +331,7 @@ function startPolling() {
     try {
       const v = await fetchVersion();
       if (lastVersion !== null && v !== lastVersion) {
-        await loadAndRender(sessionZkOptIn, sessionGithubLogin);
+        await loadAndRender(sessionZkOptIn, sessionGithubLogin, sessionZkAccountKeyEnabled);
       }
       lastVersion = v;
     } catch { /* transient — retry next tick */ }
@@ -337,11 +353,30 @@ async function init() {
   restoreControls();
   try {
     await consumeZkHandoffFromUrl();
+    await consumeZkReauthFromUrl();
     const me = await getSessionProfile();
-    sessionZkOptIn = Boolean(me.user?.zk_opt_in);
     sessionGithubLogin = me.user?.github_login ?? '';
-    await loadAndRender(sessionZkOptIn, sessionGithubLogin);
-    if (sessionZkOptIn && getGithubUserToken()) {
+    const zkAccountKeyEnabled = isZkAccountKeyEnabled(me);
+    sessionZkAccountKeyEnabled = zkAccountKeyEnabled;
+
+    if (zkAccountKeyEnabled) {
+      const zkReady = await requireZkEnrollmentGate(me, sessionGithubLogin);
+      if (!zkReady) return;
+      sessionZkOptIn = true;
+    } else {
+      await ensurePrivateMode(sessionGithubLogin);
+      sessionZkOptIn = true;
+    }
+
+    await loadAndRender(sessionZkOptIn, sessionGithubLogin, zkAccountKeyEnabled);
+
+    if (zkAccountKeyEnabled) {
+      await ensureAccountKeySealing(sessionGithubLogin, state.nodes);
+      await applyZkDecryption(state.nodes, sessionGithubLogin, { accountKeyMode: true });
+      state.nodesByKey = new Map(state.nodes.map((n) => [n.key, n]));
+      render();
+    }
+    if (getGithubUserToken()) {
       try {
         const { synced } = await syncZkContentFromGitHub(
           state.nodes,

@@ -1,0 +1,45 @@
+---
+title: "Spec: ZK account-key + structure-only sync (#216)"
+issue: 216
+frame: artifacts/frames/216-zk-account-key-frame.mdx
+status: approved
+tier: F-full
+date: 2026-06-18
+design: docs/zk-account-key-design.md
+---
+
+## Summary
+
+Implement passphrase-backed multi-device encryption (`accountKey` + D1 `zk_key_backups`), migrate ECDH v1 payloads to v2, and structure-only server sync. Full design in `docs/zk-account-key-design.md`.
+
+## Acceptance Criteria
+
+### PR 1 — Schema
+- [ ] `zk_key_backups` table per user (`user_id` PK)
+- [ ] `zk_payloads.key_fp` nullable column; backfill from `pubkey_fp`
+
+### PR 1b — Flags
+- [ ] `ZK_ACCOUNT_KEY` env var; exposed on `/api/me`
+
+### PR 2 — Backup API
+- [ ] `GET/PUT /api/zk/key-backup`; enroll 409; UPDATE requires OAuth re-auth proof
+- [ ] `zk_enrolled` on `/api/me`
+
+### PR 3–5 — Frontend crypto + enrollment + v1 migration
+- [ ] hash-wasm Argon2id; v2 AES-GCM envelopes; enrollment + unlock UI
+
+### PR 6 — Structure-only sync (code only)
+- [ ] Remove `title` from GraphQL when `ZK_STRUCTURE_ONLY` on
+
+### PR 11 — Title scrub (gated merge)
+- [ ] `0015_scrub_all_issue_titles.sql` after enrollment ≥ 95%
+
+## Slices
+
+See **PR Plan** in `docs/zk-account-key-design.md` — order: 1 → 1b → 2 → 3 → 7 → 4 → 5 → 6 → 8 → 9 → 11.
+
+## Non-Functional
+
+- OAuth re-auth for backup UPDATE (session hijack mitigation)
+- 15 min idle lock; `m=65536` Argon2id fixed
+- Observability via R2 LOGS + Workers Logs
