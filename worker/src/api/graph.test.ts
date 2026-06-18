@@ -622,6 +622,79 @@ describe("GET /api/graph", () => {
     });
   });
 
+  describe("status query filter", () => {
+    const repo = "Roxabi/roxabi-live";
+    const issues = [
+      {
+        key: `${repo}#1`,
+        repo,
+        number: 1,
+        title: "Blocker",
+        state: "open",
+        url: null,
+        milestone: null,
+        lane: null,
+        priority: null,
+        size: null,
+        status: null,
+        is_stub: 0,
+        has_active_branch: 0,
+      },
+      {
+        key: `${repo}#2`,
+        repo,
+        number: 2,
+        title: "Blocked",
+        state: "open",
+        url: null,
+        milestone: null,
+        lane: null,
+        priority: null,
+        size: null,
+        status: null,
+        is_stub: 0,
+        has_active_branch: 0,
+      },
+      {
+        key: `${repo}#3`,
+        repo,
+        number: 3,
+        title: "Done",
+        state: "closed",
+        url: null,
+        milestone: null,
+        lane: null,
+        priority: null,
+        size: null,
+        status: null,
+        is_stub: 0,
+        has_active_branch: 0,
+      },
+    ];
+    const edges = [
+      { src_key: `${repo}#1`, dst_key: `${repo}#2`, kind: "blocks" },
+      { src_key: `${repo}#1`, dst_key: `${repo}#3`, kind: "parent" },
+    ];
+
+    it("returns only ready and blocked nodes when status=ready,blocked", async () => {
+      const env = makeGraphEnv([], [], issues, edges);
+      const res = await testApp.request("/api/graph?status=ready,blocked", {}, env);
+      expect(res.status).toBe(200);
+      const body = await res.json<{ nodes: { key: string }[] }>();
+      expect(body.nodes.map((n) => n.key).sort()).toEqual([
+        `${repo}#1`,
+        `${repo}#2`,
+      ]);
+    });
+
+    it("omits status param returns all nodes", async () => {
+      const env = makeGraphEnv([], [], issues, edges);
+      const res = await testApp.request("/api/graph", {}, env);
+      const body = await res.json<{ nodes: { key: string }[] }>();
+      expect(body.nodes).toHaveLength(3);
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // Tenant-scoped visibility tests (#148)
   // ---------------------------------------------------------------------------

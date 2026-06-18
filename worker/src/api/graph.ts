@@ -17,6 +17,7 @@ import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { resolveVisibleRepos } from "../auth/repoAccess";
 import { userZkOptIn } from "../auth/zk";
+import { filterNodesByStatus, parseStatusQuery } from "../graph/status";
 import { parseMilestone } from "../sync/parse";
 
 const LANE_LABEL_PREFIX = "graph:lane/";
@@ -176,7 +177,9 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
       ` lane, priority, size, status, is_stub, has_active_branch FROM issues WHERE repo IN (${ph})`,
   ).bind(...visible).all<IssueRow>();
 
-  const nodes: Node[] = issueRows.results.map((row) => {
+  const statusFilter = parseStatusQuery(new URL(c.req.url).searchParams.get("status"));
+
+  let nodes: Node[] = issueRows.results.map((row) => {
     const issueLabels = labelsByIssue.get(row.key) ?? [];
     const { code, name, sortKey } = parseMilestone(row.milestone);
     const openPrs = openPrsByIssue.get(row.key) ?? [];
@@ -214,11 +217,17 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
       ` AND dst_key IN (SELECT key FROM issues WHERE repo IN (${ph}))`,
   ).bind(...visible, ...visible).all<EdgeRow>();
 
-  const edges: Edge[] = edgeRows.results.map((row) => ({
+  let edges: Edge[] = edgeRows.results.map((row) => ({
     src: row.src_key,
     dst: row.dst_key,
     kind: row.kind,
   }));
+
+  if (statusFilter !== null) {
+    nodes = filterNodesByStatus(nodes, edges, statusFilter);
+    const keys = new Set(nodes.map((n) => n.key));
+    edges = edges.filter((e) => keys.has(e.src) && keys.has(e.dst));
+  }
 
   // (e) repos — live first (archived=0), then archived (archived=1), both alpha
   interface RepoRow {
