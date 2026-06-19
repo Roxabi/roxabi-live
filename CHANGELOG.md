@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.2](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.1...roxabi-live/v0.17.2) (2026-06-19)
+
+
+### Bug Fixes
+
+* **frontend:** landing topbar full-width sticky bar; remove duplicate hero « Se connecter » CTA
+
+
 ## [0.17.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.0...roxabi-live/v0.17.1) (2026-06-19)
 
 
