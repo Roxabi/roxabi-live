@@ -12,7 +12,7 @@
 
 import type { Context } from "hono";
 import type { Env } from "../types";
-import { maybeScheduleBootstrapSync } from "../sync/bootstrap";
+
 import { verifyHmac } from "./hmac";
 import {
   upsertIssueFromWebhook,
@@ -615,14 +615,8 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
     // App lifecycle events self-bump data_version inside their atomic batch — do not set `mutated`.
     } else if (event === "installation") {
       await handleInstallation(payload, db, c.env);
-      if (payload["action"] === "created") {
-        await maybeScheduleBootstrapSync(db, c.env, c.executionCtx);
-      }
     } else if (event === "installation_repositories") {
       await handleInstallationRepositories(payload, db, c.env);
-      if (payload["action"] === "added") {
-        await maybeScheduleBootstrapSync(db, c.env, c.executionCtx);
-      }
     } else if (event === "repository") {
       await handleRepository(payload, db);
     } else if (event === "member") {
