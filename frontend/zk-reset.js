@@ -34,16 +34,20 @@ export async function clearLocalZkState(githubLogin) {
   clearZkSession();
   clearZkReauthProof();
   clearZkResetPending();
+  let cleanupOk = true;
   try {
     await deleteZkKeyPair(githubLogin);
-  } catch {
-    /* IndexedDB unavailable */
+  } catch (e) {
+    cleanupOk = false;
+    console.warn('[zk] deleteZkKeyPair failed — clear site data manually', e);
   }
   try {
     await deleteAccountMeta(githubLogin);
-  } catch {
-    /* IndexedDB unavailable */
+  } catch (e) {
+    cleanupOk = false;
+    console.warn('[zk] deleteAccountMeta failed — clear site data manually', e);
   }
+  return cleanupOk;
 }
 
 async function postZkReset() {
@@ -93,7 +97,13 @@ export async function resetZkAccountAndReenroll(githubLogin) {
   try {
     await postZkReset();
   } catch (err) {
-    if (await recoverFromPartialZkReset(githubLogin)) return;
+    // `reauth_required` is a pre-network guard — nothing was wiped server-side,
+    // so never run partial-reset recovery (it would wipe local keys / lock out
+    // the user on a merely-expired proof). Only genuine partial-reset signals
+    // (network error / 5xx / reset_failed) may trigger recovery.
+    if (err?.code !== 'reauth_required' && err?.message !== 'reauth_required') {
+      if (await recoverFromPartialZkReset(githubLogin)) return;
+    }
     throw err;
   }
   await clearLocalZkState(githubLogin);
@@ -107,7 +117,9 @@ function renderResetWarning($, escHtml, renderZkDialog, onCancelled) {
       <p class="consent-warning">
         <strong>This cannot be undone.</strong>
         All encrypted issue titles stored for your account on the server will be
-        deleted. You will choose a new passphrase and re-seal content from GitHub.
+        deleted. Your previously encrypted titles can no longer be decrypted —
+        they are permanently lost. You will choose a new passphrase and re-seal
+        content from GitHub.
       </p>
       <p>GitHub sign-in is required to confirm this action.</p>
       <div class="zk-actions">
@@ -156,14 +168,13 @@ function renderResetExecute($, escHtml, renderZkDialog, githubLogin, onCancelled
     try {
       await resetZkAccountAndReenroll(githubLogin);
     } catch (err) {
-      if (err?.code === 'reauth_required') {
-        if (await recoverFromPartialZkReset(githubLogin)) return;
+      if (err?.code === 'reauth_required' || err?.message === 'reauth_required') {
         errorEl.textContent = 'Verification expired — try again.';
         clearZkReauthProof();
       } else if (err?.code === 'rate_limited') {
         errorEl.textContent = 'Too many resets — try again later.';
       } else {
-        errorEl.textContent = err?.message ?? 'Reset failed. Try again.';
+        errorEl.textContent = 'Reset failed. Try again.';
       }
       errorEl.hidden = false;
       confirmBtn.disabled = false;

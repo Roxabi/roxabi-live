@@ -3,6 +3,9 @@ name: CI
 permissions:
   contents: read
 
+env:
+  NODE_VERSION: "22"
+
 on:
   push:
     branches: [main, staging]
@@ -53,13 +56,18 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
       - name: Install worker deps
         run: cd worker && npm ci
       - name: Typecheck (tsc)
         run: cd worker && npm run typecheck
       - name: Test (vitest)
         run: cd worker && npm test
+      # Informational only — does NOT fail the build.
+      # Known advisory: undici (GHSA-xxx) is a dev-only transitive of wrangler,
+      # not present in production bundle. --omit=dev scopes to prod deps only.
+      - name: Audit prod deps (informational)
+        run: cd worker && npm audit --omit=dev --audit-level=high || true
 
   plugin:
     runs-on: ubuntu-latest
@@ -83,7 +91,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
       - name: Install frontend deps
         run: cd frontend && npm ci
       - name: Test (vitest)
@@ -112,7 +120,7 @@ jobs:
         name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
       - if: steps.guard.outputs.enabled == 'true'
         name: Install worker deps
         run: cd worker && npm ci

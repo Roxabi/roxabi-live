@@ -78,4 +78,17 @@ describe('zk-reset', () => {
 
     vi.unstubAllGlobals();
   });
+
+  it('does NOT recover or wipe when reauth_proof is missing (pre-network guard)', async () => {
+    // No proof → postZkReset throws reauth_required BEFORE any network call.
+    getZkReauthProofMock.mockReturnValue(null);
+
+    await expect(resetZkAccountAndReenroll('alice')).rejects.toThrow('reauth_required');
+
+    // Must not call /api/me (recovery) nor wipe local key material on an
+    // expired/absent proof — that would lock the user out of their own data.
+    expect(apiMock).not.toHaveBeenCalled();
+    expect(deleteZkKeyPairMock).not.toHaveBeenCalled();
+    expect(deleteAccountMetaMock).not.toHaveBeenCalled();
+  });
 });

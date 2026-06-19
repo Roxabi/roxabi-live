@@ -31,7 +31,7 @@ vi.mock('./zk-crypto.js', () => ({
   deleteZkKeyPair: (...args) => deleteZkKeyPairMock(...args),
 }));
 
-const { applyZkDecryption, migrateV1PayloadsToAccountKey, SEALED_TITLE_LABEL } = await import('./zk-sync.js');
+const { applyZkDecryption, migrateV1PayloadsToAccountKey, isZkMigrationIncomplete, SEALED_TITLE_LABEL } = await import('./zk-sync.js');
 
 describe('applyZkDecryption', () => {
   beforeEach(() => {
@@ -54,6 +54,7 @@ describe('applyZkDecryption', () => {
 
 describe('migrateV1PayloadsToAccountKey', () => {
   beforeEach(() => {
+    sessionStorage.clear();
     apiMock.mockReset();
     hasZkKeyPairMock.mockReset();
     deleteZkKeyPairMock.mockReset();
@@ -121,5 +122,28 @@ describe('migrateV1PayloadsToAccountKey', () => {
 
     expect(count).toBe(1);
     expect(deleteZkKeyPairMock).toHaveBeenCalledWith('alice');
+  });
+
+  it('clears the incomplete flag after a fully successful migration', async () => {
+    // Simulate a prior partial migration having set the signal this session.
+    sessionStorage.setItem('roxabi:zk-migrate-incomplete', '1');
+    expect(isZkMigrationIncomplete()).toBe(true);
+
+    hasZkKeyPairMock.mockResolvedValue(true);
+    parseEnvelopeVersionMock.mockReturnValue(1);
+    openContentMock.mockResolvedValue({ title: 't', body: null });
+    sealWithAccountKeyMock.mockResolvedValue('v2-payload');
+    ensureZkKeyPairMock.mockResolvedValue({ privateKey: {} });
+    apiMock
+      .mockResolvedValueOnce({
+        json: async () => ({
+          payloads: [{ issue_key: 'Roxabi/live#1', encrypted_payload: 'v1' }],
+        }),
+      })
+      .mockResolvedValueOnce({});
+
+    await migrateV1PayloadsToAccountKey('alice', {}, 'fp12345678');
+
+    expect(isZkMigrationIncomplete()).toBe(false);
   });
 });

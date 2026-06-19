@@ -296,6 +296,12 @@ export async function putZkKeyBackupRoute(
   const casVersion = existing.backup_version;
   const nextVersion = existing.backup_version + 1;
 
+  // Consume reauth proof BEFORE writing — prevents replay if the write is
+  // retried or races with a concurrent request using the same proof token.
+  if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
+    return c.json({ error: "reauth_required" }, 403);
+  }
+
   if (rotation) {
     const result = await c.env.DB
       .prepare(
@@ -322,9 +328,6 @@ export async function putZkKeyBackupRoute(
       .run();
     if (result.meta.changes === 0) {
       return c.json({ error: "backup_version_conflict" }, 409);
-    }
-    if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
-      return c.json({ error: "reauth_required" }, 403);
     }
     await recordBackupPutSuccess(c.env.DB, s.userId);
     await logBackupEvent(c.env, "zk.backup.rotated", s.userId, key_fp, nextVersion, true);
@@ -354,9 +357,6 @@ export async function putZkKeyBackupRoute(
     .run();
   if (result.meta.changes === 0) {
     return c.json({ error: "backup_version_conflict" }, 409);
-  }
-  if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
-    return c.json({ error: "reauth_required" }, 403);
   }
   await recordBackupPutSuccess(c.env.DB, s.userId);
   await logBackupEvent(c.env, "zk.backup.updated", s.userId, key_fp, nextVersion, false);

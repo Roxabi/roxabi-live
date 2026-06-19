@@ -75,9 +75,10 @@ export function wireIdleLock() {
     document.addEventListener(ev, bump, { passive: true });
   }
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && sessionKey) {
-      resetIdleTimer();
-    }
+    // Restart the countdown on BOTH transitions so a backgrounded tab still
+    // auto-locks 15 min after it was hidden (not 15 min after it next becomes
+    // visible). Do not clear immediately — a quick tab switch must not lock.
+    if (sessionKey) resetIdleTimer();
   });
 }
 

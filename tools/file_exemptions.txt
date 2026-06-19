@@ -12,7 +12,7 @@ worker/src/webhook/mutations.ts  # 339 lines — #180 D1 write helpers for webho
 
 # Test files (colocated *.test.ts — exempt with local caps, not production code)
 worker/src/sync/sync.test.ts  # 1715 lines — #180 integration harness for runSync; #216 structure-only
-worker/src/api/zk-key-backup.test.ts  # 385 lines — #216 backup API security + CAS/reauth tests
+worker/src/api/zk-key-backup.test.ts  # 425 lines — #216 backup API security + CAS/reauth tests (+ consume-before-write ordering regressions)
 worker/src/webhook/handlers.test.ts  # 945 lines — #180 webhook handler contract tests
 worker/src/auth/oauth.test.ts  # 931 lines — #180 OAuth + install-pending flow tests
 worker/src/api/issues.test.ts  # 710 lines — #180 tenant-scoped issues API tests; #216 zk redaction

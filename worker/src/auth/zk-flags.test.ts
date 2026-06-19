@@ -1,10 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { zkAccountKeyEnabled, zkStructureOnlyEnabled } from "./zk-flags";
+import { describe, expect, it, vi, afterEach } from "vitest";
+import {
+  zkAccountKeyEnabled,
+  zkStructureOnlyEnabled,
+  assertZkConfigCoherent,
+} from "./zk-flags";
 import type { Env } from "../types";
 
 function env(flags: Partial<Env>): Env {
   return flags as Env;
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("zkAccountKeyEnabled", () => {
   it("is false when unset", () => {
@@ -29,5 +37,26 @@ describe("zkStructureOnlyEnabled", () => {
 
   it("is true for 1", () => {
     expect(zkStructureOnlyEnabled(env({ ZK_STRUCTURE_ONLY: "1" }))).toBe(true);
+  });
+});
+
+describe("assertZkConfigCoherent", () => {
+  it("logs an error when account key is on but structure-only is off", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    assertZkConfigCoherent(env({ ZK_ACCOUNT_KEY: "1", ZK_STRUCTURE_ONLY: "0" }));
+    expect(spy).toHaveBeenCalledOnce();
+    expect(String(spy.mock.calls[0][0])).toContain("ZK_STRUCTURE_ONLY=1");
+  });
+
+  it("is silent when both flags are on", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    assertZkConfigCoherent(env({ ZK_ACCOUNT_KEY: "1", ZK_STRUCTURE_ONLY: "1" }));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("is silent when account key is off", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    assertZkConfigCoherent(env({ ZK_ACCOUNT_KEY: "0", ZK_STRUCTURE_ONLY: "0" }));
+    expect(spy).not.toHaveBeenCalled();
   });
 });

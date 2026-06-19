@@ -32,16 +32,6 @@ export async function isIssueZkSealed(
   return row != null;
 }
 
-/** Title written into issues.payload — null when issue content is sealed. */
-export function d1PayloadTitle(
-  title: string | null | undefined,
-  issueKey: string,
-  sealedKeys: ReadonlySet<string>,
-): string | null {
-  if (sealedKeys.has(issueKey)) return null;
-  return title ?? null;
-}
-
 /** API title field — null once a zk_payloads row exists for the issue. */
 export function redactIssueTitle(
   title: string | null | undefined,
@@ -51,6 +41,12 @@ export function redactIssueTitle(
   if (sealedKeys.has(issueKey)) return null;
   return title ?? null;
 }
+
+/**
+ * Title written into issues.payload — null when issue content is sealed.
+ * Delegates to redactIssueTitle so both paths can never diverge.
+ */
+export const d1PayloadTitle = redactIssueTitle;
 
 /** Wipe plaintext content from issues.payload after sealing. */
 export async function scrubIssuePayloads(
