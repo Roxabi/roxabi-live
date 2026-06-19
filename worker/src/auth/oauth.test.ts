@@ -388,29 +388,23 @@ describe("loginRoute", () => {
       expect(res.headers.get("Location")).not.toMatch(/^https:\/\/github\.com/);
     });
 
-    it("still starts OAuth when redirect includes install=1 and session is install-pending", async () => {
+    it("short-circuits install-pending session when install=1 is only in redirect=", async () => {
       const validRow = {
         userId: 1,
         tenantId: null,
         githubId: 42,
         githubLogin: "alice",
       };
-      const bindStmt = {
-        first: vi.fn().mockResolvedValue(validRow),
-        run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
-        all: vi.fn().mockResolvedValue({ results: [] }),
-        bind: vi.fn(function (this: unknown) {
-          return this;
-        }),
-      };
-      const stmt = {
-        first: vi.fn().mockResolvedValue(validRow),
-        run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
-        all: vi.fn().mockResolvedValue({ results: [] }),
-        bind: vi.fn(() => bindStmt),
-      };
       const db = {
-        prepare: vi.fn(() => stmt),
+        prepare: vi.fn((sql: string) => ({
+          sql,
+          first: vi.fn().mockResolvedValue(validRow),
+          run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+          all: vi.fn().mockResolvedValue({ results: [] }),
+          bind: vi.fn(function (this: unknown) {
+            return this;
+          }),
+        })),
         batch: vi.fn().mockResolvedValue([]),
         dump: vi.fn(),
         exec: vi.fn(),
@@ -422,7 +416,43 @@ describe("loginRoute", () => {
           encodeURIComponent("/dashboard?install=1"),
         {
           method: "GET",
-          headers: { Cookie: `__Host-session=${"a".repeat(64)}` },
+          headers: { Cookie: `roxabi_session=${"a".repeat(64)}` },
+        },
+        env,
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/dashboard");
+      expect(res.headers.get("Location")).not.toMatch(/^https:\/\/github\.com/);
+    });
+
+    it("starts OAuth when /login?install=1 and session is install-pending", async () => {
+      const validRow = {
+        userId: 1,
+        tenantId: null,
+        githubId: 42,
+        githubLogin: "alice",
+      };
+      const db = {
+        prepare: vi.fn(() => ({
+          first: vi.fn().mockResolvedValue(validRow),
+          run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+          all: vi.fn().mockResolvedValue({ results: [] }),
+          bind: vi.fn(function (this: unknown) {
+            return this;
+          }),
+        })),
+        batch: vi.fn().mockResolvedValue([]),
+        dump: vi.fn(),
+        exec: vi.fn(),
+      } as unknown as D1Database;
+
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        "http://localhost/login?install=1&redirect=%2Fdashboard",
+        {
+          method: "GET",
+          headers: { Cookie: `roxabi_session=${"a".repeat(64)}` },
         },
         env,
       );

@@ -15,9 +15,12 @@ import { validateSession } from "./session";
 
 export const DASHBOARD_PATH = "/dashboard";
 
-/** Build /login?redirect=… preserving dashboard query (e.g. ?install=1). */
+/** Build /login?redirect=… — never embed install=1 (use /login?install=1 instead). */
 export function dashboardLoginUrl(reqUrl: URL): string {
-  const redirectPath = reqUrl.pathname + reqUrl.search;
+  const pathUrl = new URL(reqUrl.pathname + reqUrl.search, "https://_/");
+  pathUrl.searchParams.delete("install");
+  const pathname = pathUrl.pathname.replace(/\/$/, "") || "/dashboard";
+  const redirectPath = `${pathname}${pathUrl.search}`;
   return `/login?redirect=${encodeURIComponent(redirectPath)}`;
 }
 

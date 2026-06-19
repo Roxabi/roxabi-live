@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AuthError, api, hasConsent, setConsent, resolveView, escHtml, loginUrl, DASHBOARD_PATH } from './auth.js';
+import { AuthError, api, hasConsent, setConsent, resolveView, escHtml, loginUrl, refreshInstallLoginUrl, DASHBOARD_PATH } from './auth.js';
 
 // ─── loginUrl ─────────────────────────────────────────────────────────────────
 
@@ -15,6 +15,12 @@ describe('loginUrl', () => {
 
   it('encodes install query on dashboard', () => {
     expect(loginUrl('/dashboard?install=1')).toBe('/login?redirect=%2Fdashboard%3Finstall%3D1');
+  });
+});
+
+describe('refreshInstallLoginUrl', () => {
+  it('uses top-level install=1 flag', () => {
+    expect(refreshInstallLoginUrl()).toBe('/login?install=1&redirect=%2Fdashboard');
   });
 });
 
