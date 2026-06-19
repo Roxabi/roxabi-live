@@ -133,6 +133,16 @@ async function metaIdbPut(login, record) {
   });
 }
 
+async function metaIdbDelete(login) {
+  const db = await openMetaDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(META_STORE_NAME, 'readwrite');
+    tx.objectStore(META_STORE_NAME).delete(login);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 /** True when a per-device ECDH key pair exists in IndexedDB. */
 export async function hasZkKeyPair(githubLogin) {
   const existing = await idbGet(githubLogin);
@@ -155,6 +165,11 @@ export async function saveAccountMeta(githubLogin, meta) {
 /** @returns {Promise<{ key_fp: string, enrolled_at: string }|null>} */
 export async function getAccountMeta(githubLogin) {
   return metaIdbGet(githubLogin);
+}
+
+/** Remove enrollment metadata after server-side ZK reset (#216). */
+export async function deleteAccountMeta(githubLogin) {
+  await metaIdbDelete(githubLogin);
 }
 
 async function generateKeyPair() {

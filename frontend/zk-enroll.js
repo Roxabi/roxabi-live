@@ -24,6 +24,10 @@ import {
   getZkReauthProof,
   clearZkReauthProof,
 } from './zk-github.js';
+import {
+  wireZkResetUi,
+  showLostPassphraseWarning,
+} from './zk-reset.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -277,8 +281,16 @@ export function showEnrollGate(githubLogin) {
   });
 }
 
-export function showUnlockGate() {
+export function showUnlockGate(githubLogin = gateGithubLogin) {
   return new Promise((resolve) => {
+    const resetCtx = { $, escHtml, renderZkDialog };
+    const reopenUnlock = () => {
+      showUnlockGate(githubLogin).then(resolve);
+    };
+    if (wireZkResetUi(resetCtx, githubLogin, reopenUnlock)) {
+      return;
+    }
+
     renderZkDialog(
       'Unlock encryption',
       `
@@ -290,12 +302,17 @@ export function showUnlockGate() {
           </label>
           <p class="zk-error" id="zk-unlock-error" hidden></p>
           <div class="zk-actions">
+            <button type="button" class="consent-btn-link" id="zk-lost-pass">Lost passphrase?</button>
             <button type="button" class="consent-btn-secondary" id="zk-unlock-logout">Sign out</button>
             <button type="submit" class="consent-btn-primary" id="zk-unlock-submit">Unlock</button>
           </div>
         </form>
       `,
     );
+
+    $('zk-lost-pass')?.addEventListener('click', () => {
+      showLostPassphraseWarning(resetCtx, reopenUnlock);
+    });
 
     const form = $('zk-unlock-form');
     const passInput = $('zk-unlock-pass');

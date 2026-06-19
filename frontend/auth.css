@@ -232,6 +232,24 @@ body.gated #error-msg {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.consent-btn-link {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12px;
+  margin-right: auto;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.consent-btn-link:hover {
+  color: var(--text);
 }
 
 /* ─── Consent warning (beta / secrets notice) ────────────────────────────── */
