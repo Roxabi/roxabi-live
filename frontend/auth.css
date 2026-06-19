@@ -214,6 +214,39 @@
   color: var(--text);
 }
 
+/* ─── ZK migration incomplete notice ─────────────────────────────────────── */
+
+.zk-migration-notice {
+  align-items: center;
+  background: rgba(234, 179, 8, 0.08);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.35);
+  color: var(--text-muted);
+  display: flex;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12px;
+  gap: 8px;
+  justify-content: center;
+  padding: 6px 16px;
+  text-align: center;
+}
+
+.zk-migration-notice[hidden] { display: none; }
+
+.zk-migration-notice-dismiss {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.zk-migration-notice-dismiss:hover {
+  color: var(--text);
+}
+
 .zk-opt-in-panel {
   border-top: 1px solid var(--border);
   margin-top: 6px;
