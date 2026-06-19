@@ -5,9 +5,8 @@ const LOGIN_URL = `/login?redirect=${encodeURIComponent(DASHBOARD_PATH)}`;
 
 async function wireCta() {
   const headerCta = document.getElementById('landing-cta');
-  const heroCta = document.getElementById('landing-hero-cta');
-  const targets = [headerCta, heroCta].filter(Boolean);
-  if (!targets.length) return;
+  if (!headerCta) return;
+  const targets = [headerCta];
 
   let href = LOGIN_URL;
   let label = 'Se connecter';
