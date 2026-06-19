@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.13.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.13.0...roxabi-live/v0.13.1) (2026-06-19)
+
+
+### Features
+
+* **zk:** lost-passphrase recovery — reset server ciphertext and re-enroll ([#220](https://github.com/Roxabi/roxabi-live/pull/220))
+
+
+### Bug Fixes
+
+* **zk:** consume reauth proof before purge on `POST /api/zk/reset` ([#221](https://github.com/Roxabi/roxabi-live/pull/221))
+
+
+### Chores
+
+* **zk:** nuclear D1 reset + enable `ZK_ACCOUNT_KEY` in production ([#219](https://github.com/Roxabi/roxabi-live/pull/219))
+
 ## [0.13.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.12.0...roxabi-live/v0.13.0) (2026-06-18)
 
 
