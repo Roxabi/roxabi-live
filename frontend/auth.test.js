@@ -12,6 +12,10 @@ describe('loginUrl', () => {
   it('encodes custom redirect paths', () => {
     expect(loginUrl('/foo/bar')).toBe('/login?redirect=%2Ffoo%2Fbar');
   });
+
+  it('encodes install query on dashboard', () => {
+    expect(loginUrl('/dashboard?install=1')).toBe('/login?redirect=%2Fdashboard%3Finstall%3D1');
+  });
 });
 
 // ─── resolveView (pure) ───────────────────────────────────────────────────────

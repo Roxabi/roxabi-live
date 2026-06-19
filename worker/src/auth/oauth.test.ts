@@ -594,7 +594,7 @@ describe("callbackRoute", () => {
       expect(uiStmt).toBeDefined();
     });
 
-    it("returns 302 with Set-Cookie __Host-session containing HttpOnly Secure SameSite=Strict Path=/ and NO Domain", async () => {
+    it("returns 200 HTML redirect with Set-Cookie __Host-session containing HttpOnly Secure SameSite=Strict Path=/ and NO Domain", async () => {
       // Arrange
       const stateValue = "e".repeat(32);
       const captured: FakeStmt[] = [];
@@ -616,7 +616,7 @@ describe("callbackRoute", () => {
       );
 
       // Assert
-      expect(res.status).toBe(302);
+      expect(res.status).toBe(200);
       const cookie = res.headers.get("Set-Cookie") ?? "";
       expect(cookie).toContain("__Host-session=");
       expect(cookie).toContain("HttpOnly");
@@ -624,6 +624,7 @@ describe("callbackRoute", () => {
       expect(cookie).toContain("SameSite=Strict");
       expect(cookie).toContain("Path=/");
       expect(cookie).not.toContain("Domain");
+      expect(res.headers.get("Location")).toBeNull();
     });
 
     it("redirects to redirect_after from state row when it is '/dashboard'", async () => {
@@ -647,9 +648,11 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — Location must reflect the stored redirect_after, not the hardcoded "/"
-      expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe("/dashboard");
+      // Assert — HTML redirect must reflect the stored redirect_after
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("/dashboard");
+      expect(res.headers.get("Location")).toBeNull();
       const cookie = res.headers.get("Set-Cookie") ?? "";
       expect(cookie).toContain("__Host-session=");
     });
@@ -669,13 +672,13 @@ describe("callbackRoute", () => {
         { method: "GET" },
         env,
       );
-      // Behavioral outcome, not just call shape: the two batches must yield 302 + cookie.
-      expect(res.status).toBe(302);
+      // Behavioral outcome, not just call shape: the two batches must yield HTML redirect + cookie.
+      expect(res.status).toBe(200);
       expect(res.headers.get("Set-Cookie")).toContain("__Host-session");
       expect((db as unknown as { batch: ReturnType<typeof vi.fn> }).batch).toHaveBeenCalledTimes(2);
     });
 
-    it("handles multiple installations: distinct tenant ids route to the correct links + 302", async () => {
+    it("handles multiple installations: distinct tenant ids route to the correct links + HTML redirect", async () => {
       const stateValue = "g".repeat(32);
       const captured: FakeStmt[] = [];
       const db = makeHappyPathDb(captured);
@@ -708,7 +711,7 @@ describe("callbackRoute", () => {
         { method: "GET" },
         env,
       );
-      expect(res.status).toBe(302);
+      expect(res.status).toBe(200);
       expect(res.headers.get("Set-Cookie")).toContain("__Host-session");
       const tenantUpserts = captured.filter(
         (s) =>
@@ -750,7 +753,7 @@ describe("callbackRoute", () => {
   });
 
   describe("replay attack — behavioral single-use enforcement", () => {
-    it("first request mints session (302 + Set-Cookie); second with same state returns 400", async () => {
+    it("first request mints session (200 HTML + Set-Cookie); second with same state returns 400", async () => {
       // Arrange — FakeD1 whose state-consume DELETE...RETURNING returns a row
       // on the first call and null on the second (simulating row deleted by first request).
       const stateValue = "aaaa0000bbbb1111cccc2222dddd3333";
@@ -839,7 +842,7 @@ describe("callbackRoute", () => {
       );
 
       // Assert — first request succeeds with session cookie
-      expect(res1.status).toBe(302);
+      expect(res1.status).toBe(200);
       expect(res1.headers.get("Set-Cookie")).toContain("__Host-session=");
 
       // Assert — second request fails (state row gone after first consume)
@@ -1067,7 +1070,7 @@ describe("callbackRoute", () => {
       );
     }
 
-    it("returns 302 to install guide with ?install=1 when installations is empty", async () => {
+    it("returns HTML redirect to install guide with ?install=1 when installations is empty", async () => {
       // Arrange
       const stateValue = "f".repeat(32);
       const captured: FakeStmt[] = [];
@@ -1083,10 +1086,11 @@ describe("callbackRoute", () => {
       );
 
       // Assert
-      expect(res.status).toBe(302);
-      const location = res.headers.get("Location") ?? "";
-      expect(location).toContain("install=1");
-      expect(location).not.toContain("github.com");
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("install=1");
+      expect(body).not.toContain("github.com");
+      expect(res.headers.get("Location")).toBeNull();
     });
 
     it("sets install-pending session cookie when installations is empty", async () => {
@@ -1167,7 +1171,7 @@ describe("callbackRoute", () => {
         { method: "GET" },
         env,
       );
-      expect(res.status).toBe(302);
+      expect(res.status).toBe(200);
       expect(res.headers.get("Set-Cookie")).toContain("__Host-session=");
       const usersInsert = captured.find(
         (s) =>
