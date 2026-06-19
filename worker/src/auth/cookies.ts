@@ -20,7 +20,24 @@ export const AUTH_NO_CACHE: Record<string, string> = {
 
 /** Safe relative redirect target (open-redirect guards). */
 export function sanitizeAuthRedirect(raw: string | undefined): string {
-  if (raw && /^\/(?![/\\])/.test(raw) && !/[\r\n\0]/.test(raw)) return raw;
+  let candidate = raw?.trim();
+  if (!candidate) return "/dashboard";
+
+  // Recover once-encoded paths from double-encoded login links (%252F → %2F → /).
+  if (!/^\/(?![/\\])/.test(candidate) && /^%2[fF]/.test(candidate)) {
+    try {
+      const decoded = decodeURIComponent(candidate);
+      if (/^\/(?![/\\])/.test(decoded) && !/[\r\n\0]/.test(decoded)) {
+        candidate = decoded;
+      }
+    } catch {
+      /* keep candidate */
+    }
+  }
+
+  if (/^\/(?![/\\])/.test(candidate) && !/[\r\n\0]/.test(candidate)) {
+    return candidate;
+  }
   return "/dashboard";
 }
 

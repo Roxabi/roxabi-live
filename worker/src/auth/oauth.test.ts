@@ -70,6 +70,8 @@ describe("loginRoute", () => {
       expect(body).toContain("Continuer avec GitHub");
       expect(body).toContain("Connexion GitHub");
       expect(body).toContain("/login?go=1");
+      expect(body).not.toContain("%252F");
+      expect(body).toContain('href="/login?go=1&redirect=%2Fdashboard"');
       expect(res.headers.get("Location")).toBeNull();
       expect(stmts()).toHaveLength(0);
     });

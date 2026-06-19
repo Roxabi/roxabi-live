@@ -15,10 +15,15 @@ import { validateSession } from "./session";
 
 export const DASHBOARD_PATH = "/dashboard";
 
+/** Query params that must not round-trip through /login?redirect= (auth handoff / loops). */
+const DASHBOARD_LOGIN_STRIP = ["install", "code", "state"] as const;
+
 /** Build /login?redirect=… — never embed install=1 (use /login?install=1 instead). */
 export function dashboardLoginUrl(reqUrl: URL): string {
   const pathUrl = new URL(reqUrl.pathname + reqUrl.search, "https://_/");
-  pathUrl.searchParams.delete("install");
+  for (const key of DASHBOARD_LOGIN_STRIP) {
+    pathUrl.searchParams.delete(key);
+  }
   const pathname = pathUrl.pathname.replace(/\/$/, "") || "/dashboard";
   const redirectPath = `${pathname}${pathUrl.search}`;
   return `/login?redirect=${encodeURIComponent(redirectPath)}`;
@@ -28,6 +33,21 @@ export async function dashboardRoute(
   c: Context<AuthEnv>,
 ): Promise<Response> {
   const reqUrl = new URL(c.req.url);
+
+  // OAuth callback or one-shot exchange must not hit the session gate (redirect loop).
+  const handoffCode = reqUrl.searchParams.get("code");
+  if (handoffCode) {
+    const handoffState = reqUrl.searchParams.get("state");
+    if (handoffState) {
+      const callback = new URL("/oauth/callback", reqUrl.origin);
+      callback.search = reqUrl.search;
+      return authRedirect(`${callback.pathname}${callback.search}`);
+    }
+    return authRedirect(
+      `/auth/exchange?code=${encodeURIComponent(handoffCode)}`,
+    );
+  }
+
   const loginDest = dashboardLoginUrl(reqUrl);
 
   const token = readSessionToken(c);
