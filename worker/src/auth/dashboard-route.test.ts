@@ -171,7 +171,6 @@ describe("GET /dashboard", () => {
     expect(res.headers.get("Location")).toBe("/dashboard");
     expect(env.ASSETS.fetch).not.toHaveBeenCalled();
   });
-
 });
 
 describe("dashboardLoginUrl", () => {

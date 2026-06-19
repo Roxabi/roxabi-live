@@ -45,11 +45,7 @@ export async function installRefreshRoute(c: Context<AuthEnv>): Promise<Response
   const rawToken = readSessionToken(c);
 
   if (rawToken && activeTenantId == null && installations.length === 1) {
-    const upgraded = await setSessionTenant(
-      c.env.DB,
-      rawToken,
-      installations[0].tenant_id,
-    );
+    const upgraded = await setSessionTenant(c.env.DB, rawToken, installations[0].tenant_id);
     if (!upgraded) {
       return c.json({ error: "unauthorized" }, 401);
     }

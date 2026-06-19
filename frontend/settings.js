@@ -39,8 +39,8 @@ export function openSettings(me) {
   const themePref = getThemePref();
   const installations = me.installations ?? [];
   const installUrl =
-    (me.install_options ?? []).find(o => o.kind === 'personal')?.url ??
-    (me.install_options ?? []).find(o => o.kind === 'picker')?.url ??
+    (me.install_options ?? []).find((o) => o.kind === "personal")?.url ??
+    (me.install_options ?? []).find((o) => o.kind === "picker")?.url ??
     (me.install_options ?? [])[0]?.url ??
     null;
 

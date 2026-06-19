@@ -5,7 +5,9 @@
 import type { MiddlewareHandler } from "hono";
 import type { AuthEnv } from "./types";
 
-function requestHost(c: { req: { url: string; header: (n: string) => string | undefined } }): string {
+function requestHost(c: {
+  req: { url: string; header: (n: string) => string | undefined };
+}): string {
   return new URL(c.req.url).host;
 }
 

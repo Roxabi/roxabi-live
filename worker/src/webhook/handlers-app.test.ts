@@ -151,11 +151,9 @@ describe("handleInstallation", () => {
 
       await handleInstallation(payload, db, fakeEnv());
 
-      const linkStmt = allBatchedStmts(batched()).find((s) =>
-        /user_installations/.test(s.sql),
-      );
+      const linkStmt = allBatchedStmts(batched()).find((s) => /user_installations/.test(s.sql));
       expect(linkStmt).toBeDefined();
-      expect(linkStmt!.args).toEqual([42, activeTenant.id]);
+      expect(linkStmt?.args).toEqual([42, activeTenant.id]);
     });
 
     it("created with no repositories still bumps data_version (tenant row created)", async () => {

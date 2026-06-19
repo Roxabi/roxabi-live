@@ -270,7 +270,7 @@ describe("meRoute", () => {
     const { db, stmts } = captureDb();
     await makeApp(db).request("/api/me", {}, makeEnv(db));
     const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
-    expect(installStmt!.sql).toContain("suspended_at IS NULL");
+    expect(installStmt?.sql).toContain("suspended_at IS NULL");
   });
 
   it("returns onboarding_step install when session has no tenant", async () => {
@@ -283,7 +283,7 @@ describe("meRoute", () => {
     });
     const pendingSession: SessionContext = { ...STUB_SESSION, tenantId: null };
     const res = await makeApp(db, pendingSession).request("/api/me", {}, makeEnv(db));
-    const body = await res.json() as { onboarding_step: string };
+    const body = (await res.json()) as { onboarding_step: string };
     expect(body.onboarding_step).toBe("install");
   });
 
@@ -298,15 +298,13 @@ describe("meRoute", () => {
       return [];
     });
     const res = await makeApp(db).request("/api/me", {}, makeEnv(db));
-    const body = await res.json() as { onboarding_step: string; consent_at: null };
+    const body = (await res.json()) as { onboarding_step: string; consent_at: null };
     expect(body.onboarding_step).toBe("consent");
     expect(body.consent_at).toBeNull();
   });
 
   it("returns install_options when install is pending", async () => {
-    const targetsJson = JSON.stringify([
-      { id: 42, login: "alice", type: "User" },
-    ]);
+    const targetsJson = JSON.stringify([{ id: 42, login: "alice", type: "User" }]);
     const { db } = captureDb((sql) => {
       if (sql.includes("install_targets_json")) {
         return [{ zk_opt_in: 0, install_targets_json: targetsJson, consent_at: null }];
@@ -316,7 +314,7 @@ describe("meRoute", () => {
     });
     const pendingSession: SessionContext = { ...STUB_SESSION, tenantId: null };
     const res = await makeApp(db, pendingSession).request("/api/me", {}, makeEnv(db));
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       install_options: Array<{ kind: string; login?: string }>;
     };
     expect(body.install_options[0]?.kind).toBe("personal");

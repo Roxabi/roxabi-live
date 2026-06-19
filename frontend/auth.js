@@ -89,7 +89,7 @@ function renderInstallOption(opt) {
 
 /** @returns {{ linked: object|null, oauthFallback: string }} */
 export async function pollInstallRefresh(maxAttempts = 20) {
-  let oauthFallback = '/login?intent=install&redirect=%2Fdashboard';
+  let oauthFallback = "/login?intent=install&redirect=%2Fdashboard";
   for (let i = 0; i < maxAttempts; i++) {
     const resp = await fetch("/api/install/refresh", {
       method: "POST",
@@ -101,7 +101,7 @@ export async function pollInstallRefresh(maxAttempts = 20) {
     if (resp.status === 202) {
       const body = await resp.json().catch(() => ({}));
       if (body.oauth_fallback) oauthFallback = body.oauth_fallback;
-      await new Promise(r => setTimeout(r, body.retry_after_ms ?? 2000));
+      await new Promise((r) => setTimeout(r, body.retry_after_ms ?? 2000));
       continue;
     }
     throw new Error(`/api/install/refresh ${resp.status}`);
@@ -111,8 +111,8 @@ export async function pollInstallRefresh(maxAttempts = 20) {
 
 export function onboardingStepFromMe(me) {
   const step = me?.onboarding_step;
-  if (step === 'install' || step === 'consent' || step === 'ready') return step;
-  throw new Error('invalid onboarding_step');
+  if (step === "install" || step === "consent" || step === "ready") return step;
+  throw new Error("invalid onboarding_step");
 }
 
 function renderInstallCta(me) {
@@ -175,17 +175,15 @@ function renderInstallCta(me) {
       if (hint) {
         hint.hidden = false;
         const fallback = escHtml(oauthFallback);
-        hint.innerHTML =
-          'Installation pas encore détectée après plusieurs tentatives. Réessayez ou ' +
-          `<a href="${fallback}">reconnectez-vous via GitHub</a>.`;
+        hint.innerHTML = `Installation pas encore détectée après plusieurs tentatives. Réessayez ou <a href="${fallback}">reconnectez-vous via GitHub</a>.`;
       }
     } catch (e) {
       if (hint) {
         hint.hidden = false;
         hint.textContent =
           e instanceof AuthError
-            ? 'Session expirée — rechargez la page ou reconnectez-vous.'
-            : 'Erreur réseau — réessayez dans un instant.';
+            ? "Session expirée — rechargez la page ou reconnectez-vous."
+            : "Erreur réseau — réessayez dans un instant.";
       }
     } finally {
       btn.disabled = false;
@@ -248,19 +246,18 @@ function renderConsentGate(me) {
 
     ackBtn.addEventListener("click", async () => {
       ackBtn.disabled = true;
-      const errEl = $('consent-error');
+      const errEl = $("consent-error");
       if (errEl) errEl.hidden = true;
       try {
-        await api('/api/consent', { method: 'POST' });
+        await api("/api/consent", { method: "POST" });
         clearLegacyConsent(me.user.github_login);
-        el.setAttribute('hidden', '');
+        el.setAttribute("hidden", "");
         resolve();
       } catch {
         ackBtn.disabled = false;
         if (errEl) {
           errEl.hidden = false;
-          errEl.textContent =
-            'Enregistrement impossible — vérifiez votre connexion et réessayez.';
+          errEl.textContent = "Enregistrement impossible — vérifiez votre connexion et réessayez.";
         }
       }
     });
@@ -343,7 +340,7 @@ export async function requireAuthGate() {
     step = onboardingStepFromMe(me);
   } catch {
     showSessionLost();
-    return 'landing';
+    return "landing";
   }
 
   if (step === "install") {

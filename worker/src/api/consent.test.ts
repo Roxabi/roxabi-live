@@ -1,8 +1,8 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
 import { Hono } from "hono";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv, SessionContext } from "../auth/types";
+import { STUB_SESSION, captureDb, dispatchByTable, makeEnv } from "../test-utils";
 import { consentRoute } from "./consent";
-import { captureDb, dispatchByTable, makeEnv, STUB_SESSION } from "../test-utils";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -61,7 +61,7 @@ describe("consentRoute", () => {
     );
     const res = await postConsent(makeApp(SESSION), db);
     expect(res.status).toBe(200);
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       consent_at: string;
       onboarding_step: string;
       user: { github_login: string };
@@ -90,6 +90,6 @@ describe("consentRoute", () => {
     await postConsent(makeApp(SESSION), db);
     const updateStmt = stmts().find((s) => s.sql.includes("consent_at"));
     expect(updateStmt).toBeDefined();
-    expect(updateStmt!.sql).toContain("COALESCE(consent_at");
+    expect(updateStmt?.sql).toContain("COALESCE(consent_at");
   });
 });

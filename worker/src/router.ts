@@ -1,24 +1,4 @@
 import { Hono } from "hono";
-import type { Env } from "./types";
-import { versionRoute } from "./api/version";
-import { releaseRoute } from "./api/release";
-import { graphRoute } from "./api/graph";
-import { listIssuesRoute, getIssueRoute } from "./api/issues";
-import { adminSyncRoute } from "./api/admin";
-import { webhookRoute } from "./webhook/handlers";
-import { checkAdminAuth } from "./api/auth";
-import { loginRoute, callbackRoute } from "./auth/oauth";
-import { authResetRoute } from "./auth/reset";
-import { authExchangeRoute } from "./auth/oauthExchange";
-import { consentRoute } from "./api/consent";
-import { installRefreshRoute } from "./api/install-refresh";
-import { authStatusRoute } from "./auth/status";
-import { dashboardRoute } from "./auth/dashboard-route";
-import { meRoute, logoutRoute } from "./api/me";
-import type { AuthEnv } from "./auth/types";
-import { requireSession, requireLinkedTenant } from "./auth/session";
-import { requireSameOriginPost } from "./auth/csrf";
-import { installCompleteRoute } from "./api/install-complete";
 import { activeTenantRoute } from "./api/active-tenant";
 import { adminSyncRoute } from "./api/admin";
 import { checkAdminAuth } from "./api/auth";
@@ -38,6 +18,7 @@ import { zkOptInRoute } from "./api/zk-opt-in";
 import { listZkPayloadsRoute, putZkPayloadsRoute } from "./api/zk-payloads";
 import { consumeZkReauthRoute } from "./api/zk-reauth";
 import { postZkResetRoute } from "./api/zk-reset";
+import { requireSameOriginPost } from "./auth/csrf";
 import { dashboardRoute } from "./auth/dashboard-route";
 import { callbackRoute, loginRoute } from "./auth/oauth";
 import { authExchangeRoute } from "./auth/oauthExchange";
@@ -122,14 +103,29 @@ app.post("/api/zk-opt-in", requireSameOriginPost, requireLinkedTenant, zkOptInRo
 app.use("/api/zk/payloads", requireLinkedTenant);
 app.get("/api/zk/payloads", listZkPayloadsRoute);
 app.put("/api/zk/payloads", putZkPayloadsRoute);
-app.post("/api/zk/consume-handoff", requireSameOriginPost, requireLinkedTenant, consumeZkHandoffRoute);
-app.post("/api/zk/consume-reauth", requireSameOriginPost, requireLinkedTenant, consumeZkReauthRoute);
+app.post(
+  "/api/zk/consume-handoff",
+  requireSameOriginPost,
+  requireLinkedTenant,
+  consumeZkHandoffRoute,
+);
+app.post(
+  "/api/zk/consume-reauth",
+  requireSameOriginPost,
+  requireLinkedTenant,
+  consumeZkReauthRoute,
+);
 app.use("/api/zk/key-backup", requireLinkedTenant);
 app.get("/api/zk/key-backup", getZkKeyBackupRoute);
 app.put("/api/zk/key-backup", putZkKeyBackupRoute);
 app.use("/api/zk/reset", requireLinkedTenant);
 app.post("/api/zk/reset", requireSameOriginPost, postZkResetRoute);
-app.post("/api/zk/github/graphql", requireSameOriginPost, requireLinkedTenant, zkGithubGraphqlRoute);
+app.post(
+  "/api/zk/github/graphql",
+  requireSameOriginPost,
+  requireLinkedTenant,
+  zkGithubGraphqlRoute,
+);
 // /logout is ungated by session middleware (idempotent + null-safe). SameSite=Lax on session cookie
 // blocks most cross-site POSTs; requireSameOriginPost adds defense-in-depth.
 app.post("/logout", requireSameOriginPost, logoutRoute);

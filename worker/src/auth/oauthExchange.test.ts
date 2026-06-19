@@ -65,15 +65,11 @@ describe("authExchangeRoute (legacy shim)", () => {
     const db = makeFakeDb((sql) => {
       if (sql.toLowerCase().includes("oauth_exchange")) {
         const stmt = makeFakeStmt(sql, [], [], 0);
-        (stmt as { first: <T>() => Promise<T | null> }).first = vi
-          .fn()
-          .mockResolvedValue(null);
+        (stmt as { first: <T>() => Promise<T | null> }).first = vi.fn().mockResolvedValue(null);
         return stmt;
       }
       const stmt = makeFakeStmt(sql, [], [validRow], 1);
-      (stmt as { first: <T>() => Promise<T | null> }).first = vi
-        .fn()
-        .mockResolvedValue(validRow);
+      (stmt as { first: <T>() => Promise<T | null> }).first = vi.fn().mockResolvedValue(validRow);
       return stmt;
     });
     const { app, env } = makeApp(db);
