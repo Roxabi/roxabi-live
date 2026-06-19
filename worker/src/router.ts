@@ -22,6 +22,7 @@ import {
 } from "./api/zk-key-backup";
 import { postZkResetRoute } from "./api/zk-reset";
 import { zkGithubGraphqlRoute } from "./api/zk-github-proxy";
+import { syncStatusRoute } from "./api/sync-status";
 
 const app = new Hono<AuthEnv>();
 
@@ -82,6 +83,8 @@ app.get("/oauth/callback", callbackRoute);
 app.get("/install/complete", installCompleteRoute);
 app.use("/api/me", requireSession);
 app.get("/api/me", meRoute);
+app.use("/api/sync/status", requireLinkedTenant);
+app.get("/api/sync/status", syncStatusRoute);
 app.post("/api/active-tenant", requireLinkedTenant, activeTenantRoute);
 app.post("/api/zk-opt-in", requireLinkedTenant, zkOptInRoute);
 app.use("/api/zk/payloads", requireLinkedTenant);

@@ -17,6 +17,7 @@ import {
   SEALED_TITLE_LABEL,
 } from './zk-sync.js';
 import { requireZkEnrollmentGate } from './zk-enroll.js';
+import { waitForInitialSync } from './initial-sync.js';
 
 const $ = id => document.getElementById(id);
 
@@ -370,6 +371,7 @@ async function init() {
       sessionZkOptIn = true;
     }
 
+    await waitForInitialSync();
     await loadAndRender(sessionZkOptIn, sessionGithubLogin, zkAccountKeyEnabled);
 
     if (zkAccountKeyEnabled) {

@@ -14,6 +14,7 @@ import { mintSession } from "./session";
 import { sessionCookie } from "./cookies";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
+import { maybeScheduleBootstrapSync } from "../sync/bootstrap";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -320,6 +321,12 @@ export async function callbackRoute(
     } catch {
       // INSTALL_TOKEN_KEY unset — skip handoff, user can retry /login?zk=1
     }
+  }
+
+  try {
+    await maybeScheduleBootstrapSync(c.env.DB, c.env, c.executionCtx);
+  } catch {
+    // Vitest/Hono test requests have no ExecutionContext — skip background sync.
   }
 
   return new Response(null, {
