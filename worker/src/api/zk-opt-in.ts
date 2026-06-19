@@ -35,10 +35,9 @@ export async function zkOptInRoute(c: Context<AuthEnv>): Promise<Response> {
 
   const flag = enabled ? 1 : 0;
 
-  await c.env.DB
-    .prepare(
-      `UPDATE users SET zk_opt_in = ?, updated_at = datetime('now') WHERE id = ?`,
-    )
+  await c.env.DB.prepare(
+    `UPDATE users SET zk_opt_in = ?, updated_at = datetime('now') WHERE id = ?`,
+  )
     .bind(flag, s.userId)
     .run();
 

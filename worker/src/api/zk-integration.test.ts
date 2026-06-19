@@ -3,14 +3,14 @@
  * Hono harness + stateful FakeD1: enroll → seal payloads → graph redaction.
  */
 
-import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
-import type { Env } from "../types";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv, SessionContext } from "../auth/types";
+import { type FakeStmt, makeFakeDb, makeFakeStmt } from "../test-utils";
+import type { Env } from "../types";
+import { graphRoute } from "./graph";
 import { putZkKeyBackupRoute } from "./zk-key-backup";
 import { putZkPayloadsRoute } from "./zk-payloads";
-import { graphRoute } from "./graph";
-import { makeFakeDb, makeFakeStmt, type FakeStmt } from "../test-utils";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -222,7 +222,7 @@ function makeEnv(db: D1Database): Env {
   } as unknown as Env;
 }
 
-function makeApp(db: D1Database): Hono<AuthEnv> {
+function makeApp(_db: D1Database): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
   app.use("*", async (c, next) => {
     c.set("session", STUB_SESSION);
@@ -292,6 +292,6 @@ describe("ZK enrollment integration (#216 PR 8)", () => {
     };
     const node = graph.nodes.find((n) => n.key === ISSUE_KEY);
     expect(node).toBeDefined();
-    expect(node!.title).toBeNull();
+    expect(node?.title).toBeNull();
   });
 });

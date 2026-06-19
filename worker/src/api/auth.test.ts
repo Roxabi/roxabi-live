@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { timingSafeEqual, checkAdminAuth } from "./auth";
+import { checkAdminAuth, timingSafeEqual } from "./auth";
 
 // ── timingSafeEqual ──────────────────────────────────────────────────────
 
@@ -33,7 +33,7 @@ const TOKEN = "super-secret-token";
 
 function makeRequest(authHeader?: string): Request {
   const headers: Record<string, string> = {};
-  if (authHeader !== undefined) headers["Authorization"] = authHeader;
+  if (authHeader !== undefined) headers.Authorization = authHeader;
   return new Request("https://example.com/admin/sync", {
     method: "POST",
     headers,
@@ -52,10 +52,7 @@ describe("checkAdminAuth", () => {
   });
 
   it("returns null (pass) for correct Bearer token", () => {
-    const result = checkAdminAuth(
-      makeRequest(`Bearer ${TOKEN}`),
-      TOKEN,
-    );
+    const result = checkAdminAuth(makeRequest(`Bearer ${TOKEN}`), TOKEN);
     expect(result).toBeNull();
   });
 

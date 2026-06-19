@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
-import { getTenantByInstallationId, getTenantByOrgLogin, type TenantRow } from "./tenant";
-import { makeFakeDb, makeFakeStmt, type FakeStmt } from "../test-utils";
+import { describe, expect, it } from "vitest";
+import { type FakeStmt, makeFakeDb, makeFakeStmt } from "../test-utils";
+import { type TenantRow, getTenantByInstallationId, getTenantByOrgLogin } from "./tenant";
 
 // FakeResult kept local: richer variant ({ value?, changes? }) used in seededDb casts
 type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
@@ -11,8 +11,7 @@ type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
 
 function seededDb(tenantRow: TenantRow | null): D1Database & { _recorded: FakeStmt[] } {
   return makeFakeDb((sql, args) => {
-    const rows =
-      /FROM tenants/.test(sql) && tenantRow ? [tenantRow as unknown as FakeResult] : [];
+    const rows = /FROM tenants/.test(sql) && tenantRow ? [tenantRow as unknown as FakeResult] : [];
     return makeFakeStmt(sql, args, rows, 1);
   });
 }
@@ -58,9 +57,9 @@ describe("getTenantByInstallationId", () => {
       const recorded = db._recorded;
       const stmt = recorded.find((s) => /FROM tenants/.test(s.sql));
       expect(stmt).toBeDefined();
-      expect(stmt!.args).toContain(99_000);
+      expect(stmt?.args).toContain(99_000);
       // Column-swap guard: WHERE clause must reference installation_id, not account_login
-      expect(stmt!.sql).toMatch(/WHERE\s+installation_id\s*=\s*\?/);
+      expect(stmt?.sql).toMatch(/WHERE\s+installation_id\s*=\s*\?/);
     });
   });
 
@@ -106,9 +105,9 @@ describe("getTenantByOrgLogin", () => {
       const recorded = db._recorded;
       const stmt = recorded.find((s) => /FROM tenants/.test(s.sql));
       expect(stmt).toBeDefined();
-      expect(stmt!.args).toContain("Roxabi");
+      expect(stmt?.args).toContain("Roxabi");
       // Column-swap guard: WHERE clause must reference account_login, not installation_id
-      expect(stmt!.sql).toMatch(/WHERE\s+account_login\s*=\s*\?/);
+      expect(stmt?.sql).toMatch(/WHERE\s+account_login\s*=\s*\?/);
     });
   });
 

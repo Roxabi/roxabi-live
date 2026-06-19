@@ -2,17 +2,17 @@
 // v1: Ephemeral ECDH-P256 → HKDF-SHA256 → AES-GCM-256
 // v2: accountKey (AES-256-GCM) with passphrase-wrapped D1 backup
 
-import { deriveWrappingKey, ARGON2_PARAMS } from './zk-kdf.js';
+import { ARGON2_PARAMS, deriveWrappingKey } from "./zk-kdf.js";
 
 export { ARGON2_PARAMS };
 
-const DB_NAME = 'roxabi-zk-v1';
-const STORE_NAME = 'keypairs';
-const META_DB_NAME = 'roxabi-zk-v2';
-const META_STORE_NAME = 'account_meta';
-const DEVICE_STORE_NAME = 'device_session';
+const DB_NAME = "roxabi-zk-v1";
+const STORE_NAME = "keypairs";
+const META_DB_NAME = "roxabi-zk-v2";
+const META_STORE_NAME = "account_meta";
+const DEVICE_STORE_NAME = "device_session";
 const META_DB_VERSION = 2;
-const HKDF_INFO = new TextEncoder().encode('roxabi-zk-ecies-v1');
+const HKDF_INFO = new TextEncoder().encode("roxabi-zk-ecies-v1");
 const HKDF_SALT = new Uint8Array(32);
 
 function toBytes(buf) {
@@ -26,7 +26,7 @@ function toBytes(buf) {
 
 function b64Encode(buf) {
   const bytes = toBytes(buf);
-  let s = '';
+  let s = "";
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s);
 }
@@ -39,19 +39,19 @@ function b64Decode(str) {
 }
 
 function hexEncode(buf) {
-  return [...toBytes(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return [...toBytes(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function hexDecode(hex) {
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   }
   return out;
 }
 
 function parseEnvelope(envelopeJson) {
-  return typeof envelopeJson === 'string' ? JSON.parse(envelopeJson) : envelopeJson;
+  return typeof envelopeJson === "string" ? JSON.parse(envelopeJson) : envelopeJson;
 }
 
 /** Return envelope version (1 = ECIES, 2 = accountKey) or null if unparseable. */
@@ -77,7 +77,7 @@ function openDb() {
 async function idbGet(login) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
+    const tx = db.transaction(STORE_NAME, "readonly");
     const req = tx.objectStore(STORE_NAME).get(login);
     req.onsuccess = () => resolve(req.result ?? null);
     req.onerror = () => reject(req.error);
@@ -87,7 +87,7 @@ async function idbGet(login) {
 async function idbPut(login, record) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const tx = db.transaction(STORE_NAME, "readwrite");
     tx.objectStore(STORE_NAME).put(record, login);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -97,7 +97,7 @@ async function idbPut(login, record) {
 async function idbDelete(login) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const tx = db.transaction(STORE_NAME, "readwrite");
     tx.objectStore(STORE_NAME).delete(login);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -124,7 +124,7 @@ function openMetaDb() {
 async function metaIdbGet(login) {
   const db = await openMetaDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(META_STORE_NAME, 'readonly');
+    const tx = db.transaction(META_STORE_NAME, "readonly");
     const req = tx.objectStore(META_STORE_NAME).get(login);
     req.onsuccess = () => resolve(req.result ?? null);
     req.onerror = () => reject(req.error);
@@ -134,7 +134,7 @@ async function metaIdbGet(login) {
 async function metaIdbPut(login, record) {
   const db = await openMetaDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(META_STORE_NAME, 'readwrite');
+    const tx = db.transaction(META_STORE_NAME, "readwrite");
     tx.objectStore(META_STORE_NAME).put(record, login);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -144,7 +144,7 @@ async function metaIdbPut(login, record) {
 async function metaIdbDelete(login) {
   const db = await openMetaDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(META_STORE_NAME, 'readwrite');
+    const tx = db.transaction(META_STORE_NAME, "readwrite");
     tx.objectStore(META_STORE_NAME).delete(login);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -183,7 +183,7 @@ export async function deleteAccountMeta(githubLogin) {
 async function deviceIdbGet(login) {
   const db = await openMetaDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(DEVICE_STORE_NAME, 'readonly');
+    const tx = db.transaction(DEVICE_STORE_NAME, "readonly");
     const req = tx.objectStore(DEVICE_STORE_NAME).get(login);
     req.onsuccess = () => resolve(req.result ?? null);
     req.onerror = () => reject(req.error);
@@ -193,7 +193,7 @@ async function deviceIdbGet(login) {
 async function deviceIdbPut(login, record) {
   const db = await openMetaDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(DEVICE_STORE_NAME, 'readwrite');
+    const tx = db.transaction(DEVICE_STORE_NAME, "readwrite");
     tx.objectStore(DEVICE_STORE_NAME).put(record, login);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -203,7 +203,7 @@ async function deviceIdbPut(login, record) {
 async function deviceIdbDelete(login) {
   const db = await openMetaDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(DEVICE_STORE_NAME, 'readwrite');
+    const tx = db.transaction(DEVICE_STORE_NAME, "readwrite");
     tx.objectStore(DEVICE_STORE_NAME).delete(login);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -230,37 +230,32 @@ export async function clearDeviceSession(githubLogin) {
 }
 
 async function generateKeyPair() {
-  return crypto.subtle.generateKey(
-    { name: 'ECDH', namedCurve: 'P-256' },
-    false,
-    ['deriveKey', 'deriveBits'],
-  );
+  return crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, [
+    "deriveKey",
+    "deriveBits",
+  ]);
 }
 
 /** SHA-256(SPKI) first 16 bytes as hex — stored alongside ciphertext rows. */
 export async function fingerprintPublicKey(publicKey) {
-  const spki = await crypto.subtle.exportKey('spki', publicKey);
-  const hash = await crypto.subtle.digest('SHA-256', spki);
+  const spki = await crypto.subtle.exportKey("spki", publicKey);
+  const hash = await crypto.subtle.digest("SHA-256", spki);
   return [...new Uint8Array(hash)]
     .slice(0, 16)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 async function deriveAesKey(sharedBits) {
-  const base = await crypto.subtle.importKey(
-    'raw',
-    toBytes(sharedBits),
-    'HKDF',
-    false,
-    ['deriveKey'],
-  );
+  const base = await crypto.subtle.importKey("raw", toBytes(sharedBits), "HKDF", false, [
+    "deriveKey",
+  ]);
   return crypto.subtle.deriveKey(
-    { name: 'HKDF', hash: 'SHA-256', salt: HKDF_SALT, info: HKDF_INFO },
+    { name: "HKDF", hash: "SHA-256", salt: HKDF_SALT, info: HKDF_INFO },
     base,
-    { name: 'AES-GCM', length: 256 },
+    { name: "AES-GCM", length: 256 },
     false,
-    ['encrypt', 'decrypt'],
+    ["encrypt", "decrypt"],
   );
 }
 
@@ -271,8 +266,7 @@ async function deriveAesKey(sharedBits) {
 export async function ensureZkKeyPair(githubLogin) {
   const existing = await idbGet(githubLogin);
   if (existing?.publicKey && existing?.privateKey) {
-    const pubkeyFp =
-      existing.pubkeyFp ?? (await fingerprintPublicKey(existing.publicKey));
+    const pubkeyFp = existing.pubkeyFp ?? (await fingerprintPublicKey(existing.publicKey));
     return { publicKey: existing.publicKey, privateKey: existing.privateKey, pubkeyFp };
   }
 
@@ -288,24 +282,22 @@ export async function ensureZkKeyPair(githubLogin) {
 
 /** ECIES encrypt plaintext string to envelope JSON. */
 export async function eciesEncrypt(publicKey, plaintext) {
-  const ephemeral = await crypto.subtle.generateKey(
-    { name: 'ECDH', namedCurve: 'P-256' },
-    true,
-    ['deriveBits'],
-  );
+  const ephemeral = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, [
+    "deriveBits",
+  ]);
   const shared = await crypto.subtle.deriveBits(
-    { name: 'ECDH', public: publicKey },
+    { name: "ECDH", public: publicKey },
     ephemeral.privateKey,
     256,
   );
   const aesKey = await deriveAesKey(shared);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: "AES-GCM", iv },
     aesKey,
     new TextEncoder().encode(plaintext),
   );
-  const epk = await crypto.subtle.exportKey('raw', ephemeral.publicKey);
+  const epk = await crypto.subtle.exportKey("raw", ephemeral.publicKey);
   return JSON.stringify({
     v: 1,
     epk: b64Encode(epk),
@@ -317,24 +309,24 @@ export async function eciesEncrypt(publicKey, plaintext) {
 /** ECIES decrypt envelope JSON to plaintext string. */
 export async function eciesDecrypt(privateKey, envelopeJson) {
   const env = JSON.parse(envelopeJson);
-  if (env.v !== 1) throw new Error('unsupported envelope version');
+  if (env.v !== 1) throw new Error("unsupported envelope version");
 
   const epkRaw = b64Decode(env.epk);
   const ephemeralPub = await crypto.subtle.importKey(
-    'raw',
+    "raw",
     epkRaw,
-    { name: 'ECDH', namedCurve: 'P-256' },
+    { name: "ECDH", namedCurve: "P-256" },
     false,
     [],
   );
   const shared = await crypto.subtle.deriveBits(
-    { name: 'ECDH', public: ephemeralPub },
+    { name: "ECDH", public: ephemeralPub },
     privateKey,
     256,
   );
   const aesKey = await deriveAesKey(shared);
   const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: b64Decode(env.iv) },
+    { name: "AES-GCM", iv: b64Decode(env.iv) },
     aesKey,
     b64Decode(env.ct),
   );
@@ -367,35 +359,28 @@ export async function openTitle(privateKey, envelopeJson) {
 
 /** Generate a random AES-256-GCM accountKey (extractable for wrapping). */
 export async function generateAccountKey() {
-  return crypto.subtle.generateKey(
-    { name: 'AES-GCM', length: 256 },
-    true,
-    ['encrypt', 'decrypt'],
-  );
+  return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
 }
 
 /** SHA-256(rawAccountKey)[0:16] hex — stored in zk_payloads.key_fp / zk_key_backups.key_fp. */
 export async function fingerprintAccountKey(accountKey) {
-  const raw = await crypto.subtle.exportKey('raw', accountKey);
+  const raw = await crypto.subtle.exportKey("raw", accountKey);
   return fingerprintAccountKeyRaw(raw);
 }
 
 /** Fingerprint from raw 32-byte account key material. */
 export async function fingerprintAccountKeyRaw(rawAccountKey) {
-  const hash = await crypto.subtle.digest('SHA-256', toBytes(rawAccountKey));
+  const hash = await crypto.subtle.digest("SHA-256", toBytes(rawAccountKey));
   return hexEncode(new Uint8Array(hash).slice(0, 16));
 }
 
 /** Re-import accountKey as non-extractable session key after wrapping. */
 export async function sessionAccountKey(accountKey) {
-  const raw = await crypto.subtle.exportKey('raw', accountKey);
-  return crypto.subtle.importKey(
-    'raw',
-    raw,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
+  const raw = await crypto.subtle.exportKey("raw", accountKey);
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM", length: 256 }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
 }
 
 /**
@@ -406,14 +391,14 @@ export async function wrapAccountKey(passphrase, accountKey) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const wrappingKey = await deriveWrappingKey(passphrase, salt, ARGON2_PARAMS);
   const wrapIv = crypto.getRandomValues(new Uint8Array(12));
-  const rawAccountKey = await crypto.subtle.exportKey('raw', accountKey);
+  const rawAccountKey = await crypto.subtle.exportKey("raw", accountKey);
   const wrapped = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: wrapIv },
+    { name: "AES-GCM", iv: wrapIv },
     wrappingKey,
     rawAccountKey,
   );
   return {
-    kdf_alg: 'argon2id',
+    kdf_alg: "argon2id",
     kdf_params: JSON.stringify({
       m: ARGON2_PARAMS.m,
       t: ARGON2_PARAMS.t,
@@ -434,20 +419,14 @@ export async function wrapAccountKey(passphrase, accountKey) {
  */
 async function decryptWrappedAccountKeyRaw(passphrase, backup) {
   const blob =
-    typeof backup.kdf_params === 'string'
-      ? JSON.parse(backup.kdf_params)
-      : backup.kdf_params;
-  if (
-    blob.m !== ARGON2_PARAMS.m ||
-    blob.t !== ARGON2_PARAMS.t ||
-    blob.p !== ARGON2_PARAMS.p
-  ) {
-    throw new Error('kdf_param_mismatch');
+    typeof backup.kdf_params === "string" ? JSON.parse(backup.kdf_params) : backup.kdf_params;
+  if (blob.m !== ARGON2_PARAMS.m || blob.t !== ARGON2_PARAMS.t || blob.p !== ARGON2_PARAMS.p) {
+    throw new Error("kdf_param_mismatch");
   }
   const salt = hexDecode(blob.salt);
   const wrappingKey = await deriveWrappingKey(passphrase, salt, ARGON2_PARAMS);
   return crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: b64Decode(backup.wrap_iv) },
+    { name: "AES-GCM", iv: b64Decode(backup.wrap_iv) },
     wrappingKey,
     b64Decode(backup.wrapped_key),
   );
@@ -455,24 +434,21 @@ async function decryptWrappedAccountKeyRaw(passphrase, backup) {
 
 export async function unwrapAccountKey(passphrase, backup) {
   const rawAccountKey = await decryptWrappedAccountKeyRaw(passphrase, backup);
-  return crypto.subtle.importKey(
-    'raw',
-    rawAccountKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
+  return crypto.subtle.importKey("raw", rawAccountKey, { name: "AES-GCM", length: 256 }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
 }
 
 /** Re-wrap an existing backup with a new passphrase (rotation). */
 export async function rewrapAccountKeyBackup(currentPassphrase, newPassphrase, backup) {
   const rawAccountKey = await decryptWrappedAccountKeyRaw(currentPassphrase, backup);
   const extractable = await crypto.subtle.importKey(
-    'raw',
+    "raw",
     rawAccountKey,
-    { name: 'AES-GCM', length: 256 },
+    { name: "AES-GCM", length: 256 },
     true,
-    ['encrypt', 'decrypt'],
+    ["encrypt", "decrypt"],
   );
   return wrapAccountKey(newPassphrase, extractable);
 }
@@ -481,13 +457,13 @@ export async function rewrapAccountKeyBackup(currentPassphrase, newPassphrase, b
 export async function sealWithAccountKey(accountKey, content) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: "AES-GCM", iv },
     accountKey,
     new TextEncoder().encode(JSON.stringify(content)),
   );
   return JSON.stringify({
     v: 2,
-    alg: 'AES-GCM-256',
+    alg: "AES-GCM-256",
     iv: b64Encode(iv),
     ct: b64Encode(ct),
   });
@@ -496,9 +472,9 @@ export async function sealWithAccountKey(accountKey, content) {
 /** v2 envelope decrypt to `{ title, body? }`. */
 export async function openWithAccountKey(accountKey, envelopeJson) {
   const env = parseEnvelope(envelopeJson);
-  if (env.v !== 2) throw new Error('unsupported envelope version');
+  if (env.v !== 2) throw new Error("unsupported envelope version");
   const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: b64Decode(env.iv) },
+    { name: "AES-GCM", iv: b64Decode(env.iv) },
     accountKey,
     b64Decode(env.ct),
   );
@@ -512,12 +488,12 @@ export async function openWithAccountKey(accountKey, envelopeJson) {
 export async function openContentDual(keys, envelopeJson) {
   const env = parseEnvelope(envelopeJson);
   if (env.v === 2) {
-    if (!keys.accountKey) throw new Error('accountKey required for v2 envelope');
+    if (!keys.accountKey) throw new Error("accountKey required for v2 envelope");
     return openWithAccountKey(keys.accountKey, env);
   }
   if (env.v === 1) {
-    if (!keys.privateKey) throw new Error('privateKey required for v1 envelope');
+    if (!keys.privateKey) throw new Error("privateKey required for v1 envelope");
     return openContent(keys.privateKey, envelopeJson);
   }
-  throw new Error('unsupported envelope version');
+  throw new Error("unsupported envelope version");
 }

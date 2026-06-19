@@ -24,14 +24,11 @@ function parseCount(value: string | null | undefined, hourKey: string): number {
 }
 
 /** Rate limit POST /api/zk/consume-reauth (defense in depth). */
-export async function isConsumeReauthRateLimited(
-  db: D1Database,
-  userId: number,
-): Promise<boolean> {
+export async function isConsumeReauthRateLimited(db: D1Database, userId: number): Promise<boolean> {
   const hourKey = currentHourKey();
   const rowKey = `zk_reauth_consume:${userId}`;
   const row = await db
-    .prepare(`SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?`)
+    .prepare("SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?")
     .bind(rowKey)
     .first<{ value: string }>();
   return parseCount(row?.value, hourKey) >= MAX_CONSUME_PER_HOUR;
@@ -42,10 +39,7 @@ export async function isConsumeReauthRateLimited(
  * A single INSERT … ON CONFLICT DO UPDATE performs the read-modify-write in
  * one SQL statement, preventing lost increments under concurrent isolates.
  */
-export async function recordConsumeReauthSuccess(
-  db: D1Database,
-  userId: number,
-): Promise<void> {
+export async function recordConsumeReauthSuccess(db: D1Database, userId: number): Promise<void> {
   const hourKey = currentHourKey();
   const rowKey = `zk_reauth_consume:${userId}`;
   await db
@@ -73,10 +67,7 @@ function reauthCode(): string {
     .join("");
 }
 
-export async function createZkReauthCode(
-  env: Env,
-  userId: number,
-): Promise<string> {
+export async function createZkReauthCode(env: Env, userId: number): Promise<string> {
   const code = reauthCode();
   await env.DB.prepare(
     `INSERT INTO zk_reauth_proofs (code, user_id, expires_at)

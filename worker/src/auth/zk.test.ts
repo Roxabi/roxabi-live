@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { captureDb } from "../test-utils";
 import {
   d1PayloadTitle,
-  redactIssueTitle,
-  loadZkSealedIssueKeys,
   isIssueZkSealed,
+  loadZkSealedIssueKeys,
+  redactIssueTitle,
   scrubIssuePayloads,
 } from "./zk";
-import { captureDb } from "../test-utils";
 
 describe("zk D1 redaction helpers", () => {
   it("d1PayloadTitle returns null for sealed keys", () => {
@@ -41,10 +41,8 @@ describe("zk D1 redaction helpers", () => {
   it("scrubIssuePayloads issues UPDATE per chunk", async () => {
     const { db, stmts } = captureDb(() => []);
     await scrubIssuePayloads(db, ["A/r#1", "B/r#2"]);
-    const scrub = stmts().find(
-      (s) => s.sql.includes("UPDATE issues SET payload = json_object()"),
-    );
+    const scrub = stmts().find((s) => s.sql.includes("UPDATE issues SET payload = json_object()"));
     expect(scrub).toBeDefined();
-    expect(scrub!.args).toEqual(["A/r#1", "B/r#2"]);
+    expect(scrub?.args).toEqual(["A/r#1", "B/r#2"]);
   });
 });

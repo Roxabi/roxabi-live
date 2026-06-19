@@ -5,7 +5,7 @@
  * Never logs or surfaces plaintext tokens.
  */
 
-import { encode, decode } from "./base64url";
+import { decode, encode } from "./base64url";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -24,13 +24,7 @@ export async function importDek(b64: string): Promise<CryptoKey> {
       `INSTALL_TOKEN_KEY must decode to exactly 32 bytes (AES-256), got ${bytes.byteLength}`,
     );
   }
-  return crypto.subtle.importKey(
-    "raw",
-    bytes,
-    { name: "AES-GCM" },
-    false,
-    ["encrypt", "decrypt"],
-  );
+  return crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
 /**
@@ -65,17 +59,9 @@ export async function encryptToken(
  * @returns The original plaintext string.
  * @throws If decryption fails (authentication tag mismatch, wrong key, etc.)
  */
-export async function decryptToken(
-  dek: CryptoKey,
-  enc: string,
-  iv: string,
-): Promise<string> {
+export async function decryptToken(dek: CryptoKey, enc: string, iv: string): Promise<string> {
   const ctBytes = decode(enc);
   const ivBytes = decode(iv);
-  const plainBuffer = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: ivBytes },
-    dek,
-    ctBytes,
-  );
+  const plainBuffer = await crypto.subtle.decrypt({ name: "AES-GCM", iv: ivBytes }, dek, ctBytes);
   return new TextDecoder().decode(plainBuffer);
 }

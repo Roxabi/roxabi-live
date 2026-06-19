@@ -11,9 +11,7 @@ import { consumeUserTokenHandoff } from "../auth/userTokenHandoff";
 
 const CODE_RE = /^[0-9a-f]{32}$/;
 
-export async function consumeZkHandoffRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function consumeZkHandoffRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) return c.json({ error: "unauthorized" }, 401);
 

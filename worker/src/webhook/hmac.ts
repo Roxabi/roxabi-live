@@ -29,6 +29,6 @@ export async function verifyHmac(
     false,
     ["verify"],
   );
-  const sig = Uint8Array.from(hexBytes.map((b) => parseInt(b, 16)));
+  const sig = Uint8Array.from(hexBytes.map((b) => Number.parseInt(b, 16)));
   return crypto.subtle.verify("HMAC", key, sig, body);
 }

@@ -54,6 +54,7 @@ Let:
 | `worker/migrations/` | D1 schema migrations |
 | `wrangler.toml` | Worker config (bindings, Cron, routes, environments) |
 | `frontend/` | Static HTML/JS/CSS served via ASSETS binding |
+| `biome.json` | Biome lint + format config (repo root; scopes `worker/src` + `frontend`) |
 | `artifacts/` | Frames, specs, plans (dev-core) |
 
 **Legacy Python app (pre-CF, M₁-era — decommissioned 2026-06-08, code kept for reference)**
@@ -147,6 +148,7 @@ return openBlocker ? 'blocked' : 'ready';
 ## Conventions
 
 - EN for docs/code/commits
+- Lint/format: **Biome** — `cd worker && npm run lint` (check) / `npm run format` (write); enforced in CI (`worker` job) + pre-commit
 - Commits: Conventional (`feat:`, `fix:`, `chore:`)
 - Issues: `/dev #N`
 

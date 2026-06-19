@@ -7,10 +7,7 @@ import type { Context } from "hono";
 import type { Env } from "../types";
 import { AUTH_NO_CACHE, sanitizeAuthRedirect } from "./cookies";
 
-export function serveLoginPrompt(
-  c: Context<{ Bindings: Env }>,
-  redirectAfter: string,
-): Response {
+export function serveLoginPrompt(_c: Context<{ Bindings: Env }>, redirectAfter: string): Response {
   const dest = sanitizeAuthRedirect(redirectAfter);
   const continueUrl = `/login?intent=signin&redirect=${encodeURIComponent(dest)}`;
 

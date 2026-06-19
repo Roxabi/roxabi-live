@@ -24,12 +24,9 @@ export interface BootstrapSyncContext {
   zkAccountKeyEnabled?: boolean;
 }
 
-export async function isUserZkEnrolled(
-  db: D1Database,
-  userId: number,
-): Promise<boolean> {
+export async function isUserZkEnrolled(db: D1Database, userId: number): Promise<boolean> {
   const row = await db
-    .prepare(`SELECT 1 AS ok FROM zk_key_backups WHERE user_id = ? LIMIT 1`)
+    .prepare("SELECT 1 AS ok FROM zk_key_backups WHERE user_id = ? LIMIT 1")
     .bind(userId)
     .first<{ ok: number }>();
   return row != null;
@@ -45,26 +42,20 @@ async function isBootstrapAllowed(
 }
 
 export async function getIssueCount(db: D1Database): Promise<number> {
-  const row = await db
-    .prepare("SELECT COUNT(*) AS n FROM issues")
-    .first<{ n: number }>();
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM issues").first<{ n: number }>();
   return row?.n ?? 0;
 }
 
 export async function isGlobalSyncRunning(db: D1Database): Promise<boolean> {
   const row = await db
-    .prepare(
-      `SELECT value FROM sync_control WHERE key = 'sync_running' AND tenant_id = 0`,
-    )
+    .prepare(`SELECT value FROM sync_control WHERE key = 'sync_running' AND tenant_id = 0`)
     .first<{ value: string }>();
   return row?.value === "1";
 }
 
 async function getBootstrapAt(db: D1Database): Promise<string | null> {
   const row = await db
-    .prepare(
-      `SELECT value FROM sync_control WHERE key = ? AND tenant_id = 0`,
-    )
+    .prepare("SELECT value FROM sync_control WHERE key = ? AND tenant_id = 0")
     .bind(BOOTSTRAP_KEY)
     .first<{ value: string }>();
   return row?.value ?? null;
@@ -95,7 +86,7 @@ export async function maybeScheduleBootstrapSync(
 
   if (!(await isBootstrapAllowed(db, syncCtx))) return false;
 
-  if (await getIssueCount(db) > 0) return false;
+  if ((await getIssueCount(db)) > 0) return false;
   if (await isHalted(db)) return false;
   if (await isGlobalSyncRunning(db)) return false;
 
@@ -120,7 +111,6 @@ export async function getSyncStatus(
   const sync_running = await isGlobalSyncRunning(db);
   const halted = await isHalted(db);
   const bootstrapAllowed = await isBootstrapAllowed(db, syncCtx);
-  const initial_sync =
-    hasLinkedTenant && issue_count === 0 && !halted && bootstrapAllowed;
+  const initial_sync = hasLinkedTenant && issue_count === 0 && !halted && bootstrapAllowed;
   return { issue_count, sync_running, initial_sync };
 }

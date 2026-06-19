@@ -1,33 +1,29 @@
 // zk-sync.js — seal-on-enable + decrypt-on-load + GitHub content sync (#142 S2/S3, #216 PR 4)
 
-import { api } from './auth.js';
+import { api } from "./auth.js";
 import {
+  deleteZkKeyPair,
   ensureZkKeyPair,
-  sealContent,
+  hasZkKeyPair,
   openContent,
-  sealWithAccountKey,
   openContentDual,
   parseEnvelopeVersion,
-  hasZkKeyPair,
-  deleteZkKeyPair,
-} from './zk-crypto.js';
-import {
-  isZkUnlocked,
-  getSessionAccountKey,
-  getSessionKeyFp,
-} from './zk-session.js';
-import { fetchIssueContentMap, getGithubUserToken } from './zk-github.js';
+  sealContent,
+  sealWithAccountKey,
+} from "./zk-crypto.js";
+import { fetchIssueContentMap, getGithubUserToken } from "./zk-github.js";
+import { getSessionAccountKey, getSessionKeyFp, isZkUnlocked } from "./zk-session.js";
 
 const BULK = 200;
 
 /** Label when graph title was redacted and this user has no ciphertext row (#216 hybrid multi-user). */
-export const SEALED_TITLE_LABEL = '(sealed)';
+export const SEALED_TITLE_LABEL = "(sealed)";
 
 async function putPayloadBatches(payloads) {
   for (let i = 0; i < payloads.length; i += BULK) {
-    await api('/api/zk/payloads', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+    await api("/api/zk/payloads", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ payloads: payloads.slice(i, i + BULK) }),
     });
   }
@@ -39,7 +35,7 @@ async function sealNodes(nodes, githubLogin, contentByKey) {
   if (isZkUnlocked()) {
     const accountKey = getSessionAccountKey();
     const key_fp = getSessionKeyFp();
-    if (!key_fp) throw new Error('key_fp required for accountKey seal');
+    if (!key_fp) throw new Error("key_fp required for accountKey seal");
 
     for (const node of nodes) {
       const fromGh = contentByKey?.get(node.key);
@@ -89,7 +85,7 @@ async function sealNodes(nodes, githubLogin, contentByKey) {
 export async function migrateV1PayloadsToAccountKey(githubLogin, accountKey, key_fp) {
   if (!(await hasZkKeyPair(githubLogin))) return 0;
 
-  const resp = await api('/api/zk/payloads');
+  const resp = await api("/api/zk/payloads");
   const { payloads } = await resp.json();
   const v1Rows = (payloads ?? []).filter(
     (row) => parseEnvelopeVersion(row.encrypted_payload) === 1,
@@ -119,7 +115,7 @@ export async function migrateV1PayloadsToAccountKey(githubLogin, accountKey, key
 
   if (migrated.length > 0) {
     await putPayloadBatches(migrated);
-    console.info('[zk]', { event: 'zk.migrate.v1_to_v2.count', count: migrated.length });
+    console.info("[zk]", { event: "zk.migrate.v1_to_v2.count", count: migrated.length });
   }
 
   if (migrated.length === v1Rows.length) {
@@ -130,9 +126,9 @@ export async function migrateV1PayloadsToAccountKey(githubLogin, accountKey, key
     // permanently undecryptable) and signal the UI to prompt the user to finish
     // on the original device. Never silently drop undecryptable v1 rows.
     const skipped = v1Rows.length - migrated.length;
-    console.warn('[zk]', { event: 'zk.migrate.v1_to_v2.incomplete', skipped });
+    console.warn("[zk]", { event: "zk.migrate.v1_to_v2.incomplete", skipped });
     try {
-      sessionStorage.setItem('roxabi:zk-migrate-incomplete', String(skipped));
+      sessionStorage.setItem("roxabi:zk-migrate-incomplete", String(skipped));
     } catch {
       /* sessionStorage unavailable */
     }
@@ -143,7 +139,7 @@ export async function migrateV1PayloadsToAccountKey(githubLogin, accountKey, key
 /** Clear the partial-migration signal after a clean or complete migration. */
 export function clearZkMigrationIncomplete() {
   try {
-    sessionStorage.removeItem('roxabi:zk-migrate-incomplete');
+    sessionStorage.removeItem("roxabi:zk-migrate-incomplete");
   } catch {
     /* sessionStorage unavailable */
   }
@@ -152,7 +148,7 @@ export function clearZkMigrationIncomplete() {
 /** True when the last v1→v2 migration left undecryptable rows behind. */
 export function isZkMigrationIncomplete() {
   try {
-    return sessionStorage.getItem('roxabi:zk-migrate-incomplete') !== null;
+    return sessionStorage.getItem("roxabi:zk-migrate-incomplete") !== null;
   } catch {
     return false;
   }
@@ -171,23 +167,21 @@ export async function sealGraphTitles(nodes, githubLogin) {
  * Legacy path when ZK_ACCOUNT_KEY flag is off — uses per-device ECDH v1.
  */
 export async function ensurePrivateMode(githubLogin) {
-  await api('/api/zk-opt-in', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  await api("/api/zk-opt-in", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled: true }),
   });
 
   const [graphData, payloadResp] = await Promise.all([
-    api('/api/graph').then((r) => r.json()),
-    api('/api/zk/payloads')
+    api("/api/graph").then((r) => r.json()),
+    api("/api/zk/payloads")
       .then((r) => r.json())
       .catch(() => ({ payloads: [] })),
   ]);
 
   const sealed = new Set((payloadResp.payloads ?? []).map((p) => p.issue_key));
-  const toSeal = (graphData.nodes ?? []).filter(
-    (n) => n.title != null && !sealed.has(n.key),
-  );
+  const toSeal = (graphData.nodes ?? []).filter((n) => n.title != null && !sealed.has(n.key));
   if (toSeal.length > 0) {
     await sealGraphTitles(toSeal, githubLogin);
   }
@@ -200,13 +194,11 @@ export async function ensurePrivateMode(githubLogin) {
 export async function ensureAccountKeySealing(githubLogin, nodes) {
   if (!isZkUnlocked()) return;
 
-  const payloadResp = await api('/api/zk/payloads')
+  const payloadResp = await api("/api/zk/payloads")
     .then((r) => r.json())
     .catch(() => ({ payloads: [] }));
   const sealed = new Set((payloadResp.payloads ?? []).map((p) => p.issue_key));
-  const toSeal = (nodes ?? []).filter(
-    (n) => n.title != null && !sealed.has(n.key),
-  );
+  const toSeal = (nodes ?? []).filter((n) => n.title != null && !sealed.has(n.key));
   if (toSeal.length > 0) {
     await sealGraphTitles(toSeal, githubLogin);
   }
@@ -217,7 +209,7 @@ export async function ensureAccountKeySealing(githubLogin, nodes) {
  */
 export async function syncZkContentFromGitHub(nodes, githubLogin, githubToken) {
   const token = githubToken ?? getGithubUserToken();
-  if (!token) return { synced: 0, skipped: 'no_token' };
+  if (!token) return { synced: 0, skipped: "no_token" };
 
   const keys = nodes.map((n) => n.key);
   const contentByKey = await fetchIssueContentMap(keys, token);
@@ -241,7 +233,7 @@ export async function applyZkDecryption(nodes, githubLogin, opts = {}) {
     return;
   }
 
-  const resp = await api('/api/zk/payloads');
+  const resp = await api("/api/zk/payloads");
   const { payloads } = await resp.json();
   const byKey = new Map((payloads ?? []).map((p) => [p.issue_key, p]));
 
@@ -261,7 +253,7 @@ export async function applyZkDecryption(nodes, githubLogin, opts = {}) {
       }
       const v = parseEnvelopeVersion(row.encrypted_payload);
       if (v === 1 && !keys.privateKey) {
-        node.title = '(needs migration)';
+        node.title = "(needs migration)";
         continue;
       }
       try {
@@ -269,7 +261,7 @@ export async function applyZkDecryption(nodes, githubLogin, opts = {}) {
         node.title = content.title ?? SEALED_TITLE_LABEL;
         if (content.body != null) node.body = content.body;
       } catch {
-        node.title = '(decrypt error)';
+        node.title = "(decrypt error)";
       }
     }
     return;
@@ -288,7 +280,7 @@ export async function applyZkDecryption(nodes, githubLogin, opts = {}) {
       node.title = content.title ?? SEALED_TITLE_LABEL;
       if (content.body != null) node.body = content.body;
     } catch {
-      node.title = '(decrypt error)';
+      node.title = "(decrypt error)";
     }
   }
 }

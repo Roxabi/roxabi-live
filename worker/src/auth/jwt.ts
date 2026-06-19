@@ -33,11 +33,7 @@ export async function importAppPrivateKey(b64Pkcs8Der: string): Promise<CryptoKe
  * @param nowSec - Unix timestamp in seconds (defaults to current time).
  * @returns Compact serialized JWT: `<header>.<payload>.<signature>` (all base64url).
  */
-export async function signAppJwt(
-  appId: string,
-  key: CryptoKey,
-  nowSec?: number,
-): Promise<string> {
+export async function signAppJwt(appId: string, key: CryptoKey, nowSec?: number): Promise<string> {
   const now = nowSec ?? Math.floor(Date.now() / 1000);
 
   const headerB64 = encode(JSON.stringify({ alg: "RS256", typ: "JWT" }));

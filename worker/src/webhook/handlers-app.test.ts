@@ -1,12 +1,12 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { Env } from "../types";
 import {
   handleInstallation,
   handleInstallationRepositories,
-  handleRepository,
   handleMember,
   handleMembership,
+  handleRepository,
 } from "./handlers-app";
-import type { Env } from "../types";
 
 // ---------------------------------------------------------------------------
 // Fake-D1 harness
@@ -126,12 +126,12 @@ describe("handleInstallation", () => {
       // First repo is public (is_private = 0)
       const stmtA = accessStmts.find((s) => s.args.includes("Roxabi/a"));
       expect(stmtA).toBeDefined();
-      expect(stmtA!.args).toContain(0);
+      expect(stmtA?.args).toContain(0);
 
       // Second repo is private (is_private = 1)
       const stmtB = accessStmts.find((s) => s.args.includes("Roxabi/b"));
       expect(stmtB).toBeDefined();
-      expect(stmtB!.args).toContain(1);
+      expect(stmtB?.args).toContain(1);
 
       // Bump included
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
@@ -151,11 +151,9 @@ describe("handleInstallation", () => {
 
       await handleInstallation(payload, db, fakeEnv());
 
-      const linkStmt = allBatchedStmts(batched()).find((s) =>
-        /user_installations/.test(s.sql),
-      );
+      const linkStmt = allBatchedStmts(batched()).find((s) => /user_installations/.test(s.sql));
       expect(linkStmt).toBeDefined();
-      expect(linkStmt!.args).toEqual([42, activeTenant.id]);
+      expect(linkStmt?.args).toEqual([42, activeTenant.id]);
     });
 
     it("created with no repositories still bumps data_version (tenant row created)", async () => {
@@ -200,9 +198,13 @@ describe("handleInstallation", () => {
       const sqls = batchedSql(batched());
 
       expect(sqls.some((sql) => /UPDATE tenants SET deleted_at/.test(sql))).toBe(true);
-      expect(sqls.some((sql) => /DELETE FROM tenant_repo_access WHERE tenant_id=\?/.test(sql))).toBe(true);
+      expect(
+        sqls.some((sql) => /DELETE FROM tenant_repo_access WHERE tenant_id=\?/.test(sql)),
+      ).toBe(true);
       expect(sqls.some((sql) => /DELETE FROM sessions WHERE tenant_id=\?/.test(sql))).toBe(true);
-      expect(sqls.some((sql) => /DELETE FROM install_tokens WHERE tenant_id=\?/.test(sql))).toBe(true);
+      expect(sqls.some((sql) => /DELETE FROM install_tokens WHERE tenant_id=\?/.test(sql))).toBe(
+        true,
+      );
       expect(sqls.some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
     });
 
@@ -216,8 +218,18 @@ describe("handleInstallation", () => {
 
       // Assert — no statement references issues or edges tables
       const sqls = batchedSql(batched());
-      expect(sqls.some((sql) => /FROM issues/.test(sql) || /INTO issues/.test(sql) || /DELETE FROM issues/.test(sql))).toBe(false);
-      expect(sqls.some((sql) => /FROM edges/.test(sql) || /INTO edges/.test(sql) || /DELETE FROM edges/.test(sql))).toBe(false);
+      expect(
+        sqls.some(
+          (sql) =>
+            /FROM issues/.test(sql) || /INTO issues/.test(sql) || /DELETE FROM issues/.test(sql),
+        ),
+      ).toBe(false);
+      expect(
+        sqls.some(
+          (sql) =>
+            /FROM edges/.test(sql) || /INTO edges/.test(sql) || /DELETE FROM edges/.test(sql),
+        ),
+      ).toBe(false);
     });
 
     it("is a no-op when tenant is unknown (idempotent)", async () => {
@@ -248,8 +260,8 @@ describe("handleInstallation", () => {
       const suspendStmt = stmts.find((s) => /UPDATE tenants SET suspended_at/.test(s.sql));
       expect(suspendStmt).toBeDefined();
       // First arg is the suspended_at value — must be non-null (an ISO string)
-      expect(suspendStmt!.args[0]).not.toBeNull();
-      expect(typeof suspendStmt!.args[0]).toBe("string");
+      expect(suspendStmt?.args[0]).not.toBeNull();
+      expect(typeof suspendStmt?.args[0]).toBe("string");
 
       // Bump included
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
@@ -271,7 +283,7 @@ describe("handleInstallation", () => {
       const suspendStmt = stmts.find((s) => /UPDATE tenants SET suspended_at/.test(s.sql));
       expect(suspendStmt).toBeDefined();
       // First arg is suspended_at — must be null (clearing the suspension)
-      expect(suspendStmt!.args[0]).toBeNull();
+      expect(suspendStmt?.args[0]).toBeNull();
 
       // Bump included
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
@@ -306,7 +318,7 @@ describe("handleInstallationRepositories", () => {
         (s) => /INSERT INTO tenant_repo_access/.test(s.sql) && s.args.includes("Roxabi/x"),
       );
       expect(accessStmt).toBeDefined();
-      expect(accessStmt!.args).toContain(1); // is_private = 1
+      expect(accessStmt?.args).toContain(1); // is_private = 1
 
       expect(sqls.some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
     });
@@ -344,17 +356,19 @@ describe("handleInstallationRepositories", () => {
       // Assert
       expect(batchFn()).toHaveBeenCalledOnce();
       const stmts = allBatchedStmts(batched());
-      const deleteStmt = stmts.find(
-        (s) => /DELETE FROM tenant_repo_access WHERE tenant_id=\? AND repo=\?/.test(s.sql),
+      const deleteStmt = stmts.find((s) =>
+        /DELETE FROM tenant_repo_access WHERE tenant_id=\? AND repo=\?/.test(s.sql),
       );
       expect(deleteStmt).toBeDefined();
-      expect(deleteStmt!.args).toContain("Roxabi/x");
-      expect(deleteStmt!.args).toContain(1); // tenantId
+      expect(deleteStmt?.args).toContain("Roxabi/x");
+      expect(deleteStmt?.args).toContain(1); // tenantId
 
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
 
       // Retention invariant: removing a repo from an installation must NOT purge issues or edges
-      expect(stmts.every((s) => !/FROM issues/.test(s.sql) && !/FROM edges/.test(s.sql))).toBe(true);
+      expect(stmts.every((s) => !/FROM issues/.test(s.sql) && !/FROM edges/.test(s.sql))).toBe(
+        true,
+      );
     });
   });
 });
@@ -395,8 +409,8 @@ describe("handleRepository", () => {
       const stmts = allBatchedStmts(batched());
       const reposUpdateStmt = stmts.find((s) => /UPDATE repos SET repo=\?/.test(s.sql));
       expect(reposUpdateStmt).toBeDefined();
-      expect(reposUpdateStmt!.args).toContain("Roxabi/new"); // SET value
-      expect(reposUpdateStmt!.args).toContain("Roxabi/old"); // WHERE value
+      expect(reposUpdateStmt?.args).toContain("Roxabi/new"); // SET value
+      expect(reposUpdateStmt?.args).toContain("Roxabi/old"); // WHERE value
 
       // All cascade statements (all but the trailing bump) do not reference sync_control
       const cascadeStmts = stmts.slice(0, stmts.length - 1);
@@ -425,8 +439,8 @@ describe("handleRepository", () => {
       // WHERE arg in repos UPDATE must be the reconstructed old full name
       const reposStmt = stmts.find((s) => /UPDATE repos SET repo=\?/.test(s.sql));
       expect(reposStmt).toBeDefined();
-      expect(reposStmt!.args).toContain("NewOwner/repo"); // SET (new)
-      expect(reposStmt!.args).toContain("OldOwner/repo"); // WHERE (old)
+      expect(reposStmt?.args).toContain("NewOwner/repo"); // SET (new)
+      expect(reposStmt?.args).toContain("OldOwner/repo"); // WHERE (old)
     });
 
     it("handles combined transfer+rename: uses name.from to reconstruct old full name", async () => {
@@ -451,10 +465,10 @@ describe("handleRepository", () => {
       // Regression guard: WHERE must use "old-name", not "new-name" (mis-bind bug)
       const reposStmt = stmts.find((s) => /UPDATE repos SET repo=\?/.test(s.sql));
       expect(reposStmt).toBeDefined();
-      expect(reposStmt!.args).toContain("NewOwner/new-name"); // SET (new)
-      expect(reposStmt!.args).toContain("OldOwner/old-name"); // WHERE (old — correct reconstruction)
+      expect(reposStmt?.args).toContain("NewOwner/new-name"); // SET (new)
+      expect(reposStmt?.args).toContain("OldOwner/old-name"); // WHERE (old — correct reconstruction)
       // Sanity: the wrong value must NOT appear as WHERE
-      const whereArg = reposStmt!.args[reposStmt!.args.length - 1];
+      const whereArg = reposStmt?.args[reposStmt?.args.length - 1];
       expect(whereArg).not.toBe("OldOwner/new-name");
     });
 
@@ -476,7 +490,7 @@ describe("handleRepository", () => {
 
       const reposStmt = stmts.find((s) => /UPDATE repos SET repo=\?/.test(s.sql));
       expect(reposStmt).toBeDefined();
-      expect(reposStmt!.args).toContain("OldUser/repo"); // WHERE (old — from user.login)
+      expect(reposStmt?.args).toContain("OldUser/repo"); // WHERE (old — from user.login)
     });
   });
 
@@ -499,8 +513,8 @@ describe("handleRepository", () => {
       // repos UPDATE carries old → new names
       const reposStmt = stmts.find((s) => /UPDATE repos SET repo=\?/.test(s.sql));
       expect(reposStmt).toBeDefined();
-      expect(reposStmt!.args).toContain("OldOwner/repo");
-      expect(reposStmt!.args).toContain("NewOwner/repo");
+      expect(reposStmt?.args).toContain("OldOwner/repo");
+      expect(reposStmt?.args).toContain("NewOwner/repo");
 
       // All 5 cascade stmts + bump = 6
       expect(stmts).toHaveLength(6);
@@ -523,13 +537,17 @@ describe("handleRepository", () => {
       expect(batchFn()).toHaveBeenCalledOnce();
       const stmts = allBatchedStmts(batched());
 
-      const privacyStmt = stmts.find((s) => /UPDATE tenant_repo_access SET is_private=\?/.test(s.sql));
+      const privacyStmt = stmts.find((s) =>
+        /UPDATE tenant_repo_access SET is_private=\?/.test(s.sql),
+      );
       expect(privacyStmt).toBeDefined();
-      expect(privacyStmt!.args[0]).toBe(1);
+      expect(privacyStmt?.args[0]).toBe(1);
 
-      const cacheStmt = stmts.find((s) => /DELETE FROM user_repo_permission_cache WHERE repo=\?/.test(s.sql));
+      const cacheStmt = stmts.find((s) =>
+        /DELETE FROM user_repo_permission_cache WHERE repo=\?/.test(s.sql),
+      );
       expect(cacheStmt).toBeDefined();
-      expect(cacheStmt!.args).toContain("Roxabi/r");
+      expect(cacheStmt?.args).toContain("Roxabi/r");
 
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
     });
@@ -548,11 +566,15 @@ describe("handleRepository", () => {
       expect(batchFn()).toHaveBeenCalledOnce();
       const stmts = allBatchedStmts(batched());
 
-      const privacyStmt = stmts.find((s) => /UPDATE tenant_repo_access SET is_private=\?/.test(s.sql));
+      const privacyStmt = stmts.find((s) =>
+        /UPDATE tenant_repo_access SET is_private=\?/.test(s.sql),
+      );
       expect(privacyStmt).toBeDefined();
-      expect(privacyStmt!.args[0]).toBe(0);
+      expect(privacyStmt?.args[0]).toBe(0);
 
-      const cacheStmt = stmts.find((s) => /DELETE FROM user_repo_permission_cache WHERE repo=\?/.test(s.sql));
+      const cacheStmt = stmts.find((s) =>
+        /DELETE FROM user_repo_permission_cache WHERE repo=\?/.test(s.sql),
+      );
       expect(cacheStmt).toBeDefined();
 
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
@@ -584,12 +606,12 @@ describe("handleRepository", () => {
       const accessStmt = stmts.find((s) => /INSERT INTO tenant_repo_access/.test(s.sql));
       expect(accessStmt).toBeDefined();
       // upsertRepoAccess binds [tenantId, repo, is_private]
-      expect(accessStmt!.args).toEqual([1, "Roxabi/metalyde", 0]);
+      expect(accessStmt?.args).toEqual([1, "Roxabi/metalyde", 0]);
 
       const repoStmt = stmts.find((s) => /INSERT INTO repos/.test(s.sql));
       expect(repoStmt).toBeDefined();
       // upsertRepo binds [repo, archived, node_id]
-      expect(repoStmt!.args).toEqual(["Roxabi/metalyde", 0, "R_node"]);
+      expect(repoStmt?.args).toEqual(["Roxabi/metalyde", 0, "R_node"]);
 
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
     });
@@ -605,7 +627,7 @@ describe("handleRepository", () => {
       await handleRepository(payload, db);
 
       const repoStmt = allBatchedStmts(batched()).find((s) => /INSERT INTO repos/.test(s.sql));
-      expect(repoStmt!.args[1]).toBe(1);
+      expect(repoStmt?.args[1]).toBe(1);
     });
 
     it("no-ops (no batch) when no tenant matches the installation", async () => {
@@ -671,11 +693,11 @@ describe("handleMember", () => {
       expect(batchFn()).toHaveBeenCalledOnce();
       const stmts = allBatchedStmts(batched());
 
-      const cacheStmt = stmts.find(
-        (s) => /DELETE FROM user_repo_permission_cache WHERE user_id=\? AND repo=\?/.test(s.sql),
+      const cacheStmt = stmts.find((s) =>
+        /DELETE FROM user_repo_permission_cache WHERE user_id=\? AND repo=\?/.test(s.sql),
       );
       expect(cacheStmt).toBeDefined();
-      expect(cacheStmt!.args).toEqual([7, "Roxabi/r"]);
+      expect(cacheStmt?.args).toEqual([7, "Roxabi/r"]);
 
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
     });
@@ -734,13 +756,14 @@ describe("handleMembership", () => {
       expect(batchFn()).toHaveBeenCalledOnce();
       const stmts = allBatchedStmts(batched());
 
-      const cacheStmt = stmts.find(
-        (s) => /DELETE FROM user_repo_permission_cache WHERE user_id=\?/.test(s.sql),
+      const cacheStmt = stmts.find((s) =>
+        /DELETE FROM user_repo_permission_cache WHERE user_id=\?/.test(s.sql),
       );
       expect(cacheStmt).toBeDefined();
       // Must NOT have a repo filter
+      // biome-ignore lint/style/noNonNullAssertion: asserted defined on the line above.
       expect(/repo=\?/.test(cacheStmt!.sql)).toBe(false);
-      expect(cacheStmt!.args).toEqual([7]);
+      expect(cacheStmt?.args).toEqual([7]);
 
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
     });

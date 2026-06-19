@@ -9,15 +9,9 @@
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { zkAccountKeyEnabled } from "../auth/zk-flags";
-import {
-  getSyncStatus,
-  isGlobalSyncRunning,
-  maybeScheduleBootstrapSync,
-} from "../sync/bootstrap";
+import { getSyncStatus, isGlobalSyncRunning, maybeScheduleBootstrapSync } from "../sync/bootstrap";
 
-export async function syncStatusRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function syncStatusRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) {
     return c.json({ error: "unauthorized" }, 401);
@@ -31,12 +25,7 @@ export async function syncStatusRoute(
   const status = await getSyncStatus(c.env.DB, hasLinkedTenant, syncCtx);
 
   if (status.initial_sync && !status.sync_running) {
-    await maybeScheduleBootstrapSync(
-      c.env.DB,
-      c.env,
-      c.executionCtx,
-      syncCtx,
-    );
+    await maybeScheduleBootstrapSync(c.env.DB, c.env, c.executionCtx, syncCtx);
     status.sync_running = await isGlobalSyncRunning(c.env.DB);
   }
 

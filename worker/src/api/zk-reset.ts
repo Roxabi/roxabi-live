@@ -5,9 +5,9 @@
 
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
+import { loadZkSealedIssueKeys, scrubIssuePayloads } from "../auth/zk";
 import { zkAccountKeyEnabled } from "../auth/zk-flags";
 import { consumeReauthProof, issueReauthProof } from "../auth/zk-reauth";
-import { loadZkSealedIssueKeys, scrubIssuePayloads } from "../auth/zk";
 import { writeZkAudit } from "../observability/zk-events";
 
 const REAUTH_PROOF_RE = /^[0-9a-f]{32}$/;
@@ -28,14 +28,11 @@ function parseResetCount(value: string | null | undefined, hourKey: string): num
   }
 }
 
-async function isResetRateLimited(
-  db: D1Database,
-  userId: number,
-): Promise<boolean> {
+async function isResetRateLimited(db: D1Database, userId: number): Promise<boolean> {
   const hourKey = resetHourKey();
   const rowKey = `zk_reset:${userId}`;
   const row = await db
-    .prepare(`SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?`)
+    .prepare("SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?")
     .bind(rowKey)
     .first<{ value: string }>();
   return parseResetCount(row?.value, hourKey) >= MAX_RESET_PER_HOUR;
@@ -46,10 +43,7 @@ async function isResetRateLimited(
  * A single INSERT … ON CONFLICT DO UPDATE performs the read-modify-write in
  * one SQL statement, preventing lost increments under concurrent isolates.
  */
-async function recordResetSuccess(
-  db: D1Database,
-  userId: number,
-): Promise<void> {
+async function recordResetSuccess(db: D1Database, userId: number): Promise<void> {
   const hourKey = resetHourKey();
   const rowKey = `zk_reset:${userId}`;
   await db
@@ -75,20 +69,20 @@ export async function purgeUserZkData(
   userId: number,
 ): Promise<{ payloads_deleted: number; issues_scrubbed: number }> {
   const keyRows = await db
-    .prepare(`SELECT DISTINCT issue_key FROM zk_payloads WHERE user_id = ?`)
+    .prepare("SELECT DISTINCT issue_key FROM zk_payloads WHERE user_id = ?")
     .bind(userId)
     .all<{ issue_key: string }>();
   const affectedKeys = (keyRows.results ?? []).map((r) => r.issue_key);
 
   const payloadCount = await db
-    .prepare(`SELECT COUNT(*) AS n FROM zk_payloads WHERE user_id = ?`)
+    .prepare("SELECT COUNT(*) AS n FROM zk_payloads WHERE user_id = ?")
     .bind(userId)
     .first<{ n: number }>();
 
   await db.batch([
-    db.prepare(`DELETE FROM zk_payloads WHERE user_id = ?`).bind(userId),
-    db.prepare(`DELETE FROM zk_key_backups WHERE user_id = ?`).bind(userId),
-    db.prepare(`DELETE FROM user_token_handoffs WHERE user_id = ?`).bind(userId),
+    db.prepare("DELETE FROM zk_payloads WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM zk_key_backups WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM user_token_handoffs WHERE user_id = ?").bind(userId),
   ]);
 
   const stillSealed = await loadZkSealedIssueKeys(db);
@@ -101,9 +95,7 @@ export async function purgeUserZkData(
   };
 }
 
-export async function postZkResetRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function postZkResetRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) return c.json({ error: "unauthorized" }, 401);
   if (!zkAccountKeyEnabled(c.env)) {

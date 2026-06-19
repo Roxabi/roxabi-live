@@ -9,7 +9,11 @@
  * Advisory distributed lock via sync_control.sync_running (stale after 900 s).
  */
 
-import { ghGraphql, GraphQLError } from "./graphql";
+import { getInstallationToken, listInstallationRepos } from "../auth/installToken";
+import { d1PayloadTitle, loadZkSealedIssueKeys } from "../auth/zk";
+import { zkStructureOnlyEnabled } from "../auth/zk-flags";
+import type { Env } from "../types";
+import { GraphQLError, ghGraphql } from "./graphql";
 import {
   PRS_QUERY,
   REFS_QUERY,
@@ -17,10 +21,6 @@ import {
   pickRepoBundleQuery,
   pickStubIssueQuery,
 } from "./queries";
-import type { Env } from "../types";
-import { getInstallationToken, listInstallationRepos } from "../auth/installToken";
-import { d1PayloadTitle, loadZkSealedIssueKeys } from "../auth/zk";
-import { zkStructureOnlyEnabled } from "../auth/zk-flags";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -280,7 +280,7 @@ type IssueNode = {
 /** Collect edge references from a GraphQL issue node into collectedEdges map. */
 export function collectEdges(
   node: IssueNode,
-  repo: string,
+  _repo: string,
   key: string,
   collectedEdges: Map<string, EdgeData>,
 ): void {
@@ -344,14 +344,14 @@ export async function ensureGlobalSyncControlSeeded(db: D1Database): Promise<voi
   const stmts = GLOBAL_SYNC_CONTROL_SEEDS.map(([key, value]) =>
     db
       .prepare(
-        `INSERT OR IGNORE INTO sync_control (tenant_id, key, value, updated_at) VALUES (0, ?, ?, ?)`,
+        "INSERT OR IGNORE INTO sync_control (tenant_id, key, value, updated_at) VALUES (0, ?, ?, ?)",
       )
       .bind(key, value, now),
   );
   await batchChunked(db, stmts);
 }
 
-export async function acquireSyncLock(db: D1Database, tenantId: number = 0): Promise<boolean> {
+export async function acquireSyncLock(db: D1Database, tenantId = 0): Promise<boolean> {
   const result = await db
     .prepare(
       `UPDATE sync_control
@@ -365,14 +365,16 @@ export async function acquireSyncLock(db: D1Database, tenantId: number = 0): Pro
   return result.meta.changes > 0;
 }
 
-export async function releaseSyncLock(db: D1Database, tenantId: number = 0): Promise<void> {
+export async function releaseSyncLock(db: D1Database, tenantId = 0): Promise<void> {
   await db
-    .prepare(`UPDATE sync_control SET value='0', updated_at=? WHERE key='sync_running' AND tenant_id = ?`)
+    .prepare(
+      `UPDATE sync_control SET value='0', updated_at=? WHERE key='sync_running' AND tenant_id = ?`,
+    )
     .bind(new Date().toISOString(), tenantId)
     .run();
 }
 
-export async function isHalted(db: D1Database, tenantId: number = 0): Promise<boolean> {
+export async function isHalted(db: D1Database, tenantId = 0): Promise<boolean> {
   const row = await db
     .prepare(`SELECT value FROM sync_control WHERE key='halted' AND tenant_id = ?`)
     .bind(tenantId)
@@ -380,15 +382,15 @@ export async function isHalted(db: D1Database, tenantId: number = 0): Promise<bo
   return row?.value === "1";
 }
 
-export async function getAuthFailures(db: D1Database, tenantId: number = 0): Promise<number> {
+export async function getAuthFailures(db: D1Database, tenantId = 0): Promise<number> {
   const row = await db
     .prepare(`SELECT value FROM sync_control WHERE key='auth_failures' AND tenant_id = ?`)
     .bind(tenantId)
     .first<{ value: string }>();
-  return parseInt(row?.value ?? "0", 10);
+  return Number.parseInt(row?.value ?? "0", 10);
 }
 
-export async function incrementAuthFailures(db: D1Database, tenantId: number = 0): Promise<number> {
+export async function incrementAuthFailures(db: D1Database, tenantId = 0): Promise<number> {
   await db
     .prepare(
       `UPDATE sync_control SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT), updated_at=?
@@ -399,14 +401,14 @@ export async function incrementAuthFailures(db: D1Database, tenantId: number = 0
   return getAuthFailures(db, tenantId);
 }
 
-export async function haltSync(db: D1Database, tenantId: number = 0): Promise<void> {
+export async function haltSync(db: D1Database, tenantId = 0): Promise<void> {
   await db
     .prepare(`UPDATE sync_control SET value='1', updated_at=? WHERE key='halted' AND tenant_id = ?`)
     .bind(new Date().toISOString(), tenantId)
     .run();
 }
 
-export async function resetAuthFailures(db: D1Database, tenantId: number = 0): Promise<void> {
+export async function resetAuthFailures(db: D1Database, tenantId = 0): Promise<void> {
   await db
     .prepare(
       `UPDATE sync_control SET value='0', updated_at=? WHERE key='auth_failures' AND tenant_id = ?`,
@@ -481,9 +483,7 @@ export async function syncRepoIssues(
     );
     const data: IssuesData = response.data;
     const rl = data.rateLimit;
-    console.log(
-      `[sync] ${repo} p${pages + 1} cost=${rl.cost} remaining=${rl.remaining}`,
-    );
+    console.log(`[sync] ${repo} p${pages + 1} cost=${rl.cost} remaining=${rl.remaining}`);
 
     const issuesPage: IssuesData["repository"]["issues"] = data.repository.issues;
     const nodes = issuesPage.nodes;
@@ -518,9 +518,7 @@ export async function syncRepoIssues(
       // Label wipe + rewrite
       pageStmts.push(db.prepare("DELETE FROM labels WHERE issue_key=?").bind(key));
       for (const lbl of labels) {
-        pageStmts.push(
-          db.prepare("INSERT OR IGNORE INTO labels VALUES (?,?)").bind(key, lbl),
-        );
+        pageStmts.push(db.prepare("INSERT OR IGNORE INTO labels VALUES (?,?)").bind(key, lbl));
       }
 
       // Collect edges (flush in pass 2)
@@ -540,9 +538,7 @@ export async function syncRepoIssues(
   // Write sync_state ONCE after full loop
   const nowIso = new Date().toISOString();
   await db
-    .prepare(
-      "INSERT OR REPLACE INTO sync_state(repo,last_cursor,last_synced_at) VALUES(?,NULL,?)",
-    )
+    .prepare("INSERT OR REPLACE INTO sync_state(repo,last_cursor,last_synced_at) VALUES(?,NULL,?)")
     .bind(repo, nowIso)
     .run();
 }
@@ -676,11 +672,12 @@ export async function syncBranches(
 
     for (const node of data.repository.refs.nodes) {
       const m = BRANCH_ISSUE_RE.exec(node.name);
-      if (m) matchedNumbers.push(parseInt(m[1], 10));
+      if (m) matchedNumbers.push(Number.parseInt(m[1], 10));
     }
 
     pageCount++;
-    const pageInfo: { hasNextPage: boolean; endCursor: string | null } = data.repository.refs.pageInfo;
+    const pageInfo: { hasNextPage: boolean; endCursor: string | null } =
+      data.repository.refs.pageInfo;
     if (!pageInfo.hasNextPage || pageCount >= MAX_PAGES) break;
     cursor = pageInfo.endCursor;
     if (!cursor) break;
@@ -755,13 +752,12 @@ export async function applyPrState(
         .run();
     }
     return stale.length;
-  } else {
-    const res = await db
-      .prepare(`UPDATE pr_state SET state='closed' WHERE repo=? AND state='open'`)
-      .bind(repo)
-      .run();
-    return res.meta.changes ?? 0;
   }
+  const res = await db
+    .prepare(`UPDATE pr_state SET state='closed' WHERE repo=? AND state='open'`)
+    .bind(repo)
+    .run();
+  return res.meta.changes ?? 0;
 }
 
 /**
@@ -796,24 +792,28 @@ export async function syncPRs(
       const hasReviewedLabel = labelNames.includes("reviewed") ? 1 : 0;
       const closingRefs = pr.closingIssuesReferences?.nodes ?? [];
       const closingIssueKeys = closingRefs.map(
-        (ref: { number: number; repository: { nameWithOwner: string } }) => `${ref.repository.nameWithOwner}#${ref.number}`,
+        (ref: { number: number; repository: { nameWithOwner: string } }) =>
+          `${ref.repository.nameWithOwner}#${ref.number}`,
       );
 
       seenPrNumbers.push(pr.number);
       upsertStmts.push(
-        db.prepare(UPSERT_PR_STATE_SQL).bind(
-          repo,
-          pr.number,
-          pr.state.toLowerCase(),
-          hasReviewedLabel,
-          JSON.stringify(closingIssueKeys),
-          nowIso,
-        ),
+        db
+          .prepare(UPSERT_PR_STATE_SQL)
+          .bind(
+            repo,
+            pr.number,
+            pr.state.toLowerCase(),
+            hasReviewedLabel,
+            JSON.stringify(closingIssueKeys),
+            nowIso,
+          ),
       );
     }
 
     pageCount++;
-    const pageInfo: { hasNextPage: boolean; endCursor: string | null } = data.repository.pullRequests.pageInfo;
+    const pageInfo: { hasNextPage: boolean; endCursor: string | null } =
+      data.repository.pullRequests.pageInfo;
     if (!pageInfo.hasNextPage || pageCount >= MAX_PAGES) break;
     cursor = pageInfo.endCursor;
     if (!cursor) break;
@@ -901,24 +901,21 @@ export async function syncRepoBundle(
   while (!(issuesDone && refsDone && prsDone)) {
     if (pages >= MAX_PAGES) break;
 
-    const response: { data: BundleData } & Record<string, unknown> =
-      await ghGraphql<BundleData>(
-        pickRepoBundleQuery(structureOnly),
-        {
-          owner,
-          name,
-          issuesCursor: issuesDone ? null : issuesCursor,
-          refsCursor: issuesDone && refsDone ? null : refsCursor,
-          prsCursor: issuesDone && refsDone && prsDone ? null : prsCursor,
-          since,
-        },
-        token,
-      );
+    const response: { data: BundleData } & Record<string, unknown> = await ghGraphql<BundleData>(
+      pickRepoBundleQuery(structureOnly),
+      {
+        owner,
+        name,
+        issuesCursor: issuesDone ? null : issuesCursor,
+        refsCursor: issuesDone && refsDone ? null : refsCursor,
+        prsCursor: issuesDone && refsDone && prsDone ? null : prsCursor,
+        since,
+      },
+      token,
+    );
     const data: BundleData = response.data;
     const rl = data.rateLimit;
-    console.log(
-      `[sync] bundle ${repo} p${pages + 1} cost=${rl.cost} remaining=${rl.remaining}`,
-    );
+    console.log(`[sync] bundle ${repo} p${pages + 1} cost=${rl.cost} remaining=${rl.remaining}`);
     pages++;
 
     // --- issues ---
@@ -951,9 +948,7 @@ export async function syncRepoBundle(
         );
         pageStmts.push(db.prepare("DELETE FROM labels WHERE issue_key=?").bind(key));
         for (const lbl of labels) {
-          pageStmts.push(
-            db.prepare("INSERT OR IGNORE INTO labels VALUES (?,?)").bind(key, lbl),
-          );
+          pageStmts.push(db.prepare("INSERT OR IGNORE INTO labels VALUES (?,?)").bind(key, lbl));
         }
         collectEdges(node, repo, key, collectedEdges);
       }
@@ -972,7 +967,7 @@ export async function syncRepoBundle(
       const refsPage = data.repository.refs;
       for (const node of refsPage.nodes) {
         const m = BRANCH_ISSUE_RE.exec(node.name);
-        if (m) matchedBranchNumbers.push(parseInt(m[1], 10));
+        if (m) matchedBranchNumbers.push(Number.parseInt(m[1], 10));
       }
       if (!refsPage.pageInfo.hasNextPage || !refsPage.pageInfo.endCursor) {
         refsDone = true;
@@ -994,14 +989,16 @@ export async function syncRepoBundle(
         );
         seenPrNumbers.push(pr.number);
         prUpsertStmts.push(
-          db.prepare(UPSERT_PR_STATE_SQL).bind(
-            repo,
-            pr.number,
-            pr.state.toLowerCase(),
-            hasReviewedLabel,
-            JSON.stringify(closingIssueKeys),
-            nowIso,
-          ),
+          db
+            .prepare(UPSERT_PR_STATE_SQL)
+            .bind(
+              repo,
+              pr.number,
+              pr.state.toLowerCase(),
+              hasReviewedLabel,
+              JSON.stringify(closingIssueKeys),
+              nowIso,
+            ),
         );
       }
       if (!prsPage.pageInfo.hasNextPage || !prsPage.pageInfo.endCursor) {
@@ -1014,9 +1011,7 @@ export async function syncRepoBundle(
 
   // Write sync_state ONCE after full loop
   await db
-    .prepare(
-      "INSERT OR REPLACE INTO sync_state(repo,last_cursor,last_synced_at) VALUES(?,NULL,?)",
-    )
+    .prepare("INSERT OR REPLACE INTO sync_state(repo,last_cursor,last_synced_at) VALUES(?,NULL,?)")
     .bind(repo, nowIso)
     .run();
 
@@ -1092,7 +1087,7 @@ export async function closedHopPass(
     try {
       response = await ghGraphql<StubIssueData>(
         pickStubIssueQuery(structureOnly),
-        { owner, name, number: parseInt(numberStr, 10) },
+        { owner, name, number: Number.parseInt(numberStr, 10) },
         token,
       );
     } catch (err) {
@@ -1176,28 +1171,20 @@ export interface RunAuditInfo {
   corrections?: RunCorrections;
 }
 
-export async function writeRunAudit(
-  env: Env,
-  db: D1Database,
-  info: RunAuditInfo,
-): Promise<void> {
+export async function writeRunAudit(env: Env, db: D1Database, info: RunAuditInfo): Promise<void> {
   try {
     const [issues, edges, prs, wm, ctrl] = await Promise.all([
       db.prepare("SELECT COUNT(*) AS c FROM issues").first<{ c: number }>(),
       db.prepare("SELECT COUNT(*) AS c FROM edges").first<{ c: number }>(),
       db.prepare("SELECT COUNT(*) AS c FROM pr_state").first<{ c: number }>(),
-      db
-        .prepare("SELECT MAX(last_synced_at) AS w FROM sync_state")
-        .first<{ w: string | null }>(),
+      db.prepare("SELECT MAX(last_synced_at) AS w FROM sync_state").first<{ w: string | null }>(),
       db
         .prepare(
           "SELECT key, value FROM sync_control WHERE key IN ('halted','auth_failures') AND tenant_id = 0",
         )
         .all<{ key: string; value: string }>(),
     ]);
-    const ctrlMap = new Map(
-      (ctrl.results ?? []).map((r) => [r.key, r.value] as const),
-    );
+    const ctrlMap = new Map((ctrl.results ?? []).map((r) => [r.key, r.value] as const));
     const ts = new Date().toISOString();
 
     const after = {
@@ -1292,16 +1279,15 @@ export interface TenantDiscovery {
   archivedRepos: Set<string>;
 }
 
-export async function discoverTenants(
-  db: D1Database,
-  env: Env,
-): Promise<TenantDiscovery> {
+export async function discoverTenants(db: D1Database, env: Env): Promise<TenantDiscovery> {
   const repoMap = new Map<string, Array<{ tenantId: number; installationId: number }>>();
   const archivedRepos = new Set<string>();
   let staleTenantReposRemoved = 0;
 
   const tenantRows = await db
-    .prepare(`SELECT id, installation_id FROM tenants WHERE installation_id IS NOT NULL ORDER BY id ASC`)
+    .prepare(
+      "SELECT id, installation_id FROM tenants WHERE installation_id IS NOT NULL ORDER BY id ASC",
+    )
     .all<{ id: number; installation_id: number }>();
 
   for (const tenant of tenantRows.results ?? []) {
@@ -1362,14 +1348,14 @@ export async function discoverTenants(
       // Delete stale rows: repos no longer returned by the installation.
       const repoSet = new Set(repos.map((r) => r.repo));
       const existing = await db
-        .prepare(`SELECT repo FROM tenant_repo_access WHERE tenant_id = ?`)
+        .prepare("SELECT repo FROM tenant_repo_access WHERE tenant_id = ?")
         .bind(tenantId)
         .all<{ repo: string }>();
       const stale = (existing.results ?? []).map((r) => r.repo).filter((r) => !repoSet.has(r));
       if (stale.length > 0) {
         const deleteStmts = stale.map((repo) =>
           db
-            .prepare(`DELETE FROM tenant_repo_access WHERE tenant_id = ? AND repo = ?`)
+            .prepare("DELETE FROM tenant_repo_access WHERE tenant_id = ? AND repo = ?")
             .bind(tenantId, repo),
         );
         await batchChunked(db, deleteStmts);
@@ -1458,7 +1444,9 @@ export async function runSync(env: Env): Promise<void> {
     }
 
     if (allRepos.length > WINDOW * NUM_SLOTS)
-      console.warn(`[sync] ${allRepos.length} repos exceed window capacity ${WINDOW * NUM_SLOTS} — repos beyond index ${WINDOW * NUM_SLOTS} are not synced this cycle`);
+      console.warn(
+        `[sync] ${allRepos.length} repos exceed window capacity ${WINDOW * NUM_SLOTS} — repos beyond index ${WINDOW * NUM_SLOTS} are not synced this cycle`,
+      );
 
     // Upsert repos table from the union. archived is sourced from the installation
     // repo list (#160 fallout fix): listInstallationRepos now carries isArchived,
@@ -1466,7 +1454,7 @@ export async function runSync(env: Env): Promise<void> {
     const repoUpsertStmts = allRepos.map((repo) =>
       db
         .prepare(
-          `INSERT INTO repos (repo, archived) VALUES (?, ?) ON CONFLICT(repo) DO UPDATE SET archived=excluded.archived`,
+          "INSERT INTO repos (repo, archived) VALUES (?, ?) ON CONFLICT(repo) DO UPDATE SET archived=excluded.archived",
         )
         .bind(repo, archivedRepos.has(repo) ? 1 : 0),
     );
@@ -1481,19 +1469,29 @@ export async function runSync(env: Env): Promise<void> {
     const [issueRepos, edgeSrcRepos, edgeDstRepos, prStateRepos, syncStateRepos] =
       await Promise.all([
         db.prepare("SELECT DISTINCT repo FROM issues").all<{ repo: string }>(),
-        db.prepare("SELECT DISTINCT substr(src_key, 1, instr(src_key,'#')-1) AS repo FROM edges").all<{ repo: string }>(),
-        db.prepare("SELECT DISTINCT substr(dst_key, 1, instr(dst_key,'#')-1) AS repo FROM edges").all<{ repo: string }>(),
+        db
+          .prepare("SELECT DISTINCT substr(src_key, 1, instr(src_key,'#')-1) AS repo FROM edges")
+          .all<{ repo: string }>(),
+        db
+          .prepare("SELECT DISTINCT substr(dst_key, 1, instr(dst_key,'#')-1) AS repo FROM edges")
+          .all<{ repo: string }>(),
         db.prepare("SELECT DISTINCT repo FROM pr_state").all<{ repo: string }>(),
         db.prepare("SELECT repo FROM sync_state").all<{ repo: string }>(),
       ]);
 
-    const staleIssueRepos = (issueRepos.results ?? []).map((r) => r.repo).filter((r) => !knownRepos.has(r));
+    const staleIssueRepos = (issueRepos.results ?? [])
+      .map((r) => r.repo)
+      .filter((r) => !knownRepos.has(r));
     const staleEdgeRepos = [
       ...(edgeSrcRepos.results ?? []).map((r) => r.repo),
       ...(edgeDstRepos.results ?? []).map((r) => r.repo),
     ].filter((r) => !knownRepos.has(r));
-    const stalePrStateRepos = (prStateRepos.results ?? []).map((r) => r.repo).filter((r) => !knownRepos.has(r));
-    const staleSyncStateRepos = (syncStateRepos.results ?? []).map((r) => r.repo).filter((r) => !knownRepos.has(r));
+    const stalePrStateRepos = (prStateRepos.results ?? [])
+      .map((r) => r.repo)
+      .filter((r) => !knownRepos.has(r));
+    const staleSyncStateRepos = (syncStateRepos.results ?? [])
+      .map((r) => r.repo)
+      .filter((r) => !knownRepos.has(r));
 
     const pruneStmts: D1PreparedStatement[] = [];
     for (let i = 0; i < staleIssueRepos.length; i += CHUNK) {
@@ -1540,18 +1538,20 @@ export async function runSync(env: Env): Promise<void> {
     const slotRow = await db
       .prepare(`SELECT value FROM sync_control WHERE key='sync_slot' AND tenant_id = 0`)
       .first<{ value: string }>();
-    const slot = parseInt(slotRow?.value ?? "0", 10);
+    const slot = Number.parseInt(slotRow?.value ?? "0", 10);
     const windowStart = slot * WINDOW;
     const windowEnd = windowStart + WINDOW;
     // Windowing only engages past WINDOW repos; below that, sync everything hourly.
-    const windowedRepos = allRepos.length <= WINDOW ? allRepos : allRepos.slice(windowStart, windowEnd);
+    const windowedRepos =
+      allRepos.length <= WINDOW ? allRepos : allRepos.slice(windowStart, windowEnd);
 
     console.log(
       `[sync] slot=${slot} window=[${windowStart},${windowEnd}) repos=${windowedRepos.length}/${allRepos.length}`,
     );
 
     // Per-repo token resolver: try owning tenant first, fall back down list.
-    const makeRepoResolver = (repoTenants: Array<{ tenantId: number; installationId: number }>) =>
+    const makeRepoResolver =
+      (repoTenants: Array<{ tenantId: number; installationId: number }>) =>
       async (): Promise<string> => {
         for (const { tenantId, installationId } of repoTenants) {
           try {
@@ -1573,6 +1573,7 @@ export async function runSync(env: Env): Promise<void> {
       const slash = repo.indexOf("/");
       const owner = repo.slice(0, slash);
       const name = repo.slice(slash + 1);
+      // biome-ignore lint/style/noNonNullAssertion: windowedRepos is derived from repoTenantMap keys, so every repo is present.
       const repoTenants = repoTenantMap.get(repo)!;
       const resolveToken = makeRepoResolver(repoTenants);
       try {
@@ -1628,7 +1629,9 @@ export async function runSync(env: Env): Promise<void> {
     const systemicFailure = windowedRepos.length > 0 && skippedCount === windowedRepos.length;
     if (systemicFailure) {
       const failures = await incrementAuthFailures(db, 0);
-      console.error(`[sync] all ${windowedRepos.length} windowed repo(s) failed — systemic auth failure ${failures}/2`);
+      console.error(
+        `[sync] all ${windowedRepos.length} windowed repo(s) failed — systemic auth failure ${failures}/2`,
+      );
       outcome = failures >= 2 ? "halted" : "auth_error";
       if (failures >= 2) {
         await haltSync(db, 0);

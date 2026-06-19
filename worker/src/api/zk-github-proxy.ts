@@ -22,24 +22,21 @@ const MAX_BODY_BYTES = 32 * 1024;
  * names like `mutation` nested in a selection set do not false-positive.
  */
 export function isReadOnlyGraphql(query: string): boolean {
-  const cleaned = query
-    .replace(/#[^\n\r]*/g, " ")
-    .replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  const cleaned = query.replace(/#[^\n\r]*/g, " ").replace(/"(?:[^"\\]|\\.)*"/g, '""');
   let depth = 0;
   const re = /[{}]|\b(?:query|mutation|subscription)\b/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(cleaned)) !== null) {
+  let m = re.exec(cleaned);
+  while (m !== null) {
     const tok = m[0];
     if (tok === "{") depth++;
     else if (tok === "}") depth = Math.max(0, depth - 1);
     else if (depth === 0 && tok !== "query") return false;
+    m = re.exec(cleaned);
   }
   return true;
 }
 
-export async function zkGithubGraphqlRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function zkGithubGraphqlRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) return c.json({ error: "unauthorized" }, 401);
 

@@ -20,10 +20,7 @@ const KDF_P_MIN = 1;
 const KDF_P_MAX = 1;
 const REAUTH_PROOF_RE = /^[0-9a-f]{32}$/;
 
-function validateKdfParams(
-  kdf_alg: string,
-  kdf_params: string,
-): boolean {
+function validateKdfParams(kdf_alg: string, kdf_params: string): boolean {
   if (kdf_alg !== KDF_ALG) return false;
   let parsed: unknown;
   try {
@@ -78,14 +75,11 @@ function parseBackupCount(value: string | null | undefined, hourKey: string): nu
   }
 }
 
-async function isBackupPutRateLimited(
-  db: D1Database,
-  userId: number,
-): Promise<boolean> {
+async function isBackupPutRateLimited(db: D1Database, userId: number): Promise<boolean> {
   const hourKey = backupHourKey();
   const rowKey = `zk_backup_put:${userId}`;
   const row = await db
-    .prepare(`SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?`)
+    .prepare("SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?")
     .bind(rowKey)
     .first<{ value: string }>();
   return parseBackupCount(row?.value, hourKey) >= MAX_PUT_PER_HOUR;
@@ -96,10 +90,7 @@ async function isBackupPutRateLimited(
  * A single INSERT … ON CONFLICT DO UPDATE performs the read-modify-write in
  * one SQL statement, preventing lost increments under concurrent isolates.
  */
-async function recordBackupPutSuccess(
-  db: D1Database,
-  userId: number,
-): Promise<void> {
+async function recordBackupPutSuccess(db: D1Database, userId: number): Promise<void> {
   const hourKey = backupHourKey();
   const rowKey = `zk_backup_put:${userId}`;
   await db
@@ -136,21 +127,18 @@ async function logBackupEvent(
   });
 }
 
-export async function getZkKeyBackupRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function getZkKeyBackupRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) return c.json({ error: "unauthorized" }, 401);
   if (!zkAccountKeyEnabled(c.env)) {
     return c.json({ error: "zk_account_key_disabled" }, 403);
   }
 
-  const row = await c.env.DB
-    .prepare(
-      `SELECT backup_version, kdf_alg, kdf_params, wrap_iv, wrapped_key, key_fp,
+  const row = await c.env.DB.prepare(
+    `SELECT backup_version, kdf_alg, kdf_params, wrap_iv, wrapped_key, key_fp,
               created_at, updated_at
        FROM zk_key_backups WHERE user_id = ?`,
-    )
+  )
     .bind(s.userId)
     .first<BackupRow>();
 
@@ -170,9 +158,7 @@ export async function getZkKeyBackupRoute(
   });
 }
 
-export async function putZkKeyBackupRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function putZkKeyBackupRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) return c.json({ error: "unauthorized" }, 401);
   if (!zkAccountKeyEnabled(c.env)) {
@@ -195,13 +181,9 @@ export async function putZkKeyBackupRoute(
   const kdf_params = b.kdf_params;
   const wrap_iv = b.wrap_iv;
   const wrapped_key = b.wrapped_key;
-  const kdf_alg =
-    typeof b.kdf_alg === "string" && b.kdf_alg.length > 0
-      ? b.kdf_alg
-      : "argon2id";
+  const kdf_alg = typeof b.kdf_alg === "string" && b.kdf_alg.length > 0 ? b.kdf_alg : "argon2id";
   const rotation = b.rotation === true;
-  const reauth_proof =
-    typeof b.reauth_proof === "string" ? b.reauth_proof : null;
+  const reauth_proof = typeof b.reauth_proof === "string" ? b.reauth_proof : null;
   const expected_backup_version =
     typeof b.expected_backup_version === "number"
       ? b.expected_backup_version
@@ -233,10 +215,9 @@ export async function putZkKeyBackupRoute(
     return c.json({ error: "rate_limited" }, 429);
   }
 
-  const existing = await c.env.DB
-    .prepare(
-      `SELECT backup_version, key_fp FROM zk_key_backups WHERE user_id = ?`,
-    )
+  const existing = await c.env.DB.prepare(
+    "SELECT backup_version, key_fp FROM zk_key_backups WHERE user_id = ?",
+  )
     .bind(s.userId)
     .first<{ backup_version: number; key_fp: string }>();
 
@@ -244,14 +225,13 @@ export async function putZkKeyBackupRoute(
     if (expected_backup_version != null && expected_backup_version !== 1) {
       return c.json({ error: "backup_version_conflict" }, 409);
     }
-    const inserted = await c.env.DB
-      .prepare(
-        `INSERT INTO zk_key_backups
+    const inserted = await c.env.DB.prepare(
+      `INSERT INTO zk_key_backups
          (user_id, backup_version, kdf_alg, kdf_params, wrap_iv, wrapped_key, key_fp)
          VALUES (?, 1, ?, ?, ?, ?, ?)
          ON CONFLICT(user_id) DO NOTHING
          RETURNING user_id`,
-      )
+    )
       .bind(s.userId, kdf_alg, kdf_params, wrap_iv, wrapped_key, key_fp)
       .first<{ user_id: number }>();
     if (!inserted) {
@@ -302,9 +282,8 @@ export async function putZkKeyBackupRoute(
   }
 
   if (rotation) {
-    const result = await c.env.DB
-      .prepare(
-        `UPDATE zk_key_backups SET
+    const result = await c.env.DB.prepare(
+      `UPDATE zk_key_backups SET
            backup_version = ?,
            kdf_alg = ?,
            kdf_params = ?,
@@ -313,17 +292,8 @@ export async function putZkKeyBackupRoute(
            key_fp = ?,
            updated_at = datetime('now')
          WHERE user_id = ? AND backup_version = ?`,
-      )
-      .bind(
-        nextVersion,
-        kdf_alg,
-        kdf_params,
-        wrap_iv,
-        wrapped_key,
-        key_fp,
-        s.userId,
-        casVersion,
-      )
+    )
+      .bind(nextVersion, kdf_alg, kdf_params, wrap_iv, wrapped_key, key_fp, s.userId, casVersion)
       .run();
     if (result.meta.changes === 0) {
       return c.json({ error: "backup_version_conflict" }, 409);
@@ -333,9 +303,8 @@ export async function putZkKeyBackupRoute(
     return c.json({ backup_version: nextVersion, key_fp });
   }
 
-  const result = await c.env.DB
-    .prepare(
-      `UPDATE zk_key_backups SET
+  const result = await c.env.DB.prepare(
+    `UPDATE zk_key_backups SET
          backup_version = ?,
          kdf_alg = ?,
          kdf_params = ?,
@@ -343,16 +312,8 @@ export async function putZkKeyBackupRoute(
          wrapped_key = ?,
          updated_at = datetime('now')
        WHERE user_id = ? AND backup_version = ?`,
-    )
-    .bind(
-      nextVersion,
-      kdf_alg,
-      kdf_params,
-      wrap_iv,
-      wrapped_key,
-      s.userId,
-      casVersion,
-    )
+  )
+    .bind(nextVersion, kdf_alg, kdf_params, wrap_iv, wrapped_key, s.userId, casVersion)
     .run();
   if (result.meta.changes === 0) {
     return c.json({ error: "backup_version_conflict" }, 409);

@@ -10,8 +10,8 @@
  */
 
 import type { Context } from "hono";
-import type { Env } from "../types";
 import { runSync } from "../sync/sync";
+import type { Env } from "../types";
 
 export const adminSyncRoute = async (c: Context<{ Bindings: Env }>) => {
   c.executionCtx.waitUntil(runSync(c.env));

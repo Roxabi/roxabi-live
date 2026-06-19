@@ -1,32 +1,24 @@
 /** ZK mode helpers (#142). */
 
-export async function userZkOptIn(
-  db: D1Database,
-  userId: number,
-): Promise<boolean> {
+export async function userZkOptIn(db: D1Database, userId: number): Promise<boolean> {
   const row = await db
-    .prepare(`SELECT zk_opt_in FROM users WHERE id = ?`)
+    .prepare("SELECT zk_opt_in FROM users WHERE id = ?")
     .bind(userId)
     .first<{ zk_opt_in: number }>();
   return row?.zk_opt_in === 1;
 }
 
 /** Issue keys that have at least one zk_payloads ciphertext row. */
-export async function loadZkSealedIssueKeys(
-  db: D1Database,
-): Promise<Set<string>> {
+export async function loadZkSealedIssueKeys(db: D1Database): Promise<Set<string>> {
   const rows = await db
-    .prepare(`SELECT DISTINCT issue_key FROM zk_payloads`)
+    .prepare("SELECT DISTINCT issue_key FROM zk_payloads")
     .all<{ issue_key: string }>();
   return new Set((rows.results ?? []).map((r) => r.issue_key));
 }
 
-export async function isIssueZkSealed(
-  db: D1Database,
-  issueKey: string,
-): Promise<boolean> {
+export async function isIssueZkSealed(db: D1Database, issueKey: string): Promise<boolean> {
   const row = await db
-    .prepare(`SELECT 1 AS one FROM zk_payloads WHERE issue_key = ? LIMIT 1`)
+    .prepare("SELECT 1 AS one FROM zk_payloads WHERE issue_key = ? LIMIT 1")
     .bind(issueKey)
     .first<{ one: number }>();
   return row != null;
@@ -49,10 +41,7 @@ export function redactIssueTitle(
 export const d1PayloadTitle = redactIssueTitle;
 
 /** Wipe plaintext content from issues.payload after sealing. */
-export async function scrubIssuePayloads(
-  db: D1Database,
-  issueKeys: string[],
-): Promise<void> {
+export async function scrubIssuePayloads(db: D1Database, issueKeys: string[]): Promise<void> {
   const unique = [...new Set(issueKeys)];
   for (let i = 0; i < unique.length; i += 90) {
     const chunk = unique.slice(i, i + 90);

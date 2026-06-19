@@ -6,10 +6,10 @@
  * Also provides a positive control confirming the gate admits a valid session.
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
-import type { Env } from "./types";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionContext } from "./auth/types";
 import { app } from "./router";
+import type { Env } from "./types";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -62,7 +62,9 @@ function makeSessionDb(session: SessionContext): D1Database {
     first: vi.fn().mockResolvedValue(validRow),
     run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
     all: vi.fn().mockResolvedValue({ results: [] }),
-    bind: vi.fn(function (this: unknown) { return this; }),
+    bind: vi.fn(function (this: unknown) {
+      return this;
+    }),
   };
 
   const stmt = {
@@ -121,7 +123,7 @@ describe("requireSession auth gate", () => {
 
       // Assert
       expect(res.status).toBe(401);
-      const body = await res.json() as { error: string };
+      const body = (await res.json()) as { error: string };
       expect(body.error).toBe("unauthorized");
     });
 
@@ -146,15 +148,11 @@ describe("requireSession auth gate", () => {
       const env = makeEnv(db);
 
       // Act — encoded Roxabi/alpha#42
-      const res = await app.request(
-        "/api/issues/Roxabi%2Falpha%2342",
-        {},
-        env,
-      );
+      const res = await app.request("/api/issues/Roxabi%2Falpha%2342", {}, env);
 
       // Assert
       expect(res.status).toBe(401);
-      const body = await res.json() as { error: string };
+      const body = (await res.json()) as { error: string };
       expect(body.error).toBe("unauthorized");
     });
 
@@ -164,11 +162,7 @@ describe("requireSession auth gate", () => {
       const env = makeEnv(db);
 
       // Act
-      const res = await app.request(
-        "/api/issues/Roxabi%2Falpha%2342",
-        {},
-        env,
-      );
+      const res = await app.request("/api/issues/Roxabi%2Falpha%2342", {}, env);
 
       // Assert
       expect(res.status).toBe(401);
@@ -187,7 +181,7 @@ describe("requireSession auth gate", () => {
 
       // Assert
       expect(res.status).toBe(401);
-      const body = await res.json() as { error: string };
+      const body = (await res.json()) as { error: string };
       expect(body.error).toBe("unauthorized");
     });
 

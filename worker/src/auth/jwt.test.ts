@@ -27,10 +27,10 @@ async function exportPrivateKeyAsB64(key: CryptoKey): Promise<string> {
 
 /** Convert a base64url string to standard base64 (add padding, swap chars). */
 function b64urlToB64(s: string): string {
-  return s.replace(/-/g, "+").replace(/_/g, "/").padEnd(
-    s.length + ((4 - (s.length % 4)) % 4),
-    "=",
-  );
+  return s
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(s.length + ((4 - (s.length % 4)) % 4), "=");
 }
 
 // ---------------------------------------------------------------------------
@@ -76,12 +76,7 @@ describe("importAppPrivateKey", () => {
 
     // Act
     const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", imported, data);
-    const valid = await crypto.subtle.verify(
-      "RSASSA-PKCS1-v1_5",
-      pair.publicKey,
-      sig,
-      data,
-    );
+    const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", pair.publicKey, sig, data);
 
     // Assert
     expect(valid).toBe(true);
@@ -95,14 +90,12 @@ describe("importAppPrivateKey", () => {
 describe("signAppJwt", () => {
   // Shared key pair for all signing tests
   let privKey: CryptoKey;
-  let pubKey: CryptoKey;
 
   // We generate once (before all) to keep tests fast — key generation is expensive
   beforeAll(async () => {
     const pair = await generateTestKeyPair();
     const b64 = await exportPrivateKeyAsB64(pair.privateKey);
     privKey = await importAppPrivateKey(b64);
-    pubKey = pair.publicKey;
   });
 
   const NOW_SEC = 1_700_000_000;
@@ -209,7 +202,7 @@ describe("signAppJwt base64url encoding", () => {
   it("signature part contains none of '=', '+', '/'", async () => {
     // Arrange / Act
     const token = await signAppJwt("123456", privKey, 1_700_000_000);
-    const [,, sig] = token.split(".");
+    const [, , sig] = token.split(".");
 
     // Assert
     expect(sig).not.toContain("=");
@@ -240,17 +233,10 @@ describe("signAppJwt signature verification", () => {
     const signingInput = new TextEncoder().encode(`${headerB64url}.${payloadB64url}`);
 
     // Decode signature from base64url back to bytes
-    const sigBytes = Uint8Array.from(atob(b64urlToB64(sigB64url)), (c) =>
-      c.charCodeAt(0),
-    );
+    const sigBytes = Uint8Array.from(atob(b64urlToB64(sigB64url)), (c) => c.charCodeAt(0));
 
     // Act
-    const valid = await crypto.subtle.verify(
-      "RSASSA-PKCS1-v1_5",
-      pubKey,
-      sigBytes,
-      signingInput,
-    );
+    const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", pubKey, sigBytes, signingInput);
 
     // Assert
     expect(valid).toBe(true);
@@ -268,21 +254,12 @@ describe("signAppJwt signature verification", () => {
       .replace(/\//g, "_")
       .replace(/=+$/, "");
 
-    const signingInput = new TextEncoder().encode(
-      `${headerB64url}.${tamperedPayloadB64url}`,
-    );
+    const signingInput = new TextEncoder().encode(`${headerB64url}.${tamperedPayloadB64url}`);
 
-    const sigBytes = Uint8Array.from(atob(b64urlToB64(sigB64url)), (c) =>
-      c.charCodeAt(0),
-    );
+    const sigBytes = Uint8Array.from(atob(b64urlToB64(sigB64url)), (c) => c.charCodeAt(0));
 
     // Act
-    const valid = await crypto.subtle.verify(
-      "RSASSA-PKCS1-v1_5",
-      pubKey,
-      sigBytes,
-      signingInput,
-    );
+    const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", pubKey, sigBytes, signingInput);
 
     // Assert
     expect(valid).toBe(false);
@@ -294,7 +271,9 @@ describe("signAppJwt signature verification", () => {
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=+$/, "");
-    const payloadB64url = btoa(JSON.stringify({ iss: "123456", iat: 1_699_999_940, exp: 1_700_000_540 }))
+    const payloadB64url = btoa(
+      JSON.stringify({ iss: "123456", iat: 1_699_999_940, exp: 1_700_000_540 }),
+    )
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=+$/, "");
@@ -303,12 +282,7 @@ describe("signAppJwt signature verification", () => {
     const zeroedSig = new Uint8Array(256); // all zeros — not a real RSA signature
 
     // Act
-    const valid = await crypto.subtle.verify(
-      "RSASSA-PKCS1-v1_5",
-      pubKey,
-      zeroedSig,
-      signingInput,
-    );
+    const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", pubKey, zeroedSig, signingInput);
 
     // Assert — a zeroed signature must NOT verify (confirms guard is meaningful)
     expect(valid).toBe(false);

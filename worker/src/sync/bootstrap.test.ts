@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { captureDb } from "../test-utils";
 import {
   getIssueCount,
@@ -32,11 +32,7 @@ describe("maybeScheduleBootstrapSync", () => {
     const waitUntil = vi.fn();
     const ctx = { waitUntil } as unknown as ExecutionContext;
 
-    const scheduled = await maybeScheduleBootstrapSync(
-      db,
-      { DB: db } as never,
-      ctx,
-    );
+    const scheduled = await maybeScheduleBootstrapSync(db, { DB: db } as never, ctx);
 
     expect(scheduled).toBe(true);
     expect(waitUntil).toHaveBeenCalledOnce();

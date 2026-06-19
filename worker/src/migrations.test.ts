@@ -7,10 +7,10 @@
  */
 
 import { readFileSync, readdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { describe, it, expect, beforeAll } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -46,14 +46,8 @@ function getPkColumns(db: Database.Database, table: string): string[] {
     .map((c) => c.name);
 }
 
-function getIndexColumns(
-  db: Database.Database,
-  table: string,
-  indexName: string,
-): string[] {
-  const info = db
-    .prepare(`PRAGMA index_info(${indexName})`)
-    .all() as IndexInfo[];
+function getIndexColumns(db: Database.Database, _table: string, indexName: string): string[] {
+  const info = db.prepare(`PRAGMA index_info(${indexName})`).all() as IndexInfo[];
   return info.sort((a, b) => a.seqno - b.seqno).map((r) => r.name);
 }
 
@@ -88,9 +82,7 @@ beforeAll(() => {
 describe("migration chain", () => {
   it("applies all migrations without throwing", () => {
     // If beforeAll did not throw, the chain succeeded. Verify the db is usable.
-    const result = db
-      .prepare("SELECT COUNT(*) AS cnt FROM sync_control")
-      .get() as { cnt: number };
+    const result = db.prepare("SELECT COUNT(*) AS cnt FROM sync_control").get() as { cnt: number };
     expect(result.cnt).toBeGreaterThan(0);
   });
 
@@ -100,7 +92,7 @@ describe("migration chain", () => {
     expect(appliedFiles[0]).toMatch(/^0001_/);
     // Contiguity check: each file's 4-digit prefix must equal its 1-based position
     for (let i = 0; i < appliedFiles.length; i++) {
-      expect(parseInt(appliedFiles[i].slice(0, 4), 10)).toBe(i + 1);
+      expect(Number.parseInt(appliedFiles[i].slice(0, 4), 10)).toBe(i + 1);
     }
   });
 });
@@ -220,9 +212,7 @@ describe("zk_key_backups table", () => {
   });
 
   it("backup_version defaults to 1", () => {
-    const col = getColumns(db, "zk_key_backups").find(
-      (c) => c.name === "backup_version",
-    );
+    const col = getColumns(db, "zk_key_backups").find((c) => c.name === "backup_version");
     expect(col).toBeDefined();
     expect(col?.notnull).toBe(1);
     expect(col?.dflt_value).toBe("1");
@@ -233,10 +223,7 @@ describe("0014_zk_key_backups", () => {
   it("backfills key_fp from pubkey_fp on existing rows", () => {
     const migDb = new Database(":memory:");
     const pre = appliedFiles.filter(
-      (f) =>
-        !f.startsWith("0014_") &&
-        !f.startsWith("0015_") &&
-        !f.startsWith("0016_"),
+      (f) => !f.startsWith("0014_") && !f.startsWith("0015_") && !f.startsWith("0016_"),
     );
     for (const file of pre) {
       migDb.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
@@ -249,7 +236,7 @@ describe("0014_zk_key_backups", () => {
     `);
     migDb.exec(readFileSync(join(MIGRATIONS_DIR, "0014_zk_key_backups.sql"), "utf8"));
     const row = migDb
-      .prepare(`SELECT pubkey_fp, key_fp FROM zk_payloads WHERE issue_key = ?`)
+      .prepare("SELECT pubkey_fp, key_fp FROM zk_payloads WHERE issue_key = ?")
       .get("Roxabi/live#1") as { pubkey_fp: string; key_fp: string | null };
     expect(row.pubkey_fp).toBe("abc12345");
     expect(row.key_fp).toBe("abc12345");
@@ -263,16 +250,11 @@ describe("0014_zk_key_backups", () => {
 
 describe("tenant_repo_access table", () => {
   it("has composite primary key (tenant_id, repo)", () => {
-    expect(getPkColumns(db, "tenant_repo_access")).toEqual([
-      "tenant_id",
-      "repo",
-    ]);
+    expect(getPkColumns(db, "tenant_repo_access")).toEqual(["tenant_id", "repo"]);
   });
 
   it("has is_private column (added in 0007) defaulting to 1", () => {
-    const col = getColumns(db, "tenant_repo_access").find(
-      (c) => c.name === "is_private",
-    );
+    const col = getColumns(db, "tenant_repo_access").find((c) => c.name === "is_private");
     expect(col).toBeDefined();
     expect(col?.notnull).toBe(1);
     expect(col?.dflt_value).toBe("1");
@@ -375,7 +357,7 @@ describe("0013_zk_always_on", () => {
     `);
     migDb.exec(readFileSync(join(MIGRATIONS_DIR, "0013_zk_always_on.sql"), "utf8"));
     const rows = migDb
-      .prepare(`SELECT github_login, zk_opt_in FROM users ORDER BY id`)
+      .prepare("SELECT github_login, zk_opt_in FROM users ORDER BY id")
       .all() as Array<{ github_login: string; zk_opt_in: number }>;
     expect(rows).toEqual([
       { github_login: "off", zk_opt_in: 1 },

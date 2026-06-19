@@ -13,27 +13,33 @@
 import type { Context } from "hono";
 import type { Env } from "../types";
 
-import { verifyHmac } from "./hmac";
-import {
-  upsertIssueFromWebhook,
-  replaceLabels,
-  addEdge,
-  removeEdge,
-  upsertEdges,
-  deleteIssue,
-  setActiveBranch,
-  upsertPrState,
-  renameMilestone,
-  bumpDataVersion,
-  type WebhookIssue,
-} from "./mutations";
+import { resolveInstallToken } from "../auth/installToken";
 import { isIssueZkSealed } from "../auth/zk";
 import { zkStructureOnlyEnabled } from "../auth/zk-flags";
+import { GraphQLError, fetchIssueDeps } from "../sync/graphql";
 import { BRANCH_ISSUE_RE, canonicalKey, extractFromLabels, syncBranches } from "../sync/sync";
-import { fetchIssueDeps, GraphQLError } from "../sync/graphql";
-import { resolveInstallToken } from "../auth/installToken";
-import { getTenantByInstallationId, getTenantByOrgLogin, type TenantRow } from "./tenant";
-import { handleInstallation, handleInstallationRepositories, handleRepository, handleMember, handleMembership } from "./handlers-app";
+import {
+  handleInstallation,
+  handleInstallationRepositories,
+  handleMember,
+  handleMembership,
+  handleRepository,
+} from "./handlers-app";
+import { verifyHmac } from "./hmac";
+import {
+  type WebhookIssue,
+  addEdge,
+  bumpDataVersion,
+  deleteIssue,
+  removeEdge,
+  renameMilestone,
+  replaceLabels,
+  setActiveBranch,
+  upsertEdges,
+  upsertIssueFromWebhook,
+  upsertPrState,
+} from "./mutations";
+import { type TenantRow, getTenantByInstallationId, getTenantByOrgLogin } from "./tenant";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -71,9 +77,9 @@ function issueKey(
   issue: Record<string, unknown>,
   repoOverride?: Record<string, unknown> | null,
 ): string {
-  const repo = repoOverride ?? (issue["repository"] as Record<string, unknown> | undefined) ?? {};
-  const fullName = (repo["full_name"] as string | undefined) ?? "";
-  return `${fullName}#${issue["number"]}`;
+  const repo = repoOverride ?? (issue.repository as Record<string, unknown> | undefined) ?? {};
+  const fullName = (repo.full_name as string | undefined) ?? "";
+  return `${fullName}#${issue.number}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,28 +98,31 @@ export async function handleIssues(
   db: D1Database,
   env: Env,
 ): Promise<void> {
-  const action = payload["action"] as string | undefined;
-  const issue = payload["issue"] as Record<string, unknown>;
-  const repo = ((payload["repository"] as Record<string, unknown> | undefined) ?? {})["full_name"] as string | undefined ?? "";
-  const key = `${repo}#${issue["number"]}`;
+  const action = payload.action as string | undefined;
+  const issue = payload.issue as Record<string, unknown>;
+  const repo =
+    ((payload.repository as Record<string, unknown> | undefined)?.full_name as
+      | string
+      | undefined) ?? "";
+  const key = `${repo}#${issue.number}`;
 
   if (action === "deleted" || action === "transferred") {
     await deleteIssue(db, key).run();
     return;
   }
 
-  const rawLabels: unknown[] = (issue["labels"] as unknown[] | undefined) ?? [];
+  const rawLabels: unknown[] = (issue.labels as unknown[] | undefined) ?? [];
   const names: string[] = rawLabels.map((lbl) => {
     if (lbl && typeof lbl === "object") {
-      return String((lbl as Record<string, unknown>)["name"] ?? "");
+      return String((lbl as Record<string, unknown>).name ?? "");
     }
     return String(lbl);
   });
 
-  const milestoneObj = issue["milestone"];
+  const milestoneObj = issue.milestone;
   let milestoneTitle: string | null = null;
   if (milestoneObj && typeof milestoneObj === "object") {
-    const titleVal = (milestoneObj as Record<string, unknown>)["title"];
+    const titleVal = (milestoneObj as Record<string, unknown>).title;
     milestoneTitle = titleVal != null ? String(titleVal) : null;
   }
 
@@ -121,19 +130,18 @@ export async function handleIssues(
 
   const structureOnly = zkStructureOnlyEnabled(env);
   const sealed = await isIssueZkSealed(db, key);
-  const title =
-    structureOnly || sealed ? null : ((issue["title"] as string | undefined) ?? null);
+  const title = structureOnly || sealed ? null : ((issue.title as string | undefined) ?? null);
 
   const issuePartial: WebhookIssue = {
     key,
     repo,
-    number: issue["number"] as number,
+    number: issue.number as number,
     title,
-    state: issue["state"] as string,
-    url: (issue["html_url"] as string | undefined) ?? null,
-    created_at: (issue["created_at"] as string | null | undefined) ?? null,
-    updated_at: (issue["updated_at"] as string | null | undefined) ?? null,
-    closed_at: (issue["closed_at"] as string | null | undefined) ?? null,
+    state: issue.state as string,
+    url: (issue.html_url as string | undefined) ?? null,
+    created_at: (issue.created_at as string | null | undefined) ?? null,
+    updated_at: (issue.updated_at as string | null | undefined) ?? null,
+    closed_at: (issue.closed_at as string | null | undefined) ?? null,
     milestone: milestoneTitle,
     lane: derived.lane,
     priority: derived.priority,
@@ -157,14 +165,14 @@ async function pointFetchAndUpsertDeps(
   blockedIssue: Record<string, unknown>,
   repo: Record<string, unknown>,
 ): Promise<number> {
-  const number = blockedIssue["number"] as number | undefined;
+  const number = blockedIssue.number as number | undefined;
   if (number == null) {
     console.warn(
       `[webhook] handle_deps: missing number in blocked_issue — keys=${Object.keys(blockedIssue).join(",")}`,
     );
     return 0;
   }
-  const fullName = (repo["full_name"] as string | undefined) ?? "";
+  const fullName = (repo.full_name as string | undefined) ?? "";
   const slashIdx = fullName.indexOf("/");
   if (slashIdx < 0 || slashIdx === fullName.length - 1) {
     console.warn(
@@ -212,7 +220,7 @@ export async function handleDeps(
   db: D1Database,
   env: Env,
 ): Promise<number> {
-  const action = payload["action"] as string | undefined;
+  const action = payload.action as string | undefined;
 
   if (action === "blocking_added" || action === "blocking_removed") {
     return 0;
@@ -222,11 +230,10 @@ export async function handleDeps(
     return 0;
   }
 
-  const blockingIssue = (payload["blocking_issue"] as Record<string, unknown> | undefined) ?? null;
+  const blockingIssue = (payload.blocking_issue as Record<string, unknown> | undefined) ?? null;
   const blockedIssue =
-    ((payload["blocked_issue"] ?? payload["issue"]) as Record<string, unknown> | undefined) ?? null;
-  const blockingRepo =
-    (payload["blocking_issue_repo"] as Record<string, unknown> | undefined) ?? null;
+    ((payload.blocked_issue ?? payload.issue) as Record<string, unknown> | undefined) ?? null;
+  const blockingRepo = (payload.blocking_issue_repo as Record<string, unknown> | undefined) ?? null;
 
   if (blockedIssue == null) {
     console.warn(
@@ -238,8 +245,8 @@ export async function handleDeps(
   // Cross-repo case: blocking_issue absent — point-fetch the downstream issue's
   // current dep graph and derive edges from the authoritative GitHub state.
   if (blockingIssue == null) {
-    const repoObj = (payload["repository"] as Record<string, unknown> | undefined) ?? {};
-    const fullName = (repoObj["full_name"] as string | undefined) ?? "";
+    const repoObj = (payload.repository as Record<string, unknown> | undefined) ?? {};
+    const fullName = (repoObj.full_name as string | undefined) ?? "";
     const slashIdx = fullName.indexOf("/");
     if (slashIdx < 0 || slashIdx === fullName.length - 1) {
       console.warn(
@@ -260,13 +267,10 @@ export async function handleDeps(
   }
 
   // Same-repo fast path: both sides are in the payload — use them directly.
-  const blockerKey = issueKey(
-    blockingIssue,
-    blockingRepo,
-  );
+  const blockerKey = issueKey(blockingIssue, blockingRepo);
   const blockedKey = issueKey(
     blockedIssue,
-    (payload["repository"] as Record<string, unknown> | undefined) ?? null,
+    (payload.repository as Record<string, unknown> | undefined) ?? null,
   );
 
   if (action === "blocked_by_added") {
@@ -294,7 +298,7 @@ export async function handleSubIssues(
   payload: Record<string, unknown>,
   db: D1Database,
 ): Promise<number> {
-  const action = payload["action"] as string | undefined;
+  const action = payload.action as string | undefined;
 
   if (action === "parent_issue_added" || action === "parent_issue_removed") {
     return 0;
@@ -304,16 +308,13 @@ export async function handleSubIssues(
     return 0;
   }
 
-  const parentIssue = payload["parent_issue"] as Record<string, unknown> | undefined;
+  const parentIssue = payload.parent_issue as Record<string, unknown> | undefined;
   const parentRepo =
-    ((payload["parent_issue_repo"] ?? payload["repository"]) as
-      | Record<string, unknown>
-      | undefined) ?? null;
-  const subIssue = payload["sub_issue"] as Record<string, unknown> | undefined;
+    ((payload.parent_issue_repo ?? payload.repository) as Record<string, unknown> | undefined) ??
+    null;
+  const subIssue = payload.sub_issue as Record<string, unknown> | undefined;
   const subRepo =
-    ((payload["sub_issue_repo"] ?? payload["repository"]) as
-      | Record<string, unknown>
-      | undefined) ?? null;
+    ((payload.sub_issue_repo ?? payload.repository) as Record<string, unknown> | undefined) ?? null;
 
   if (!parentIssue || !parentRepo || !subIssue || !subRepo) {
     console.warn(
@@ -325,8 +326,8 @@ export async function handleSubIssues(
   let parentKey: string;
   let childKey: string;
   try {
-    parentKey = `${(parentRepo as Record<string, unknown>)["full_name"]}#${parentIssue["number"]}`;
-    childKey = `${(subRepo as Record<string, unknown>)["full_name"]}#${subIssue["number"]}`;
+    parentKey = `${(parentRepo as Record<string, unknown>).full_name}#${parentIssue.number}`;
+    childKey = `${(subRepo as Record<string, unknown>).full_name}#${subIssue.number}`;
   } catch {
     console.warn(
       `[webhook] handle_sub_issues: malformed payload for ${action} — keys=${Object.keys(payload).sort().join(",")}`,
@@ -337,11 +338,10 @@ export async function handleSubIssues(
   if (action === "sub_issue_added") {
     const result = await addEdge(db, parentKey, childKey, "parent").run();
     return result.meta.changes ?? 0;
-  } else {
-    // sub_issue_removed
-    const result = await removeEdge(db, parentKey, childKey, "parent").run();
-    return result.meta.changes ?? 0;
   }
+  // sub_issue_removed
+  const result = await removeEdge(db, parentKey, childKey, "parent").run();
+  return result.meta.changes ?? 0;
 }
 
 /**
@@ -355,20 +355,19 @@ export async function handleRefCreate(
   payload: Record<string, unknown>,
   db: D1Database,
 ): Promise<void> {
-  if (payload["ref_type"] !== "branch") {
+  if (payload.ref_type !== "branch") {
     return;
   }
-  const ref = (payload["ref"] as string | undefined) ?? "";
-  const repo =
-    ((payload["repository"] as Record<string, unknown> | undefined) ?? {})["full_name"] as
-      | string
-      | undefined;
+  const ref = (payload.ref as string | undefined) ?? "";
+  const repo = (payload.repository as Record<string, unknown> | undefined)?.full_name as
+    | string
+    | undefined;
   const repoStr = repo ?? "";
   const m = BRANCH_ISSUE_RE.exec(ref);
   if (!m) {
     return;
   }
-  const number = parseInt(m[1], 10);
+  const number = Number.parseInt(m[1], 10);
   await setActiveBranch(db, repoStr, number, 1).run();
 }
 
@@ -385,14 +384,13 @@ export async function handleRefDelete(
   db: D1Database,
   env: Env,
 ): Promise<void> {
-  if (payload["ref_type"] !== "branch") {
+  if (payload.ref_type !== "branch") {
     return;
   }
-  const ref = (payload["ref"] as string | undefined) ?? "";
-  const repoFull =
-    ((payload["repository"] as Record<string, unknown> | undefined) ?? {})["full_name"] as
-      | string
-      | undefined;
+  const ref = (payload.ref as string | undefined) ?? "";
+  const repoFull = (payload.repository as Record<string, unknown> | undefined)?.full_name as
+    | string
+    | undefined;
   const repo = repoFull ?? "";
 
   const m = BRANCH_ISSUE_RE.exec(ref);
@@ -438,13 +436,12 @@ export async function handlePullRequest(
   payload: Record<string, unknown>,
   db: D1Database,
 ): Promise<void> {
-  const pr = (payload["pull_request"] as Record<string, unknown> | undefined) ?? {};
-  const repo =
-    ((payload["repository"] as Record<string, unknown> | undefined) ?? {})["full_name"] as
-      | string
-      | undefined;
+  const pr = (payload.pull_request as Record<string, unknown> | undefined) ?? {};
+  const repo = (payload.repository as Record<string, unknown> | undefined)?.full_name as
+    | string
+    | undefined;
   const repoStr = repo ?? "";
-  const number = parseInt(String(pr["number"] ?? "0"), 10);
+  const number = Number.parseInt(String(pr.number ?? "0"), 10);
   if (!number) {
     console.warn(
       `[webhook] pull_request webhook missing PR number; payload keys: ${Object.keys(pr).join(",")}`,
@@ -452,20 +449,20 @@ export async function handlePullRequest(
     return;
   }
 
-  const rawState = String(pr["state"] ?? "open");
-  const merged = Boolean(pr["merged"]);
+  const rawState = String(pr.state ?? "open");
+  const merged = Boolean(pr.merged);
   const state = rawState === "closed" || merged ? "closed" : "open";
 
-  const rawLabels: unknown[] = (pr["labels"] as unknown[] | undefined) ?? [];
+  const rawLabels: unknown[] = (pr.labels as unknown[] | undefined) ?? [];
   const labelNames: string[] = rawLabels.map((lbl) => {
     if (lbl && typeof lbl === "object") {
-      return String((lbl as Record<string, unknown>)["name"] ?? "");
+      return String((lbl as Record<string, unknown>).name ?? "");
     }
     return String(lbl);
   });
   const hasReviewedLabel: 0 | 1 = labelNames.includes("reviewed") ? 1 : 0;
 
-  const body = String(pr["body"] ?? "");
+  const body = String(pr.body ?? "");
   const issueNumbers: string[] = [];
   for (const m of body.matchAll(/(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi)) {
     issueNumbers.push(m[1]);
@@ -475,7 +472,15 @@ export async function handlePullRequest(
 
   const updatedAt = new Date().toISOString();
 
-  await upsertPrState(db, repoStr, number, state, hasReviewedLabel, closingIssueKeysJson, updatedAt).run();
+  await upsertPrState(
+    db,
+    repoStr,
+    number,
+    state,
+    hasReviewedLabel,
+    closingIssueKeysJson,
+    updatedAt,
+  ).run();
 }
 
 /**
@@ -488,21 +493,23 @@ export async function handleMilestone(
   payload: Record<string, unknown>,
   db: D1Database,
 ): Promise<void> {
-  const action = payload["action"] as string | undefined;
+  const action = payload.action as string | undefined;
   if (action !== "edited") {
     return;
   }
-  const changes = (payload["changes"] as Record<string, unknown> | undefined) ?? {};
-  const titleChange = changes["title"] as Record<string, unknown> | undefined;
+  const changes = (payload.changes as Record<string, unknown> | undefined) ?? {};
+  const titleChange = changes.title as Record<string, unknown> | undefined;
   if (!titleChange) {
     return;
   }
-  const oldTitle = String(titleChange["from"]);
+  const oldTitle = String(titleChange.from);
   const newTitle = String(
-    ((payload["milestone"] as Record<string, unknown> | undefined ?? {})["title"] as string | undefined) ?? "",
+    ((payload.milestone as Record<string, unknown> | undefined)?.title as string | undefined) ?? "",
   );
   const repo = String(
-    ((payload["repository"] as Record<string, unknown> | undefined ?? {})["full_name"] as string | undefined) ?? "",
+    ((payload.repository as Record<string, unknown> | undefined)?.full_name as
+      | string
+      | undefined) ?? "",
   );
   await renameMilestone(db, repo, oldTitle, newTitle).run();
 }
@@ -557,9 +564,9 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
   // ── Tenant routing gate (S4 #147) ──
   // Resolve installation → tenant for events carrying installation context.
   // membership payloads may omit `installation` → route via organization.login.
-  const installation = payload["installation"] as Record<string, unknown> | undefined;
+  const installation = payload.installation as Record<string, unknown> | undefined;
   const installationId =
-    typeof installation?.["id"] === "number" ? (installation["id"] as number) : undefined;
+    typeof installation?.id === "number" ? (installation.id as number) : undefined;
 
   let tenant: TenantRow | null = null;
   let hasRoutingContext = false;
@@ -567,8 +574,8 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
     tenant = await getTenantByInstallationId(db, installationId);
     hasRoutingContext = true;
   } else if (event === "membership") {
-    const org = payload["organization"] as Record<string, unknown> | undefined;
-    const login = org?.["login"];
+    const org = payload.organization as Record<string, unknown> | undefined;
+    const login = org?.login;
     if (typeof login === "string") {
       tenant = await getTenantByOrgLogin(db, login);
       hasRoutingContext = true;
@@ -612,7 +619,7 @@ export async function webhookRoute(c: Context<{ Bindings: Env }>): Promise<Respo
     } else if (event === "milestone") {
       await handleMilestone(payload, db);
       mutated = true;
-    // App lifecycle events self-bump data_version inside their atomic batch — do not set `mutated`.
+      // App lifecycle events self-bump data_version inside their atomic batch — do not set `mutated`.
     } else if (event === "installation") {
       await handleInstallation(payload, db, c.env);
     } else if (event === "installation_repositories") {

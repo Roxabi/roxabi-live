@@ -7,9 +7,9 @@
  * Compatible with the Cloudflare Workers runtime — no Node.js imports.
  */
 
-import { importAppPrivateKey, signAppJwt } from "./jwt";
-import { importDek, encryptToken, decryptToken } from "./tokenCrypto";
 import type { Env } from "../types";
+import { importAppPrivateKey, signAppJwt } from "./jwt";
+import { decryptToken, encryptToken, importDek } from "./tokenCrypto";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,7 +79,7 @@ export async function getInstallationToken(
   // Fail-closed on suspended installations: sync.ts calls this directly, bypassing
   // resolveInstallToken's guard. Covers both the cache-hit and mint paths.
   const tenantRow = await db
-    .prepare(`SELECT suspended_at FROM tenants WHERE id = ?`)
+    .prepare("SELECT suspended_at FROM tenants WHERE id = ?")
     .bind(tenantId)
     .first<{ suspended_at: string | null }>();
   if (!tenantRow) {
@@ -93,9 +93,7 @@ export async function getInstallationToken(
 
   // Step 1 — Check cache
   const row = await db
-    .prepare(
-      `SELECT token_enc, token_iv, expires_at FROM install_tokens WHERE tenant_id = ?`,
-    )
+    .prepare("SELECT token_enc, token_iv, expires_at FROM install_tokens WHERE tenant_id = ?")
     .bind(tenantId)
     .first<InstallTokenRow>();
 
@@ -245,8 +243,7 @@ export async function listInstallationRepos(
   token: string,
 ): Promise<Array<{ repo: string; isPrivate: boolean; isArchived?: boolean }>> {
   const MAX_PAGES = 10;
-  const repos: Array<{ repo: string; isPrivate: boolean; isArchived?: boolean }> =
-    [];
+  const repos: Array<{ repo: string; isPrivate: boolean; isArchived?: boolean }> = [];
   let lastPageFull = false;
 
   for (let page = 1; page <= MAX_PAGES; page++) {

@@ -21,25 +21,23 @@
 
 import type { Env } from "../types";
 import {
-  getTenantByInstallationId,
-} from "./tenant";
-import {
   bumpDataVersion,
-  upsertTenant,
-  softDeleteTenant,
-  setTenantSuspended,
-  upsertRepoAccess,
-  deleteRepoAccess,
-  deleteAllRepoAccessForTenant,
-  setRepoPrivacy,
-  upsertRepo,
   cascadeRepoRename,
-  invalidateCacheByRepo,
-  invalidateCacheByUserRepo,
-  invalidateCacheByUser,
-  deleteSessionsForTenant,
+  deleteAllRepoAccessForTenant,
   deleteInstallTokensForTenant,
+  deleteRepoAccess,
+  deleteSessionsForTenant,
+  invalidateCacheByRepo,
+  invalidateCacheByUser,
+  invalidateCacheByUserRepo,
+  setRepoPrivacy,
+  setTenantSuspended,
+  softDeleteTenant,
+  upsertRepo,
+  upsertRepoAccess,
+  upsertTenant,
 } from "./mutations";
+import { getTenantByInstallationId } from "./tenant";
 
 // ---------------------------------------------------------------------------
 // Module-local helpers
@@ -54,7 +52,7 @@ function repoFullName(repoObj: unknown): string {
   if (!repoObj || typeof repoObj !== "object") {
     return "";
   }
-  const fn = (repoObj as Record<string, unknown>)["full_name"];
+  const fn = (repoObj as Record<string, unknown>).full_name;
   return typeof fn === "string" ? fn : "";
 }
 
@@ -66,7 +64,7 @@ function isPrivateBit(repoObj: unknown): 0 | 1 {
   if (!repoObj || typeof repoObj !== "object") {
     return 1;
   }
-  const priv = (repoObj as Record<string, unknown>)["private"];
+  const priv = (repoObj as Record<string, unknown>).private;
   return priv === false ? 0 : 1;
 }
 
@@ -79,7 +77,7 @@ function archivedBit(repoObj: unknown): 0 | 1 {
   if (!repoObj || typeof repoObj !== "object") {
     return 0;
   }
-  const arch = (repoObj as Record<string, unknown>)["archived"];
+  const arch = (repoObj as Record<string, unknown>).archived;
   return arch === true ? 1 : 0;
 }
 
@@ -88,12 +86,9 @@ function archivedBit(repoObj: unknown): 0 | 1 {
  * Returns null when the user has no local account (never logged in) — callers
  * can skip cache invalidation safely in that case.
  */
-async function resolveUserId(
-  db: D1Database,
-  githubId: number,
-): Promise<number | null> {
+async function resolveUserId(db: D1Database, githubId: number): Promise<number | null> {
   const row = await db
-    .prepare(`SELECT id FROM users WHERE github_id = ?`)
+    .prepare("SELECT id FROM users WHERE github_id = ?")
     .bind(githubId)
     .first<{ id: number }>();
   return row?.id ?? null;
@@ -131,24 +126,24 @@ async function resolveUserId(
 export async function handleInstallation(
   payload: Record<string, unknown>,
   db: D1Database,
-  env: Env,
+  _env: Env,
 ): Promise<void> {
-  const action = payload["action"] as string | undefined;
+  const action = payload.action as string | undefined;
   if (!action) {
     console.warn("[webhook/app] installation event missing action");
     return;
   }
 
-  const installation = (payload["installation"] as Record<string, unknown> | undefined) ?? {};
-  const installationId = installation["id"] as number | undefined;
+  const installation = (payload.installation as Record<string, unknown> | undefined) ?? {};
+  const installationId = installation.id as number | undefined;
   if (installationId == null) {
     console.warn(`[webhook/app] installation.${action}: missing installation.id`);
     return;
   }
 
-  const account = (installation["account"] as Record<string, unknown> | undefined) ?? {};
-  const accountLogin = (account["login"] as string | undefined) ?? "";
-  const accountType = (account["type"] as string | undefined) ?? "Organization";
+  const account = (installation.account as Record<string, unknown> | undefined) ?? {};
+  const accountLogin = (account.login as string | undefined) ?? "";
+  const accountType = (account.type as string | undefined) ?? "Organization";
   const nowIso = new Date().toISOString();
 
   // ── created ───────────────────────────────────────────────────────────────
@@ -175,7 +170,7 @@ export async function handleInstallation(
     const tenantId = tenant.id;
 
     // Build repo-access upserts from payload.repositories (the install-time selection).
-    const repositories = (payload["repositories"] as unknown[] | undefined) ?? [];
+    const repositories = (payload.repositories as unknown[] | undefined) ?? [];
     const repoStmts = repositories.flatMap((r) => {
       const repo = repoFullName(r);
       if (!repo) {
@@ -184,17 +179,15 @@ export async function handleInstallation(
       return [upsertRepoAccess(db, tenantId, repo, isPrivateBit(r))];
     });
 
-    const sender = (payload["sender"] as Record<string, unknown> | undefined) ?? {};
-    const senderGithubId = sender["id"] as number | undefined;
+    const sender = (payload.sender as Record<string, unknown> | undefined) ?? {};
+    const senderGithubId = sender.id as number | undefined;
     const linkStmts = [];
     if (senderGithubId != null) {
       const userId = await resolveUserId(db, senderGithubId);
       if (userId != null) {
         linkStmts.push(
           db
-            .prepare(
-              `INSERT OR IGNORE INTO user_installations (user_id, tenant_id) VALUES (?, ?)`,
-            )
+            .prepare("INSERT OR IGNORE INTO user_installations (user_id, tenant_id) VALUES (?, ?)")
             .bind(userId, tenantId),
         );
       }
@@ -253,10 +246,7 @@ export async function handleInstallation(
       );
       return;
     }
-    await db.batch([
-      setTenantSuspended(db, tenant.id, null, nowIso),
-      bumpDataVersion(db, nowIso),
-    ]);
+    await db.batch([setTenantSuspended(db, tenant.id, null, nowIso), bumpDataVersion(db, nowIso)]);
     return;
   }
 
@@ -281,20 +271,18 @@ export async function handleInstallation(
 export async function handleInstallationRepositories(
   payload: Record<string, unknown>,
   db: D1Database,
-  env: Env,
+  _env: Env,
 ): Promise<void> {
-  const action = payload["action"] as string | undefined;
+  const action = payload.action as string | undefined;
   if (action !== "added" && action !== "removed") {
     console.info(`[webhook/app] installation_repositories.${action}: no-op`);
     return;
   }
 
-  const installation = (payload["installation"] as Record<string, unknown> | undefined) ?? {};
-  const installationId = installation["id"] as number | undefined;
+  const installation = (payload.installation as Record<string, unknown> | undefined) ?? {};
+  const installationId = installation.id as number | undefined;
   if (installationId == null) {
-    console.warn(
-      `[webhook/app] installation_repositories.${action}: missing installation.id`,
-    );
+    console.warn(`[webhook/app] installation_repositories.${action}: missing installation.id`);
     return;
   }
 
@@ -309,7 +297,7 @@ export async function handleInstallationRepositories(
   const nowIso = new Date().toISOString();
 
   if (action === "added") {
-    const repositories = (payload["repositories_added"] as unknown[] | undefined) ?? [];
+    const repositories = (payload.repositories_added as unknown[] | undefined) ?? [];
     const stmts = repositories.flatMap((r) => {
       const repo = repoFullName(r);
       if (!repo) {
@@ -326,7 +314,7 @@ export async function handleInstallationRepositories(
   }
 
   // removed
-  const repositories = (payload["repositories_removed"] as unknown[] | undefined) ?? [];
+  const repositories = (payload.repositories_removed as unknown[] | undefined) ?? [];
   const stmts = repositories.flatMap((r) => {
     const repo = repoFullName(r);
     if (!repo) {
@@ -380,7 +368,7 @@ export async function handleRepository(
   payload: Record<string, unknown>,
   db: D1Database,
 ): Promise<void> {
-  const action = payload["action"] as string | undefined;
+  const action = payload.action as string | undefined;
   if (
     action !== "created" &&
     action !== "renamed" &&
@@ -391,7 +379,7 @@ export async function handleRepository(
     return;
   }
 
-  const repoObj = (payload["repository"] as Record<string, unknown> | undefined) ?? {};
+  const repoObj = (payload.repository as Record<string, unknown> | undefined) ?? {};
   const fullName = repoFullName(repoObj);
   if (!fullName) {
     console.warn(`[webhook/app] repository.${action}: missing repository.full_name`);
@@ -401,9 +389,8 @@ export async function handleRepository(
 
   // ── created ───────────────────────────────────────────────────────────────
   if (action === "created") {
-    const installation =
-      (payload["installation"] as Record<string, unknown> | undefined) ?? {};
-    const installationId = installation["id"] as number | undefined;
+    const installation = (payload.installation as Record<string, unknown> | undefined) ?? {};
+    const installationId = installation.id as number | undefined;
     if (installationId == null) {
       console.warn(
         `[webhook/app] repository.created: missing installation.id for repo=${fullName}`,
@@ -417,7 +404,7 @@ export async function handleRepository(
       );
       return;
     }
-    const nodeId = (repoObj["node_id"] as string | undefined) ?? null;
+    const nodeId = (repoObj.node_id as string | undefined) ?? null;
     await db.batch([
       upsertRepoAccess(db, tenant.id, fullName, isPrivateBit(repoObj)),
       upsertRepo(db, fullName, archivedBit(repoObj), nodeId),
@@ -429,15 +416,15 @@ export async function handleRepository(
 
   // ── renamed / transferred ─────────────────────────────────────────────────
   if (action === "renamed" || action === "transferred") {
-    const nodeId = (repoObj["node_id"] as string | undefined) ?? "";
-    const changes = (payload["changes"] as Record<string, unknown> | undefined) ?? {};
+    const nodeId = (repoObj.node_id as string | undefined) ?? "";
+    const changes = (payload.changes as Record<string, unknown> | undefined) ?? {};
 
     let oldFullName: string | null = null;
 
     // Priority 1: node_id anchor — look up the currently stored slug by node_id.
     if (nodeId) {
       const row = await db
-        .prepare(`SELECT repo FROM repos WHERE repo_node_id = ?`)
+        .prepare("SELECT repo FROM repos WHERE repo_node_id = ?")
         .bind(nodeId)
         .first<{ repo: string }>();
       if (row && row.repo !== fullName) {
@@ -447,9 +434,9 @@ export async function handleRepository(
 
     // Priority 2: renamed fallback — changes.repository.name.from (owner unchanged).
     if (!oldFullName && action === "renamed") {
-      const repoChanges = (changes["repository"] as Record<string, unknown> | undefined) ?? {};
-      const nameChanges = (repoChanges["name"] as Record<string, unknown> | undefined) ?? {};
-      const oldName = (nameChanges["from"] as string | undefined) ?? "";
+      const repoChanges = (changes.repository as Record<string, unknown> | undefined) ?? {};
+      const nameChanges = (repoChanges.name as Record<string, unknown> | undefined) ?? {};
+      const oldName = (nameChanges.from as string | undefined) ?? "";
       if (oldName) {
         const slashIdx = fullName.lastIndexOf("/");
         if (slashIdx >= 0) {
@@ -461,22 +448,20 @@ export async function handleRepository(
 
     // Priority 3: transferred fallback — changes.owner.from.{user|organization}.login.
     if (!oldFullName && action === "transferred") {
-      const ownerChanges = (changes["owner"] as Record<string, unknown> | undefined) ?? {};
-      const fromBlock = (ownerChanges["from"] as Record<string, unknown> | undefined) ?? {};
-      const userBlock = (fromBlock["user"] as Record<string, unknown> | undefined) ?? {};
-      const orgBlock = (fromBlock["organization"] as Record<string, unknown> | undefined) ?? {};
+      const ownerChanges = (changes.owner as Record<string, unknown> | undefined) ?? {};
+      const fromBlock = (ownerChanges.from as Record<string, unknown> | undefined) ?? {};
+      const userBlock = (fromBlock.user as Record<string, unknown> | undefined) ?? {};
+      const orgBlock = (fromBlock.organization as Record<string, unknown> | undefined) ?? {};
       const oldOwner =
-        (userBlock["login"] as string | undefined) ??
-        (orgBlock["login"] as string | undefined) ??
-        "";
+        (userBlock.login as string | undefined) ?? (orgBlock.login as string | undefined) ?? "";
       if (oldOwner) {
         const slashIdx = fullName.lastIndexOf("/");
         if (slashIdx >= 0) {
           // A transfer may also rename: prefer changes.repository.name.from; fall back to the
           // current name for a pure ownership transfer (name unchanged).
-          const repoChanges = (changes["repository"] as Record<string, unknown> | undefined) ?? {};
-          const nameChanges = (repoChanges["name"] as Record<string, unknown> | undefined) ?? {};
-          const oldName = (nameChanges["from"] as string | undefined) ?? fullName.slice(slashIdx + 1);
+          const repoChanges = (changes.repository as Record<string, unknown> | undefined) ?? {};
+          const nameChanges = (repoChanges.name as Record<string, unknown> | undefined) ?? {};
+          const oldName = (nameChanges.from as string | undefined) ?? fullName.slice(slashIdx + 1);
           oldFullName = `${oldOwner}/${oldName}`;
         }
       }
@@ -525,7 +510,7 @@ export async function handleMember(
   payload: Record<string, unknown>,
   db: D1Database,
 ): Promise<void> {
-  const action = payload["action"] as string | undefined;
+  const action = payload.action as string | undefined;
   if (action !== "added" && action !== "removed") {
     return;
   }
@@ -537,14 +522,14 @@ export async function handleMember(
   }
 
   // `removed`: invalidate the specific (user, repo) pair.
-  const memberObj = (payload["member"] as Record<string, unknown> | undefined) ?? {};
-  const githubId = memberObj["id"] as number | undefined;
+  const memberObj = (payload.member as Record<string, unknown> | undefined) ?? {};
+  const githubId = memberObj.id as number | undefined;
   if (githubId == null) {
     console.warn("[webhook/app] member.removed: missing member.id");
     return;
   }
 
-  const repoObj = (payload["repository"] as Record<string, unknown> | undefined) ?? {};
+  const repoObj = (payload.repository as Record<string, unknown> | undefined) ?? {};
   const repo = repoFullName(repoObj);
   if (!repo) {
     console.warn("[webhook/app] member.removed: missing repository.full_name");
@@ -558,10 +543,7 @@ export async function handleMember(
   }
 
   const nowIso = new Date().toISOString();
-  await db.batch([
-    invalidateCacheByUserRepo(db, userId, repo),
-    bumpDataVersion(db, nowIso),
-  ]);
+  await db.batch([invalidateCacheByUserRepo(db, userId, repo), bumpDataVersion(db, nowIso)]);
 }
 
 // ---------------------------------------------------------------------------
@@ -582,7 +564,7 @@ export async function handleMembership(
   payload: Record<string, unknown>,
   db: D1Database,
 ): Promise<void> {
-  const action = payload["action"] as string | undefined;
+  const action = payload.action as string | undefined;
   if (action !== "added" && action !== "removed") {
     return;
   }
@@ -593,8 +575,8 @@ export async function handleMembership(
   }
 
   // `removed`: full-user cache wipe.
-  const memberObj = (payload["member"] as Record<string, unknown> | undefined) ?? {};
-  const githubId = memberObj["id"] as number | undefined;
+  const memberObj = (payload.member as Record<string, unknown> | undefined) ?? {};
+  const githubId = memberObj.id as number | undefined;
   if (githubId == null) {
     console.warn("[webhook/app] membership.removed: missing member.id");
     return;
@@ -607,8 +589,5 @@ export async function handleMembership(
   }
 
   const nowIso = new Date().toISOString();
-  await db.batch([
-    invalidateCacheByUser(db, userId),
-    bumpDataVersion(db, nowIso),
-  ]);
+  await db.batch([invalidateCacheByUser(db, userId), bumpDataVersion(db, nowIso)]);
 }

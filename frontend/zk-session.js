@@ -22,7 +22,7 @@ export function isZkUnlocked() {
 
 /** @returns {CryptoKey} */
 export function getSessionAccountKey() {
-  if (!sessionKey) throw new Error('ZK locked');
+  if (!sessionKey) throw new Error("ZK locked");
   return sessionKey;
 }
 
@@ -50,7 +50,7 @@ function resetIdleTimer() {
   if (!sessionKey) return;
   idleTimer = setTimeout(() => {
     clearZkSession();
-    console.info('[zk]', { event: 'zk.lock.idle' });
+    console.info("[zk]", { event: "zk.lock.idle" });
     onAutoLock?.();
   }, IDLE_MS);
 }
@@ -71,10 +71,10 @@ export function wireIdleLock() {
   const bump = () => {
     if (sessionKey) resetIdleTimer();
   };
-  for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
+  for (const ev of ["pointerdown", "keydown", "touchstart"]) {
     document.addEventListener(ev, bump, { passive: true });
   }
-  document.addEventListener('visibilitychange', () => {
+  document.addEventListener("visibilitychange", () => {
     // Restart the countdown on BOTH transitions so a backgrounded tab still
     // auto-locks 15 min after it was hidden (not 15 min after it next becomes
     // visible). Do not clear immediately — a quick tab switch must not lock.
@@ -85,11 +85,11 @@ export function wireIdleLock() {
 export function wirePageHideLock() {
   if (pageHideWired) return;
   pageHideWired = true;
-  window.addEventListener('pagehide', clearZkSession);
-  window.addEventListener('beforeunload', clearZkSession);
+  window.addEventListener("pagehide", clearZkSession);
+  window.addEventListener("beforeunload", clearZkSession);
   if (!pageShowWired) {
     pageShowWired = true;
-    window.addEventListener('pageshow', (ev) => {
+    window.addEventListener("pageshow", (ev) => {
       if (ev.persisted && !sessionKey) {
         onPageRestore?.();
       }

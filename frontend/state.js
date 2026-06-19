@@ -1,53 +1,67 @@
 // state.js — shared app state + sessionStorage persistence (per-tab)
 export const SS = {
   get(key, def) {
-    try { const v = sessionStorage.getItem(key); return v === null ? def : v; } catch { return def; }
+    try {
+      const v = sessionStorage.getItem(key);
+      return v === null ? def : v;
+    } catch {
+      return def;
+    }
   },
   getJSON(key, def) {
-    try { const v = sessionStorage.getItem(key); return v === null ? def : JSON.parse(v); } catch { return def; }
+    try {
+      const v = sessionStorage.getItem(key);
+      return v === null ? def : JSON.parse(v);
+    } catch {
+      return def;
+    }
   },
   set(key, val) {
-    try { sessionStorage.setItem(key, val); } catch {}
+    try {
+      sessionStorage.setItem(key, val);
+    } catch {}
   },
   setJSON(key, val) {
-    try { sessionStorage.setItem(key, JSON.stringify(val)); } catch {}
+    try {
+      sessionStorage.setItem(key, JSON.stringify(val));
+    } catch {}
   },
 };
 
 // Migration: old repo was a string. Convert to array.
 function migrateRepo() {
-  const raw = sessionStorage.getItem('v6:repo');
+  const raw = sessionStorage.getItem("v6:repo");
   if (raw === null) return [];
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) return parsed;
     // was a string (old format)
-    return parsed === 'all' ? [] : [parsed];
+    return parsed === "all" ? [] : [parsed];
   } catch {
     // raw was plain string, not JSON
-    return raw === 'all' ? [] : [raw];
+    return raw === "all" ? [] : [raw];
   }
 }
 
 export const state = {
-  view:      SS.get('v6:view', 'table'),
+  view: SS.get("v6:view", "table"),
   // multi-select arrays (empty = all)
-  repo:      migrateRepo(),
-  milestone: SS.getJSON('v6:milestone', []),
-  priority:  SS.getJSON('v6:priority', []),
-  status:    SS.getJSON('v6:status', ['ready', 'blocked']),
-  label:     SS.getJSON('v6:label', []),
-  search:    SS.get('v6:search', ''),
-  pivotRow:  SS.get('v6:pivotRow', 'milestone'),
-  pivotCol:  SS.get('v6:pivotCol', 'lane'),
-  listGroup: SS.get('v7:listGroup', 'none'),
-  listGroup2: SS.get('v7:listGroup2', 'none'),
-  tableGroup: SS.get('v7:tableGroup', 'none'),
+  repo: migrateRepo(),
+  milestone: SS.getJSON("v6:milestone", []),
+  priority: SS.getJSON("v6:priority", []),
+  status: SS.getJSON("v6:status", ["ready", "blocked"]),
+  label: SS.getJSON("v6:label", []),
+  search: SS.get("v6:search", ""),
+  pivotRow: SS.get("v6:pivotRow", "milestone"),
+  pivotCol: SS.get("v6:pivotCol", "lane"),
+  listGroup: SS.get("v7:listGroup", "none"),
+  listGroup2: SS.get("v7:listGroup2", "none"),
+  tableGroup: SS.get("v7:tableGroup", "none"),
   // graph options
-  showParents: SS.get('v6:showParents', 'false') === 'true',
-  showClosedUnderOpenEpic: SS.get('v6:showClosedUnderOpenEpic', 'false') === 'true',
-  nodes:     [],
-  edges:     [],
+  showParents: SS.get("v6:showParents", "false") === "true",
+  showClosedUnderOpenEpic: SS.get("v6:showClosedUnderOpenEpic", "false") === "true",
+  nodes: [],
+  edges: [],
   // built once after load
   edgesBySrc: new Map(),
   edgesByDst: new Map(),
@@ -55,20 +69,20 @@ export const state = {
 };
 
 const SS_KEYS = {
-  view:        { key: 'v6:view',        json: false },
-  repo:        { key: 'v6:repo',        json: true  },
-  milestone:   { key: 'v6:milestone',   json: true  },
-  priority:    { key: 'v6:priority',    json: true  },
-  status:      { key: 'v6:status',      json: true  },
-  label:       { key: 'v6:label',       json: true  },
-  search:      { key: 'v6:search',      json: false },
-  pivotRow:    { key: 'v6:pivotRow',    json: false },
-  pivotCol:    { key: 'v6:pivotCol',    json: false },
-  listGroup:   { key: 'v7:listGroup',   json: false },
-  listGroup2:  { key: 'v7:listGroup2',  json: false },
-  tableGroup:  { key: 'v7:tableGroup',  json: false },
-  showParents: { key: 'v6:showParents', json: false },
-  showClosedUnderOpenEpic: { key: 'v6:showClosedUnderOpenEpic', json: false },
+  view: { key: "v6:view", json: false },
+  repo: { key: "v6:repo", json: true },
+  milestone: { key: "v6:milestone", json: true },
+  priority: { key: "v6:priority", json: true },
+  status: { key: "v6:status", json: true },
+  label: { key: "v6:label", json: true },
+  search: { key: "v6:search", json: false },
+  pivotRow: { key: "v6:pivotRow", json: false },
+  pivotCol: { key: "v6:pivotCol", json: false },
+  listGroup: { key: "v7:listGroup", json: false },
+  listGroup2: { key: "v7:listGroup2", json: false },
+  tableGroup: { key: "v7:tableGroup", json: false },
+  showParents: { key: "v6:showParents", json: false },
+  showClosedUnderOpenEpic: { key: "v6:showClosedUnderOpenEpic", json: false },
 };
 
 export function setState(patch) {
@@ -96,13 +110,13 @@ export function buildEdgeIndex(edges) {
 // ─── Status computation ───────────────────────────────────────────────────
 // Only 'blocks' edges affect status; 'parent' edges are for layout only
 export function computeStatus(node, blockingEdgesByDst, nodesByKey) {
-  if (node.state === 'closed') return 'done';
+  if (node.state === "closed") return "done";
   const blockers = blockingEdgesByDst.get(node.key) ?? [];
-  const openBlocker = blockers.some(e => {
+  const openBlocker = blockers.some((e) => {
     const srcNode = nodesByKey.get(e.src);
-    return srcNode?.state === 'open';
+    return srcNode?.state === "open";
   });
-  return openBlocker ? 'blocked' : 'ready';
+  return openBlocker ? "blocked" : "ready";
 }
 
 // Attach _status, _blockers, _parent to every node after payload load
@@ -112,10 +126,10 @@ export function computeStatus(node, blockingEdgesByDst, nodesByKey) {
 //          (unless the descendant itself is already closed → kept as 'done').
 // _parent: parent issue key (from 'parent' edges where dst=this, src=parent)
 export function annotateNodes(nodes, edges) {
-  const blockingByDst = new Map();  // kind='blocks' only, for status
-  const allByDst = new Map();       // all edges, for _blockers
-  const parentByDst = new Map();    // kind='parent', dst=child → src=parent
-  const childrenBySrc = new Map();  // kind='parent', src=parent → [child nodes]
+  const blockingByDst = new Map(); // kind='blocks' only, for status
+  const allByDst = new Map(); // all edges, for _blockers
+  const parentByDst = new Map(); // kind='parent', dst=child → src=parent
+  const childrenBySrc = new Map(); // kind='parent', src=parent → [child nodes]
   const byKey = new Map();
 
   for (const n of nodes) byKey.set(n.key, n);
@@ -123,16 +137,16 @@ export function annotateNodes(nodes, edges) {
     if (!allByDst.has(e.dst)) allByDst.set(e.dst, []);
     allByDst.get(e.dst).push(e);
 
-    if (e.kind === 'blocks') {
+    if (e.kind === "blocks") {
       if (!blockingByDst.has(e.dst)) blockingByDst.set(e.dst, []);
       blockingByDst.get(e.dst).push(e);
     }
 
-    if (e.kind === 'parent') {
+    if (e.kind === "parent") {
       if (!parentByDst.has(e.dst)) parentByDst.set(e.dst, []);
-      parentByDst.get(e.dst).push(e.src);  // src is the parent
+      parentByDst.get(e.dst).push(e.src); // src is the parent
       if (!childrenBySrc.has(e.src)) childrenBySrc.set(e.src, []);
-      childrenBySrc.get(e.src).push(e.dst);  // dst is the child
+      childrenBySrc.get(e.src).push(e.dst); // dst is the child
     }
   }
 
@@ -153,7 +167,7 @@ export function annotateNodes(nodes, edges) {
   // A descendant of a blocked parent is itself rendered blocked, unless it
   // is already 'done' (closed) — closed always wins.  Visited guard handles
   // any pathological parent cycles.
-  const queue = nodes.filter(n => n._status === 'blocked').map(n => n.key);
+  const queue = nodes.filter((n) => n._status === "blocked").map((n) => n.key);
   const visited = new Set(queue);
   while (queue.length) {
     const parentKey = queue.shift();
@@ -162,8 +176,8 @@ export function annotateNodes(nodes, edges) {
       if (visited.has(childKey)) continue;
       visited.add(childKey);
       const child = byKey.get(childKey);
-      if (!child || child._status === 'done') continue;
-      child._status = 'blocked';
+      if (!child || child._status === "done") continue;
+      child._status = "blocked";
       queue.push(childKey);
     }
   }
@@ -175,17 +189,21 @@ const MS_RE = /^(M\d+|Ph\d+|FIN|Phase\s*\d+)/i;
 export function parseMilestone(node) {
   if (node.milestone_code !== undefined) {
     return {
-      code:    node.milestone_code ?? null,
-      name:    node.milestone_name ?? null,
+      code: node.milestone_code ?? null,
+      name: node.milestone_name ?? null,
       sortKey: node.milestone_sort_key ?? 9999,
     };
   }
-  const raw = node.milestone ?? '';
+  const raw = node.milestone ?? "";
   if (!raw) return { code: null, name: null, sortKey: 9999 };
   const m = raw.match(MS_RE);
   if (m) {
-    const code = m[1].replace(/Phase\s*/i, 'Ph');
-    const name = raw.slice(m[0].length).replace(/^\s*[—–-]\s*/, '').trim() || null;
+    const code = m[1].replace(/Phase\s*/i, "Ph");
+    const name =
+      raw
+        .slice(m[0].length)
+        .replace(/^\s*[—–-]\s*/, "")
+        .trim() || null;
     return { code, name, sortKey: codeToSortKey(code) };
   }
   return { code: raw.slice(0, 8), name: null, sortKey: 9999 };
@@ -194,9 +212,11 @@ export function parseMilestone(node) {
 function codeToSortKey(code) {
   if (!code) return 9999;
   const u = code.toUpperCase();
-  if (u === 'FIN') return 8888;
-  const mNum = u.match(/^M(\d+)$/);   if (mNum)  return parseInt(mNum[1], 10);
-  const phNum = u.match(/^PH(\d+)$/); if (phNum) return 1000 + parseInt(phNum[1], 10);
+  if (u === "FIN") return 8888;
+  const mNum = u.match(/^M(\d+)$/);
+  if (mNum) return Number.parseInt(mNum[1], 10);
+  const phNum = u.match(/^PH(\d+)$/);
+  if (phNum) return 1000 + Number.parseInt(phNum[1], 10);
   return 9999;
 }
 
@@ -208,34 +228,38 @@ export function prioritySortKey(p) {
 
 // ─── Dim-value extraction ──────────────────────────────────────────────────
 export function dimValue(node, dim) {
-  if (dim === 'none')      return 'All';
-  if (dim === 'milestone') { const ms = parseMilestone(node); return ms.code ?? '—'; }
-  if (dim === 'priority')  return node.priority ?? 'None';
-  if (dim === 'repo')      return node.repo ?? '—';
-  if (dim === 'lane')      return node.lane ?? '—';
-  if (dim === 'size')      return node.size ?? '—';
-  if (dim === 'status')    return node._status ?? '—';
-  if (dim === 'parent')    return node._parent ?? '—';
-  return '—';
+  if (dim === "none") return "All";
+  if (dim === "milestone") {
+    const ms = parseMilestone(node);
+    return ms.code ?? "—";
+  }
+  if (dim === "priority") return node.priority ?? "None";
+  if (dim === "repo") return node.repo ?? "—";
+  if (dim === "lane") return node.lane ?? "—";
+  if (dim === "size") return node.size ?? "—";
+  if (dim === "status") return node._status ?? "—";
+  if (dim === "parent") return node._parent ?? "—";
+  return "—";
 }
 
 // ─── Filter application ───────────────────────────────────────────────────
 export function applyFilters(nodes, filters) {
-  const q = (filters.search ?? '').trim().toLowerCase();
+  const q = (filters.search ?? "").trim().toLowerCase();
   const parentKeys = state.showParents
     ? null
-    : new Set(state.edges.filter(e => e.kind === 'parent').map(e => e.src));
-  return nodes.filter(n => {
-    if (parentKeys && parentKeys.has(n.key)) return false;
+    : new Set(state.edges.filter((e) => e.kind === "parent").map((e) => e.src));
+  return nodes.filter((n) => {
+    if (parentKeys?.has(n.key)) return false;
     if (filters.repo.length && !filters.repo.includes(n.repo)) return false;
-    const msCode = n.milestone_code ?? '(None)';
+    const msCode = n.milestone_code ?? "(None)";
     if (filters.milestone.length && !filters.milestone.includes(msCode)) return false;
-    const pri = n.priority ?? '(None)';
+    const pri = n.priority ?? "(None)";
     if (filters.priority.length && !filters.priority.includes(pri)) return false;
     if (filters.status.length && !filters.status.includes(n._status)) return false;
-    if (filters.label?.length && !filters.label.some(l => (n.labels ?? []).includes(l))) return false;
+    if (filters.label?.length && !filters.label.some((l) => (n.labels ?? []).includes(l)))
+      return false;
     if (q) {
-      const hay = `${n.key} ${n.title ?? ''} ${(n.labels ?? []).join(' ')}`.toLowerCase();
+      const hay = `${n.key} ${n.title ?? ""} ${(n.labels ?? []).join(" ")}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -245,12 +269,12 @@ export function applyFilters(nodes, filters) {
 // Convenience: apply current state filters to state.nodes
 export function filteredNodes() {
   return applyFilters(state.nodes, {
-    repo:      state.repo,
+    repo: state.repo,
     milestone: state.milestone,
-    priority:  state.priority,
-    status:    state.status,
-    label:     state.label,
-    search:    state.search,
+    priority: state.priority,
+    status: state.status,
+    label: state.label,
+    search: state.search,
   });
 }
 
@@ -261,19 +285,19 @@ export function filteredNodes() {
 // rendering logic is unchanged.
 export function filteredNodesForGraph() {
   const base = applyFilters(state.nodes, {
-    repo:      state.repo,
+    repo: state.repo,
     milestone: state.milestone,
-    priority:  state.priority,
-    status:    [],   // bypass status here, re-apply with override below
-    label:     state.label,
-    search:    '',
+    priority: state.priority,
+    status: [], // bypass status here, re-apply with override below
+    label: state.label,
+    search: "",
   });
   if (state.status.length === 0) return base;
-  return base.filter(n => {
+  return base.filter((n) => {
     if (state.status.includes(n._status)) return true;
-    if (state.showClosedUnderOpenEpic && n._status === 'done' && n._parent) {
+    if (state.showClosedUnderOpenEpic && n._status === "done" && n._parent) {
       const parent = state.nodesByKey.get(n._parent);
-      if (parent && parent.state === 'open') return true;
+      if (parent && parent.state === "open") return true;
     }
     return false;
   });
@@ -281,10 +305,10 @@ export function filteredNodesForGraph() {
 
 // ─── Dev-state → animation class mapping (issue #82) ─────────────────────
 export function mapDevStateToClass(devState) {
-  if (devState === 'pr_reviewed') return 'pulse orbit-2';
-  if (devState === 'pr_open')     return 'pulse orbit-1';
-  if (devState === 'dev')         return 'pulse';
-  return '';
+  if (devState === "pr_reviewed") return "pulse orbit-2";
+  if (devState === "pr_open") return "pulse orbit-1";
+  if (devState === "dev") return "pulse";
+  return "";
 }
 
 // ─── Build edge lookup (legacy helper, kept for pivot.js) ─────────────────
@@ -292,10 +316,12 @@ export function buildEdgeLookup(edges) {
   const blocks = {};
   const parent = {};
   for (const e of edges) {
-    if (e.kind === 'blocks' || !e.kind) {
-      (blocks[e.dst] = blocks[e.dst] || []).push(e.src);
-    } else if (e.kind === 'parent') {
-      (parent[e.dst] = parent[e.dst] || []).push(e.src);
+    if (e.kind === "blocks" || !e.kind) {
+      blocks[e.dst] = blocks[e.dst] || [];
+      blocks[e.dst].push(e.src);
+    } else if (e.kind === "parent") {
+      parent[e.dst] = parent[e.dst] || [];
+      parent[e.dst].push(e.src);
     }
   }
   return { blocks, parent };

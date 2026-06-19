@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { importDek, encryptToken, decryptToken } from "./tokenCrypto";
+import { decryptToken, encryptToken, importDek } from "./tokenCrypto";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -16,10 +16,10 @@ async function generateDek(): Promise<{ b64: string; key: CryptoKey }> {
 /** Decode a base64url string to bytes. */
 function decodeBase64url(s: string): Uint8Array {
   // Convert base64url → standard base64, add padding
-  const b64 = s.replace(/-/g, "+").replace(/_/g, "/").padEnd(
-    s.length + ((4 - (s.length % 4)) % 4),
-    "=",
-  );
+  const b64 = s
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(s.length + ((4 - (s.length % 4)) % 4), "=");
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
 
@@ -118,7 +118,7 @@ describe("encryptToken / decryptToken", () => {
     const { enc, iv } = await encryptToken(key, "sensitive-token");
 
     // Tamper: flip the first character of enc
-    const tamperedEnc = enc[0] === "A" ? "B" + enc.slice(1) : "A" + enc.slice(1);
+    const tamperedEnc = enc[0] === "A" ? `B${enc.slice(1)}` : `A${enc.slice(1)}`;
 
     // Act + Assert — AES-GCM authentication tag must fail
     await expect(decryptToken(key, tamperedEnc, iv)).rejects.toThrow();

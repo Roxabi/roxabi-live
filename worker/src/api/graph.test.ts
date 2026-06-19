@@ -1,17 +1,17 @@
-import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv } from "../auth/types";
-import type { Env } from "../types";
-import { graphRoute } from "./graph";
 import {
+  type FakeResult,
   STUB_SESSION,
-  makeEnv,
+  captureDb,
   dispatchByTable,
+  makeEnv,
   makeFakeDb,
   makeFakeStmt,
-  captureDb,
-  type FakeResult,
 } from "../test-utils";
+import type { Env } from "../types";
+import { graphRoute } from "./graph";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -59,18 +59,18 @@ function makeGraphEnv(
   zkOptIn = false,
   sealedIssueKeys: string[] = [],
 ): Env {
-  const visibleRepos =
-    overrideVisible ??
-    [...new Set((issues as Array<{ repo: string }>).map((i) => i.repo))];
+  const visibleRepos = overrideVisible ?? [
+    ...new Set((issues as Array<{ repo: string }>).map((i) => i.repo)),
+  ];
 
   const db = makeFakeDb((sql, args) =>
     makeFakeStmt(
       sql,
       args,
       dispatchByTable(sql, {
-        "zk_opt_in": [{ zk_opt_in: zkOptIn ? 1 : 0 }],
+        zk_opt_in: [{ zk_opt_in: zkOptIn ? 1 : 0 }],
         "from zk_payloads": sealedIssueKeys.map((issue_key) => ({ issue_key })),
-        "tenant_repo_access": visibleRepos.map((repo) => ({
+        tenant_repo_access: visibleRepos.map((repo) => ({
           repo,
           is_private: 0,
         })),
@@ -101,14 +101,12 @@ function makeGraphEnvWithCapture(
 ): { env: Env; capturedSqls: string[] } {
   const capturedSqls: string[] = [];
 
-  const visibleRepos = [
-    ...new Set((issues as Array<{ repo: string }>).map((i) => i.repo)),
-  ];
+  const visibleRepos = [...new Set((issues as Array<{ repo: string }>).map((i) => i.repo))];
 
   const { db } = captureDb((sql, _args) => {
     capturedSqls.push(sql);
     return dispatchByTable(sql, {
-      "tenant_repo_access": visibleRepos.map((repo) => ({
+      tenant_repo_access: visibleRepos.map((repo) => ({
         repo,
         is_private: 0,
       })),
@@ -147,11 +145,7 @@ describe("GET /api/graph", () => {
         dst_key: "Roxabi/roxabi-live#1",
         kind: "blocks",
       };
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv([], [], [issue], [edge]),
-      );
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [issue], [edge]));
       expect(res.status).toBe(200);
       const body = await res.json<{
         nodes: unknown[];
@@ -182,9 +176,7 @@ describe("GET /api/graph", () => {
       const res = await testApp.request(
         "/api/graph",
         {},
-        makeGraphEnv([], [], [issue], [], [], undefined, false, [
-          "Roxabi/roxabi-live#7",
-        ]),
+        makeGraphEnv([], [], [issue], [], [], undefined, false, ["Roxabi/roxabi-live#7"]),
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].title).toBeNull();
@@ -206,11 +198,7 @@ describe("GET /api/graph", () => {
         is_stub: 0,
         has_active_branch: 0,
       };
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv([], [], [issue], []),
-      );
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [issue], []));
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       const node = body.nodes[0];
       expect(node.key).toBe("Roxabi/roxabi-live#42");
@@ -218,9 +206,7 @@ describe("GET /api/graph", () => {
       expect(node.number).toBe(42);
       expect(node.title).toBe("Hello");
       expect(node.state).toBe("open");
-      expect(node.url).toBe(
-        "https://github.com/Roxabi/roxabi-live/issues/42",
-      );
+      expect(node.url).toBe("https://github.com/Roxabi/roxabi-live/issues/42");
       expect(node.lane).toBe("backlog");
       expect(node.priority).toBe("P1");
       expect(node.size).toBe("M");
@@ -249,11 +235,7 @@ describe("GET /api/graph", () => {
         dst_key: "Roxabi/roxabi-live#1",
         kind: "blocks",
       };
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv([], [], [issue], [edge]),
-      );
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [issue], [edge]));
       const body = await res.json<{ edges: Record<string, unknown>[] }>();
       expect(body.edges[0]).toEqual({
         src: "Roxabi/roxabi-live#2",
@@ -336,12 +318,7 @@ describe("GET /api/graph", () => {
       const res = await testApp.request(
         "/api/graph",
         {},
-        makeGraphEnv(
-          [],
-          [],
-          [{ ...baseIssue, state: "closed", has_active_branch: 1 }],
-          [],
-        ),
+        makeGraphEnv([], [], [{ ...baseIssue, state: "closed", has_active_branch: 1 }], []),
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].dev_state).toBe("idle");
@@ -387,11 +364,7 @@ describe("GET /api/graph", () => {
     });
 
     it("returns null lane when no lane field and no graph:lane/ label", async () => {
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv([], [], [baseIssue], []),
-      );
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [baseIssue], []));
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].lane).toBeNull();
     });
@@ -453,11 +426,7 @@ describe("GET /api/graph", () => {
       };
       // One row with invalid JSON — should not throw, issue gets idle dev_state
       const prState = [{ closing_issue_keys: "not-valid-json", has_reviewed_label: 1 }];
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv([], prState, [issue], []),
-      );
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], prState, [issue], []));
       expect(res.status).toBe(200);
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].dev_state).toBe("idle");
@@ -480,11 +449,7 @@ describe("GET /api/graph", () => {
         has_active_branch: 0,
       };
       const prState = [{ closing_issue_keys: null, has_reviewed_label: 1 }];
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv([], prState, [issue], []),
-      );
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], prState, [issue], []));
       expect(res.status).toBe(200);
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].dev_state).toBe("idle");
@@ -513,11 +478,7 @@ describe("GET /api/graph", () => {
         { issue_key: issue.key, name: "P1" },
         { issue_key: "other/repo#99", name: "enhancement" },
       ];
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv(labels, [], [issue], []),
-      );
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv(labels, [], [issue], []));
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].labels).toEqual(["bug", "P1"]);
     });
@@ -538,11 +499,7 @@ describe("GET /api/graph", () => {
         is_stub: 0,
         has_active_branch: 0,
       };
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv([], [], [issue], []),
-      );
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [issue], []));
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].labels).toEqual([]);
     });
@@ -551,11 +508,7 @@ describe("GET /api/graph", () => {
   describe("empty database", () => {
     it("returns {nodes:[], edges:[], repos:[]} when all tables empty", async () => {
       // Empty issues → no visible repos → resolveVisibleRepos short-circuits → {nodes:[],edges:[],repos:[]}
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv([], [], [], []),
-      );
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [], []));
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body).toEqual({ nodes: [], edges: [], repos: [] });
@@ -607,19 +560,12 @@ describe("GET /api/graph", () => {
         is_stub: 0,
         has_active_branch: 0,
       };
-      const { env: env2, capturedSqls: sqls2 } = makeGraphEnvWithCapture(
-        [],
-        [],
-        [issue],
-        [],
-      );
+      const { env: env2, capturedSqls: sqls2 } = makeGraphEnvWithCapture([], [], [issue], []);
       await testApp.request("/api/graph", {}, env2);
       // Assert — the issues query must project title via JSON_EXTRACT.
       // Use "json_extract" as the finder key so labels/edges subqueries (which also
       // contain "from issues") don't accidentally win the find().
-      const issuesSql = sqls2.find((s) =>
-        s.toLowerCase().includes("json_extract"),
-      );
+      const issuesSql = sqls2.find((s) => s.toLowerCase().includes("json_extract"));
       expect(issuesSql).toContain("JSON_EXTRACT(payload,'$.title') AS title");
       void env; // suppress unused warning
       void capturedSqls;
@@ -685,10 +631,7 @@ describe("GET /api/graph", () => {
       const res = await testApp.request("/api/graph?status=ready,blocked", {}, env);
       expect(res.status).toBe(200);
       const body = await res.json<{ nodes: { key: string }[] }>();
-      expect(body.nodes.map((n) => n.key).sort()).toEqual([
-        `${repo}#1`,
-        `${repo}#2`,
-      ]);
+      expect(body.nodes.map((n) => n.key).sort()).toEqual([`${repo}#1`, `${repo}#2`]);
     });
 
     it("includes done child under open epic when closed_under_open_epic=1", async () => {
@@ -700,11 +643,7 @@ describe("GET /api/graph", () => {
       );
       expect(res.status).toBe(200);
       const body = await res.json<{ nodes: { key: string }[] }>();
-      expect(body.nodes.map((n) => n.key).sort()).toEqual([
-        `${repo}#1`,
-        `${repo}#2`,
-        `${repo}#3`,
-      ]);
+      expect(body.nodes.map((n) => n.key).sort()).toEqual([`${repo}#1`, `${repo}#2`, `${repo}#3`]);
     });
 
     it("omits status param returns all nodes", async () => {

@@ -14,10 +14,7 @@ export interface ZkAuditEvent {
   rotation?: boolean;
 }
 
-export async function writeZkAudit(
-  env: Env,
-  event: ZkAuditEvent,
-): Promise<void> {
+export async function writeZkAudit(env: Env, event: ZkAuditEvent): Promise<void> {
   try {
     const ts = new Date().toISOString();
     const payload = { ts, prefix: "[zk]", ...event };

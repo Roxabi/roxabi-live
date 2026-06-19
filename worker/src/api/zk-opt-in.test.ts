@@ -1,9 +1,9 @@
-import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
-import type { Env } from "../types";
-import { zkOptInRoute } from "./zk-opt-in";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv, SessionContext } from "../auth/types";
 import { captureDb } from "../test-utils";
+import type { Env } from "../types";
+import { zkOptInRoute } from "./zk-opt-in";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -24,7 +24,7 @@ function makeEnv(db: D1Database): Env {
   } as unknown as Env;
 }
 
-function makeApp(db: D1Database): Hono<AuthEnv> {
+function makeApp(_db: D1Database): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
   app.use("*", async (c, next) => {
     c.set("session", STUB_SESSION);
@@ -59,12 +59,12 @@ describe("zkOptInRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { zk_opt_in: boolean };
+    const body = (await res.json()) as { zk_opt_in: boolean };
     expect(body.zk_opt_in).toBe(true);
 
     const update = stmts().find((s) => s.sql.includes("UPDATE users SET zk_opt_in"));
     expect(update).toBeDefined();
-    expect(update!.args).toEqual([1, 7]);
+    expect(update?.args).toEqual([1, 7]);
   });
 
   it("binds 0 when disabling", async () => {
@@ -80,6 +80,6 @@ describe("zkOptInRoute", () => {
       makeEnv(db),
     );
     const update = stmts().find((s) => s.sql.includes("UPDATE users SET zk_opt_in"));
-    expect(update!.args[0]).toBe(0);
+    expect(update?.args[0]).toBe(0);
   });
 });

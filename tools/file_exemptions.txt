@@ -4,14 +4,14 @@
 # The declared count is a local cap — exceeding it fails the gate.
 
 # Production sources above QG_FILE_MAX=300 (split deferred; cap prevents growth)
-worker/src/sync/sync.ts  # 1304 lines — #180 sync orchestrator; #216 structure-only sync path
+worker/src/sync/sync.ts  # 1306 lines — #180 sync orchestrator; #216 structure-only sync path (+biome reflow)
 worker/src/api/zk-key-backup.ts  # 340 lines — #216 passphrase backup API (enroll/update/rotation)
 worker/src/webhook/handlers.ts  # 462 lines — #180 issue webhook dispatch + bootstrap sync trigger
 worker/src/webhook/handlers-app.ts  # 384 lines — #180 GitHub App lifecycle + install sender→user_installations link
 worker/src/webhook/mutations.ts  # 339 lines — #180 D1 write helpers for webhooks
 
 # Test files (colocated *.test.ts — exempt with local caps, not production code)
-worker/src/sync/sync.test.ts  # 1729 lines — #180 integration harness for runSync; #216 structure-only
+worker/src/sync/sync.test.ts  # 1745 lines — #180 integration harness for runSync; #216 structure-only (+biome reflow)
 worker/src/api/zk-key-backup.test.ts  # 506 lines — #216 backup API security + CAS/reauth tests; fp enforcement + atomic UPSERT tests
 worker/src/webhook/handlers.test.ts  # 945 lines — #180 webhook handler contract tests
 worker/src/auth/oauth.test.ts  # 1145 lines — #180 OAuth + install-pending; mustReOAuth webhook-link short-circuit
@@ -19,7 +19,7 @@ worker/src/api/issues.test.ts  # 710 lines — #180 tenant-scoped issues API tes
 worker/src/api/graph.test.ts  # 745 lines — #180 tenant-scoped graph + #142 S2 zk + closed_under_open_epic
 worker/src/migrations.test.ts  # 323 lines — schema tests incl. users.consent_at (0020)
 worker/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
-worker/src/webhook/handlers-app.test.ts  # 516 lines — #180 app lifecycle + sender→user_installations tests
+worker/src/webhook/handlers-app.test.ts  # 538 lines — #180 app lifecycle + sender→user_installations tests (+biome reflow)
 worker/src/auth/installToken.test.ts  # 470 lines — #180 install token + pagination tests
 worker/src/auth/session.test.ts  # 357 lines — #180 session + authNavigateHtml XSS guard tests
 worker/src/api/me.test.ts  # 335 lines — onboarding_step + install_options + suspended tenant filter tests

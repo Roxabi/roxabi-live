@@ -6,16 +6,14 @@ import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { zkAccountKeyEnabled } from "../auth/zk-flags";
 import {
-  issueReauthProof,
   isConsumeReauthRateLimited,
+  issueReauthProof,
   recordConsumeReauthSuccess,
 } from "../auth/zk-reauth";
 
 const CODE_RE = /^[0-9a-f]{32}$/;
 
-export async function consumeZkReauthRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function consumeZkReauthRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) return c.json({ error: "unauthorized" }, 401);
   if (!zkAccountKeyEnabled(c.env)) {

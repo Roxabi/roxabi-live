@@ -1,5 +1,5 @@
 // zk-kdf.js — Argon2id passphrase → AES-GCM wrapping key (#216 PR 3)
-import { argon2id } from './vendor/hash-wasm/esm/index.js';
+import { argon2id } from "./vendor/hash-wasm/esm/index.js";
 
 /** Fixed Argon2id parameters — no mobile downgrade (#216 Key Decision #17). */
 export const ARGON2_PARAMS = { m: 65536, t: 3, p: 1 };
@@ -28,14 +28,11 @@ export async function deriveWrappingKey(passphrase, salt, params) {
     iterations: params.t,
     memorySize: params.m,
     hashLength: 32,
-    outputType: 'binary',
+    outputType: "binary",
   });
-  if (raw.byteLength !== 32) throw new Error('KDF output length mismatch');
-  return crypto.subtle.importKey(
-    'raw',
-    raw,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
+  if (raw.byteLength !== 32) throw new Error("KDF output length mismatch");
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM", length: 256 }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
 }
