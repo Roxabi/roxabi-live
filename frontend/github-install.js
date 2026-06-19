@@ -18,8 +18,10 @@ export function githubInstallUrl(target) {
 
 /**
  * @param {Array<{ id: number, login: string, type: string }>} targets
+ * @returns {{ personal: { id: number, login: string, type: string }|null, orgs: Array<{ id: number, login: string, type: string }> }}
  */
 export function partitionInstallTargets(targets) {
+  if (!Array.isArray(targets)) return { personal: null, orgs: [] };
   const personal = targets.find(t => t.type === 'User') ?? null;
   const orgs = targets.filter(t => t.type === 'Organization');
   return { personal, orgs };
