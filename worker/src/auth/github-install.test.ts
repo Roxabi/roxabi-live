@@ -47,4 +47,12 @@ describe("parseInstallTargets", () => {
       { id: 1, login: "alice", type: "User" },
     ]);
   });
+
+  it("returns valid entries unchanged (happy path)", () => {
+    const targets = [
+      { id: 1, login: "alice", type: "User" as const },
+      { id: 2, login: "Roxabi", type: "Organization" as const },
+    ];
+    expect(parseInstallTargets(JSON.stringify(targets))).toEqual(targets);
+  });
 });
