@@ -709,7 +709,7 @@ describe("callbackRoute", () => {
       expect(cookie).toContain("__Host-session=");
       expect(cookie).toContain("HttpOnly");
       expect(cookie).toContain("Secure");
-      expect(cookie).toContain("SameSite=Strict");
+      expect(cookie).toContain("SameSite=Lax");
       expect(cookie).toContain("Path=/");
       expect(cookie).not.toContain("Domain");
       expect(res.headers.get("Location")).toBeNull();
@@ -736,10 +736,10 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — HTML redirect must reflect the stored redirect_after
+      // Assert — HTML redirect must reflect the stored redirect_after via /auth/continue
       expect(res.status).toBe(200);
       const body = await res.text();
-      expect(body).toContain("/dashboard");
+      expect(body).toContain("/auth/continue?to=%2Fdashboard");
       expect(res.headers.get("Location")).toBeNull();
       const cookie = res.headers.get("Set-Cookie") ?? "";
       expect(cookie).toContain("__Host-session=");
@@ -1173,10 +1173,10 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert
+      // Assert — install=1 preserved in encoded continue target
       expect(res.status).toBe(200);
       const body = await res.text();
-      expect(body).toContain("install=1");
+      expect(body).toContain("install%3D1");
       expect(body).not.toContain("github.com");
       expect(res.headers.get("Location")).toBeNull();
     });

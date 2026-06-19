@@ -11,24 +11,19 @@
 import type { Context } from "hono";
 import type { Env } from "../types";
 import { mintSession } from "./session";
-import { authRedirect, readSessionToken, sessionRedirectHtml } from "./cookies";
+import {
+  authRedirect,
+  clearSessionCookie,
+  readSessionToken,
+  sanitizeAuthRedirect,
+  sessionRedirectHtml,
+} from "./cookies";
 import { validateSession } from "./session";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Validate a `redirect` query parameter as a safe relative path.
- * Accepts paths starting with "/" but not "//" (open-redirect via protocol-
- * relative URLs), not starting with "/\" (backslash bypass), and rejects
- * CRLF / NUL injection.
- */
-function sanitizeRedirect(raw: string | undefined): string {
-  if (raw && /^\/(?![/\\])/.test(raw) && !/[\r\n\0]/.test(raw)) return raw;
-  return "/dashboard";
-}
 
 /**
  * Encode a Uint8Array of random bytes as a lowercase hex string.
@@ -61,7 +56,7 @@ function mustReOAuth(c: Context<{ Bindings: Env }>, redirectAfter: string): bool
 export async function loginRoute(
   c: Context<{ Bindings: Env }>,
 ): Promise<Response> {
-  const redirectAfter = sanitizeRedirect(c.req.query("redirect") ?? undefined);
+  const redirectAfter = sanitizeAuthRedirect(c.req.query("redirect") ?? undefined);
   const zkTokenHandoff = c.req.query("zk") === "1" ? 1 : 0;
   const reauth = c.req.query("reauth") === "1" ? 1 : 0;
 
@@ -97,7 +92,7 @@ export async function loginRoute(
   dest.searchParams.set("redirect_uri", redirectUri);
   dest.searchParams.set("state", state);
 
-  return authRedirect(dest.toString());
+  return authRedirect(dest.toString(), { "Set-Cookie": clearSessionCookie() });
 }
 
 // ---------------------------------------------------------------------------

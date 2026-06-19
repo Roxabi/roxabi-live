@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.5](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.4...roxabi-live/v0.17.5) (2026-06-19)
+
+
+### Bug Fixes
+
+* **auth:** OAuth callback polls `/api/me` until session cookie is live, then `/auth/continue` server hop — fixes redirect loops in normal browser profiles (Opera, etc.)
+* **auth:** session cookie `SameSite=Lax`; clear stale cookie before GitHub OAuth; read last duplicate `__Host-session` value
+
+
 ## [0.17.4](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.3...roxabi-live/v0.17.4) (2026-06-19)
 
 
