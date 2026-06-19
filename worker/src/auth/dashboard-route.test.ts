@@ -97,6 +97,7 @@ describe("GET /dashboard", () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/login?redirect=%2Fdashboard");
+    expect(res.headers.get("Set-Cookie")).toContain("__Host-session=;");
     expect(env.ASSETS.fetch).not.toHaveBeenCalled();
   });
 

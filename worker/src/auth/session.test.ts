@@ -433,6 +433,8 @@ describe("sessionRedirectHtml", () => {
     const body = await res.text();
     expect(body).toContain("/dashboard?install=1");
     expect(body).toContain("location.replace");
+    expect(body).toContain("setTimeout");
+    expect(body).not.toContain("http-equiv");
   });
 
   it("rejects open-redirect destinations", async () => {
