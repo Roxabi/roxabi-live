@@ -85,4 +85,57 @@ describe("zkGithubGraphqlRoute", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer gho_test_token");
   });
+
+  it("rejects mutation operations (read-only relay) without calling GitHub", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { db } = captureDb((sql) => {
+      if (sql.includes("zk_opt_in")) return [{ zk_opt_in: 1 }];
+      return [];
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/github/graphql",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-GitHub-User-Token": "gho_test_token",
+        },
+        body: JSON.stringify({
+          query: "mutation { addComment(input: {}) { clientMutationId } }",
+        }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json() as { error: string }).error).toBe("read_only");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("allows a query whose selection set contains a field named like a keyword", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const { db } = captureDb((sql) => {
+      if (sql.includes("zk_opt_in")) return [{ zk_opt_in: 1 }];
+      return [];
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/github/graphql",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-GitHub-User-Token": "gho_test_token",
+        },
+        // "mutation" appears only as a nested field name, not a top-level op.
+        body: JSON.stringify({ query: "query { repository { mutation } }" }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalled();
+  });
 });

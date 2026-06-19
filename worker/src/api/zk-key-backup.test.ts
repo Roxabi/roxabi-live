@@ -272,10 +272,11 @@ describe("putZkKeyBackupRoute", () => {
     const deleteIdx = captured.findIndex(
       (s) => s.sql.includes("zk_reauth_proofs") && s.sql.includes("DELETE"),
     );
-    expect(deleteIdx).toBeGreaterThan(updateIdx);
+    // Proof is consumed BEFORE the write (single-use, anti-replay): delete precedes update.
+    expect(deleteIdx).toBeLessThan(updateIdx);
   });
 
-  it("returns 409 backup_version_conflict without consuming reauth on CAS miss", async () => {
+  it("returns 409 on backup_version mismatch without consuming reauth", async () => {
     const proof = "0123456789abcdef0123456789abcdef";
     const { db, stmts } = captureDb((sql) => {
       if (sql.includes("zk_key_backups") && sql.includes("SELECT")) {
@@ -293,6 +294,50 @@ describe("putZkKeyBackupRoute", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...VALID_BODY,
+          expected_backup_version: 2,
+          reauth_proof: proof,
+        }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(409);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("backup_version_conflict");
+    // Version mismatch short-circuits before re-auth — proof is NOT burned.
+    const deleteProof = stmts().find(
+      (s) => s.sql.includes("zk_reauth_proofs") && s.sql.includes("DELETE"),
+    );
+    expect(deleteProof).toBeUndefined();
+  });
+
+  it("consumes reauth before the CAS write — proof is burned even on a CAS miss", async () => {
+    const proof = "0123456789abcdef0123456789abcdef";
+    const captured: ReturnType<typeof makeFakeStmt>[] = [];
+    const db = makeFakeDb((sql, args) => {
+      let rows: Record<string, unknown>[] = [];
+      let changes = 0;
+      if (sql.includes("zk_key_backups") && sql.includes("SELECT")) {
+        rows = [{ backup_version: 1, key_fp: VALID_BODY.key_fp }];
+      } else if (sql.includes("zk_reauth_proofs") && sql.includes("SELECT")) {
+        rows = [{ ok: 1 }];
+      } else if (sql.includes("zk_reauth_proofs") && sql.includes("DELETE")) {
+        rows = [{ code: proof }];
+        changes = 1;
+      } else if (sql.includes("sync_control")) {
+        changes = 1;
+      }
+      // UPDATE zk_key_backups intentionally returns changes=0 → CAS miss.
+      const stmt = makeFakeStmt(sql, args, rows, changes);
+      captured.push(stmt);
+      return stmt;
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...VALID_BODY,
           expected_backup_version: 1,
           reauth_proof: proof,
         }),
@@ -302,10 +347,13 @@ describe("putZkKeyBackupRoute", () => {
     expect(res.status).toBe(409);
     const body = await res.json() as { error: string };
     expect(body.error).toBe("backup_version_conflict");
-    const deleteProof = stmts().find(
+    // The proof WAS consumed before the failed CAS write (single-use, anti-replay).
+    const deleteIdx = captured.findIndex(
       (s) => s.sql.includes("zk_reauth_proofs") && s.sql.includes("DELETE"),
     );
-    expect(deleteProof).toBeUndefined();
+    const updateIdx = captured.findIndex((s) => s.sql.includes("UPDATE zk_key_backups"));
+    expect(deleteIdx).toBeGreaterThanOrEqual(0);
+    expect(deleteIdx).toBeLessThan(updateIdx);
   });
 
   it("rotates key_fp when rotation=true and reauth valid", async () => {

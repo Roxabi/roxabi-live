@@ -15,10 +15,8 @@ describe("zk D1 redaction helpers", () => {
     expect(d1PayloadTitle("Visible", "Roxabi/live#2", sealed)).toBe("Visible");
   });
 
-  it("redactIssueTitle mirrors d1PayloadTitle for API responses", () => {
-    const sealed = new Set(["Roxabi/live#1"]);
-    expect(redactIssueTitle("Secret", "Roxabi/live#1", sealed)).toBeNull();
-    expect(redactIssueTitle("Visible", "Roxabi/live#2", sealed)).toBe("Visible");
+  it("d1PayloadTitle is the same function reference as redactIssueTitle (no divergence possible)", () => {
+    expect(d1PayloadTitle).toBe(redactIssueTitle);
   });
 
   it("loadZkSealedIssueKeys returns distinct issue_key set", async () => {
