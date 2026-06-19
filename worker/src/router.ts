@@ -19,6 +19,7 @@ import {
   getZkKeyBackupRoute,
   putZkKeyBackupRoute,
 } from "./api/zk-key-backup";
+import { postZkResetRoute } from "./api/zk-reset";
 import { zkGithubGraphqlRoute } from "./api/zk-github-proxy";
 
 const app = new Hono<AuthEnv>();
@@ -89,6 +90,8 @@ app.post("/api/zk/consume-reauth", requireSession, consumeZkReauthRoute);
 app.use("/api/zk/key-backup", requireSession);
 app.get("/api/zk/key-backup", getZkKeyBackupRoute);
 app.put("/api/zk/key-backup", putZkKeyBackupRoute);
+app.use("/api/zk/reset", requireSession);
+app.post("/api/zk/reset", postZkResetRoute);
 app.post("/api/zk/github/graphql", requireSession, zkGithubGraphqlRoute);
 // /logout is intentionally ungated: logoutRoute is null-safe + idempotent, and SameSite=Strict
 // blocks cross-site cookie submission — gating it would make a stale/expired cookie impossible to clear.
