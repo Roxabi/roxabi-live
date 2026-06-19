@@ -8,27 +8,22 @@
 import type { Context } from "hono";
 import type { Env } from "../types";
 
-import { serveDashboardShell } from "./dashboard-route";
 import {
+  AUTH_NO_CACHE,
   authRedirect,
   isDashboardDest,
   sanitizeAuthRedirect,
   sessionCookieHeaders,
-  AUTH_NO_CACHE,
 } from "./cookies";
+import { serveDashboardShell } from "./dashboard-route";
 
 function destHasZkParams(path: string): boolean {
   const url = new URL(path, "https://_/");
-  return (
-    url.searchParams.has("zk_handoff") || url.searchParams.has("zk_reauth")
-  );
+  return url.searchParams.has("zk_handoff") || url.searchParams.has("zk_reauth");
 }
 
 /** 200 HTML: poll /api/me until cookie is live, then location.replace(dest). */
-export function authNavigateHtml(
-  dest: string,
-  extraSetCookies: string[] = [],
-): Response {
+export function authNavigateHtml(dest: string, extraSetCookies: string[] = []): Response {
   const safeDest = sanitizeAuthRedirect(dest);
   const html = `<!DOCTYPE html>
 <html lang="fr">

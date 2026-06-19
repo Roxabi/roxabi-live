@@ -1,10 +1,6 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
-import {
-  zkAccountKeyEnabled,
-  zkStructureOnlyEnabled,
-  assertZkConfigCoherent,
-} from "./zk-flags";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../types";
+import { assertZkConfigCoherent, zkAccountKeyEnabled, zkStructureOnlyEnabled } from "./zk-flags";
 
 function env(flags: Partial<Env>): Env {
   return flags as Env;

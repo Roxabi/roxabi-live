@@ -5,8 +5,8 @@
  * so existing tests keep importing from "../test-utils".
  */
 
-import type { Env } from "./types";
 import type { SessionContext } from "./auth/types";
+import type { Env } from "./types";
 
 export type { FakeResult, FakeStmt } from "../test/fake-d1";
 export {
@@ -23,10 +23,7 @@ import type { FakeResult } from "../test/fake-d1";
 // SQL-dispatch helper
 // ---------------------------------------------------------------------------
 
-export function dispatchByTable(
-  sql: string,
-  map: Record<string, FakeResult[]>,
-): FakeResult[] {
+export function dispatchByTable(sql: string, map: Record<string, FakeResult[]>): FakeResult[] {
   const lower = sql.toLowerCase();
   for (const [key, rows] of Object.entries(map)) {
     if (lower.includes(key.toLowerCase())) {

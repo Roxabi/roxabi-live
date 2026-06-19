@@ -1,6 +1,6 @@
+import { assertZkConfigCoherent } from "./auth/zk-flags";
 import { app } from "./router";
 import { runSync } from "./sync/sync";
-import { assertZkConfigCoherent } from "./auth/zk-flags";
 import type { Env } from "./types";
 
 export default {

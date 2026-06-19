@@ -1,48 +1,42 @@
 // zk-enroll.js — passphrase enrollment, unlock, lock UI (#216 PR 4)
 
-import { api, escHtml } from './auth.js';
-import { zkLoginUrl } from './zk-github.js';
+import { api, escHtml } from "./auth.js";
 import {
-  generateAccountKey,
-  wrapAccountKey,
-  unwrapAccountKey,
-  sessionAccountKey,
-  hasZkKeyPair,
-  saveAccountMeta,
-  parseEnvelopeVersion,
-  saveDeviceSession,
-  loadDeviceSession,
   clearDeviceSession,
-} from './zk-crypto.js';
+  generateAccountKey,
+  hasZkKeyPair,
+  loadDeviceSession,
+  parseEnvelopeVersion,
+  saveAccountMeta,
+  saveDeviceSession,
+  sessionAccountKey,
+  unwrapAccountKey,
+  wrapAccountKey,
+} from "./zk-crypto.js";
+import { zkLoginUrl } from "./zk-github.js";
+import { clearZkReauthProof, getZkReauthProof } from "./zk-github.js";
+import { showLostPassphraseWarning, wireZkResetUi } from "./zk-reset.js";
 import {
-  isZkUnlocked,
-  setZkSession,
   clearZkSession,
-  wireIdleLock,
-  wirePageHideLock,
+  isZkUnlocked,
   setZkAutoLockHandler,
   setZkPageRestoreHandler,
-} from './zk-session.js';
-import { migrateV1PayloadsToAccountKey } from './zk-sync.js';
-import {
-  getZkReauthProof,
-  clearZkReauthProof,
-} from './zk-github.js';
-import {
-  wireZkResetUi,
-  showLostPassphraseWarning,
-} from './zk-reset.js';
+  setZkSession,
+  wireIdleLock,
+  wirePageHideLock,
+} from "./zk-session.js";
+import { migrateV1PayloadsToAccountKey } from "./zk-sync.js";
 
 const $ = (id) => document.getElementById(id);
 
 /** Set during requireZkEnrollmentGate for migration retry on unlock. */
-let gateGithubLogin = '';
+let gateGithubLogin = "";
 
 function zkLog(event, extra = {}) {
-  console.info('[zk]', { event, ...extra });
+  console.info("[zk]", { event, ...extra });
 }
 
-export { isZkUnlocked, getSessionAccountKey, getSessionKeyFp } from './zk-session.js';
+export { isZkUnlocked, getSessionAccountKey, getSessionKeyFp } from "./zk-session.js";
 
 export function lockZkSession() {
   if (!isZkUnlocked()) return;
@@ -50,7 +44,7 @@ export function lockZkSession() {
   if (gateGithubLogin) {
     clearDeviceSession(gateGithubLogin).catch(() => {});
   }
-  zkLog('zk.lock.explicit');
+  zkLog("zk.lock.explicit");
   updateLockButton();
   showUnlockGate().catch(() => {});
 }
@@ -66,7 +60,7 @@ export async function tryRestoreDeviceZkSession(githubLogin) {
     const local = await loadDeviceSession(githubLogin);
     if (!local?.accountKey || local.key_fp !== backup.key_fp) return false;
     setZkSession(local.accountKey, local.key_fp);
-    zkLog('zk.device.restore', { key_fp: local.key_fp });
+    zkLog("zk.device.restore", { key_fp: local.key_fp });
     updateLockButton();
     return true;
   } catch {
@@ -75,14 +69,14 @@ export async function tryRestoreDeviceZkSession(githubLogin) {
 }
 
 async function fetchKeyBackup() {
-  const resp = await api('/api/zk/key-backup');
+  const resp = await api("/api/zk/key-backup");
   return resp.json();
 }
 
 async function putKeyBackup(body) {
-  const resp = await api('/api/zk/key-backup', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+  const resp = await api("/api/zk/key-backup", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   return resp.json();
@@ -95,7 +89,7 @@ async function putKeyBackup(body) {
 export async function updateKeyBackup(body) {
   const reauth_proof = getZkReauthProof();
   if (!reauth_proof) {
-    throw new Error('reauth_required');
+    throw new Error("reauth_required");
   }
   const result = await putKeyBackup({ ...body, reauth_proof });
   clearZkReauthProof();
@@ -111,7 +105,7 @@ function payloadsHaveV1(payloads) {
 
 async function fetchPayloadRows() {
   try {
-    const resp = await api('/api/zk/payloads');
+    const resp = await api("/api/zk/payloads");
     const data = await resp.json();
     return data.payloads ?? [];
   } catch {
@@ -134,15 +128,11 @@ export async function enrollAccountKey(passphrase, githubLogin) {
     enrolled_at: new Date().toISOString(),
   });
 
-  const migrated = await migrateV1PayloadsToAccountKey(
-    githubLogin,
-    session,
-    wrapped.key_fp,
-  );
+  const migrated = await migrateV1PayloadsToAccountKey(githubLogin, session, wrapped.key_fp);
 
   setZkSession(session, wrapped.key_fp);
   await saveDeviceSession(githubLogin, session, wrapped.key_fp);
-  zkLog('zk.enroll.success', {
+  zkLog("zk.enroll.success", {
     key_fp: wrapped.key_fp,
     kdf_duration_ms: Math.round(performance.now() - t0),
     migrated,
@@ -160,42 +150,38 @@ export async function unlockAccountKey(passphrase) {
       await saveDeviceSession(gateGithubLogin, accountKey, backup.key_fp);
       const payloads = await fetchPayloadRows();
       if (payloadsHaveV1(payloads) && (await hasZkKeyPair(gateGithubLogin))) {
-        await migrateV1PayloadsToAccountKey(
-          gateGithubLogin,
-          accountKey,
-          backup.key_fp,
-        );
+        await migrateV1PayloadsToAccountKey(gateGithubLogin, accountKey, backup.key_fp);
       }
     }
-    zkLog('zk.unlock.success', {
+    zkLog("zk.unlock.success", {
       key_fp: backup.key_fp,
       kdf_duration_ms: Math.round(performance.now() - t0),
     });
     return { key_fp: backup.key_fp };
   } catch (err) {
-    zkLog('zk.unlock.failure');
+    zkLog("zk.unlock.failure");
     throw err;
   }
 }
 
 function showZkGate() {
-  document.body.classList.add('gated');
-  const el = $('zk-gate');
-  if (el) el.removeAttribute('hidden');
+  document.body.classList.add("gated");
+  const el = $("zk-gate");
+  if (el) el.removeAttribute("hidden");
 }
 
 function hideZkGate() {
-  document.body.classList.remove('gated');
-  const el = $('zk-gate');
+  document.body.classList.remove("gated");
+  const el = $("zk-gate");
   if (el) {
-    el.setAttribute('hidden', '');
-    el.innerHTML = '';
+    el.setAttribute("hidden", "");
+    el.innerHTML = "";
   }
 }
 
 function renderZkDialog(title, bodyHtml) {
   showZkGate();
-  const el = $('zk-gate');
+  const el = $("zk-gate");
   el.innerHTML = `
     <div class="zk-dialog" role="dialog" aria-modal="true" aria-labelledby="zk-dialog-title">
       <h2 id="zk-dialog-title">${escHtml(title)}</h2>
@@ -207,7 +193,7 @@ function renderZkDialog(title, bodyHtml) {
 
 function renderDevice2Block() {
   renderZkDialog(
-    'Complete setup on your original device',
+    "Complete setup on your original device",
     `
       <p>
         Encrypted issue titles on this account were sealed on another browser
@@ -225,9 +211,9 @@ function renderDevice2Block() {
       </div>
     `,
   );
-  $('zk-block-reload')?.addEventListener('click', () => location.reload());
-  $('zk-block-logout')?.addEventListener('click', async () => {
-    await api('/logout', { method: 'POST' }).catch(() => {});
+  $("zk-block-reload")?.addEventListener("click", () => location.reload());
+  $("zk-block-logout")?.addEventListener("click", async () => {
+    await api("/logout", { method: "POST" }).catch(() => {});
     location.reload();
   });
 }
@@ -235,7 +221,7 @@ function renderDevice2Block() {
 export function showEnrollGate(githubLogin) {
   return new Promise((resolve) => {
     renderZkDialog(
-      'Set encryption passphrase',
+      "Set encryption passphrase",
       `
         <p>
           Choose a passphrase to protect your encryption key. It never leaves this browser;
@@ -260,50 +246,50 @@ export function showEnrollGate(githubLogin) {
       `,
     );
 
-    const form = $('zk-enroll-form');
-    const passInput = $('zk-enroll-pass');
-    const confirmInput = $('zk-enroll-confirm');
-    const errorEl = $('zk-enroll-error');
-    const submitBtn = $('zk-enroll-submit');
+    const form = $("zk-enroll-form");
+    const passInput = $("zk-enroll-pass");
+    const confirmInput = $("zk-enroll-confirm");
+    const errorEl = $("zk-enroll-error");
+    const submitBtn = $("zk-enroll-submit");
 
     passInput?.focus();
 
-    $('zk-enroll-logout')?.addEventListener('click', async () => {
-      await api('/logout', { method: 'POST' }).catch(() => {});
+    $("zk-enroll-logout")?.addEventListener("click", async () => {
+      await api("/logout", { method: "POST" }).catch(() => {});
       location.reload();
     });
 
-    form?.addEventListener('submit', async (e) => {
+    form?.addEventListener("submit", async (e) => {
       e.preventDefault();
       errorEl.hidden = true;
       const pass = passInput.value;
       const confirm = confirmInput.value;
       if (pass.length < 8) {
-        errorEl.textContent = 'Passphrase must be at least 8 characters.';
+        errorEl.textContent = "Passphrase must be at least 8 characters.";
         errorEl.hidden = false;
         return;
       }
       if (pass !== confirm) {
-        errorEl.textContent = 'Passphrases do not match.';
+        errorEl.textContent = "Passphrases do not match.";
         errorEl.hidden = false;
         return;
       }
 
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Creating backup…';
+      submitBtn.textContent = "Creating backup…";
       try {
         await enrollAccountKey(pass, githubLogin);
         hideZkGate();
         resolve();
       } catch (err) {
-        if (String(err?.message ?? '').includes('409')) {
-          errorEl.textContent = 'Already enrolled — unlock with your passphrase instead.';
+        if (String(err?.message ?? "").includes("409")) {
+          errorEl.textContent = "Already enrolled — unlock with your passphrase instead.";
         } else {
-          errorEl.textContent = err?.message ?? 'Enrollment failed. Try again.';
+          errorEl.textContent = err?.message ?? "Enrollment failed. Try again.";
         }
         errorEl.hidden = false;
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Create backup';
+        submitBtn.textContent = "Create backup";
       }
     });
   });
@@ -320,7 +306,7 @@ export function showUnlockGate(githubLogin = gateGithubLogin) {
     }
 
     renderZkDialog(
-      'Unlock encryption',
+      "Unlock encryption",
       `
         <p>Enter your encryption passphrase to decrypt issue titles and bodies on this device.</p>
         <form class="zk-form" id="zk-unlock-form">
@@ -338,36 +324,36 @@ export function showUnlockGate(githubLogin = gateGithubLogin) {
       `,
     );
 
-    $('zk-lost-pass')?.addEventListener('click', () => {
+    $("zk-lost-pass")?.addEventListener("click", () => {
       showLostPassphraseWarning(resetCtx, reopenUnlock);
     });
 
-    const form = $('zk-unlock-form');
-    const passInput = $('zk-unlock-pass');
-    const errorEl = $('zk-unlock-error');
-    const submitBtn = $('zk-unlock-submit');
+    const form = $("zk-unlock-form");
+    const passInput = $("zk-unlock-pass");
+    const errorEl = $("zk-unlock-error");
+    const submitBtn = $("zk-unlock-submit");
 
     passInput?.focus();
 
-    $('zk-unlock-logout')?.addEventListener('click', async () => {
-      await api('/logout', { method: 'POST' }).catch(() => {});
+    $("zk-unlock-logout")?.addEventListener("click", async () => {
+      await api("/logout", { method: "POST" }).catch(() => {});
       location.reload();
     });
 
-    form?.addEventListener('submit', async (e) => {
+    form?.addEventListener("submit", async (e) => {
       e.preventDefault();
       errorEl.hidden = true;
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Unlocking…';
+      submitBtn.textContent = "Unlocking…";
       try {
         await unlockAccountKey(passInput.value);
         hideZkGate();
         resolve();
       } catch {
-        errorEl.textContent = 'Incorrect passphrase. Try again.';
+        errorEl.textContent = "Incorrect passphrase. Try again.";
         errorEl.hidden = false;
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Unlock';
+        submitBtn.textContent = "Unlock";
         passInput.select();
       }
     });
@@ -375,22 +361,22 @@ export function showUnlockGate(githubLogin = gateGithubLogin) {
 }
 
 function updateLockButton() {
-  const btn = $('zk-lock-btn');
+  const btn = $("zk-lock-btn");
   if (!btn) return;
   if (isZkUnlocked()) {
-    btn.removeAttribute('hidden');
-    btn.textContent = 'Lock';
-    btn.title = 'Lock encryption (clear key from memory)';
+    btn.removeAttribute("hidden");
+    btn.textContent = "Lock";
+    btn.title = "Lock encryption (clear key from memory)";
   } else {
-    btn.setAttribute('hidden', '');
+    btn.setAttribute("hidden", "");
   }
 }
 
 export function wireZkLockButton() {
-  const btn = $('zk-lock-btn');
+  const btn = $("zk-lock-btn");
   if (!btn || btn.dataset.wired) return;
-  btn.dataset.wired = '1';
-  btn.addEventListener('click', () => lockZkSession());
+  btn.dataset.wired = "1";
+  btn.addEventListener("click", () => lockZkSession());
   updateLockButton();
 }
 

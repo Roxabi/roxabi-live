@@ -59,6 +59,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install worker deps
         run: cd worker && npm ci
+      - name: Lint + format (Biome)
+        run: cd worker && npm run ci:lint
       - name: Typecheck (tsc)
         run: cd worker && npm run typecheck
       - name: Test (vitest)

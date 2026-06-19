@@ -1,12 +1,12 @@
 // auth.js — Server-owned onboarding gate (install → consent → ready)
 
-import { renderOnboardingSteps } from './onboarding.js';
+import { renderOnboardingSteps } from "./onboarding.js";
 
-const $ = id => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 
-export const DASHBOARD_PATH = '/dashboard';
+export const DASHBOARD_PATH = "/dashboard";
 
-const CONSENT_PREFIX = 'roxabi:consent:';
+const CONSENT_PREFIX = "roxabi:consent:";
 
 /** Safe login URL with post-auth return path (defaults to dashboard). */
 export function loginUrl(redirect = DASHBOARD_PATH) {
@@ -14,9 +14,9 @@ export function loginUrl(redirect = DASHBOARD_PATH) {
 }
 
 export class AuthError extends Error {
-  constructor(msg = 'Not authenticated') {
+  constructor(msg = "Not authenticated") {
     super(msg);
-    this.name = 'AuthError';
+    this.name = "AuthError";
   }
 }
 
@@ -38,9 +38,9 @@ function clearLegacyConsent(login) {
 
 async function migrateLegacyConsent(me) {
   const login = me.user.github_login;
-  if (me.onboarding_step !== 'consent' || !hasLegacyConsent(login)) return me;
+  if (me.onboarding_step !== "consent" || !hasLegacyConsent(login)) return me;
   try {
-    await api('/api/consent', { method: 'POST' });
+    await api("/api/consent", { method: "POST" });
     clearLegacyConsent(login);
     return fetchMe();
   } catch {
@@ -49,7 +49,7 @@ async function migrateLegacyConsent(me) {
 }
 
 async function fetchMe() {
-  const resp = await api('/api/me');
+  const resp = await api("/api/me");
   return resp.json();
 }
 
@@ -58,15 +58,15 @@ export async function getSessionProfile() {
 }
 
 function showSessionLost() {
-  const el = document.getElementById('error-msg');
+  const el = document.getElementById("error-msg");
   if (el) {
     el.hidden = false;
-    el.textContent = 'Session expirée. Rechargez la page ou reconnectez-vous depuis l’accueil.';
+    el.textContent = "Session expirée. Rechargez la page ou reconnectez-vous depuis l’accueil.";
   }
 }
 
 function renderInstallOption(opt) {
-  if (opt.kind === 'picker') {
+  if (opt.kind === "picker") {
     return `
       <a class="install-option" href="${escHtml(opt.url)}" role="listitem">
         <span class="install-option-title">Organisation</span>
@@ -74,30 +74,30 @@ function renderInstallOption(opt) {
         <span class="install-option-hint">GitHub liste les organisations où vous pouvez installer l'app</span>
       </a>`;
   }
-  const title = opt.kind === 'personal' ? 'Compte personnel' : 'Organisation';
+  const title = opt.kind === "personal" ? "Compte personnel" : "Organisation";
   const hint =
-    opt.kind === 'personal'
-      ? 'Vos dépôts uniquement — idéal en solo'
-      : 'Installer sur cette org — tous les dépôts ou une sélection sur GitHub';
+    opt.kind === "personal"
+      ? "Vos dépôts uniquement — idéal en solo"
+      : "Installer sur cette org — tous les dépôts ou une sélection sur GitHub";
   return `
     <a class="install-option" href="${escHtml(opt.url)}" role="listitem">
       <span class="install-option-title">${title}</span>
-      <span class="install-option-name">${escHtml(opt.login ?? '')}</span>
+      <span class="install-option-name">${escHtml(opt.login ?? "")}</span>
       <span class="install-option-hint">${hint}</span>
     </a>`;
 }
 
 async function pollInstallRefresh(maxAttempts = 15) {
   for (let i = 0; i < maxAttempts; i++) {
-    const resp = await fetch('/api/install/refresh', {
-      method: 'POST',
-      credentials: 'same-origin',
-      cache: 'no-store',
+    const resp = await fetch("/api/install/refresh", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
     });
     if (resp.status === 200) return resp.json();
     if (resp.status === 202) {
       const body = await resp.json().catch(() => ({}));
-      await new Promise(r => setTimeout(r, body.retry_after_ms ?? 2000));
+      await new Promise((r) => setTimeout(r, body.retry_after_ms ?? 2000));
       continue;
     }
     throw new Error(`/api/install/refresh ${resp.status}`);
@@ -106,13 +106,13 @@ async function pollInstallRefresh(maxAttempts = 15) {
 }
 
 function renderInstallCta(me) {
-  document.body.classList.add('gated');
-  const el = $('auth-install');
+  document.body.classList.add("gated");
+  const el = $("auth-install");
   const login = escHtml(me.user.github_login);
-  const options = (me.install_options ?? []).map(renderInstallOption).join('');
+  const options = (me.install_options ?? []).map(renderInstallOption).join("");
 
   el.innerHTML = `
-    ${renderOnboardingSteps('install')}
+    ${renderOnboardingSteps("install")}
     <div class="install-panel">
       <h2>Installer Roxabi Live sur GitHub</h2>
       <p class="install-lead">
@@ -142,20 +142,20 @@ function renderInstallCta(me) {
       <p class="install-note" id="install-refresh-hint" hidden></p>
     </div>
   `;
-  el.removeAttribute('hidden');
+  el.removeAttribute("hidden");
 
-  el.querySelector('.install-option[href]')?.focus();
+  el.querySelector(".install-option[href]")?.focus();
 
-  $('install-logout')?.addEventListener('click', async () => {
-    await api('/logout', { method: 'POST' }).catch(() => {});
-    location.href = '/';
+  $("install-logout")?.addEventListener("click", async () => {
+    await api("/logout", { method: "POST" }).catch(() => {});
+    location.href = "/";
   });
 
-  $('install-continue')?.addEventListener('click', async () => {
-    const btn = $('install-continue');
-    const hint = $('install-refresh-hint');
+  $("install-continue")?.addEventListener("click", async () => {
+    const btn = $("install-continue");
+    const hint = $("install-refresh-hint");
     btn.disabled = true;
-    btn.textContent = 'Vérification…';
+    btn.textContent = "Vérification…";
     try {
       const refreshed = await pollInstallRefresh();
       if (refreshed?.onboarding_step) {
@@ -165,27 +165,27 @@ function renderInstallCta(me) {
       if (hint) {
         hint.hidden = false;
         hint.innerHTML =
-          'Installation pas encore détectée. Attendez quelques secondes et réessayez, ou ' +
+          "Installation pas encore détectée. Attendez quelques secondes et réessayez, ou " +
           '<a href="/login?intent=install&amp;redirect=%2Fdashboard">reconnectez-vous via GitHub</a>.';
       }
     } catch {
       if (hint) {
         hint.hidden = false;
-        hint.textContent = 'Erreur réseau — réessayez dans un instant.';
+        hint.textContent = "Erreur réseau — réessayez dans un instant.";
       }
     } finally {
       btn.disabled = false;
-      btn.textContent = 'J\'ai installé — continuer';
+      btn.textContent = "J'ai installé — continuer";
     }
   });
 }
 
 function renderConsentGate(me) {
-  return new Promise(resolve => {
-    document.body.classList.add('gated');
-    const el = $('consent-gate');
+  return new Promise((resolve) => {
+    document.body.classList.add("gated");
+    const el = $("consent-gate");
     el.innerHTML = `
-      ${renderOnboardingSteps('consent')}
+      ${renderOnboardingSteps("consent")}
       <div class="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="consent-title">
         <h2 id="consent-title">Accès aux données</h2>
         <p>
@@ -212,14 +212,14 @@ function renderConsentGate(me) {
         </div>
       </div>
     `;
-    el.removeAttribute('hidden');
+    el.removeAttribute("hidden");
 
-    const ackBtn = $('consent-ack');
-    const logoutBtn = $('consent-logout');
+    const ackBtn = $("consent-ack");
+    const logoutBtn = $("consent-logout");
     ackBtn.focus();
 
-    el.addEventListener('keydown', e => {
-      if (e.key !== 'Tab') return;
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
       if (e.shiftKey) {
         if (document.activeElement === logoutBtn) {
           e.preventDefault();
@@ -231,43 +231,46 @@ function renderConsentGate(me) {
       }
     });
 
-    ackBtn.addEventListener('click', async () => {
+    ackBtn.addEventListener("click", async () => {
       ackBtn.disabled = true;
       try {
-        await api('/api/consent', { method: 'POST' });
-        el.setAttribute('hidden', '');
+        await api("/api/consent", { method: "POST" });
+        el.setAttribute("hidden", "");
         resolve();
       } catch {
         ackBtn.disabled = false;
       }
     });
 
-    logoutBtn.addEventListener('click', async () => {
-      await api('/logout', { method: 'POST' }).catch(() => {});
+    logoutBtn.addEventListener("click", async () => {
+      await api("/logout", { method: "POST" }).catch(() => {});
       location.reload();
     });
   });
 }
 
 function renderOrgPicker(me) {
-  const sel = $('org-picker');
-  if (me.installations.length <= 1) { sel.setAttribute('hidden', ''); return; }
-  sel.innerHTML = '';
+  const sel = $("org-picker");
+  if (me.installations.length <= 1) {
+    sel.setAttribute("hidden", "");
+    return;
+  }
+  sel.innerHTML = "";
   for (const inst of me.installations) {
-    const opt = document.createElement('option');
+    const opt = document.createElement("option");
     opt.value = inst.tenant_id;
     opt.textContent = inst.account_login;
     sel.appendChild(opt);
   }
   if (me.active_tenant_id != null) sel.value = String(me.active_tenant_id);
-  sel.removeAttribute('hidden');
+  sel.removeAttribute("hidden");
 
-  sel.addEventListener('change', async () => {
+  sel.addEventListener("change", async () => {
     const id = Number(sel.value);
     try {
-      await api('/api/active-tenant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await api("/api/active-tenant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tenant_id: id }),
       });
       location.reload();
@@ -278,17 +281,17 @@ function renderOrgPicker(me) {
 }
 
 async function wireUserMenu(me) {
-  const { wireUserMenu: mount } = await import('./user-menu.js');
+  const { wireUserMenu: mount } = await import("./user-menu.js");
   mount(me);
 }
 
 export function escHtml(str) {
   return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
 }
 
 export function isZkAccountKeyEnabled(me) {
@@ -306,29 +309,29 @@ export async function requireAuthGate() {
   } catch (e) {
     if (e instanceof AuthError) {
       showSessionLost();
-      return 'landing';
+      return "landing";
     }
     throw e;
   }
 
   me = await migrateLegacyConsent(me);
-  const step = me.onboarding_step ?? 'install';
+  const step = me.onboarding_step ?? "install";
 
-  if (step === 'install') {
+  if (step === "install") {
     renderInstallCta(me);
-    return 'install';
+    return "install";
   }
 
-  if (step === 'consent') {
+  if (step === "consent") {
     await renderConsentGate(me);
-    document.body.classList.remove('gated');
+    document.body.classList.remove("gated");
     renderOrgPicker(me);
     await wireUserMenu(me);
-    return 'ready';
+    return "ready";
   }
 
-  document.body.classList.remove('gated');
+  document.body.classList.remove("gated");
   renderOrgPicker(me);
   await wireUserMenu(me);
-  return 'ready';
+  return "ready";
 }

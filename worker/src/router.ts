@@ -1,35 +1,31 @@
 import { Hono } from "hono";
-import type { Env } from "./types";
-import { versionRoute } from "./api/version";
-import { releaseRoute } from "./api/release";
-import { graphRoute } from "./api/graph";
-import { listIssuesRoute, getIssueRoute } from "./api/issues";
-import { adminSyncRoute } from "./api/admin";
-import { webhookRoute } from "./webhook/handlers";
-import { checkAdminAuth } from "./api/auth";
-import { loginRoute, callbackRoute } from "./auth/oauth";
-import { authResetRoute } from "./auth/reset";
-import { authExchangeRoute } from "./auth/oauthExchange";
-import { consentRoute } from "./api/consent";
-import { installRefreshRoute } from "./api/install-refresh";
-import { authStatusRoute } from "./auth/status";
-import { dashboardRoute } from "./auth/dashboard-route";
-import { meRoute, logoutRoute } from "./api/me";
-import type { AuthEnv } from "./auth/types";
-import { requireSession, requireLinkedTenant } from "./auth/session";
-import { installCompleteRoute } from "./api/install-complete";
 import { activeTenantRoute } from "./api/active-tenant";
+import { adminSyncRoute } from "./api/admin";
+import { checkAdminAuth } from "./api/auth";
+import { consentRoute } from "./api/consent";
+import { graphRoute } from "./api/graph";
+import { installCompleteRoute } from "./api/install-complete";
+import { installRefreshRoute } from "./api/install-refresh";
+import { getIssueRoute, listIssuesRoute } from "./api/issues";
+import { logoutRoute, meRoute } from "./api/me";
+import { releaseRoute } from "./api/release";
+import { syncStatusRoute } from "./api/sync-status";
+import { versionRoute } from "./api/version";
+import { zkGithubGraphqlRoute } from "./api/zk-github-proxy";
+import { consumeZkHandoffRoute } from "./api/zk-handoff";
+import { getZkKeyBackupRoute, putZkKeyBackupRoute } from "./api/zk-key-backup";
 import { zkOptInRoute } from "./api/zk-opt-in";
 import { listZkPayloadsRoute, putZkPayloadsRoute } from "./api/zk-payloads";
-import { consumeZkHandoffRoute } from "./api/zk-handoff";
 import { consumeZkReauthRoute } from "./api/zk-reauth";
-import {
-  getZkKeyBackupRoute,
-  putZkKeyBackupRoute,
-} from "./api/zk-key-backup";
 import { postZkResetRoute } from "./api/zk-reset";
-import { zkGithubGraphqlRoute } from "./api/zk-github-proxy";
-import { syncStatusRoute } from "./api/sync-status";
+import { dashboardRoute } from "./auth/dashboard-route";
+import { callbackRoute, loginRoute } from "./auth/oauth";
+import { authExchangeRoute } from "./auth/oauthExchange";
+import { authResetRoute } from "./auth/reset";
+import { requireLinkedTenant, requireSession } from "./auth/session";
+import { authStatusRoute } from "./auth/status";
+import type { AuthEnv } from "./auth/types";
+import { webhookRoute } from "./webhook/handlers";
 
 const app = new Hono<AuthEnv>();
 
@@ -74,9 +70,7 @@ app.get("/health", async (c) => {
   let dbReachable = false;
   let issueCount = 0;
   try {
-    const row = await c.env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM issues",
-    ).first<{ n: number }>();
+    const row = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM issues").first<{ n: number }>();
     dbReachable = true;
     issueCount = row?.n ?? 0;
   } catch {

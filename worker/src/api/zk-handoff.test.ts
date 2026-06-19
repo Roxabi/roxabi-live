@@ -1,9 +1,9 @@
-import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
-import type { Env } from "../types";
-import { consumeZkHandoffRoute } from "./zk-handoff";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv, SessionContext } from "../auth/types";
 import { captureDb } from "../test-utils";
+import type { Env } from "../types";
+import { consumeZkHandoffRoute } from "./zk-handoff";
 
 vi.mock("../auth/userTokenHandoff", () => ({
   consumeUserTokenHandoff: vi.fn(),
@@ -30,7 +30,7 @@ function makeEnv(db: D1Database): Env {
   } as unknown as Env;
 }
 
-function makeApp(db: D1Database): Hono<AuthEnv> {
+function makeApp(_db: D1Database): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
   app.use("*", async (c, next) => {
     c.set("session", STUB_SESSION);
@@ -55,7 +55,7 @@ describe("consumeZkHandoffRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { github_token: string };
+    const body = (await res.json()) as { github_token: string };
     expect(body.github_token).toBe("gho_secret");
     expect(consumeUserTokenHandoff).toHaveBeenCalledWith(expect.anything(), 7, code);
   });

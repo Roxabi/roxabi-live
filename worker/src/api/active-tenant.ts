@@ -8,9 +8,9 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "../auth/types";
 import { readSessionToken } from "../auth/cookies";
 import { setSessionTenant } from "../auth/session";
+import type { AuthEnv } from "../auth/types";
 
 export async function activeTenantRoute(c: Context<AuthEnv>): Promise<Response> {
   // Defense-in-depth: requireSession already guards, but fail closed here too.
@@ -37,10 +37,9 @@ export async function activeTenantRoute(c: Context<AuthEnv>): Promise<Response> 
   }
 
   // Membership check — user must belong to the requested tenant.
-  const membership = await c.env.DB
-    .prepare(
-      `SELECT 1 FROM user_installations WHERE user_id = ? AND tenant_id = ?`,
-    )
+  const membership = await c.env.DB.prepare(
+    "SELECT 1 FROM user_installations WHERE user_id = ? AND tenant_id = ?",
+  )
     .bind(s.userId, tenantId)
     .first<{ 1: number }>();
 
@@ -51,8 +50,7 @@ export async function activeTenantRoute(c: Context<AuthEnv>): Promise<Response> 
   // Suspended-tenant guard: a member must not switch into a suspended tenant.
   // validateSession would 401 every subsequent request (NOT-EXISTS suspended guard),
   // self-locking the session — reject the switch up-front instead.
-  const tenant = await c.env.DB
-    .prepare(`SELECT suspended_at FROM tenants WHERE id = ?`)
+  const tenant = await c.env.DB.prepare("SELECT suspended_at FROM tenants WHERE id = ?")
     .bind(tenantId)
     .first<{ suspended_at: string | null }>();
 

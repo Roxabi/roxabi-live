@@ -8,11 +8,9 @@
  */
 
 import type { Context } from "hono";
-import type { Env } from "../types";
 import { authRedirect } from "../auth/cookies";
+import type { Env } from "../types";
 
-export async function installCompleteRoute(
-  c: Context<{ Bindings: Env }>,
-): Promise<Response> {
+export async function installCompleteRoute(_c: Context<{ Bindings: Env }>): Promise<Response> {
   return authRedirect("/dashboard");
 }

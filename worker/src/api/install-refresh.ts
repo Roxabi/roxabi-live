@@ -6,29 +6,26 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "../auth/types";
 import { readSessionToken } from "../auth/cookies";
 import { setSessionTenant } from "../auth/session";
+import type { AuthEnv } from "../auth/types";
 import { buildMePayload } from "./me";
 
 const OAUTH_FALLBACK = "/login?intent=install&redirect=%2Fdashboard";
 
-export async function installRefreshRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function installRefreshRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) {
     return c.json({ error: "unauthorized" }, 401);
   }
 
-  const rows = await c.env.DB
-    .prepare(
-      `SELECT ui.tenant_id AS tenant_id, t.account_login AS account_login, t.account_type AS account_type
+  const rows = await c.env.DB.prepare(
+    `SELECT ui.tenant_id AS tenant_id, t.account_login AS account_login, t.account_type AS account_type
        FROM user_installations ui
        JOIN tenants t ON t.id = ui.tenant_id
        WHERE ui.user_id = ? AND t.deleted_at IS NULL
        ORDER BY ui.tenant_id`,
-    )
+  )
     .bind(s.userId)
     .all<{ tenant_id: number; account_login: string; account_type: string }>();
 

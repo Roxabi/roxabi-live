@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import type { AuthEnv } from "./types";
-import { authExchangeRoute } from "./oauthExchange";
+import { describe, expect, it, vi } from "vitest";
 import { makeFakeDb, makeFakeStmt } from "../test-utils";
+import { authExchangeRoute } from "./oauthExchange";
+import type { AuthEnv } from "./types";
 
 function makeApp(db: D1Database) {
   const app = new Hono<AuthEnv>();
@@ -28,9 +28,7 @@ describe("authExchangeRoute (legacy shim)", () => {
     };
     const db = makeFakeDb((sql) => {
       const stmt = makeFakeStmt(sql, [], [validRow], 1);
-      (stmt as { first: <T>() => Promise<T | null> }).first = vi
-        .fn()
-        .mockResolvedValue(validRow);
+      (stmt as { first: <T>() => Promise<T | null> }).first = vi.fn().mockResolvedValue(validRow);
       return stmt;
     });
     const { app, env } = makeApp(db);
@@ -52,11 +50,7 @@ describe("authExchangeRoute (legacy shim)", () => {
   it("returns 400 when no valid session", async () => {
     const db = makeFakeDb(() => makeFakeStmt("SELECT 1", [], [], 0));
     const { app, env } = makeApp(db);
-    const res = await app.request(
-      "/auth/exchange?code=deadbeef",
-      { method: "GET" },
-      env,
-    );
+    const res = await app.request("/auth/exchange?code=deadbeef", { method: "GET" }, env);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "expired" });
   });

@@ -58,17 +58,12 @@ export async function ghGraphql<T = unknown>(
   });
 
   if (res.status === 401 || res.status === 403) {
-    throw new GraphQLError(
-      `GitHub GraphQL auth error: HTTP ${res.status}`,
-      true,
-    );
+    throw new GraphQLError(`GitHub GraphQL auth error: HTTP ${res.status}`, true);
   }
 
   if (!res.ok) {
     const text = await res.text();
-    throw new GraphQLError(
-      `GitHub GraphQL request failed: HTTP ${res.status} — ${text}`,
-    );
+    throw new GraphQLError(`GitHub GraphQL request failed: HTTP ${res.status} — ${text}`);
   }
 
   const body = (await res.json()) as Record<string, unknown>;

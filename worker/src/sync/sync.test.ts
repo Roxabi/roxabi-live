@@ -1,34 +1,30 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Env } from "../types";
 import {
   BRANCH_ISSUE_RE,
   UPSERT_ISSUE_SQL,
   UPSERT_ISSUE_SQL_STRUCTURE,
+  acquireSyncLock,
   batchChunked,
   canonicalKey,
   collectEdges,
+  ensureGlobalSyncControlSeeded,
   extractFromLabels,
   flushEdges,
-  acquireSyncLock,
-  ensureGlobalSyncControlSeeded,
-  isHalted,
-  haltSync,
   getAuthFailures,
+  haltSync,
   incrementAuthFailures,
+  isHalted,
   resetAuthFailures,
-  syncRepoIssues,
-  syncBranches,
-  syncPRs,
-  syncRepoBundle,
   runSync,
+  syncBranches,
+  syncRepoBundle,
+  syncRepoIssues,
   writeRunAudit,
 } from "./sync";
 import type { EdgeData } from "./sync";
-import type { Env } from "../types";
 
-import { makeFakeDb, makeFakeStmt, type FakeStmt } from "../test-utils";
-
-// FakeResult kept local: richer variant ({ value?, changes? }) used in local helper casts
-type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
+import { type FakeStmt, makeFakeDb, makeFakeStmt } from "../test-utils";
 
 // ---------------------------------------------------------------------------
 // canonicalKey
@@ -48,15 +44,11 @@ describe("canonicalKey", () => {
   });
 
   it("passes through full key unchanged regardless of repo arg", () => {
-    expect(canonicalKey("Roxabi/voiceCLI#7", "Roxabi/other")).toBe(
-      "Roxabi/voiceCLI#7",
-    );
+    expect(canonicalKey("Roxabi/voiceCLI#7", "Roxabi/other")).toBe("Roxabi/voiceCLI#7");
   });
 
   it("throws on unrecognised ref", () => {
-    expect(() => canonicalKey("not-a-ref", "Roxabi/lyra")).toThrow(
-      /Cannot canonicalise issue ref/,
-    );
+    expect(() => canonicalKey("not-a-ref", "Roxabi/lyra")).toThrow(/Cannot canonicalise issue ref/);
   });
 });
 
@@ -68,13 +60,13 @@ describe("BRANCH_ISSUE_RE", () => {
   it("matches feat/42-some-feature and captures issue number", () => {
     const m = BRANCH_ISSUE_RE.exec("feat/42-some-feature");
     expect(m).not.toBeNull();
-    expect(m![1]).toBe("42");
+    expect(m?.[1]).toBe("42");
   });
 
   it("matches bare 7-fix-thing (no prefix) and captures issue number", () => {
     const m = BRANCH_ISSUE_RE.exec("7-fix-thing");
     expect(m).not.toBeNull();
-    expect(m![1]).toBe("7");
+    expect(m?.[1]).toBe("7");
   });
 
   it("does not match a branch without issue number prefix", () => {
@@ -128,19 +120,12 @@ describe("extractFromLabels", () => {
   });
 
   it("first match wins (lane)", () => {
-    const { lane } = extractFromLabels([
-      "graph:lane/frontend",
-      "graph:lane/backend",
-    ]);
+    const { lane } = extractFromLabels(["graph:lane/frontend", "graph:lane/backend"]);
     expect(lane).toBe("frontend");
   });
 
   it("extracts all three fields simultaneously", () => {
-    const result = extractFromLabels([
-      "graph:lane/ops",
-      "P0",
-      "size:XL",
-    ]);
+    const result = extractFromLabels(["graph:lane/ops", "P0", "size:XL"]);
     expect(result).toEqual({ lane: "ops", priority: "P0", size: "XL" });
   });
 });
@@ -230,9 +215,7 @@ describe("collectEdges", () => {
 
 describe("batchChunked", () => {
   it("never calls db.batch with empty array (no stmts)", async () => {
-    const db = makeFakeDb((sql, args) =>
-      makeFakeStmt(sql, args, [], 0),
-    );
+    const db = makeFakeDb((sql, args) => makeFakeStmt(sql, args, [], 0));
     await batchChunked(db, []);
     expect((db as unknown as { batch: ReturnType<typeof vi.fn> }).batch).not.toHaveBeenCalled();
   });
@@ -280,9 +263,7 @@ describe("flushEdges", () => {
 
     await flushEdges(db, edges);
 
-    const deleteStmts = capturedStmts.filter((s) =>
-      s.sql.trimStart().startsWith("DELETE"),
-    );
+    const deleteStmts = capturedStmts.filter((s) => s.sql.trimStart().startsWith("DELETE"));
     // Only parent DELETE; blocks DELETE is guarded and skipped when both arrays are empty
     expect(deleteStmts).toHaveLength(1);
     expect(deleteStmts[0].sql).toContain("kind='parent'");
@@ -297,17 +278,12 @@ describe("flushEdges", () => {
     });
 
     const edges = new Map<string, EdgeData>([
-      [
-        "Roxabi/lyra#1",
-        { parents: [], children: [], blockedBy: ["Roxabi/lyra#2"], blocking: [] },
-      ],
+      ["Roxabi/lyra#1", { parents: [], children: [], blockedBy: ["Roxabi/lyra#2"], blocking: [] }],
     ]);
 
     await flushEdges(db, edges);
 
-    const deleteStmts = capturedStmts.filter((s) =>
-      s.sql.trimStart().startsWith("DELETE"),
-    );
+    const deleteStmts = capturedStmts.filter((s) => s.sql.trimStart().startsWith("DELETE"));
     expect(deleteStmts).toHaveLength(2);
     expect(deleteStmts[0].sql).toContain("kind='parent'");
     expect(deleteStmts[1].sql).toContain("kind='blocks'");
@@ -328,9 +304,7 @@ describe("flushEdges", () => {
 
     await flushEdges(db, edges);
 
-    const deleteStmts = capturedStmts.filter((s) =>
-      s.sql.trimStart().startsWith("DELETE"),
-    );
+    const deleteStmts = capturedStmts.filter((s) => s.sql.trimStart().startsWith("DELETE"));
     // 2 issue keys × 1 kind (parent only, no blocks) = 2 deletes
     expect(deleteStmts).toHaveLength(2);
   });
@@ -357,19 +331,17 @@ describe("flushEdges", () => {
 
     await flushEdges(db, edges);
 
-    const insertStmts = capturedStmts.filter((s) =>
-      s.sql.trimStart().startsWith("INSERT"),
-    );
+    const insertStmts = capturedStmts.filter((s) => s.sql.trimStart().startsWith("INSERT"));
     // 1 parent edge + 1 blockedBy edge = 2 inserts
     expect(insertStmts).toHaveLength(2);
     // Parent edge: src=parent, dst=child
     const parentInsert = insertStmts.find((s) => s.args.includes("Roxabi/lyra#1"));
     expect(parentInsert).toBeDefined();
-    expect(parentInsert!.args).toEqual(["Roxabi/lyra#1", "Roxabi/lyra#2"]);
+    expect(parentInsert?.args).toEqual(["Roxabi/lyra#1", "Roxabi/lyra#2"]);
     // Blocks edge: src=blocker, dst=blocked
     const blocksInsert = insertStmts.find((s) => s.args.includes("Roxabi/lyra#3"));
     expect(blocksInsert).toBeDefined();
-    expect(blocksInsert!.args).toEqual(["Roxabi/lyra#3", "Roxabi/lyra#2"]);
+    expect(blocksInsert?.args).toEqual(["Roxabi/lyra#3", "Roxabi/lyra#2"]);
   });
 
   it("is a no-op (no batch call) for empty collectedEdges map", async () => {
@@ -444,17 +416,13 @@ describe("ensureGlobalSyncControlSeeded", () => {
 
 describe("acquireSyncLock", () => {
   it("returns true when UPDATE affects a row (changes=1)", async () => {
-    const db = makeFakeDb((sql, args) =>
-      makeFakeStmt(sql, args, [], 1),
-    );
+    const db = makeFakeDb((sql, args) => makeFakeStmt(sql, args, [], 1));
     const acquired = await acquireSyncLock(db);
     expect(acquired).toBe(true);
   });
 
   it("returns false when UPDATE affects no rows (changes=0)", async () => {
-    const db = makeFakeDb((sql, args) =>
-      makeFakeStmt(sql, args, [], 0),
-    );
+    const db = makeFakeDb((sql, args) => makeFakeStmt(sql, args, [], 0));
     const acquired = await acquireSyncLock(db);
     expect(acquired).toBe(false);
   });
@@ -482,23 +450,17 @@ describe("acquireSyncLock", () => {
 
 describe("isHalted", () => {
   it("returns true when sync_control halted=1", async () => {
-    const db = makeFakeDb((sql, args) =>
-      makeFakeStmt(sql, args, [{ value: "1" }]),
-    );
+    const db = makeFakeDb((sql, args) => makeFakeStmt(sql, args, [{ value: "1" }]));
     expect(await isHalted(db)).toBe(true);
   });
 
   it("returns false when sync_control halted=0", async () => {
-    const db = makeFakeDb((sql, args) =>
-      makeFakeStmt(sql, args, [{ value: "0" }]),
-    );
+    const db = makeFakeDb((sql, args) => makeFakeStmt(sql, args, [{ value: "0" }]));
     expect(await isHalted(db)).toBe(false);
   });
 
   it("returns false when row is missing (null)", async () => {
-    const db = makeFakeDb((sql, args) =>
-      makeFakeStmt(sql, args, []),
-    );
+    const db = makeFakeDb((sql, args) => makeFakeStmt(sql, args, []));
     expect(await isHalted(db)).toBe(false);
   });
 });
@@ -540,9 +502,7 @@ describe("auth failure helpers", () => {
   });
 
   it("getAuthFailures parses integer from value string", async () => {
-    const db = makeFakeDb((sql, args) =>
-      makeFakeStmt(sql, args, [{ value: "2" }]),
-    );
+    const db = makeFakeDb((sql, args) => makeFakeStmt(sql, args, [{ value: "2" }]));
     expect(await getAuthFailures(db)).toBe(2);
   });
 
@@ -704,7 +664,7 @@ describe("syncRepoIssues", () => {
     // sync_state INSERT should have been executed
     const syncStateStmt = capturedStmts.find((s) => s.sql.includes("sync_state"));
     expect(syncStateStmt).toBeDefined();
-    expect(syncStateStmt!.args[0]).toBe("Roxabi/lyra");
+    expect(syncStateStmt?.args[0]).toBe("Roxabi/lyra");
 
     // Edge collection
     expect(edges.has("Roxabi/lyra#42")).toBe(true);
@@ -762,8 +722,8 @@ describe("syncRepoIssues", () => {
 
     const upsertStmt = capturedStmts.find((s) => s.sql.includes("INSERT INTO issues"));
     expect(upsertStmt).toBeDefined();
-    expect(upsertStmt!.sql).toContain("json_object()");
-    expect(upsertStmt!.args).not.toContain("Test issue");
+    expect(upsertStmt?.sql).toContain("json_object()");
+    expect(upsertStmt?.args).not.toContain("Test issue");
 
     expect(logSpy).toHaveBeenCalledWith(
       JSON.stringify({
@@ -830,12 +790,12 @@ describe("syncBranches", () => {
         !s.sql.includes("number"),
     );
     expect(resetStmt).toBeDefined();
-    expect(resetStmt!.args).toEqual(["Roxabi/lyra"]);
+    expect(resetStmt?.args).toEqual(["Roxabi/lyra"]);
 
     // set-to-1 with deduped numbers (42 once, 7 once) → [repo, 42, 7]
     const setStmt = capturedStmts.find((s) => s.sql.includes("has_active_branch=1"));
     expect(setStmt).toBeDefined();
-    expect(setStmt!.args).toEqual(["Roxabi/lyra", 42, 7]);
+    expect(setStmt?.args).toEqual(["Roxabi/lyra", 42, 7]);
   });
 
   it("zeros all issues in repo (no batch) when no branch matches an issue number", async () => {
@@ -867,7 +827,7 @@ describe("syncBranches", () => {
     expect(batchMock).not.toHaveBeenCalled();
     const resetStmt = capturedStmts.find((s) => s.sql.includes("has_active_branch=0"));
     expect(resetStmt).toBeDefined();
-    expect(resetStmt!.args).toEqual(["Roxabi/lyra"]);
+    expect(resetStmt?.args).toEqual(["Roxabi/lyra"]);
   });
 });
 
@@ -955,7 +915,7 @@ describe("syncRepoBundle", () => {
     // sync_state written
     const syncStateStmt = capturedStmts.find((s) => s.sql.includes("sync_state"));
     expect(syncStateStmt).toBeDefined();
-    expect(syncStateStmt!.args[0]).toBe("Roxabi/lyra");
+    expect(syncStateStmt?.args[0]).toBe("Roxabi/lyra");
 
     // Edge collected for issue 10
     expect(edges.has("Roxabi/lyra#10")).toBe(true);
@@ -1019,7 +979,7 @@ describe("syncRepoBundle", () => {
 
     const upsertStmt = capturedStmts.find((s) => s.sql.includes("INSERT INTO issues"));
     expect(upsertStmt).toBeDefined();
-    expect(upsertStmt!.sql).toContain("json_object()");
+    expect(upsertStmt?.sql).toContain("json_object()");
 
     expect(logSpy).toHaveBeenCalledWith(
       JSON.stringify({
@@ -1162,13 +1122,15 @@ describe("runSync", () => {
    *   DB SELECT DISTINCT queries return stale=[Roxabi/lyra] in issues/edges/pr_state/sync_state →
    *   batchChunked invoked with DELETE stmts for Roxabi/lyra
    */
-  function makeFullSyncDb(opts: {
-    issueRepos?: string[];
-    edgeSrcRepos?: string[];
-    edgeDstRepos?: string[];
-    prStateRepos?: string[];
-    syncStateRepos?: string[];
-  } = {}) {
+  function makeFullSyncDb(
+    opts: {
+      issueRepos?: string[];
+      edgeSrcRepos?: string[];
+      edgeDstRepos?: string[];
+      prStateRepos?: string[];
+      syncStateRepos?: string[];
+    } = {},
+  ) {
     const {
       issueRepos = ["Roxabi/lyra", "Roxabi/roxabi-factory"],
       edgeSrcRepos = ["Roxabi/lyra"],
@@ -1179,7 +1141,8 @@ describe("runSync", () => {
 
     return makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
-      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_running") && sql.includes("UPDATE"))
+        return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
       // discoverTenants
       if (sql.includes("FROM tenants")) {
@@ -1191,19 +1154,39 @@ describe("runSync", () => {
       }
       // Prune SELECT DISTINCT queries
       if (sql.includes("SELECT DISTINCT repo FROM issues")) {
-        return makeFakeStmt(sql, args, issueRepos.map((r) => ({ repo: r })));
+        return makeFakeStmt(
+          sql,
+          args,
+          issueRepos.map((r) => ({ repo: r })),
+        );
       }
       if (sql.includes("SELECT DISTINCT substr(src_key")) {
-        return makeFakeStmt(sql, args, edgeSrcRepos.map((r) => ({ repo: r })));
+        return makeFakeStmt(
+          sql,
+          args,
+          edgeSrcRepos.map((r) => ({ repo: r })),
+        );
       }
       if (sql.includes("SELECT DISTINCT substr(dst_key")) {
-        return makeFakeStmt(sql, args, edgeDstRepos.map((r) => ({ repo: r })));
+        return makeFakeStmt(
+          sql,
+          args,
+          edgeDstRepos.map((r) => ({ repo: r })),
+        );
       }
       if (sql.includes("SELECT DISTINCT repo FROM pr_state")) {
-        return makeFakeStmt(sql, args, prStateRepos.map((r) => ({ repo: r })));
+        return makeFakeStmt(
+          sql,
+          args,
+          prStateRepos.map((r) => ({ repo: r })),
+        );
       }
       if (sql.includes("SELECT repo FROM sync_state")) {
-        return makeFakeStmt(sql, args, syncStateRepos.map((r) => ({ repo: r })));
+        return makeFakeStmt(
+          sql,
+          args,
+          syncStateRepos.map((r) => ({ repo: r })),
+        );
       }
       // releaseSyncLock, writeRunAudit queries
       return makeFakeStmt(sql, args, [], 1);
@@ -1214,7 +1197,9 @@ describe("runSync", () => {
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
     // listInstallationRepos returns only roxabi-factory (lyra is gone)
-    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "Roxabi/roxabi-factory", isPrivate: false }]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([
+      { repo: "Roxabi/roxabi-factory", isPrivate: false },
+    ]);
 
     const { ghGraphql } = await import("./graphql");
     const mockGhGraphql = vi.mocked(ghGraphql);
@@ -1253,7 +1238,10 @@ describe("runSync", () => {
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
     // listInstallationRepos returns both repos — roxabi-vault is still accessible
-    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "Roxabi/roxabi-factory", isPrivate: false }, { repo: "Roxabi/roxabi-vault", isPrivate: false }]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([
+      { repo: "Roxabi/roxabi-factory", isPrivate: false },
+      { repo: "Roxabi/roxabi-vault", isPrivate: false },
+    ]);
 
     const { ghGraphql } = await import("./graphql");
     const mockGhGraphql = vi.mocked(ghGraphql);
@@ -1297,7 +1285,8 @@ describe("runSync", () => {
 
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
-      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_running") && sql.includes("UPDATE"))
+        return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("FROM tenants")) {
         return makeFakeStmt(sql, args, [{ id: 1, installation_id: 139542392 }]);
@@ -1468,10 +1457,14 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
 
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
-      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_running") && sql.includes("UPDATE"))
+        return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("FROM tenants")) {
-        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }, { id: 2, installation_id: 20 }]);
+        return makeFakeStmt(sql, args, [
+          { id: 1, installation_id: 10 },
+          { id: 2, installation_id: 20 },
+        ]);
       }
       return makeFakeStmt(sql, args, [], 1);
     });
@@ -1496,7 +1489,9 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
 
     // Exactly 1 ghGraphql call for repo o/r (deduplication)
     const bundleCalls = mockGhGraphql.mock.calls.filter(
-      (c) => (c[1] as Record<string, unknown>)?.owner === "o" && (c[1] as Record<string, unknown>)?.name === "r",
+      (c) =>
+        (c[1] as Record<string, unknown>)?.owner === "o" &&
+        (c[1] as Record<string, unknown>)?.name === "r",
     );
     expect(bundleCalls).toHaveLength(1);
   });
@@ -1524,7 +1519,8 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     let nextSlotValue: unknown;
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
-      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_running") && sql.includes("UPDATE"))
+        return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("FROM tenants")) {
         return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }]);
@@ -1579,7 +1575,10 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
       }
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("FROM tenants")) {
-        return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }, { id: 2, installation_id: 20 }]);
+        return makeFakeStmt(sql, args, [
+          { id: 1, installation_id: 10 },
+          { id: 2, installation_id: 20 },
+        ]);
       }
       return makeFakeStmt(sql, args, [], 1);
     });
@@ -1597,7 +1596,9 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     // runSync must use getInstallationToken() and never read env.GITHUB_TOKEN.
     const { getInstallationToken, listInstallationRepos } = await import("../auth/installToken");
     vi.mocked(getInstallationToken).mockResolvedValue("fake-token");
-    vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "Roxabi/roxabi-factory", isPrivate: false }]);
+    vi.mocked(listInstallationRepos).mockResolvedValue([
+      { repo: "Roxabi/roxabi-factory", isPrivate: false },
+    ]);
 
     const { ghGraphql } = await import("./graphql");
     vi.mocked(ghGraphql).mockResolvedValue({
@@ -1613,7 +1614,8 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
 
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
-      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_running") && sql.includes("UPDATE"))
+        return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("FROM tenants")) {
         return makeFakeStmt(sql, args, [{ id: 1, installation_id: 139542392 }]);
@@ -1624,7 +1626,7 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     const base = makeEnv({ DB: db });
     // Replace GITHUB_TOKEN with a spy getter that records every access.
     let patAccessCount = 0;
-    delete (base as unknown as Record<string, unknown>)["GITHUB_TOKEN"];
+    (base as unknown as Record<string, unknown>).GITHUB_TOKEN = undefined;
     Object.defineProperty(base, "GITHUB_TOKEN", {
       get() {
         patAccessCount++;
@@ -1668,7 +1670,8 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
 
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("key='halted'")) return makeFakeStmt(sql, args, [{ value: "0" }], 0);
-      if (sql.includes("sync_running") && sql.includes("UPDATE")) return makeFakeStmt(sql, args, [], 1);
+      if (sql.includes("sync_running") && sql.includes("UPDATE"))
+        return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("sync_started_at")) return makeFakeStmt(sql, args, [], 1);
       if (sql.includes("FROM tenants")) {
         return makeFakeStmt(sql, args, [{ id: 1, installation_id: 10 }]);
@@ -1729,7 +1732,11 @@ describe("runSync — breaker + discovery (#160)", () => {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
       // auth_failures SELECT for tenant after increment → return count
-      if (sql.includes("key='auth_failures'") && sql.includes("SELECT") && !sql.includes("UPDATE")) {
+      if (
+        sql.includes("key='auth_failures'") &&
+        sql.includes("SELECT") &&
+        !sql.includes("UPDATE")
+      ) {
         return makeFakeStmt(sql, args, [{ value: "1" }], 0);
       }
       // tenants discovery
@@ -1750,10 +1757,7 @@ describe("runSync — breaker + discovery (#160)", () => {
     // Assert — auth_failures UPDATE was issued bound to tenant_id=1
     const recorded = db._recorded;
     const authFailureUpdate = recorded.find(
-      (s) =>
-        s.sql.includes("auth_failures") &&
-        s.sql.includes("UPDATE") &&
-        s.args.includes(1),
+      (s) => s.sql.includes("auth_failures") && s.sql.includes("UPDATE") && s.args.includes(1),
     );
     expect(authFailureUpdate).toBeDefined();
   });
@@ -1790,7 +1794,11 @@ describe("runSync — breaker + discovery (#160)", () => {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
       // auth_failures SELECT → not halted
-      if (sql.includes("key='auth_failures'") && sql.includes("SELECT") && !sql.includes("UPDATE")) {
+      if (
+        sql.includes("key='auth_failures'") &&
+        sql.includes("SELECT") &&
+        !sql.includes("UPDATE")
+      ) {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
       // tenants discovery → 1 tenant
@@ -1815,9 +1823,7 @@ describe("runSync — breaker + discovery (#160)", () => {
     // Assert — INSERT for "o/keep"
     const recorded = db._recorded;
     const insertKeep = recorded.find(
-      (s) =>
-        s.sql.includes("INSERT INTO tenant_repo_access") &&
-        s.args.includes("o/keep"),
+      (s) => s.sql.includes("INSERT INTO tenant_repo_access") && s.args.includes("o/keep"),
     );
     expect(insertKeep).toBeDefined();
     // #148: is_private written (o/keep mocked private → bound 1; args = [tenantId, repo, is_private])
@@ -1825,16 +1831,12 @@ describe("runSync — breaker + discovery (#160)", () => {
 
     // Assert — DELETE for "o/stale" (not for "o/keep")
     const deleteStale = recorded.find(
-      (s) =>
-        s.sql.includes("DELETE FROM tenant_repo_access") &&
-        s.args.includes("o/stale"),
+      (s) => s.sql.includes("DELETE FROM tenant_repo_access") && s.args.includes("o/stale"),
     );
     expect(deleteStale).toBeDefined();
 
     const deleteKeep = recorded.find(
-      (s) =>
-        s.sql.includes("DELETE FROM tenant_repo_access") &&
-        s.args.includes("o/keep"),
+      (s) => s.sql.includes("DELETE FROM tenant_repo_access") && s.args.includes("o/keep"),
     );
     expect(deleteKeep).toBeUndefined();
   });
@@ -1871,7 +1873,11 @@ describe("runSync — breaker + discovery (#160)", () => {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
       // auth_failures SELECT → not halted
-      if (sql.includes("key='auth_failures'") && sql.includes("SELECT") && !sql.includes("UPDATE")) {
+      if (
+        sql.includes("key='auth_failures'") &&
+        sql.includes("SELECT") &&
+        !sql.includes("UPDATE")
+      ) {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
       // tenants discovery → 1 tenant
@@ -1896,9 +1902,7 @@ describe("runSync — breaker + discovery (#160)", () => {
     // Assert — INSERT for "o/pub" with is_private=0
     const recorded = db._recorded;
     const insertPub = recorded.find(
-      (s) =>
-        s.sql.includes("INSERT INTO tenant_repo_access") &&
-        s.args.includes("o/pub"),
+      (s) => s.sql.includes("INSERT INTO tenant_repo_access") && s.args.includes("o/pub"),
     );
     expect(insertPub).toBeDefined();
     // #148: is_private=0 for public repo (args = [tenantId, repo, is_private])
@@ -1936,7 +1940,11 @@ describe("runSync — breaker + discovery (#160)", () => {
       if (sql.includes("key='halted'") && sql.includes("SELECT")) {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
-      if (sql.includes("key='auth_failures'") && sql.includes("SELECT") && !sql.includes("UPDATE")) {
+      if (
+        sql.includes("key='auth_failures'") &&
+        sql.includes("SELECT") &&
+        !sql.includes("UPDATE")
+      ) {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
       if (sql.includes("FROM tenants")) {
@@ -1996,7 +2004,11 @@ describe("runSync — breaker + discovery (#160)", () => {
       if (sql.includes("key='halted'") && sql.includes("SELECT")) {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
-      if (sql.includes("key='auth_failures'") && sql.includes("SELECT") && !sql.includes("UPDATE")) {
+      if (
+        sql.includes("key='auth_failures'") &&
+        sql.includes("SELECT") &&
+        !sql.includes("UPDATE")
+      ) {
         return makeFakeStmt(sql, args, [{ value: "1" }], 0);
       }
       if (sql.includes("FROM tenants")) {
@@ -2017,9 +2029,7 @@ describe("runSync — breaker + discovery (#160)", () => {
     await expect(runSync(env)).resolves.toBeUndefined();
 
     // ghGraphql must NOT have been called with REPO_BUNDLE_QUERY for o/a
-    const bundleCalls = vi.mocked(ghGraphql).mock.calls.filter(
-      (c) => c[0] === "REPO_BUNDLE_QUERY",
-    );
+    const bundleCalls = vi.mocked(ghGraphql).mock.calls.filter((c) => c[0] === "REPO_BUNDLE_QUERY");
     expect(bundleCalls).toHaveLength(0);
   });
 
@@ -2046,7 +2056,11 @@ describe("runSync — breaker + discovery (#160)", () => {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
       // auth_failures SELECT — return ≥2 for global (tenant_id=0) to trigger halt
-      if (sql.includes("key='auth_failures'") && sql.includes("SELECT") && !sql.includes("UPDATE")) {
+      if (
+        sql.includes("key='auth_failures'") &&
+        sql.includes("SELECT") &&
+        !sql.includes("UPDATE")
+      ) {
         const val = args[0] === 0 ? "2" : "1";
         return makeFakeStmt(sql, args, [{ value: val }], 0);
       }
@@ -2073,11 +2087,7 @@ describe("runSync — breaker + discovery (#160)", () => {
     // Assert — a halted-related UPDATE was fired (haltSync writes to sync_control)
     // The SQL sets halted='1' or value='1' where key='halted'
     const recorded = db._recorded;
-    const haltUpdate = recorded.find(
-      (s) =>
-        s.sql.includes("halted") &&
-        s.sql.includes("UPDATE"),
-    );
+    const haltUpdate = recorded.find((s) => s.sql.includes("halted") && s.sql.includes("UPDATE"));
     expect(haltUpdate).toBeDefined();
 
     // Assert — fetch was called with NOTIFY_URL and body containing 'sync_halted'
@@ -2108,7 +2118,11 @@ describe("runSync — breaker + discovery (#160)", () => {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
       // auth_failures SELECT always returns 1 (below threshold — no halt)
-      if (sql.includes("key='auth_failures'") && sql.includes("SELECT") && !sql.includes("UPDATE")) {
+      if (
+        sql.includes("key='auth_failures'") &&
+        sql.includes("SELECT") &&
+        !sql.includes("UPDATE")
+      ) {
         return makeFakeStmt(sql, args, [{ value: "1" }], 0);
       }
       if (sql.includes("FROM tenants")) {
@@ -2133,11 +2147,7 @@ describe("runSync — breaker + discovery (#160)", () => {
 
     // Assert — NO halted UPDATE issued
     const recorded = db._recorded;
-    const haltUpdate = recorded.find(
-      (s) =>
-        s.sql.includes("halted") &&
-        s.sql.includes("UPDATE"),
-    );
+    const haltUpdate = recorded.find((s) => s.sql.includes("halted") && s.sql.includes("UPDATE"));
     expect(haltUpdate).toBeUndefined();
 
     // Assert — fetch was NOT called with NOTIFY_URL
@@ -2175,7 +2185,11 @@ describe("runSync — breaker + discovery (#160)", () => {
       if (sql.includes("key='halted'") && sql.includes("SELECT")) {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
-      if (sql.includes("key='auth_failures'") && sql.includes("SELECT") && !sql.includes("UPDATE")) {
+      if (
+        sql.includes("key='auth_failures'") &&
+        sql.includes("SELECT") &&
+        !sql.includes("UPDATE")
+      ) {
         return makeFakeStmt(sql, args, [{ value: "0" }], 0);
       }
       if (sql.includes("FROM tenants")) {

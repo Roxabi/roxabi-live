@@ -1,9 +1,5 @@
 import type { Context } from "hono";
-import {
-  LEGACY_SESSION_COOKIE,
-  SESSION_COOKIE,
-  SESSION_TTL_SECONDS,
-} from "./types";
+import { LEGACY_SESSION_COOKIE, SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
 
 // ---------------------------------------------------------------------------
 // Auth response cache policy — never cache session-gated redirects/HTML.
@@ -113,10 +109,7 @@ export function sessionCookieHeaders(rawToken: string): string[] {
 // ---------------------------------------------------------------------------
 
 /** Parse a named cookie from the Cookie header. */
-export function readNamedCookie(
-  cookieHeader: string | undefined,
-  name: string,
-): string | null {
+export function readNamedCookie(cookieHeader: string | undefined, name: string): string | null {
   if (!cookieHeader) return null;
   let last: string | null = null;
   for (const part of cookieHeader.split(";")) {
@@ -135,8 +128,5 @@ export function readNamedCookie(
  */
 export function readSessionToken(c: Context): string | null {
   const header = c.req.header("Cookie");
-  return (
-    readNamedCookie(header, SESSION_COOKIE) ??
-    readNamedCookie(header, LEGACY_SESSION_COOKIE)
-  );
+  return readNamedCookie(header, SESSION_COOKIE) ?? readNamedCookie(header, LEGACY_SESSION_COOKIE);
 }

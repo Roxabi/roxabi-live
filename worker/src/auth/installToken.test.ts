@@ -1,13 +1,9 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
-import {
-  getInstallationToken,
-  resolveInstallToken,
-  listInstallationRepos,
-} from "./installToken";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../types";
+import { getInstallationToken, listInstallationRepos, resolveInstallToken } from "./installToken";
 
-import type { FakeResult, FakeStmt } from "../test-utils";
-import { makeFakeStmt, makeFakeDb } from "../test-utils";
+import type { FakeResult } from "../test-utils";
+import { makeFakeDb, makeFakeStmt } from "../test-utils";
 
 // ---------------------------------------------------------------------------
 // Test key generation helpers (mirrors jwt.test.ts pattern)
@@ -48,7 +44,7 @@ function generateInstallTokenKey(): string {
 // We'll use a simple approach: store a known "encrypted" value using the
 // real tokenCrypto module once it exists. For now, tests that need a seeded
 // encrypted row (cache-hit path) import encryptToken directly.
-import { importDek, encryptToken, decryptToken } from "./tokenCrypto";
+import { decryptToken, encryptToken, importDek } from "./tokenCrypto";
 
 // ---------------------------------------------------------------------------
 // Fake env builder
@@ -103,12 +99,7 @@ function buildSeededDb(opts: {
   /** Track upsert calls to install_tokens */
   upsertCapture?: Array<{ sql: string; args: unknown[] }>;
 }): D1Database {
-  const {
-    tenant,
-    installToken,
-    repoAccess = [],
-    upsertCapture,
-  } = opts;
+  const { tenant, installToken, repoAccess = [], upsertCapture } = opts;
 
   return makeFakeDb((sql, args) => {
     const sqlLower = sql.toLowerCase();
@@ -145,9 +136,7 @@ function buildSeededDb(opts: {
 
     // Query on tenant_repo_access (bare — no JOIN)
     if (sqlLower.includes("tenant_repo_access")) {
-      const matchingRow = repoAccess.find(
-        (r) => args.includes(r.repo),
-      );
+      const matchingRow = repoAccess.find((r) => args.includes(r.repo));
       if (matchingRow) {
         return makeFakeStmt(sql, args, [matchingRow as unknown as FakeResult]);
       }
@@ -246,9 +235,7 @@ describe("getInstallationToken — cache fresh", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     // Act + Assert — suspended tenant must be rejected
-    await expect(
-      getInstallationToken(db, { ...env, DB: db }, 1, 42),
-    ).rejects.toThrow(/suspended/);
+    await expect(getInstallationToken(db, { ...env, DB: db }, 1, 42)).rejects.toThrow(/suspended/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -267,9 +254,9 @@ describe("getInstallationToken — cache fresh", () => {
     });
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as typeof fetch;
-    await expect(
-      getInstallationToken(db, { ...env, DB: db }, 999, 42),
-    ).rejects.toThrow(/not found/);
+    await expect(getInstallationToken(db, { ...env, DB: db }, 999, 42)).rejects.toThrow(
+      /not found/,
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -482,9 +469,7 @@ describe("resolveInstallToken — fail-closed guards", () => {
     });
 
     // Act + Assert — suspended tenant must be rejected
-    await expect(
-      resolveInstallToken(db, { ...env, DB: db }, "owner", "my-repo"),
-    ).rejects.toThrow();
+    await expect(resolveInstallToken(db, { ...env, DB: db }, "owner", "my-repo")).rejects.toThrow();
   });
 
   it("resolves to the decrypted token via cache-hit when tenant is active", async () => {
@@ -512,12 +497,7 @@ describe("resolveInstallToken — fail-closed guards", () => {
     });
 
     // Act
-    const token = await resolveInstallToken(
-      db,
-      { ...env, DB: db },
-      "owner",
-      "active-repo",
-    );
+    const token = await resolveInstallToken(db, { ...env, DB: db }, "owner", "active-repo");
 
     // Assert — cache-hit decrypt path returns the expected plaintext token
     expect(token).toBe(plaintext);
@@ -582,10 +562,10 @@ describe("listInstallationRepos — W2 pagination bound", () => {
       .fn()
       .mockResolvedValueOnce(fullPage())
       .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ repositories: [{ full_name: "o/last-repo" }] }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
+        new Response(JSON.stringify({ repositories: [{ full_name: "o/last-repo" }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
       );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
@@ -603,13 +583,10 @@ describe("listInstallationRepos — W2 pagination bound", () => {
 
   it("stops early on a short final page and does NOT warn (normal case)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ repositories: [{ full_name: "o/only", private: true }] }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
+      new Response(JSON.stringify({ repositories: [{ full_name: "o/only", private: true }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

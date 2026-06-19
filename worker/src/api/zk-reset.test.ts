@@ -1,9 +1,9 @@
-import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
-import type { Env } from "../types";
-import { postZkResetRoute, purgeUserZkData } from "./zk-reset";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv, SessionContext } from "../auth/types";
 import { captureDb, makeFakeDb, makeFakeStmt } from "../test-utils";
+import type { Env } from "../types";
+import { postZkResetRoute, purgeUserZkData } from "./zk-reset";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -28,7 +28,7 @@ function makeEnv(db: D1Database, overrides: Partial<Env> = {}): Env {
   } as unknown as Env;
 }
 
-function makeApp(db: D1Database): Hono<AuthEnv> {
+function makeApp(_db: D1Database): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
   app.use("*", async (c, next) => {
     c.set("session", STUB_SESSION);
@@ -65,7 +65,7 @@ describe("postZkResetRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(403);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("reauth_required");
   });
 
@@ -124,16 +124,12 @@ describe("postZkResetRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { ok: boolean; payloads_deleted: number };
+    const body = (await res.json()) as { ok: boolean; payloads_deleted: number };
     expect(body.ok).toBe(true);
     expect(body.payloads_deleted).toBe(2);
 
-    expect(
-      captured.some((s) => s.sql.includes("DELETE FROM zk_payloads")),
-    ).toBe(true);
-    expect(
-      captured.some((s) => s.sql.includes("DELETE FROM zk_key_backups")),
-    ).toBe(true);
+    expect(captured.some((s) => s.sql.includes("DELETE FROM zk_payloads"))).toBe(true);
+    expect(captured.some((s) => s.sql.includes("DELETE FROM zk_key_backups"))).toBe(true);
 
     const consumeIdx = captured.findIndex(
       (s) =>
@@ -141,9 +137,7 @@ describe("postZkResetRoute", () => {
         s.sql.includes("DELETE") &&
         s.sql.includes("RETURNING"),
     );
-    const purgeIdx = captured.findIndex((s) =>
-      s.sql.includes("DELETE FROM zk_payloads"),
-    );
+    const purgeIdx = captured.findIndex((s) => s.sql.includes("DELETE FROM zk_payloads"));
     expect(consumeIdx).toBeGreaterThanOrEqual(0);
     expect(purgeIdx).toBeGreaterThan(consumeIdx);
   });
@@ -202,7 +196,9 @@ describe("postZkResetRoute — recordResetSuccess atomic UPSERT", () => {
   it("returns 429 when reset rate limited", async () => {
     const { db } = captureDb((sql) => {
       if (sql.includes("sync_control") && sql.includes("SELECT")) {
-        return [{ value: JSON.stringify({ hour: new Date().toISOString().slice(0, 13), count: 3 }) }];
+        return [
+          { value: JSON.stringify({ hour: new Date().toISOString().slice(0, 13), count: 3 }) },
+        ];
       }
       return [];
     });
@@ -217,7 +213,7 @@ describe("postZkResetRoute — recordResetSuccess atomic UPSERT", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(429);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("rate_limited");
   });
 });
@@ -245,8 +241,6 @@ describe("purgeUserZkData", () => {
     const stats = await purgeUserZkData(db, 7);
     expect(stats.payloads_deleted).toBe(1);
     expect(stats.issues_scrubbed).toBe(1);
-    expect(
-      captured.some((s) => s.sql.includes("UPDATE issues SET payload")),
-    ).toBe(true);
+    expect(captured.some((s) => s.sql.includes("UPDATE issues SET payload"))).toBe(true);
   });
 });

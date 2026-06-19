@@ -4,7 +4,6 @@
 
 import type { Context } from "hono";
 import type { Env } from "../types";
-import type { AuthEnv } from "./types";
 import {
   AUTH_NO_CACHE,
   authRedirect,
@@ -12,6 +11,7 @@ import {
   readSessionToken,
 } from "./cookies";
 import { validateSession } from "./session";
+import type { AuthEnv } from "./types";
 
 export const DASHBOARD_PATH = "/dashboard";
 
@@ -41,9 +41,7 @@ export function dashboardCleanUrl(reqUrl: URL): string | null {
   return `${pathname}${pathUrl.search}`;
 }
 
-export async function dashboardRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function dashboardRoute(c: Context<AuthEnv>): Promise<Response> {
   const reqUrl = new URL(c.req.url);
   const loginDest = dashboardLoginUrl(reqUrl);
 
@@ -74,9 +72,7 @@ export async function serveDashboardShell(
 ): Promise<Response> {
   const assetUrl = new URL(reqUrl);
   assetUrl.pathname = "/dashboard/index.html";
-  const assetRes = await env.ASSETS.fetch(
-    new Request(assetUrl.toString(), raw),
-  );
+  const assetRes = await env.ASSETS.fetch(new Request(assetUrl.toString(), raw));
   const headers = new Headers(assetRes.headers);
   for (const [key, value] of Object.entries(AUTH_NO_CACHE)) {
     headers.set(key, value);

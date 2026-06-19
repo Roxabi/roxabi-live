@@ -1,13 +1,8 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
 import { Hono } from "hono";
-import type { AuthEnv, SessionContext } from "../auth/types";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AuthEnv } from "../auth/types";
+import { STUB_SESSION, captureDb, dispatchByTable, makeEnv } from "../test-utils";
 import { activeTenantRoute } from "./active-tenant";
-import {
-  captureDb,
-  dispatchByTable,
-  makeEnv,
-  STUB_SESSION,
-} from "../test-utils";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -23,7 +18,7 @@ const COOKIE_HEADER = `${SESSION_COOKIE_NAME}=${RAW_TOKEN}`;
 // ---------------------------------------------------------------------------
 
 /** App with STUB_SESSION injected — simulates requireSession middleware passing. */
-function makeApp(db: ReturnType<typeof captureDb>["db"]): Hono<AuthEnv> {
+function makeApp(_db: ReturnType<typeof captureDb>["db"]): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
 
   app.use("*", async (c, next) => {
@@ -37,7 +32,7 @@ function makeApp(db: ReturnType<typeof captureDb>["db"]): Hono<AuthEnv> {
 }
 
 /** App with NO session injected — simulates unauthenticated request. */
-function makeAppNoSession(db: ReturnType<typeof captureDb>["db"]): Hono<AuthEnv> {
+function makeAppNoSession(_db: ReturnType<typeof captureDb>["db"]): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
   app.post("/api/active-tenant", activeTenantRoute);
   return app;
@@ -57,7 +52,7 @@ async function postActiveTenant(
     "Content-Type": "application/json",
   };
   if (cookie) {
-    headers["Cookie"] = cookie;
+    headers.Cookie = cookie;
   }
 
   return app.request(
@@ -92,7 +87,7 @@ describe("activeTenantRoute", () => {
 
       // Assert — status + body
       expect(res.status).toBe(200);
-      const body = await res.json() as { active_tenant_id: number };
+      const body = (await res.json()) as { active_tenant_id: number };
       expect(body.active_tenant_id).toBe(2);
 
       // Assert — an UPDATE sessions SET tenant_id statement was issued
@@ -102,7 +97,7 @@ describe("activeTenantRoute", () => {
           s.sql.toLowerCase().includes("tenant_id"),
       );
       expect(updateStmt).toBeDefined();
-      expect(updateStmt!.sql).toMatch(/UPDATE sessions SET tenant_id/i);
+      expect(updateStmt?.sql).toMatch(/UPDATE sessions SET tenant_id/i);
     });
   });
 
@@ -117,7 +112,7 @@ describe("activeTenantRoute", () => {
 
       // Assert — status + body
       expect(res.status).toBe(403);
-      const body = await res.json() as { error: string };
+      const body = (await res.json()) as { error: string };
       expect(body.error).toBe("forbidden");
 
       // Assert — no UPDATE sessions was issued
@@ -146,7 +141,7 @@ describe("activeTenantRoute", () => {
 
       // Assert — switch rejected before any session mutation
       expect(res.status).toBe(403);
-      const body = await res.json() as { error: string };
+      const body = (await res.json()) as { error: string };
       expect(body.error).toBe("forbidden");
 
       const updateStmt = stmts().find(
@@ -169,7 +164,7 @@ describe("activeTenantRoute", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
+      const body = (await res.json()) as { error: string };
       expect(body.error).toBe("tenant_id required");
     });
 
@@ -183,7 +178,7 @@ describe("activeTenantRoute", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
+      const body = (await res.json()) as { error: string };
       expect(body.error).toBe("tenant_id required");
     });
 
@@ -197,7 +192,7 @@ describe("activeTenantRoute", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
+      const body = (await res.json()) as { error: string };
       expect(body.error).toBe("tenant_id required");
     });
 
@@ -219,7 +214,7 @@ describe("activeTenantRoute", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
+      const body = (await res.json()) as { error: string };
       expect(body.error).toBe("tenant_id required");
     });
   });
@@ -235,7 +230,7 @@ describe("activeTenantRoute", () => {
 
       // Assert
       expect(res.status).toBe(401);
-      const body = await res.json() as { error: string };
+      const body = (await res.json()) as { error: string };
       expect(body.error).toBe("unauthorized");
     });
   });

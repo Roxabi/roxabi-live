@@ -7,7 +7,7 @@
  */
 
 import type { Env } from "../types";
-import { encryptToken, importDek, decryptToken } from "./tokenCrypto";
+import { decryptToken, encryptToken, importDek } from "./tokenCrypto";
 
 const HANDOFF_TTL_MINUTES = 5;
 

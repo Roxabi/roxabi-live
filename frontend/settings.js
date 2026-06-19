@@ -1,21 +1,17 @@
 // settings.js — account settings panel
 
-import { api, escHtml } from './auth.js';
-import { getThemePref, setThemePref, applyThemePref } from './theme.js';
-import {
-  rewrapAccountKeyBackup,
-  unwrapAccountKey,
-  saveDeviceSession,
-} from './zk-crypto.js';
-import { updateKeyBackup } from './zk-enroll.js';
-import { setZkSession } from './zk-session.js';
-import { getZkReauthProof, zkReauthLoginUrl } from './zk-github.js';
-import { clearLocalZkState } from './zk-reset.js';
+import { api, escHtml } from "./auth.js";
+import { applyThemePref, getThemePref, setThemePref } from "./theme.js";
+import { rewrapAccountKeyBackup, saveDeviceSession, unwrapAccountKey } from "./zk-crypto.js";
+import { updateKeyBackup } from "./zk-enroll.js";
+import { getZkReauthProof, zkReauthLoginUrl } from "./zk-github.js";
+import { clearLocalZkState } from "./zk-reset.js";
+import { setZkSession } from "./zk-session.js";
 
 const $ = (id) => document.getElementById(id);
 
-const DISPLAY_NAME_PREFIX = 'roxabi:display-name:';
-const SETTINGS_ACTION_KEY = 'roxabi:settings-pending-action';
+const DISPLAY_NAME_PREFIX = "roxabi:display-name:";
+const SETTINGS_ACTION_KEY = "roxabi:settings-pending-action";
 
 export function getDisplayName(login) {
   return localStorage.getItem(DISPLAY_NAME_PREFIX + login) || login;
@@ -35,16 +31,17 @@ export function setDisplayName(login, name) {
  * @param {{ user: { github_login: string, zk_enrolled?: boolean, zk_account_key_enabled?: boolean }, installations?: Array<{ tenant_id: number, account_login: string, account_type: string }>, install_targets?: Array<{ id: number, login: string, type: string }> }} me
  */
 export function openSettings(me) {
-  const gate = $('settings-gate');
+  const gate = $("settings-gate");
   if (!gate) return;
 
   const login = me.user.github_login;
   const displayName = getDisplayName(login);
   const themePref = getThemePref();
   const installations = me.installations ?? [];
-  const personalOpt = (me.install_options ?? []).find(o => o.kind === 'personal');
-  const pickerOpt = (me.install_options ?? []).find(o => o.kind === 'picker');
-  const installUrl = personalOpt?.url ?? pickerOpt?.url ?? 'https://github.com/apps/roxabi-live/installations/new';
+  const personalOpt = (me.install_options ?? []).find((o) => o.kind === "personal");
+  const pickerOpt = (me.install_options ?? []).find((o) => o.kind === "picker");
+  const installUrl =
+    personalOpt?.url ?? pickerOpt?.url ?? "https://github.com/apps/roxabi-live/installations/new";
 
   gate.innerHTML = `
     <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -67,14 +64,16 @@ export function openSettings(me) {
           <label class="settings-field">
             <span>Default theme</span>
             <select id="settings-theme">
-              <option value="auto" ${themePref === 'auto' ? 'selected' : ''}>Auto (system)</option>
-              <option value="light" ${themePref === 'light' ? 'selected' : ''}>Light</option>
-              <option value="dark" ${themePref === 'dark' ? 'selected' : ''}>Dark</option>
+              <option value="auto" ${themePref === "auto" ? "selected" : ""}>Auto (system)</option>
+              <option value="light" ${themePref === "light" ? "selected" : ""}>Light</option>
+              <option value="dark" ${themePref === "dark" ? "selected" : ""}>Dark</option>
             </select>
           </label>
         </section>
 
-        ${me.user.zk_account_key_enabled ? `
+        ${
+          me.user.zk_account_key_enabled
+            ? `
         <section class="settings-section">
           <h3>Encryption</h3>
           <p class="settings-hint">Change the passphrase protecting your server-side encryption backup.</p>
@@ -99,16 +98,24 @@ export function openSettings(me) {
             </div>
           </div>
         </section>
-        ` : ''}
+        `
+            : ""
+        }
 
         <section class="settings-section">
           <h3>Repositories</h3>
           <p class="settings-hint">Add or remove repositories the GitHub App can access.</p>
-          ${installations.length
-    ? `<ul class="settings-list">${installations.map((i) => `
+          ${
+            installations.length
+              ? `<ul class="settings-list">${installations
+                  .map(
+                    (i) => `
               <li><strong>${escHtml(i.account_login)}</strong> <span class="settings-muted">(${escHtml(i.account_type)})</span></li>
-            `).join('')}</ul>`
-    : '<p class="settings-muted">No installation linked yet.</p>'}
+            `,
+                  )
+                  .join("")}</ul>`
+              : '<p class="settings-muted">No installation linked yet.</p>'
+          }
           <a class="settings-link-btn" href="${escHtml(installUrl)}" target="_blank" rel="noopener noreferrer">Configure repositories on GitHub</a>
         </section>
 
@@ -127,33 +134,33 @@ export function openSettings(me) {
     </div>
   `;
 
-  gate.removeAttribute('hidden');
-  document.body.classList.add('settings-open');
+  gate.removeAttribute("hidden");
+  document.body.classList.add("settings-open");
 
   const close = () => {
-    gate.setAttribute('hidden', '');
-    gate.innerHTML = '';
-    document.body.classList.remove('settings-open');
+    gate.setAttribute("hidden", "");
+    gate.innerHTML = "";
+    document.body.classList.remove("settings-open");
   };
 
-  $('settings-close')?.addEventListener('click', close);
-  gate.addEventListener('click', (e) => {
+  $("settings-close")?.addEventListener("click", close);
+  gate.addEventListener("click", (e) => {
     if (e.target === gate) close();
   });
-  document.addEventListener('keydown', function onEsc(e) {
-    if (e.key === 'Escape') {
+  document.addEventListener("keydown", function onEsc(e) {
+    if (e.key === "Escape") {
       close();
-      document.removeEventListener('keydown', onEsc);
+      document.removeEventListener("keydown", onEsc);
     }
   });
 
-  $('settings-display-name')?.addEventListener('change', (e) => {
+  $("settings-display-name")?.addEventListener("change", (e) => {
     const name = setDisplayName(login, e.target.value);
     e.target.value = name;
-    document.dispatchEvent(new CustomEvent('roxabi:display-name', { detail: { login, name } }));
+    document.dispatchEvent(new CustomEvent("roxabi:display-name", { detail: { login, name } }));
   });
 
-  $('settings-theme')?.addEventListener('change', (e) => {
+  $("settings-theme")?.addEventListener("change", (e) => {
     setThemePref(e.target.value);
     applyThemePref(e.target.value);
   });
@@ -162,85 +169,85 @@ export function openSettings(me) {
     wirePassphraseChange(login, close);
   }
 
-  $('settings-delete-account')?.addEventListener('click', () => {
+  $("settings-delete-account")?.addEventListener("click", () => {
     deleteAccountData(me, login);
   });
 
-  return { close, showPassphraseForm: () => $('settings-pass-form')?.removeAttribute('hidden') };
+  return { close, showPassphraseForm: () => $("settings-pass-form")?.removeAttribute("hidden") };
 }
 
 async function deleteAccountData(me, login) {
-  if (!confirm('Delete all your Roxabi Live data and sign out? This cannot be undone.')) {
+  if (!confirm("Delete all your Roxabi Live data and sign out? This cannot be undone.")) {
     return;
   }
 
   if (me.user.zk_enrolled) {
     if (!getZkReauthProof()) {
-      sessionStorage.setItem(SETTINGS_ACTION_KEY, 'delete');
-      location.href = zkReauthLoginUrl('/?settings=delete');
+      sessionStorage.setItem(SETTINGS_ACTION_KEY, "delete");
+      location.href = zkReauthLoginUrl("/?settings=delete");
       return;
     }
     try {
-      await api('/api/zk/reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await api("/api/zk/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reauth_proof: getZkReauthProof() }),
       });
     } catch {
-      alert('Could not delete encrypted data. Verify with GitHub and try again.');
+      alert("Could not delete encrypted data. Verify with GitHub and try again.");
       return;
     }
   }
 
   await clearLocalZkState(login);
   localStorage.removeItem(DISPLAY_NAME_PREFIX + login);
-  await api('/logout', { method: 'POST' }).catch(() => {});
+  await api("/logout", { method: "POST" }).catch(() => {});
   location.reload();
 }
 
 function wirePassphraseChange(login, closeSettings) {
-  const form = $('settings-pass-form');
-  const errEl = $('settings-pass-error');
+  const form = $("settings-pass-form");
+  const errEl = $("settings-pass-error");
 
-  $('settings-change-pass')?.addEventListener('click', () => {
+  $("settings-change-pass")?.addEventListener("click", () => {
     if (!getZkReauthProof()) {
-      sessionStorage.setItem(SETTINGS_ACTION_KEY, 'passphrase');
-      location.href = zkReauthLoginUrl('/?settings=passphrase');
+      sessionStorage.setItem(SETTINGS_ACTION_KEY, "passphrase");
+      location.href = zkReauthLoginUrl("/?settings=passphrase");
       return;
     }
-    form?.removeAttribute('hidden');
+    form?.removeAttribute("hidden");
   });
 
-  $('settings-pass-cancel')?.addEventListener('click', () => {
-    form?.setAttribute('hidden', '');
+  $("settings-pass-cancel")?.addEventListener("click", () => {
+    form?.setAttribute("hidden", "");
     if (errEl) errEl.hidden = true;
   });
 
-  $('settings-pass-save')?.addEventListener('click', async () => {
-    const current = $('settings-pass-current')?.value ?? '';
-    const newPass = $('settings-pass-new')?.value ?? '';
-    const confirm = $('settings-pass-confirm')?.value ?? '';
+  $("settings-pass-save")?.addEventListener("click", async () => {
+    const current = $("settings-pass-current")?.value ?? "";
+    const newPass = $("settings-pass-new")?.value ?? "";
+    const confirm = $("settings-pass-confirm")?.value ?? "";
     if (errEl) errEl.hidden = true;
 
     if (newPass.length < 8) {
-      errEl.textContent = 'New passphrase must be at least 8 characters.';
+      errEl.textContent = "New passphrase must be at least 8 characters.";
       errEl.hidden = false;
       return;
     }
     if (newPass !== confirm) {
-      errEl.textContent = 'New passphrases do not match.';
+      errEl.textContent = "New passphrases do not match.";
       errEl.hidden = false;
       return;
     }
 
-    const saveBtn = $('settings-pass-save');
+    const saveBtn = $("settings-pass-save");
     if (saveBtn) {
       saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving…';
+      saveBtn.textContent = "Saving…";
     }
 
     try {
-      const resp = await api('/api/zk/key-backup');
+      const resp = await api("/api/zk/key-backup");
       const backup = await resp.json();
       const wrapped = await rewrapAccountKeyBackup(current, newPass, backup);
       await updateKeyBackup(wrapped);
@@ -251,17 +258,17 @@ function wirePassphraseChange(login, closeSettings) {
       });
       setZkSession(accountKey, wrapped.key_fp);
       await saveDeviceSession(login, accountKey, wrapped.key_fp);
-      form?.setAttribute('hidden', '');
+      form?.setAttribute("hidden", "");
       closeSettings();
     } catch {
       if (errEl) {
-        errEl.textContent = 'Incorrect current passphrase or update failed.';
+        errEl.textContent = "Incorrect current passphrase or update failed.";
         errEl.hidden = false;
       }
     } finally {
       if (saveBtn) {
         saveBtn.disabled = false;
-        saveBtn.textContent = 'Save passphrase';
+        saveBtn.textContent = "Save passphrase";
       }
     }
   });
@@ -270,21 +277,21 @@ function wirePassphraseChange(login, closeSettings) {
 /** Resume settings flow after OAuth reauth redirect. */
 export function resumeSettingsFromUrl(me) {
   const params = new URLSearchParams(window.location.search);
-  const tab = params.get('settings');
+  const tab = params.get("settings");
   if (!tab) return;
 
   const action = sessionStorage.getItem(SETTINGS_ACTION_KEY);
   sessionStorage.removeItem(SETTINGS_ACTION_KEY);
   if (!getZkReauthProof()) return;
 
-  params.delete('settings');
+  params.delete("settings");
   const qs = params.toString();
-  history.replaceState({}, '', `${location.pathname}${qs ? `?${qs}` : ''}${location.hash}`);
+  history.replaceState({}, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
 
-  if (tab === 'passphrase' && action === 'passphrase') {
+  if (tab === "passphrase" && action === "passphrase") {
     const ui = openSettings(me);
     ui?.showPassphraseForm();
-  } else if (tab === 'delete' && action === 'delete') {
+  } else if (tab === "delete" && action === "delete") {
     deleteAccountData(me, me.user.github_login);
   }
 }

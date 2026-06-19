@@ -1,11 +1,10 @@
-import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
-import type { Env } from "../types";
-import { meRoute, logoutRoute } from "./me";
-import type { AuthEnv, SessionContext } from "../auth/types";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { requireSession } from "../auth/session";
-import type { FakeResult, FakeStmt } from "../test-utils";
-import { makeFakeStmt, makeFakeDb, captureDb, captureDbWithRows } from "../test-utils";
+import type { AuthEnv, SessionContext } from "../auth/types";
+import { captureDb, captureDbWithRows } from "../test-utils";
+import type { Env } from "../types";
+import { logoutRoute, meRoute } from "./me";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -36,10 +35,7 @@ function makeEnv(db: D1Database): Env {
  * then mounts meRoute + logoutRoute.
  * This tests the route handlers in isolation — independent of requireSession.
  */
-function makeApp(
-  db: D1Database,
-  session: SessionContext = STUB_SESSION,
-): Hono<AuthEnv> {
+function makeApp(_db: D1Database, session: SessionContext = STUB_SESSION): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
 
   // Stub middleware: injects session without any cookie/DB check
@@ -63,7 +59,7 @@ describe("meRoute", () => {
     const { db } = captureDb();
     const app = makeApp(db);
     const res = await app.request("/api/me", {}, makeEnv(db));
-    const body = await res.json() as { user: { zk_opt_in: boolean } };
+    const body = (await res.json()) as { user: { zk_opt_in: boolean } };
     expect(body.user.zk_opt_in).toBe(false);
   });
 
@@ -71,7 +67,7 @@ describe("meRoute", () => {
     const { db } = captureDb();
     const app = makeApp(db);
     const res = await app.request("/api/me", {}, makeEnv(db));
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       user: { zk_account_key_enabled: boolean; zk_enrolled: boolean };
     };
     expect(body.user.zk_account_key_enabled).toBe(false);
@@ -85,7 +81,7 @@ describe("meRoute", () => {
       return [];
     });
     const res = await makeApp(db).request("/api/me", {}, makeEnv(db));
-    const body = await res.json() as { user: { zk_enrolled: boolean } };
+    const body = (await res.json()) as { user: { zk_enrolled: boolean } };
     expect(body.user.zk_enrolled).toBe(true);
   });
 
@@ -93,7 +89,7 @@ describe("meRoute", () => {
     const { db } = captureDb();
     const env = { ...makeEnv(db), ZK_ACCOUNT_KEY: "1" };
     const res = await makeApp(db).request("/api/me", {}, env);
-    const body = await res.json() as { user: { zk_account_key_enabled: boolean } };
+    const body = (await res.json()) as { user: { zk_account_key_enabled: boolean } };
     expect(body.user.zk_account_key_enabled).toBe(true);
   });
 
@@ -106,7 +102,7 @@ describe("meRoute", () => {
     });
     const app = makeApp(db);
     const res = await app.request("/api/me", {}, makeEnv(db));
-    const body = await res.json() as { user: { zk_opt_in: boolean } };
+    const body = (await res.json()) as { user: { zk_opt_in: boolean } };
     expect(body.user.zk_opt_in).toBe(true);
   });
 
@@ -120,7 +116,7 @@ describe("meRoute", () => {
 
     // Assert
     expect(res.status).toBe(200);
-    const body = await res.json() as { user: { github_id: number; github_login: string } };
+    const body = (await res.json()) as { user: { github_id: number; github_login: string } };
     expect(body.user.github_id).toBe(42);
     expect(body.user.github_login).toBe("alice");
   });
@@ -135,7 +131,7 @@ describe("meRoute", () => {
 
     // Assert
     expect(res.status).toBe(200);
-    const body = await res.json() as { installations: unknown[] };
+    const body = (await res.json()) as { installations: unknown[] };
     expect(Array.isArray(body.installations)).toBe(true);
   });
 
@@ -150,7 +146,7 @@ describe("meRoute", () => {
     // Assert — the SQL issued must mention user_installations
     const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
     expect(installStmt).toBeDefined();
-    expect(installStmt!.sql).toContain("user_installations");
+    expect(installStmt?.sql).toContain("user_installations");
   });
 
   it("installations SELECT JOINs the tenants table", async () => {
@@ -164,7 +160,7 @@ describe("meRoute", () => {
     // Assert — the SQL must JOIN tenants
     const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
     expect(installStmt).toBeDefined();
-    expect(installStmt!.sql).toContain("JOIN tenants");
+    expect(installStmt?.sql).toContain("JOIN tenants");
   });
 
   it("surfaces installation rows returned by D1 in the response body", async () => {
@@ -178,7 +174,7 @@ describe("meRoute", () => {
 
     // Assert
     expect(res.status).toBe(200);
-    const body = await res.json() as { installations: typeof fakeRow[] };
+    const body = (await res.json()) as { installations: (typeof fakeRow)[] };
     expect(body.installations).toHaveLength(1);
     expect(body.installations[0]).toMatchObject({
       tenant_id: 9,
@@ -198,7 +194,7 @@ describe("meRoute", () => {
     // Assert — installation_id is internal infra detail, not surfaced to clients
     const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
     expect(installStmt).toBeDefined();
-    expect(installStmt!.sql).not.toContain("installation_id");
+    expect(installStmt?.sql).not.toContain("installation_id");
   });
 
   it("response includes active_tenant_id from the session (#148 SC7)", async () => {
@@ -211,7 +207,7 @@ describe("meRoute", () => {
 
     // Assert — the active tenant is surfaced so the client can render the tenant switcher
     expect(res.status).toBe(200);
-    const body = await res.json() as { active_tenant_id: number };
+    const body = (await res.json()) as { active_tenant_id: number };
     expect(body.active_tenant_id).toBe(STUB_SESSION.tenantId);
   });
 
@@ -232,7 +228,7 @@ describe("meRoute", () => {
       tenantId: null,
     };
     const res = await makeApp(db, pendingSession).request("/api/me", {}, makeEnv(db));
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       install_pending: boolean;
       install_targets: Array<{ login: string }>;
       active_tenant_id: number | null;
@@ -255,7 +251,7 @@ describe("meRoute", () => {
       return [];
     });
     const res = await makeApp(db).request("/api/me", {}, makeEnv(db));
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       install_pending: boolean;
       install_targets: unknown[];
     };
@@ -267,7 +263,7 @@ describe("meRoute", () => {
     const { db, stmts } = captureDb();
     await makeApp(db).request("/api/me", {}, makeEnv(db));
     const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
-    expect(installStmt!.sql).toContain("deleted_at IS NULL");
+    expect(installStmt?.sql).toContain("deleted_at IS NULL");
   });
 
   it("installations SELECT projects account_type (#148 SC7)", async () => {
@@ -281,7 +277,7 @@ describe("meRoute", () => {
     // Assert — account_type must be selected so User vs Organization tenants are distinguishable
     const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
     expect(installStmt).toBeDefined();
-    expect(installStmt!.sql).toContain("account_type");
+    expect(installStmt?.sql).toContain("account_type");
   });
 
   it("returns 401 when requireSession finds no session cookie (negative guard test)", async () => {
@@ -337,7 +333,7 @@ describe("logoutRoute", () => {
     // Assert — the SQL must be DELETE FROM sessions keyed on token_hash
     const deleteStmt = stmts().find((s) => s.sql.includes("DELETE FROM sessions"));
     expect(deleteStmt).toBeDefined();
-    expect(deleteStmt!.sql).toContain("token_hash");
+    expect(deleteStmt?.sql).toContain("token_hash");
   });
 
   it("binds a 64-char hex hash (SHA-256 of raw token) — not the raw token itself", async () => {
@@ -355,7 +351,7 @@ describe("logoutRoute", () => {
     // Assert — args[0] must be a 64-char lowercase hex string (SHA-256 digest)
     const deleteStmt = stmts().find((s) => s.sql.includes("DELETE FROM sessions"));
     expect(deleteStmt).toBeDefined();
-    expect(deleteStmt!.args[0]).toMatch(/^[0-9a-f]{64}$/);
+    expect(deleteStmt?.args[0]).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("Set-Cookie response header clears the session cookie (Max-Age=0)", async () => {

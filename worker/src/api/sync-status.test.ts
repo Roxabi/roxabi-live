@@ -1,9 +1,9 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
 import { Hono } from "hono";
-import type { Env } from "../types";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv, SessionContext } from "../auth/types";
-import { syncStatusRoute } from "./sync-status";
 import { captureDb } from "../test-utils";
+import type { Env } from "../types";
+import { syncStatusRoute } from "./sync-status";
 
 vi.mock("../sync/bootstrap", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../sync/bootstrap")>();
@@ -19,11 +19,7 @@ vi.mock("../sync/bootstrap", async (importOriginal) => {
   };
 });
 
-import {
-  getSyncStatus,
-  isGlobalSyncRunning,
-  maybeScheduleBootstrapSync,
-} from "../sync/bootstrap";
+import { getSyncStatus, isGlobalSyncRunning, maybeScheduleBootstrapSync } from "../sync/bootstrap";
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -36,7 +32,7 @@ const STUB_SESSION: SessionContext = {
   githubLogin: "alice",
 };
 
-function makeApp(db: D1Database, session = STUB_SESSION) {
+function makeApp(_db: D1Database, session = STUB_SESSION) {
   const app = new Hono<AuthEnv>();
   app.use("*", async (c, next) => {
     c.set("session", session);
@@ -59,12 +55,9 @@ function makeEnv(db: D1Database, overrides: Partial<Env> = {}): Env {
 describe("GET /api/sync/status", () => {
   it("returns sync status for linked tenant", async () => {
     const { db } = captureDb();
-    const res = await makeApp(db).request(
-      "/api/sync/status",
-      {},
-      makeEnv(db),
-      { waitUntil: vi.fn() } as unknown as ExecutionContext,
-    );
+    const res = await makeApp(db).request("/api/sync/status", {}, makeEnv(db), {
+      waitUntil: vi.fn(),
+    } as unknown as ExecutionContext);
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body).toEqual({
@@ -82,12 +75,9 @@ describe("GET /api/sync/status", () => {
     });
     const { db } = captureDb();
     const waitUntil = vi.fn();
-    await makeApp(db).request(
-      "/api/sync/status",
-      {},
-      makeEnv(db),
-      { waitUntil } as unknown as ExecutionContext,
-    );
+    await makeApp(db).request("/api/sync/status", {}, makeEnv(db), {
+      waitUntil,
+    } as unknown as ExecutionContext);
     expect(maybeScheduleBootstrapSync).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
@@ -104,12 +94,9 @@ describe("GET /api/sync/status", () => {
       initial_sync: false,
     });
     const { db } = captureDb();
-    await makeApp(db).request(
-      "/api/sync/status",
-      {},
-      makeEnv(db),
-      { waitUntil: vi.fn() } as unknown as ExecutionContext,
-    );
+    await makeApp(db).request("/api/sync/status", {}, makeEnv(db), {
+      waitUntil: vi.fn(),
+    } as unknown as ExecutionContext);
     expect(maybeScheduleBootstrapSync).not.toHaveBeenCalled();
   });
 

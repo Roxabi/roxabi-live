@@ -4,14 +4,12 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "./types";
 import { readSessionToken } from "./cookies";
-import { validateSession } from "./session";
 import { serveDashboardShell } from "./dashboard-route";
+import { validateSession } from "./session";
+import type { AuthEnv } from "./types";
 
-export async function authExchangeRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function authExchangeRoute(c: Context<AuthEnv>): Promise<Response> {
   const token = readSessionToken(c);
   if (token) {
     const session = await validateSession(c.env.DB, token);

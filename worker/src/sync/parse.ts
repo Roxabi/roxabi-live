@@ -38,13 +38,13 @@ export function parseMilestone(raw: string | null): ParsedMilestone {
 
   const mMN = MILESTONE_MN.exec(raw);
   if (mMN) {
-    const n = parseInt(mMN[1], 10);
+    const n = Number.parseInt(mMN[1], 10);
     return { code: `M${n}`, name: mMN[2].trim(), sortKey: n };
   }
 
   const mPhase = MILESTONE_PHASE.exec(raw);
   if (mPhase) {
-    const n = parseInt(mPhase[1], 10);
+    const n = Number.parseInt(mPhase[1], 10);
     return { code: `Ph${n}`, name: mPhase[2].trim(), sortKey: 100 + n };
   }
 

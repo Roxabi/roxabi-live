@@ -4,20 +4,16 @@
  */
 
 import type { Context } from "hono";
-import type { Env } from "../types";
-import type { SessionContext, AuthEnv } from "../auth/types";
-import {
-  AUTH_NO_CACHE,
-  clearSessionCookieHeaders,
-  readSessionToken,
-} from "../auth/cookies";
-import { deleteSession } from "../auth/session";
-import { zkAccountKeyEnabled } from "../auth/zk-flags";
+import { AUTH_NO_CACHE, clearSessionCookieHeaders, readSessionToken } from "../auth/cookies";
 import {
   buildInstallOptions,
   deriveOnboardingStep,
   installTargetsFromUserRow,
 } from "../auth/onboarding";
+import { deleteSession } from "../auth/session";
+import type { AuthEnv, SessionContext } from "../auth/types";
+import { zkAccountKeyEnabled } from "../auth/zk-flags";
+import type { Env } from "../types";
 
 export interface MePayload {
   user: {
@@ -43,12 +39,9 @@ export interface MePayload {
 }
 
 /** Shared /api/me body builder — used by GET /api/me and POST /api/install/refresh. */
-export async function buildMePayload(
-  env: Env,
-  session: SessionContext,
-): Promise<MePayload> {
+export async function buildMePayload(env: Env, session: SessionContext): Promise<MePayload> {
   const userRow = await env.DB.prepare(
-    `SELECT zk_opt_in, install_targets_json, consent_at FROM users WHERE id = ?`,
+    "SELECT zk_opt_in, install_targets_json, consent_at FROM users WHERE id = ?",
   )
     .bind(session.userId)
     .first<{
@@ -57,33 +50,25 @@ export async function buildMePayload(
       consent_at: string | null;
     }>();
 
-  const enrolledRow = await env.DB
-    .prepare(`SELECT 1 AS ok FROM zk_key_backups WHERE user_id = ? LIMIT 1`)
+  const enrolledRow = await env.DB.prepare(
+    "SELECT 1 AS ok FROM zk_key_backups WHERE user_id = ? LIMIT 1",
+  )
     .bind(session.userId)
     .first<{ ok: number }>();
 
-  const rows = await env.DB
-    .prepare(
-      `SELECT ui.tenant_id AS tenant_id, t.account_login AS account_login, t.account_type AS account_type
+  const rows = await env.DB.prepare(
+    `SELECT ui.tenant_id AS tenant_id, t.account_login AS account_login, t.account_type AS account_type
        FROM user_installations ui
        JOIN tenants t ON t.id = ui.tenant_id
        WHERE ui.user_id = ? AND t.deleted_at IS NULL`,
-    )
+  )
     .bind(session.userId)
     .all<{ tenant_id: number; account_login: string; account_type: string }>();
 
   const installations = rows.results;
-  const installPending =
-    session.tenantId == null || installations.length === 0;
-  const installTargets = installTargetsFromUserRow(
-    installPending,
-    userRow?.install_targets_json,
-  );
-  const onboardingStep = deriveOnboardingStep(
-    session,
-    installations,
-    userRow?.consent_at ?? null,
-  );
+  const installPending = session.tenantId == null || installations.length === 0;
+  const installTargets = installTargetsFromUserRow(installPending, userRow?.install_targets_json);
+  const onboardingStep = deriveOnboardingStep(session, installations, userRow?.consent_at ?? null);
 
   return {
     user: {

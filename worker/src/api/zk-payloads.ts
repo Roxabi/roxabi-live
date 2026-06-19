@@ -28,9 +28,7 @@ interface PutEntry {
   encrypted_payload: string;
 }
 
-export async function listZkPayloadsRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function listZkPayloadsRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) return c.json({ error: "unauthorized" }, 401);
 
@@ -38,20 +36,17 @@ export async function listZkPayloadsRoute(
     return c.json({ error: "zk_not_enabled" }, 403);
   }
 
-  const rows = await c.env.DB
-    .prepare(
-      `SELECT issue_key, pubkey_fp, key_fp, encrypted_payload, updated_at
+  const rows = await c.env.DB.prepare(
+    `SELECT issue_key, pubkey_fp, key_fp, encrypted_payload, updated_at
        FROM zk_payloads WHERE user_id = ?`,
-    )
+  )
     .bind(s.userId)
     .all<PayloadRow>();
 
   return c.json({ payloads: rows.results });
 }
 
-export async function putZkPayloadsRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function putZkPayloadsRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) return c.json({ error: "unauthorized" }, 401);
 
@@ -94,10 +89,7 @@ export async function putZkPayloadsRoute(
     if (typeof issue_key !== "string" || !ISSUE_KEY_RE.test(issue_key)) {
       return c.json({ error: "invalid issue_key" }, 400);
     }
-    if (
-      typeof key_fp_raw !== "string" ||
-      !/^[0-9a-f]{32}$/.test(key_fp_raw)
-    ) {
+    if (typeof key_fp_raw !== "string" || !/^[0-9a-f]{32}$/.test(key_fp_raw)) {
       return c.json({ error: "invalid key_fp" }, 400);
     }
     const key_fp = key_fp_raw;

@@ -1,7 +1,7 @@
 // initial-sync.js — first corpus sync overlay (#223 follow-up)
 
-import { api } from './auth.js';
-import { renderOnboardingSteps } from './onboarding.js';
+import { api } from "./auth.js";
+import { renderOnboardingSteps } from "./onboarding.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -14,7 +14,7 @@ const MAX_WAIT_MS = 180_000;
  * (the first issues can land while the full reconcile is still running).
  */
 export async function waitForInitialSync() {
-  const gate = $('initial-sync-gate');
+  const gate = $("initial-sync-gate");
   if (!gate) return;
 
   const started = Date.now();
@@ -27,10 +27,10 @@ export async function waitForInitialSync() {
     if (Date.now() - started > MAX_WAIT_MS) {
       setOverlayMessage(
         gate,
-        'Synchronisation terminée',
+        "Synchronisation terminée",
         status.issue_count > 0
-          ? 'Import partiel — actualise la page dans quelques instants si des issues manquent.'
-          : 'Aucun issue trouvé pour les dépôts accessibles. Vérifie les repos sélectionnés sur GitHub.',
+          ? "Import partiel — actualise la page dans quelques instants si des issues manquent."
+          : "Aucun issue trouvé pour les dépôts accessibles. Vérifie les repos sélectionnés sur GitHub.",
       );
       await sleep(2200);
       break;
@@ -41,14 +41,14 @@ export async function waitForInitialSync() {
     if (status.sync_running) {
       setOverlayMessage(
         gate,
-        'Première synchronisation en cours',
-        'Import des issues, labels et dépendances depuis GitHub…',
+        "Première synchronisation en cours",
+        "Import des issues, labels et dépendances depuis GitHub…",
       );
     } else if (status.initial_sync) {
       setOverlayMessage(
         gate,
-        'Préparation de la synchronisation',
-        'Démarrage de l\'import depuis GitHub…',
+        "Préparation de la synchronisation",
+        "Démarrage de l'import depuis GitHub…",
       );
     }
   }
@@ -58,7 +58,7 @@ export async function waitForInitialSync() {
 
 async function fetchStatus() {
   try {
-    const resp = await api('/api/sync/status');
+    const resp = await api("/api/sync/status");
     return resp.json();
   } catch {
     return null;
@@ -67,26 +67,28 @@ async function fetchStatus() {
 
 function showOverlay(gate, running) {
   gate.innerHTML = `
-    ${renderOnboardingSteps('sync')}
+    ${renderOnboardingSteps("sync")}
     <div class="initial-sync-dialog" role="status" aria-live="polite" aria-busy="true">
       <div class="initial-sync-spinner" aria-hidden="true"></div>
-      <h2 id="initial-sync-title">${running ? 'Première synchronisation en cours' : 'Préparation de la synchronisation'}</h2>
-      <p id="initial-sync-detail">${running
-    ? 'Import des issues, labels et dépendances depuis GitHub…'
-    : 'Démarrage de l\'import depuis GitHub…'}</p>
+      <h2 id="initial-sync-title">${running ? "Première synchronisation en cours" : "Préparation de la synchronisation"}</h2>
+      <p id="initial-sync-detail">${
+        running
+          ? "Import des issues, labels et dépendances depuis GitHub…"
+          : "Démarrage de l'import depuis GitHub…"
+      }</p>
     </div>
   `;
-  gate.removeAttribute('hidden');
+  gate.removeAttribute("hidden");
 }
 
 function setOverlayMessage(gate, title, detail) {
-  gate.querySelector('#initial-sync-title')?.replaceChildren(document.createTextNode(title));
-  gate.querySelector('#initial-sync-detail')?.replaceChildren(document.createTextNode(detail));
+  gate.querySelector("#initial-sync-title")?.replaceChildren(document.createTextNode(title));
+  gate.querySelector("#initial-sync-detail")?.replaceChildren(document.createTextNode(detail));
 }
 
 function hideOverlay(gate) {
-  gate.setAttribute('hidden', '');
-  gate.innerHTML = '';
+  gate.setAttribute("hidden", "");
+  gate.innerHTML = "";
 }
 
 function sleep(ms) {

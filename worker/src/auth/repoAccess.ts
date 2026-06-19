@@ -9,9 +9,9 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "./types";
 import type { Env } from "../types";
 import { getInstallationToken } from "./installToken";
+import type { AuthEnv } from "./types";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -46,9 +46,7 @@ interface PermCacheRow {
  * @param c - Hono context carrying AuthEnv (DB binding + session variable).
  * @returns Array of visible repo full-names ("owner/name").
  */
-export async function resolveVisibleRepos(
-  c: Context<AuthEnv>,
-): Promise<string[]> {
+export async function resolveVisibleRepos(c: Context<AuthEnv>): Promise<string[]> {
   const s = c.get("session");
   // Middleware guarantees session; guard defensively — fail-closed.
   if (!s || s.tenantId == null) {
@@ -62,9 +60,7 @@ export async function resolveVisibleRepos(
   let rows: RepoAccessRow[];
   try {
     const result = await db
-      .prepare(
-        `SELECT repo, is_private FROM tenant_repo_access WHERE tenant_id = ?`,
-      )
+      .prepare("SELECT repo, is_private FROM tenant_repo_access WHERE tenant_id = ?")
       .bind(s.tenantId)
       .all<RepoAccessRow>();
     rows = result.results ?? [];
@@ -85,9 +81,7 @@ export async function resolveVisibleRepos(
   if (hasPrivate) {
     try {
       const tenantRow = await db
-        .prepare(
-          `SELECT installation_id FROM tenants WHERE id = ?`,
-        )
+        .prepare("SELECT installation_id FROM tenants WHERE id = ?")
         .bind(s.tenantId)
         .first<TenantInstallRow>();
       installationId = tenantRow?.installation_id ?? null;
@@ -185,12 +179,7 @@ export async function checkPrivateAccess(
   try {
     // tenantId + installationId are both supplied by the caller (resolveVisibleRepos),
     // which already holds them on the session — no reverse lookup needed.
-    const token = await getInstallationToken(
-      db,
-      env,
-      tenantId,
-      installationId,
-    );
+    const token = await getInstallationToken(db, env, tenantId, installationId);
 
     // GET /repos/{owner}/{name}/collaborators/{login}
     // repo is already "owner/name" — use directly.

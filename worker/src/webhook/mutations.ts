@@ -59,14 +59,10 @@ const INSERT_LABEL_SQL = "INSERT OR IGNORE INTO labels (issue_key, name) VALUES 
 const DELETE_EDGES_BY_KIND_SQL =
   "DELETE FROM edges WHERE (src_key = ? OR dst_key = ?) AND kind = ?";
 const INSERT_EDGE_SQL = "INSERT OR IGNORE INTO edges (src_key, dst_key, kind) VALUES (?, ?, ?)";
-const DELETE_EDGE_SQL =
-  "DELETE FROM edges WHERE src_key = ? AND dst_key = ? AND kind = ?";
-const SET_ACTIVE_BRANCH_ON_SQL =
-  "UPDATE issues SET has_active_branch=1 WHERE repo=? AND number=?";
-const SET_ACTIVE_BRANCH_OFF_SQL =
-  "UPDATE issues SET has_active_branch=0 WHERE repo=? AND number=?";
-const RENAME_MILESTONE_SQL =
-  "UPDATE issues SET milestone = ? WHERE repo = ? AND milestone = ?";
+const DELETE_EDGE_SQL = "DELETE FROM edges WHERE src_key = ? AND dst_key = ? AND kind = ?";
+const SET_ACTIVE_BRANCH_ON_SQL = "UPDATE issues SET has_active_branch=1 WHERE repo=? AND number=?";
+const SET_ACTIVE_BRANCH_OFF_SQL = "UPDATE issues SET has_active_branch=0 WHERE repo=? AND number=?";
+const RENAME_MILESTONE_SQL = "UPDATE issues SET milestone = ? WHERE repo = ? AND milestone = ?";
 
 /** Upsert the data_version key in sync_control with the given ISO-8601 timestamp. */
 export const BUMP_DATA_VERSION_SQL = `
@@ -106,32 +102,30 @@ export interface WebhookIssue {
  * Uses UPSERT_ISSUE_FROM_WEBHOOK_SQL — preserves status and has_active_branch.
  */
 export function upsertIssueFromWebhook(db: D1Database, issue: WebhookIssue): D1PreparedStatement {
-  return db.prepare(UPSERT_ISSUE_FROM_WEBHOOK_SQL).bind(
-    issue.key,
-    issue.repo,
-    issue.number,
-    issue.title,
-    issue.state,
-    issue.url,
-    issue.created_at ?? null,
-    issue.updated_at ?? null,
-    issue.closed_at ?? null,
-    issue.milestone ?? null,
-    issue.lane ?? null,
-    issue.priority ?? null,
-    issue.size ?? null,
-  );
+  return db
+    .prepare(UPSERT_ISSUE_FROM_WEBHOOK_SQL)
+    .bind(
+      issue.key,
+      issue.repo,
+      issue.number,
+      issue.title,
+      issue.state,
+      issue.url,
+      issue.created_at ?? null,
+      issue.updated_at ?? null,
+      issue.closed_at ?? null,
+      issue.milestone ?? null,
+      issue.lane ?? null,
+      issue.priority ?? null,
+      issue.size ?? null,
+    );
 }
 
 /**
  * Prepare statements to wipe all labels for an issue key and rewrite them.
  * Returns [DELETE stmt, ...INSERT stmts].
  */
-export function replaceLabels(
-  db: D1Database,
-  key: string,
-  names: string[],
-): D1PreparedStatement[] {
+export function replaceLabels(db: D1Database, key: string, names: string[]): D1PreparedStatement[] {
   const stmts: D1PreparedStatement[] = [db.prepare(DELETE_LABELS_SQL).bind(key)];
   for (const name of names) {
     stmts.push(db.prepare(INSERT_LABEL_SQL).bind(key, name));
@@ -185,7 +179,7 @@ export function upsertEdges(
   issueKey: string,
   blockedBy: string[],
   blocking: string[],
-  kind: string = "parent",
+  kind = "parent",
 ): D1PreparedStatement[] {
   const stmts: D1PreparedStatement[] = [
     db.prepare(DELETE_EDGES_BY_KIND_SQL).bind(issueKey, issueKey, kind),
@@ -225,14 +219,9 @@ export function upsertPrState(
   closingIssueKeysJson: string,
   updatedAt: string,
 ): D1PreparedStatement {
-  return db.prepare(UPSERT_PR_STATE_SQL).bind(
-    repo,
-    number,
-    state,
-    hasReviewedLabel,
-    closingIssueKeysJson,
-    updatedAt,
-  );
+  return db
+    .prepare(UPSERT_PR_STATE_SQL)
+    .bind(repo, number, state, hasReviewedLabel, closingIssueKeysJson, updatedAt);
 }
 
 /**
@@ -271,11 +260,9 @@ const UPSERT_TENANT_SQL = `
     deleted_at    = NULL
 `;
 
-const SOFT_DELETE_TENANT_SQL =
-  "UPDATE tenants SET deleted_at=?, updated_at=? WHERE id=?";
+const SOFT_DELETE_TENANT_SQL = "UPDATE tenants SET deleted_at=?, updated_at=? WHERE id=?";
 
-const SET_TENANT_SUSPENDED_SQL =
-  "UPDATE tenants SET suspended_at=?, updated_at=? WHERE id=?";
+const SET_TENANT_SUSPENDED_SQL = "UPDATE tenants SET suspended_at=?, updated_at=? WHERE id=?";
 
 /**
  * Prepare an upsert for a tenant row.
@@ -319,9 +306,7 @@ export function setTenantSuspended(
   suspendedAtOrNull: string | null,
   nowIso: string,
 ): D1PreparedStatement {
-  return db
-    .prepare(SET_TENANT_SUSPENDED_SQL)
-    .bind(suspendedAtOrNull, nowIso, tenantId);
+  return db.prepare(SET_TENANT_SUSPENDED_SQL).bind(suspendedAtOrNull, nowIso, tenantId);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,14 +320,11 @@ const UPSERT_REPO_ACCESS_SQL = `
     is_private = excluded.is_private
 `;
 
-const DELETE_REPO_ACCESS_SQL =
-  "DELETE FROM tenant_repo_access WHERE tenant_id=? AND repo=?";
+const DELETE_REPO_ACCESS_SQL = "DELETE FROM tenant_repo_access WHERE tenant_id=? AND repo=?";
 
-const DELETE_ALL_REPO_ACCESS_FOR_TENANT_SQL =
-  "DELETE FROM tenant_repo_access WHERE tenant_id=?";
+const DELETE_ALL_REPO_ACCESS_FOR_TENANT_SQL = "DELETE FROM tenant_repo_access WHERE tenant_id=?";
 
-const SET_REPO_PRIVACY_SQL =
-  "UPDATE tenant_repo_access SET is_private=? WHERE repo=?";
+const SET_REPO_PRIVACY_SQL = "UPDATE tenant_repo_access SET is_private=? WHERE repo=?";
 
 /**
  * Prepare an upsert for a single repo in tenant_repo_access.
@@ -439,29 +421,23 @@ export function cascadeRepoRename(
   oldFullName: string,
   newFullName: string,
 ): D1PreparedStatement[] {
-  const oldPrefix = oldFullName + "#";
-  const newPrefix = newFullName + "#";
+  const oldPrefix = `${oldFullName}#`;
+  const newPrefix = `${newFullName}#`;
   const oldPrefixLen = oldPrefix.length;
   return [
-    db.prepare(`UPDATE repos SET repo=? WHERE repo=?`).bind(newFullName, oldFullName),
-    db
-      .prepare(`UPDATE tenant_repo_access SET repo=? WHERE repo=?`)
-      .bind(newFullName, oldFullName),
+    db.prepare("UPDATE repos SET repo=? WHERE repo=?").bind(newFullName, oldFullName),
+    db.prepare("UPDATE tenant_repo_access SET repo=? WHERE repo=?").bind(newFullName, oldFullName),
     // issues: key = repo#number — recompute key from the intact number column
     db
       .prepare(`UPDATE issues SET repo=?, key=? || '#' || number WHERE repo=?`)
       .bind(newFullName, newFullName, oldFullName),
     // edges src_key: match rows whose src_key starts with oldPrefix, rewrite prefix
     db
-      .prepare(
-        `UPDATE edges SET src_key = ? || substr(src_key, ?) WHERE substr(src_key, 1, ?) = ?`,
-      )
+      .prepare("UPDATE edges SET src_key = ? || substr(src_key, ?) WHERE substr(src_key, 1, ?) = ?")
       .bind(newPrefix, oldPrefixLen + 1, oldPrefixLen, oldPrefix),
     // edges dst_key: same logic for dst_key
     db
-      .prepare(
-        `UPDATE edges SET dst_key = ? || substr(dst_key, ?) WHERE substr(dst_key, 1, ?) = ?`,
-      )
+      .prepare("UPDATE edges SET dst_key = ? || substr(dst_key, ?) WHERE substr(dst_key, 1, ?) = ?")
       .bind(newPrefix, oldPrefixLen + 1, oldPrefixLen, oldPrefix),
   ];
 }
@@ -470,23 +446,18 @@ export function cascadeRepoRename(
 // Permission cache invalidation helpers
 // ---------------------------------------------------------------------------
 
-const INVALIDATE_CACHE_BY_REPO_SQL =
-  "DELETE FROM user_repo_permission_cache WHERE repo=?";
+const INVALIDATE_CACHE_BY_REPO_SQL = "DELETE FROM user_repo_permission_cache WHERE repo=?";
 
 const INVALIDATE_CACHE_BY_USER_REPO_SQL =
   "DELETE FROM user_repo_permission_cache WHERE user_id=? AND repo=?";
 
-const INVALIDATE_CACHE_BY_USER_SQL =
-  "DELETE FROM user_repo_permission_cache WHERE user_id=?";
+const INVALIDATE_CACHE_BY_USER_SQL = "DELETE FROM user_repo_permission_cache WHERE user_id=?";
 
 /**
  * Prepare a delete of all permission-cache entries for a given repo.
  * Use when a repo's privacy status changes (privatize/publicize).
  */
-export function invalidateCacheByRepo(
-  db: D1Database,
-  repo: string,
-): D1PreparedStatement {
+export function invalidateCacheByRepo(db: D1Database, repo: string): D1PreparedStatement {
   return db.prepare(INVALIDATE_CACHE_BY_REPO_SQL).bind(repo);
 }
 
@@ -506,10 +477,7 @@ export function invalidateCacheByUserRepo(
  * Prepare a delete of all permission-cache entries for a given user.
  * Use when a user loses org membership (all repo access revoked).
  */
-export function invalidateCacheByUser(
-  db: D1Database,
-  userId: number,
-): D1PreparedStatement {
+export function invalidateCacheByUser(db: D1Database, userId: number): D1PreparedStatement {
   return db.prepare(INVALIDATE_CACHE_BY_USER_SQL).bind(userId);
 }
 
@@ -517,20 +485,15 @@ export function invalidateCacheByUser(
 // Session / install-token cleanup helpers
 // ---------------------------------------------------------------------------
 
-const DELETE_SESSIONS_FOR_TENANT_SQL =
-  "DELETE FROM sessions WHERE tenant_id=?";
+const DELETE_SESSIONS_FOR_TENANT_SQL = "DELETE FROM sessions WHERE tenant_id=?";
 
-const DELETE_INSTALL_TOKENS_FOR_TENANT_SQL =
-  "DELETE FROM install_tokens WHERE tenant_id=?";
+const DELETE_INSTALL_TOKENS_FOR_TENANT_SQL = "DELETE FROM install_tokens WHERE tenant_id=?";
 
 /**
  * Prepare a delete of all active sessions for a tenant.
  * Used on uninstall to force re-auth on next login.
  */
-export function deleteSessionsForTenant(
-  db: D1Database,
-  tenantId: number,
-): D1PreparedStatement {
+export function deleteSessionsForTenant(db: D1Database, tenantId: number): D1PreparedStatement {
   return db.prepare(DELETE_SESSIONS_FOR_TENANT_SQL).bind(tenantId);
 }
 

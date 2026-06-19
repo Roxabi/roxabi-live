@@ -1,10 +1,10 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../types";
-import { loginRoute, callbackRoute } from "./oauth";
+import { callbackRoute, loginRoute } from "./oauth";
 
 import type { FakeResult, FakeStmt } from "../test-utils";
-import { makeFakeStmt, makeFakeDb, captureDb } from "../test-utils";
+import { captureDb, makeFakeDb, makeFakeStmt } from "../test-utils";
 
 /**
  * #158: the default makeFakeDb batch() mock returns empty results. This override
@@ -61,11 +61,7 @@ describe("loginRoute", () => {
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
 
-      const res = await app.request(
-        "http://localhost/login",
-        { method: "GET" },
-        env,
-      );
+      const res = await app.request("http://localhost/login", { method: "GET" }, env);
 
       expect(res.status).toBe(200);
       const body = await res.text();
@@ -82,11 +78,7 @@ describe("loginRoute", () => {
       const { db } = captureDb();
       const { app, env } = makeApp(db);
 
-      const res = await app.request(
-        "http://localhost/login?go=1",
-        { method: "GET" },
-        env,
-      );
+      const res = await app.request("http://localhost/login?go=1", { method: "GET" }, env);
 
       expect(res.status).toBe(302);
     });
@@ -95,11 +87,7 @@ describe("loginRoute", () => {
       const { db } = captureDb();
       const { app, env } = makeApp(db);
 
-      const res = await app.request(
-        "http://localhost/login?go=1",
-        { method: "GET" },
-        env,
-      );
+      const res = await app.request("http://localhost/login?go=1", { method: "GET" }, env);
 
       const location = res.headers.get("Location") ?? "";
       expect(location).toMatch(/^https:\/\/github\.com\/login\/oauth\/authorize/);
@@ -109,11 +97,7 @@ describe("loginRoute", () => {
       const { db } = captureDb();
       const { app, env } = makeApp(db);
 
-      const res = await app.request(
-        "http://localhost/login?go=1",
-        { method: "GET" },
-        env,
-      );
+      const res = await app.request("http://localhost/login?go=1", { method: "GET" }, env);
 
       const location = res.headers.get("Location") ?? "";
       const url = new URL(location);
@@ -124,11 +108,7 @@ describe("loginRoute", () => {
       const { db } = captureDb();
       const { app, env } = makeApp(db);
 
-      const res = await app.request(
-        "http://localhost/login?go=1",
-        { method: "GET" },
-        env,
-      );
+      const res = await app.request("http://localhost/login?go=1", { method: "GET" }, env);
 
       const location = res.headers.get("Location") ?? "";
       const url = new URL(location);
@@ -140,11 +120,7 @@ describe("loginRoute", () => {
       const { db } = captureDb();
       const { app, env } = makeApp(db);
 
-      const res = await app.request(
-        "http://myapp.example.com/login?go=1",
-        { method: "GET" },
-        env,
-      );
+      const res = await app.request("http://myapp.example.com/login?go=1", { method: "GET" }, env);
 
       // Assert
       const location = res.headers.get("Location") ?? "";
@@ -163,11 +139,9 @@ describe("loginRoute", () => {
       await app.request("http://localhost/login?go=1", { method: "GET" }, env);
 
       // Assert — state row has datetime('now', '+10 minutes')
-      const insertStmt = stmts().find((s) =>
-        s.sql.toLowerCase().includes("oauth_state"),
-      );
+      const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.sql).toContain("+10 minutes");
+      expect(insertStmt?.sql).toContain("+10 minutes");
     });
 
     it("oauth_state INSERT binds [state, redirectAfter] in that order", async () => {
@@ -179,13 +153,11 @@ describe("loginRoute", () => {
       await app.request("http://localhost/login?go=1", { method: "GET" }, env);
 
       // Assert
-      const insertStmt = stmts().find((s) =>
-        s.sql.toLowerCase().includes("oauth_state"),
-      );
+      const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
       // args[0] = state (32 hex), args[1] = redirectAfter
-      expect(insertStmt!.args[0]).toMatch(/^[0-9a-f]{32}$/);
-      expect(insertStmt!.args[1]).toBe("/dashboard"); // default when no ?redirect param
+      expect(insertStmt?.args[0]).toMatch(/^[0-9a-f]{32}$/);
+      expect(insertStmt?.args[1]).toBe("/dashboard"); // default when no ?redirect param
     });
 
     it("?redirect=/dash stores '/dash' as redirect_after", async () => {
@@ -194,18 +166,12 @@ describe("loginRoute", () => {
       const { app, env } = makeApp(db);
 
       // Act
-      await app.request(
-        "http://localhost/login?go=1&redirect=/dash",
-        { method: "GET" },
-        env,
-      );
+      await app.request("http://localhost/login?go=1&redirect=/dash", { method: "GET" }, env);
 
       // Assert
-      const insertStmt = stmts().find((s) =>
-        s.sql.toLowerCase().includes("oauth_state"),
-      );
+      const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/dash");
+      expect(insertStmt?.args[1]).toBe("/dash");
     });
 
     it("?redirect=//evil stores '/dashboard' (open-redirect guard)", async () => {
@@ -214,18 +180,12 @@ describe("loginRoute", () => {
       const { app, env } = makeApp(db);
 
       // Act
-      await app.request(
-        "http://localhost/login?go=1&redirect=//evil",
-        { method: "GET" },
-        env,
-      );
+      await app.request("http://localhost/login?go=1&redirect=//evil", { method: "GET" }, env);
 
       // Assert
-      const insertStmt = stmts().find((s) =>
-        s.sql.toLowerCase().includes("oauth_state"),
-      );
+      const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/dashboard");
+      expect(insertStmt?.args[1]).toBe("/dashboard");
     });
 
     it("?redirect=https://evil stores '/dashboard' (absolute URL guard)", async () => {
@@ -241,11 +201,9 @@ describe("loginRoute", () => {
       );
 
       // Assert
-      const insertStmt = stmts().find((s) =>
-        s.sql.toLowerCase().includes("oauth_state"),
-      );
+      const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/dashboard");
+      expect(insertStmt?.args[1]).toBe("/dashboard");
     });
 
     it("?redirect=/\\evil stores '/dashboard' (backslash bypass guard)", async () => {
@@ -254,18 +212,12 @@ describe("loginRoute", () => {
       const { app, env } = makeApp(db);
 
       // Act
-      await app.request(
-        "http://localhost/login?go=1&redirect=/\\evil",
-        { method: "GET" },
-        env,
-      );
+      await app.request("http://localhost/login?go=1&redirect=/\\evil", { method: "GET" }, env);
 
       // Assert — deleting the /[/\\]/ check in sanitizeRedirect would let "/\evil" pass
-      const insertStmt = stmts().find((s) =>
-        s.sql.toLowerCase().includes("oauth_state"),
-      );
+      const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/dashboard");
+      expect(insertStmt?.args[1]).toBe("/dashboard");
     });
 
     it("?redirect=/ok\\r\\nX-Injected:x stores '/dashboard' (CRLF injection guard)", async () => {
@@ -275,17 +227,15 @@ describe("loginRoute", () => {
 
       // Act — encodeURIComponent so the URL parser doesn't strip the special chars
       await app.request(
-        "http://localhost/login?go=1&redirect=" + encodeURIComponent("/ok\r\nX-Injected: x"),
+        `http://localhost/login?go=1&redirect=${encodeURIComponent("/ok\r\nX-Injected: x")}`,
         { method: "GET" },
         env,
       );
 
       // Assert — deleting the /[\r\n\0]/ check in sanitizeRedirect would let the injection through
-      const insertStmt = stmts().find((s) =>
-        s.sql.toLowerCase().includes("oauth_state"),
-      );
+      const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/dashboard");
+      expect(insertStmt?.args[1]).toBe("/dashboard");
     });
 
     it("?redirect=/ok\\0null stores '/dashboard' (NUL injection guard)", async () => {
@@ -295,17 +245,15 @@ describe("loginRoute", () => {
 
       // Act — encodeURIComponent so the URL parser doesn't strip the NUL byte
       await app.request(
-        "http://localhost/login?go=1&redirect=" + encodeURIComponent("/ok\0null"),
+        `http://localhost/login?go=1&redirect=${encodeURIComponent("/ok\0null")}`,
         { method: "GET" },
         env,
       );
 
       // Assert — deleting the /[\r\n\0]/ check in sanitizeRedirect would let the NUL through
-      const insertStmt = stmts().find((s) =>
-        s.sql.toLowerCase().includes("oauth_state"),
-      );
+      const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/dashboard");
+      expect(insertStmt?.args[1]).toBe("/dashboard");
     });
 
     it("redirects to redirect_after when session is already valid", async () => {
@@ -383,8 +331,7 @@ describe("loginRoute", () => {
 
       const { app, env } = makeApp(db);
       const res = await app.request(
-        "http://localhost/login?redirect=" +
-          encodeURIComponent("/dashboard?install=1"),
+        `http://localhost/login?redirect=${encodeURIComponent("/dashboard?install=1")}`,
         {
           method: "GET",
           headers: { Cookie: `roxabi_session=${"a".repeat(64)}` },
@@ -421,8 +368,7 @@ describe("loginRoute", () => {
 
       const { app, env } = makeApp(db);
       const res = await app.request(
-        "http://localhost/login?redirect=" +
-          encodeURIComponent("/dashboard?install=1"),
+        `http://localhost/login?redirect=${encodeURIComponent("/dashboard?install=1")}`,
         {
           method: "GET",
           headers: { Cookie: `roxabi_session=${"a".repeat(64)}` },
@@ -522,11 +468,7 @@ describe("callbackRoute", () => {
       const { app, env } = makeApp(db);
 
       // Act
-      const res = await app.request(
-        "http://localhost/oauth/callback",
-        { method: "GET" },
-        env,
-      );
+      const res = await app.request("http://localhost/oauth/callback", { method: "GET" }, env);
 
       // Assert
       expect(res.status).toBe(400);
@@ -558,30 +500,27 @@ describe("callbackRoute", () => {
       installations: Array<{ id: number; account: { login: string; type: string } }>,
     ) {
       let callCount = 0;
-      const mockFetch = vi.fn(async (url: string, _init?: RequestInit) => {
+      const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => {
         callCount++;
         if (callCount === 1) {
           // Token exchange
-          return new Response(
-            JSON.stringify({ access_token: accessToken }),
-            {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            },
-          );
-        } else if (callCount === 2) {
+          return new Response(JSON.stringify({ access_token: accessToken }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (callCount === 2) {
           // /user
           return new Response(JSON.stringify(user), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
-        } else {
-          // /user/installations
-          return new Response(JSON.stringify({ installations }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
         }
+        // /user/installations
+        return new Response(JSON.stringify({ installations }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       });
       vi.stubGlobal("fetch", mockFetch);
       return mockFetch;
@@ -595,8 +534,7 @@ describe("callbackRoute", () => {
       let oauthDeleteCallCount = 0;
       const db = makeFakeDb((sql, args) => {
         const isOauthDelete =
-          sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("delete");
+          sql.toLowerCase().includes("oauth_state") && sql.toLowerCase().includes("delete");
         oauthDeleteCallCount += isOauthDelete ? 1 : 0;
         const row =
           isOauthDelete && oauthDeleteCallCount === 1
@@ -605,29 +543,31 @@ describe("callbackRoute", () => {
 
         // For users RETURNING id, return a row with id
         const isUsersInsert =
-          sql.toLowerCase().includes("users") &&
-          sql.toLowerCase().includes("returning");
+          sql.toLowerCase().includes("users") && sql.toLowerCase().includes("returning");
         const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
 
         // For tenants RETURNING id
         const isTenantsInsert =
-          sql.toLowerCase().includes("tenants") &&
-          sql.toLowerCase().includes("returning");
+          sql.toLowerCase().includes("tenants") && sql.toLowerCase().includes("returning");
         const tenantsRow = isTenantsInsert ? ({ id: 10 } as FakeResult) : null;
 
         const rows = isOauthDelete
-          ? (row ? [row] : [])
+          ? row
+            ? [row]
+            : []
           : isUsersInsert
-            ? (usersRow ? [usersRow] : [])
+            ? usersRow
+              ? [usersRow]
+              : []
             : isTenantsInsert
-              ? (tenantsRow ? [tenantsRow] : [])
+              ? tenantsRow
+                ? [tenantsRow]
+                : []
               : [];
 
         const stmt = makeFakeStmt(sql, args, rows, 0);
         if (isOauthDelete) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(row);
+          (stmt as { first: <T>() => Promise<T | null> }).first = vi.fn().mockResolvedValue(row);
         } else if (isUsersInsert) {
           (stmt as { first: <T>() => Promise<T | null> }).first = vi
             .fn()
@@ -651,11 +591,9 @@ describe("callbackRoute", () => {
       const captured: FakeStmt[] = [];
       const db = makeHappyPathDb(captured);
 
-      stubFetchSequence(
-        "t",
-        { id: 42, login: "alice" },
-        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
-      );
+      stubFetchSequence("t", { id: 42, login: "alice" }, [
+        { id: 9, account: { login: "Roxabi", type: "Organization" } },
+      ]);
 
       const { app, env } = makeApp(db);
 
@@ -669,12 +607,11 @@ describe("callbackRoute", () => {
       // Assert — a DELETE FROM oauth_state statement was issued (the atomic consume)
       const deleteStmt = captured.find(
         (s) =>
-          s.sql.toLowerCase().includes("delete") &&
-          s.sql.toLowerCase().includes("oauth_state"),
+          s.sql.toLowerCase().includes("delete") && s.sql.toLowerCase().includes("oauth_state"),
       );
       expect(deleteStmt).toBeDefined();
       // It must also have RETURNING (atomic, not a separate DELETE)
-      expect(deleteStmt!.sql.toUpperCase()).toContain("RETURNING");
+      expect(deleteStmt?.sql.toUpperCase()).toContain("RETURNING");
     });
 
     it("issues users upsert with ON CONFLICT(github_id)", async () => {
@@ -683,11 +620,9 @@ describe("callbackRoute", () => {
       const captured: FakeStmt[] = [];
       const db = makeHappyPathDb(captured);
 
-      stubFetchSequence(
-        "t",
-        { id: 42, login: "alice" },
-        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
-      );
+      stubFetchSequence("t", { id: 42, login: "alice" }, [
+        { id: 9, account: { login: "Roxabi", type: "Organization" } },
+      ]);
 
       const { app, env } = makeApp(db);
 
@@ -705,7 +640,7 @@ describe("callbackRoute", () => {
           s.sql.toUpperCase().includes("ON CONFLICT(github_id)".toUpperCase()),
       );
       expect(usersStmt).toBeDefined();
-      expect(usersStmt!.sql).toContain("ON CONFLICT(github_id)");
+      expect(usersStmt?.sql).toContain("ON CONFLICT(github_id)");
     });
 
     it("issues tenants upsert with ON CONFLICT(installation_id)", async () => {
@@ -714,11 +649,9 @@ describe("callbackRoute", () => {
       const captured: FakeStmt[] = [];
       const db = makeHappyPathDb(captured);
 
-      stubFetchSequence(
-        "t",
-        { id: 42, login: "alice" },
-        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
-      );
+      stubFetchSequence("t", { id: 42, login: "alice" }, [
+        { id: 9, account: { login: "Roxabi", type: "Organization" } },
+      ]);
 
       const { app, env } = makeApp(db);
 
@@ -736,7 +669,7 @@ describe("callbackRoute", () => {
           s.sql.toUpperCase().includes("ON CONFLICT(installation_id)".toUpperCase()),
       );
       expect(tenantsStmt).toBeDefined();
-      expect(tenantsStmt!.sql).toContain("ON CONFLICT(installation_id)");
+      expect(tenantsStmt?.sql).toContain("ON CONFLICT(installation_id)");
     });
 
     it("issues user_installations INSERT", async () => {
@@ -745,11 +678,9 @@ describe("callbackRoute", () => {
       const captured: FakeStmt[] = [];
       const db = makeHappyPathDb(captured);
 
-      stubFetchSequence(
-        "t",
-        { id: 42, login: "alice" },
-        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
-      );
+      stubFetchSequence("t", { id: 42, login: "alice" }, [
+        { id: 9, account: { login: "Roxabi", type: "Organization" } },
+      ]);
 
       const { app, env } = makeApp(db);
 
@@ -761,9 +692,7 @@ describe("callbackRoute", () => {
       );
 
       // Assert
-      const uiStmt = captured.find((s) =>
-        s.sql.toLowerCase().includes("user_installations"),
-      );
+      const uiStmt = captured.find((s) => s.sql.toLowerCase().includes("user_installations"));
       expect(uiStmt).toBeDefined();
     });
 
@@ -773,11 +702,9 @@ describe("callbackRoute", () => {
       const captured: FakeStmt[] = [];
       const db = makeHappyPathDb(captured, "/dashboard");
 
-      stubFetchSequence(
-        "t",
-        { id: 42, login: "alice" },
-        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
-      );
+      stubFetchSequence("t", { id: 42, login: "alice" }, [
+        { id: 9, account: { login: "Roxabi", type: "Organization" } },
+      ]);
 
       const { app, env } = makeApp(db);
 
@@ -793,9 +720,7 @@ describe("callbackRoute", () => {
       expect(await res.text()).toContain("dashboard");
       expect(res.headers.get("Location")).toBeNull();
       expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
-      const exchangeInsert = captured.find((s) =>
-        s.sql.toLowerCase().includes("oauth_exchange"),
-      );
+      const exchangeInsert = captured.find((s) => s.sql.toLowerCase().includes("oauth_exchange"));
       expect(exchangeInsert).toBeUndefined();
     });
 
@@ -805,11 +730,9 @@ describe("callbackRoute", () => {
       const captured: FakeStmt[] = [];
       const db = makeHappyPathDb(captured, "/dashboard");
 
-      stubFetchSequence(
-        "t",
-        { id: 42, login: "alice" },
-        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
-      );
+      stubFetchSequence("t", { id: 42, login: "alice" }, [
+        { id: 9, account: { login: "Roxabi", type: "Organization" } },
+      ]);
 
       const { app, env } = makeApp(db);
 
@@ -829,11 +752,9 @@ describe("callbackRoute", () => {
       const stateValue = "h".repeat(32);
       const captured: FakeStmt[] = [];
       const db = makeHappyPathDb(captured, "/dashboard");
-      stubFetchSequence(
-        "t",
-        { id: 42, login: "alice" },
-        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
-      );
+      stubFetchSequence("t", { id: 42, login: "alice" }, [
+        { id: 9, account: { login: "Roxabi", type: "Organization" } },
+      ]);
       const { app, env } = makeApp(db);
       const res = await app.request(
         `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
@@ -853,8 +774,7 @@ describe("callbackRoute", () => {
       (db as unknown as { batch: unknown }).batch = vi.fn(async (stmts: FakeStmt[]) =>
         stmts.map((s) => {
           const isTenantUpsert =
-            s.sql.toLowerCase().includes("tenants") &&
-            s.sql.toLowerCase().includes("returning");
+            s.sql.toLowerCase().includes("tenants") && s.sql.toLowerCase().includes("returning");
           if (isTenantUpsert) {
             return {
               results: [{ id: idByInstall[s.args[0] as number] }],
@@ -864,14 +784,10 @@ describe("callbackRoute", () => {
           return { results: [], meta: { changes: 0 } };
         }),
       );
-      stubFetchSequence(
-        "t",
-        { id: 42, login: "alice" },
-        [
-          { id: 9, account: { login: "Roxabi", type: "Organization" } },
-          { id: 11, account: { login: "OtherOrg", type: "Organization" } },
-        ],
-      );
+      stubFetchSequence("t", { id: 42, login: "alice" }, [
+        { id: 9, account: { login: "Roxabi", type: "Organization" } },
+        { id: 11, account: { login: "OtherOrg", type: "Organization" } },
+      ]);
       const { app, env } = makeApp(db);
       const res = await app.request(
         `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
@@ -881,14 +797,10 @@ describe("callbackRoute", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
       const tenantUpserts = captured.filter(
-        (s) =>
-          s.sql.toLowerCase().includes("tenants") &&
-          s.sql.toLowerCase().includes("returning"),
+        (s) => s.sql.toLowerCase().includes("tenants") && s.sql.toLowerCase().includes("returning"),
       );
       expect(tenantUpserts).toHaveLength(2);
-      const links = captured.filter((s) =>
-        s.sql.toLowerCase().includes("user_installations"),
-      );
+      const links = captured.filter((s) => s.sql.toLowerCase().includes("user_installations"));
       expect(links).toHaveLength(2);
       expect(links.map((s) => s.args[1])).toEqual([100, 101]);
     });
@@ -902,11 +814,9 @@ describe("callbackRoute", () => {
       (db as unknown as { batch: unknown }).batch = vi.fn(async (stmts: FakeStmt[]) =>
         stmts.map(() => ({ results: [], meta: { changes: 0 } })),
       );
-      stubFetchSequence(
-        "t",
-        { id: 42, login: "alice" },
-        [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
-      );
+      stubFetchSequence("t", { id: 42, login: "alice" }, [
+        { id: 9, account: { login: "Roxabi", type: "Organization" } },
+      ]);
       const { app, env } = makeApp(db);
       const res = await app.request(
         `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
@@ -924,31 +834,27 @@ describe("callbackRoute", () => {
       // Arrange — FakeD1 whose state-consume DELETE...RETURNING returns a row
       // on the first call and null on the second (simulating row deleted by first request).
       const stateValue = "aaaa0000bbbb1111cccc2222dddd3333";
-      const atomicDeleteSql =
-        `DELETE FROM oauth_state WHERE state = ? AND expires_at > datetime('now') RETURNING redirect_after`;
+      const atomicDeleteSql = `DELETE FROM oauth_state WHERE state = ? AND expires_at > datetime('now') RETURNING redirect_after`;
 
       let atomicDeleteCallCount = 0;
 
       const captured: FakeStmt[] = [];
       const db = makeFakeDb((sql, args) => {
-        const isAtomicDelete = sql.trim() === atomicDeleteSql.trim() ||
+        const isAtomicDelete =
+          sql.trim() === atomicDeleteSql.trim() ||
           (sql.toLowerCase().includes("delete") &&
             sql.toLowerCase().includes("oauth_state") &&
             sql.toLowerCase().includes("returning"));
 
         const isUsersInsert =
-          sql.toLowerCase().includes("users") &&
-          sql.toLowerCase().includes("returning");
+          sql.toLowerCase().includes("users") && sql.toLowerCase().includes("returning");
         const isTenantsInsert =
-          sql.toLowerCase().includes("tenants") &&
-          sql.toLowerCase().includes("returning");
+          sql.toLowerCase().includes("tenants") && sql.toLowerCase().includes("returning");
 
         let row: FakeResult | null = null;
         if (isAtomicDelete) {
           atomicDeleteCallCount++;
-          row = atomicDeleteCallCount === 1
-            ? ({ redirect_after: "/" } as FakeResult)
-            : null;
+          row = atomicDeleteCallCount === 1 ? ({ redirect_after: "/" } as FakeResult) : null;
         } else if (isUsersInsert) {
           row = { id: 1 } as FakeResult;
         } else if (isTenantsInsert) {
@@ -956,9 +862,7 @@ describe("callbackRoute", () => {
         }
 
         const stmt = makeFakeStmt(sql, args, row !== null ? [row] : [], 0);
-        (stmt as { first: <T>() => Promise<T | null> }).first = vi
-          .fn()
-          .mockResolvedValue(row);
+        (stmt as { first: <T>() => Promise<T | null> }).first = vi.fn().mockResolvedValue(row);
         captured.push(stmt);
         return stmt;
       });
@@ -974,21 +878,23 @@ describe("callbackRoute", () => {
           // Cycle through token → user → installations for each OAuth callback
           const pos = ((fetchCallCount - 1) % 3) + 1;
           if (pos === 1) {
-            return new Response(
-              JSON.stringify({ access_token: "tok-abc" }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
-          } else if (pos === 2) {
-            return new Response(
-              JSON.stringify({ id: 42, login: "alice" }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
-          } else {
-            return new Response(
-              JSON.stringify({ installations: [{ id: 9, account: { login: "Roxabi", type: "Organization" } }] }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
+            return new Response(JSON.stringify({ access_token: "tok-abc" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
           }
+          if (pos === 2) {
+            return new Response(JSON.stringify({ id: 42, login: "alice" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return new Response(
+            JSON.stringify({
+              installations: [{ id: 9, account: { login: "Roxabi", type: "Organization" } }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
         }),
       );
 
@@ -1028,8 +934,7 @@ describe("callbackRoute", () => {
       let oauthDeleteCallCount = 0;
       const db = makeFakeDb((sql, args) => {
         const isOauthDelete =
-          sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("delete");
+          sql.toLowerCase().includes("oauth_state") && sql.toLowerCase().includes("delete");
         oauthDeleteCallCount += isOauthDelete ? 1 : 0;
         const row =
           isOauthDelete && oauthDeleteCallCount === 1
@@ -1037,9 +942,7 @@ describe("callbackRoute", () => {
             : null;
 
         const stmt = makeFakeStmt(sql, args, row !== null ? [row] : [], 0);
-        (stmt as { first: <T>() => Promise<T | null> }).first = vi
-          .fn()
-          .mockResolvedValue(row);
+        (stmt as { first: <T>() => Promise<T | null> }).first = vi.fn().mockResolvedValue(row);
         captured.push(stmt);
         return stmt;
       });
@@ -1053,11 +956,12 @@ describe("callbackRoute", () => {
 
       vi.stubGlobal(
         "fetch",
-        vi.fn(async () =>
-          new Response(
-            JSON.stringify({ error: "bad_verification_code" }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          ),
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ error: "bad_verification_code" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
         ),
       );
 
@@ -1075,9 +979,7 @@ describe("callbackRoute", () => {
 
       // No INSERT INTO sessions should have been executed
       const sessionsInsert = stmts().find(
-        (s) =>
-          s.sql.toLowerCase().includes("sessions") &&
-          s.sql.toLowerCase().includes("insert"),
+        (s) => s.sql.toLowerCase().includes("sessions") && s.sql.toLowerCase().includes("insert"),
       );
       expect(sessionsInsert).toBeUndefined();
     });
@@ -1094,10 +996,10 @@ describe("callbackRoute", () => {
           fetchCallCount++;
           if (fetchCallCount === 1) {
             // Token exchange succeeds
-            return new Response(
-              JSON.stringify({ access_token: "tok-xyz" }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
+            return new Response(JSON.stringify({ access_token: "tok-xyz" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
           }
           // /user returns 401
           return new Response("Unauthorized", { status: 401 });
@@ -1129,16 +1031,17 @@ describe("callbackRoute", () => {
           fetchCallCount++;
           if (fetchCallCount === 1) {
             // Token exchange succeeds
-            return new Response(
-              JSON.stringify({ access_token: "tok-abc" }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
-          } else if (fetchCallCount === 2) {
+            return new Response(JSON.stringify({ access_token: "tok-abc" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          if (fetchCallCount === 2) {
             // /user succeeds
-            return new Response(
-              JSON.stringify({ id: 1, login: "alice" }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
-            );
+            return new Response(JSON.stringify({ id: 1, login: "alice" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
           }
           // /user/installations returns 500
           return new Response("Internal Server Error", { status: 500 });
@@ -1164,30 +1067,23 @@ describe("callbackRoute", () => {
      * Build a FakeD1 for zero-installation tests.
      * Tracks whether INSERT INTO users was ever called.
      */
-    function makeZeroInstallDb(
-      captured: FakeStmt[],
-      redirectAfter = "/dashboard",
-    ): D1Database {
+    function makeZeroInstallDb(captured: FakeStmt[], redirectAfter = "/dashboard"): D1Database {
       let oauthDeleteCallCount = 0;
       return makeFakeDb((sql, args) => {
         const isOauthDelete =
-          sql.toLowerCase().includes("oauth_state") &&
-          sql.toLowerCase().includes("delete");
+          sql.toLowerCase().includes("oauth_state") && sql.toLowerCase().includes("delete");
         oauthDeleteCallCount += isOauthDelete ? 1 : 0;
         const row =
           isOauthDelete && oauthDeleteCallCount === 1
             ? ({ redirect_after: redirectAfter } as FakeResult)
             : null;
         const isUsersInsert =
-          sql.toLowerCase().includes("users") &&
-          sql.toLowerCase().includes("returning");
+          sql.toLowerCase().includes("users") && sql.toLowerCase().includes("returning");
         const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
 
         const stmt = makeFakeStmt(sql, args, [], 0);
         if (isOauthDelete) {
-          (stmt as { first: <T>() => Promise<T | null> }).first = vi
-            .fn()
-            .mockResolvedValue(row);
+          (stmt as { first: <T>() => Promise<T | null> }).first = vi.fn().mockResolvedValue(row);
         } else if (isUsersInsert) {
           (stmt as { first: <T>() => Promise<T | null> }).first = vi
             .fn()
@@ -1205,38 +1101,27 @@ describe("callbackRoute", () => {
         vi.fn(async (_url: string) => {
           fetchCallCount++;
           if (fetchCallCount === 1) {
-            return new Response(
-              JSON.stringify({ access_token: "tok" }),
-              {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-              },
-            );
-          } else if (fetchCallCount === 2) {
-            return new Response(
-              JSON.stringify({ id: 42, login: "alice" }),
-              {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-              },
-            );
-          } else if (fetchCallCount === 3) {
-            return new Response(
-              JSON.stringify({ installations: [] }),
-              {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-              },
-            );
-          } else {
-            return new Response(
-              JSON.stringify([{ id: 77, login: "Roxabi" }]),
-              {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-              },
-            );
+            return new Response(JSON.stringify({ access_token: "tok" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
           }
+          if (fetchCallCount === 2) {
+            return new Response(JSON.stringify({ id: 42, login: "alice" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          if (fetchCallCount === 3) {
+            return new Response(JSON.stringify({ installations: [] }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return new Response(JSON.stringify([{ id: 77, login: "Roxabi" }]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
         }),
       );
     }
@@ -1256,9 +1141,7 @@ describe("callbackRoute", () => {
 
       expect(res.status).toBe(200);
       expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
-      const exchangeInsert = captured.find((s) =>
-        s.sql.toLowerCase().includes("oauth_exchange"),
-      );
+      const exchangeInsert = captured.find((s) => s.sql.toLowerCase().includes("oauth_exchange"));
       expect(exchangeInsert).toBeUndefined();
     });
 
@@ -1279,12 +1162,10 @@ describe("callbackRoute", () => {
 
       // Assert
       const sessionsInsert = captured.find(
-        (s) =>
-          s.sql.toLowerCase().includes("sessions") &&
-          s.sql.toLowerCase().includes("insert"),
+        (s) => s.sql.toLowerCase().includes("sessions") && s.sql.toLowerCase().includes("insert"),
       );
       expect(sessionsInsert).toBeDefined();
-      expect(sessionsInsert!.args[1]).toBeNull();
+      expect(sessionsInsert?.args[1]).toBeNull();
     });
 
     it("still mints install-pending session when /user/orgs fails (User target only)", async () => {
@@ -1301,12 +1182,14 @@ describe("callbackRoute", () => {
               status: 200,
               headers: { "Content-Type": "application/json" },
             });
-          } else if (fetchCallCount === 2) {
+          }
+          if (fetchCallCount === 2) {
             return new Response(JSON.stringify({ id: 42, login: "alice" }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             });
-          } else if (fetchCallCount === 3) {
+          }
+          if (fetchCallCount === 3) {
             return new Response(JSON.stringify({ installations: [] }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
@@ -1324,11 +1207,9 @@ describe("callbackRoute", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
       const usersInsert = captured.find(
-        (s) =>
-          s.sql.toLowerCase().includes("insert") &&
-          s.sql.toLowerCase().includes("users"),
+        (s) => s.sql.toLowerCase().includes("insert") && s.sql.toLowerCase().includes("users"),
       );
-      const targets = JSON.parse(String(usersInsert!.args[2])) as Array<{
+      const targets = JSON.parse(String(usersInsert?.args[2])) as Array<{
         type: string;
       }>;
       expect(targets).toHaveLength(1);
@@ -1352,22 +1233,16 @@ describe("callbackRoute", () => {
 
       // Assert
       const usersInsert = captured.find(
-        (s) =>
-          s.sql.toLowerCase().includes("insert") &&
-          s.sql.toLowerCase().includes("users"),
+        (s) => s.sql.toLowerCase().includes("insert") && s.sql.toLowerCase().includes("users"),
       );
       expect(usersInsert).toBeDefined();
-      expect(usersInsert!.sql).toContain("install_targets_json");
-      const targets = JSON.parse(String(usersInsert!.args[2])) as Array<{
+      expect(usersInsert?.sql).toContain("install_targets_json");
+      const targets = JSON.parse(String(usersInsert?.args[2])) as Array<{
         login: string;
         type: string;
       }>;
-      expect(targets.some((t) => t.login === "alice" && t.type === "User")).toBe(
-        true,
-      );
-      expect(targets.some((t) => t.login === "Roxabi" && t.type === "Organization")).toBe(
-        true,
-      );
+      expect(targets.some((t) => t.login === "alice" && t.type === "User")).toBe(true);
+      expect(targets.some((t) => t.login === "Roxabi" && t.type === "Organization")).toBe(true);
     });
   });
 });

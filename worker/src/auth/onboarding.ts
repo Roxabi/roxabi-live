@@ -2,12 +2,8 @@
  * Server-owned onboarding step derivation for /api/me and auth flows.
  */
 
+import { type InstallTarget, githubInstallUrl, parseInstallTargets } from "./github-install";
 import type { SessionContext } from "./types";
-import {
-  githubInstallUrl,
-  parseInstallTargets,
-  type InstallTarget,
-} from "./github-install";
 
 export type OnboardingStep = "install" | "consent" | "ready";
 
@@ -47,8 +43,7 @@ export function deriveOnboardingStep(
   installations: Array<{ tenant_id: number }>,
   consentAt: string | null,
 ): OnboardingStep {
-  const installPending =
-    session.tenantId == null || installations.length === 0;
+  const installPending = session.tenantId == null || installations.length === 0;
   if (installPending) return "install";
   if (!consentAt) return "consent";
   return "ready";

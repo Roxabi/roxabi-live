@@ -100,7 +100,7 @@ describe("verifyHmac", () => {
     const validHeader = await computeHmac(BODY_A, SECRET);
     const hexPart = validHeader.slice(7); // strip "sha256="
     // Flip first two hex chars (first byte)
-    const firstByte = parseInt(hexPart.slice(0, 2), 16);
+    const firstByte = Number.parseInt(hexPart.slice(0, 2), 16);
     const flipped = ((firstByte + 1) & 0xff).toString(16).padStart(2, "0");
     const tamperedHeader = `sha256=${flipped}${hexPart.slice(2)}`;
     // Act

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../types";
 
 vi.mock("../sync/sync", () => ({
@@ -14,7 +14,11 @@ const TOKEN = "test-secret-token";
 function mockEnv(adminToken?: string): Env {
   return {
     DB: {
-      prepare: () => ({ first: async () => null, all: async () => ({ results: [] }), bind: () => ({ first: async () => null, all: async () => ({ results: [] }) }) }),
+      prepare: () => ({
+        first: async () => null,
+        all: async () => ({ results: [] }),
+        bind: () => ({ first: async () => null, all: async () => ({ results: [] }) }),
+      }),
       batch: async () => [],
       exec: async () => ({ count: 0, duration: 0 }),
       dump: async () => new ArrayBuffer(0),
@@ -50,7 +54,9 @@ describe("POST /admin/sync — ADMIN_TOKEN set", () => {
     const body = await res.json();
     expect(body).toEqual({ ok: true, triggered: true });
     expect(waitUntil).toHaveBeenCalledOnce();
-    expect(vi.mocked(runSync)).toHaveBeenCalledWith(expect.objectContaining({ ADMIN_TOKEN: TOKEN }));
+    expect(vi.mocked(runSync)).toHaveBeenCalledWith(
+      expect.objectContaining({ ADMIN_TOKEN: TOKEN }),
+    );
   });
 
   it("wrong token → 401 and sync NOT called", async () => {
@@ -71,12 +77,9 @@ describe("POST /admin/sync — ADMIN_TOKEN set", () => {
 
   it("missing Authorization header → 401 and sync NOT called", async () => {
     const waitUntil = vi.fn();
-    const res = await app.request(
-      "/admin/sync",
-      { method: "POST" },
-      mockEnv(TOKEN),
-      { waitUntil } as unknown as ExecutionContext,
-    );
+    const res = await app.request("/admin/sync", { method: "POST" }, mockEnv(TOKEN), {
+      waitUntil,
+    } as unknown as ExecutionContext);
 
     expect(res.status).toBe(401);
     const body = await res.json();
@@ -96,12 +99,9 @@ describe("POST /admin/sync — ADMIN_TOKEN unset (back-compat)", () => {
 
   it("request without token passes through — gate disabled", async () => {
     const waitUntil = vi.fn();
-    const res = await app.request(
-      "/admin/sync",
-      { method: "POST" },
-      mockEnv(undefined),
-      { waitUntil } as unknown as ExecutionContext,
-    );
+    const res = await app.request("/admin/sync", { method: "POST" }, mockEnv(undefined), {
+      waitUntil,
+    } as unknown as ExecutionContext);
 
     expect(res.status).toBe(202);
     const body = await res.json();
@@ -133,12 +133,9 @@ describe("POST /admin/sync — existing behaviour (no ADMIN_TOKEN)", () => {
 
   it("returns 202 with {ok:true, triggered:true}", async () => {
     const waitUntil = vi.fn();
-    const res = await app.request(
-      "/admin/sync",
-      { method: "POST" },
-      mockEnv(),
-      { waitUntil } as unknown as ExecutionContext,
-    );
+    const res = await app.request("/admin/sync", { method: "POST" }, mockEnv(), {
+      waitUntil,
+    } as unknown as ExecutionContext);
 
     expect(res.status).toBe(202);
     const body = await res.json();
@@ -147,12 +144,9 @@ describe("POST /admin/sync — existing behaviour (no ADMIN_TOKEN)", () => {
 
   it("calls executionCtx.waitUntil with a Promise", async () => {
     const waitUntil = vi.fn();
-    await app.request(
-      "/admin/sync",
-      { method: "POST" },
-      mockEnv(),
-      { waitUntil } as unknown as ExecutionContext,
-    );
+    await app.request("/admin/sync", { method: "POST" }, mockEnv(), {
+      waitUntil,
+    } as unknown as ExecutionContext);
 
     expect(waitUntil).toHaveBeenCalledOnce();
     const passedArg = waitUntil.mock.calls[0][0];
@@ -164,12 +158,9 @@ describe("POST /admin/sync — existing behaviour (no ADMIN_TOKEN)", () => {
     const env = mockEnv();
     vi.mocked(runSync).mockResolvedValueOnce(undefined);
 
-    await app.request(
-      "/admin/sync",
-      { method: "POST" },
-      env,
-      { waitUntil } as unknown as ExecutionContext,
-    );
+    await app.request("/admin/sync", { method: "POST" }, env, {
+      waitUntil,
+    } as unknown as ExecutionContext);
 
     expect(vi.mocked(runSync)).toHaveBeenCalledWith(env);
     expect(waitUntil).toHaveBeenCalledOnce();

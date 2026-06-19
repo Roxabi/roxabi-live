@@ -1,25 +1,20 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import { Hono } from "hono";
+import { describe, expect, it } from "vitest";
 
 // ---------------------------------------------------------------------------
 // NOTE: session.ts does not exist yet — these tests are intentionally RED.
 // They define the contract that session.ts must satisfy (T6 task).
 // ---------------------------------------------------------------------------
 
-import {
-  mintSession,
-  validateSession,
-  deleteSession,
-  requireSession,
-} from "./session";
-import { sessionCookie, clearSessionCookie } from "./cookies";
+import type { Env } from "../types";
+import { clearSessionCookie, sessionCookie } from "./cookies";
 import { authNavigateHtml } from "./post-oauth";
+import { deleteSession, mintSession, requireSession, validateSession } from "./session";
 import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
 import type { AuthEnv, SessionContext } from "./types";
-import type { Env } from "../types";
 
-import type { FakeResult, FakeStmt } from "../test-utils";
-import { makeFakeStmt, makeFakeDb, captureDb, fixedFirstDb } from "../test-utils";
+import type { FakeResult } from "../test-utils";
+import { captureDb, fixedFirstDb, makeFakeDb, makeFakeStmt } from "../test-utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -325,7 +320,7 @@ describe("deleteSession", () => {
 
 describe("requireSession", () => {
   function buildApp(
-    db: D1Database,
+    _db: D1Database,
     probeHandler: (session: SessionContext) => Response = (s) =>
       new Response(JSON.stringify(s), { status: 200 }),
   ) {
@@ -335,6 +330,7 @@ describe("requireSession", () => {
     app.get("/protected", (c) => {
       // requireSession guarantees session is set before next() is called;
       // the non-null assertion is safe here (the middleware returns 401 otherwise).
+      // biome-ignore lint/style/noNonNullAssertion: middleware guarantees session is set (401 otherwise).
       const session = c.get("session")!;
       return probeHandler(session);
     });
@@ -409,7 +405,7 @@ describe("requireSession", () => {
     const db = fixedFirstDb(VALID_SESSION as unknown as FakeResult);
     const app = buildApp(db);
     const env = { DB: db } as unknown as Env;
-    const cookieValue = `wrong-name=sometoken`;
+    const cookieValue = "wrong-name=sometoken";
     // Act
     const res = await app.request(
       "/protected",

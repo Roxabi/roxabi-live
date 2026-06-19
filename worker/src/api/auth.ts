@@ -36,17 +36,13 @@ export function timingSafeEqual(a: string, b: string): boolean {
  * Safe-when-unset: if adminToken is falsy, this function returns null
  * (gate disabled — edge-Access-only mode).
  */
-export function checkAdminAuth(
-  request: Request,
-  adminToken: string | undefined,
-): Response | null {
+export function checkAdminAuth(request: Request, adminToken: string | undefined): Response | null {
   // Gate disabled — unset/empty ADMIN_TOKEN means edge Access is the only guard.
   if (!adminToken) return null;
 
   const authHeader = request.headers.get("Authorization") ?? "";
   const prefix = "Bearer ";
-  const supplied =
-    authHeader.startsWith(prefix) ? authHeader.slice(prefix.length) : "";
+  const supplied = authHeader.startsWith(prefix) ? authHeader.slice(prefix.length) : "";
 
   if (timingSafeEqual(supplied, adminToken)) return null;
 

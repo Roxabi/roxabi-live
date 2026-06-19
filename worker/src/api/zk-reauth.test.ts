@@ -1,13 +1,10 @@
-import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AuthEnv, SessionContext } from "../auth/types";
+import { isConsumeReauthRateLimited, recordConsumeReauthSuccess } from "../auth/zk-reauth";
+import { captureDb } from "../test-utils";
 import type { Env } from "../types";
 import { consumeZkReauthRoute } from "./zk-reauth";
-import type { AuthEnv, SessionContext } from "../auth/types";
-import { captureDb } from "../test-utils";
-import {
-  recordConsumeReauthSuccess,
-  isConsumeReauthRateLimited,
-} from "../auth/zk-reauth";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -32,7 +29,7 @@ function makeEnv(db: D1Database, overrides: Partial<Env> = {}): Env {
   } as unknown as Env;
 }
 
-function makeApp(db: D1Database): Hono<AuthEnv> {
+function makeApp(_db: D1Database): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
   app.use("*", async (c, next) => {
     c.set("session", STUB_SESSION);
@@ -58,7 +55,7 @@ describe("consumeZkReauthRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { reauth_proof: string };
+    const body = (await res.json()) as { reauth_proof: string };
     expect(body.reauth_proof).toBe(CODE);
   });
 
