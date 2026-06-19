@@ -84,7 +84,6 @@ export async function purgeUserZkData(
   await db.batch([
     db.prepare(`DELETE FROM zk_payloads WHERE user_id = ?`).bind(userId),
     db.prepare(`DELETE FROM zk_key_backups WHERE user_id = ?`).bind(userId),
-    db.prepare(`DELETE FROM zk_reauth_proofs WHERE user_id = ?`).bind(userId),
     db.prepare(`DELETE FROM user_token_handoffs WHERE user_id = ?`).bind(userId),
   ]);
 
@@ -127,15 +126,16 @@ export async function postZkResetRoute(
     return c.json({ error: "rate_limited" }, 429);
   }
 
-  if (!(await issueReauthProof(c.env, s.userId, reauth_proof))) {
+  const proof = await issueReauthProof(c.env, s.userId, reauth_proof);
+  if (!proof) {
     return c.json({ error: "reauth_required" }, 403);
   }
-
-  const stats = await purgeUserZkData(c.env.DB, s.userId);
 
   if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
     return c.json({ error: "reauth_required" }, 403);
   }
+
+  const stats = await purgeUserZkData(c.env.DB, s.userId);
 
   await recordResetSuccess(c.env.DB, s.userId);
   await writeZkAudit(c.env, {

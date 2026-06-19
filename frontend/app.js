@@ -354,6 +354,8 @@ async function init() {
   try {
     await consumeZkHandoffFromUrl();
     await consumeZkReauthFromUrl();
+    const { reconcileZkResetPendingAfterReauth } = await import('./zk-reset.js');
+    reconcileZkResetPendingAfterReauth();
     const me = await getSessionProfile();
     sessionGithubLogin = me.user?.github_login ?? '';
     const zkAccountKeyEnabled = isZkAccountKeyEnabled(me);
