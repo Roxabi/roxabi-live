@@ -12,6 +12,11 @@ export function loginUrl(redirect = DASHBOARD_PATH) {
   return `/login?redirect=${encodeURIComponent(redirect)}`;
 }
 
+/** Re-OAuth after GitHub App install — install=1 is a /login flag, not redirect=. */
+export function refreshInstallLoginUrl(redirect = DASHBOARD_PATH) {
+  return `/login?install=1&redirect=${encodeURIComponent(redirect)}`;
+}
+
 /** @deprecated Server gates /dashboard; client redirect causes OAuth loops. */
 function showSessionLost() {
   const el = document.getElementById('error-msg');
@@ -159,7 +164,7 @@ function renderInstallCta(me) {
       </p>
       <div class="install-actions">
         <button type="button" class="consent-btn-secondary" id="install-logout">Sign out</button>
-        <a href="${escHtml(loginUrl(`${DASHBOARD_PATH}?install=1`))}" class="auth-login-btn" id="install-continue">I've installed — continue</a>
+        <a href="${escHtml(refreshInstallLoginUrl(DASHBOARD_PATH))}" class="auth-login-btn" id="install-continue">I've installed — continue</a>
       </div>
     </div>
   `;

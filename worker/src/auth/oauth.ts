@@ -46,15 +46,16 @@ function bytesToHex(bytes: Uint8Array): string {
  * endpoint.  The redirect_uri is derived from the request origin — never from
  * a query parameter — to prevent redirect-uri injection (D-6).
  */
-/** OAuth must run again (install handoff, ZK flows, explicit reauth). */
-async function mustReOAuth(
-  c: Context<{ Bindings: Env }>,
-  redirectAfter: string,
-): Promise<boolean> {
+/**
+ * OAuth must run again (install refresh, ZK flows, explicit reauth).
+ * install=1 must be a top-level /login query flag — NOT embedded in redirect=,
+ * otherwise every post-OAuth hop back to /login?redirect=/dashboard?install=1
+ * re-triggers GitHub while the session cookie is already valid (redirect loop).
+ */
+async function mustReOAuth(c: Context<{ Bindings: Env }>): Promise<boolean> {
   if (c.req.query("reauth") === "1") return true;
   if (c.req.query("zk") === "1") return true;
-
-  if (!redirectAfter.includes("install=1")) return false;
+  if (c.req.query("install") !== "1") return false;
 
   const token = readSessionToken(c);
   if (!token) return true;
@@ -80,16 +81,14 @@ export async function loginRoute(
   const zkTokenHandoff = c.req.query("zk") === "1" ? 1 : 0;
   const reauth = c.req.query("reauth") === "1" ? 1 : 0;
 
-  if (!(await mustReOAuth(c, redirectAfter))) {
+  const cleanRedirect = stripInstallParam(redirectAfter);
+
+  if (!(await mustReOAuth(c))) {
     const token = readSessionToken(c);
     if (token) {
       const session = await validateSession(c.env.DB, token);
       if (session) {
-        let dest = redirectAfter;
-        if (session.tenantId != null && dest.includes("install=1")) {
-          dest = stripInstallParam(dest);
-        }
-        return authRedirect(dest);
+        return authRedirect(cleanRedirect);
       }
     }
   }
@@ -104,7 +103,7 @@ export async function loginRoute(
     `INSERT INTO oauth_state (state, redirect_after, expires_at, zk_token_handoff, reauth)
      VALUES (?, ?, datetime('now', '+10 minutes'), ?, ?)`,
   )
-    .bind(state, redirectAfter, zkTokenHandoff, reauth)
+    .bind(state, cleanRedirect, zkTokenHandoff, reauth)
     .run();
 
   // Build GitHub authorize URL — redirect_uri derived from origin only (D-6)

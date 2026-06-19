@@ -61,16 +61,14 @@ const STUB_SESSION: SessionContext = {
 };
 
 describe("GET /dashboard", () => {
-  it("redirects to /login preserving ?install=1 when no cookie", async () => {
+  it("redirects to /login without install=1 in redirect when no cookie", async () => {
     const db = makeSessionDb(null);
     const env = makeEnv(db);
 
     const res = await app.request("/dashboard/?install=1", {}, env);
 
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe(
-      "/login?redirect=%2Fdashboard%2F%3Finstall%3D1",
-    );
+    expect(res.headers.get("Location")).toBe("/login?redirect=%2Fdashboard");
     expect(res.headers.get("Cache-Control")).toContain("no-store");
     expect(env.ASSETS.fetch).not.toHaveBeenCalled();
   });

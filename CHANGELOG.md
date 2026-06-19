@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.9](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.8...roxabi-live/v0.17.9) (2026-06-19)
+
+
+### Bug Fixes
+
+* **auth:** `install=1` is a `/login` query flag only — strip from `redirect=` to stop OAuth loops for valid install-pending sessions
+* **frontend:** « I've installed — continue » → `/login?install=1&redirect=/dashboard`
+
+
 ## [0.17.8](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.7...roxabi-live/v0.17.8) (2026-06-19)
 
 
