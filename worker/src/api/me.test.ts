@@ -373,7 +373,7 @@ describe("logoutRoute", () => {
     // Assert
     const setCookie = res.headers.get("Set-Cookie") ?? "";
     expect(setCookie).toContain("Max-Age=0");
-    expect(setCookie).toContain("__Host-session");
+    expect(setCookie).toContain("roxabi_session");
   });
 
   it("does NOT issue DELETE when no session cookie is present", async () => {
@@ -406,7 +406,7 @@ describe("logoutRoute", () => {
     // Assert
     expect(res.status).toBe(204);
     const setCookie = res.headers.get("Set-Cookie") ?? "";
-    expect(setCookie).toContain("__Host-session=");
+    expect(setCookie).toContain("roxabi_session=");
     expect(setCookie).toContain("Max-Age=0");
   });
 });

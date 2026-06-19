@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "./types";
 import { versionRoute } from "./api/version";
+import { releaseRoute } from "./api/release";
 import { graphRoute } from "./api/graph";
 import { listIssuesRoute, getIssueRoute } from "./api/issues";
 import { adminSyncRoute } from "./api/admin";
@@ -9,6 +10,7 @@ import { checkAdminAuth } from "./api/auth";
 import { loginRoute, callbackRoute } from "./auth/oauth";
 import { authResetRoute } from "./auth/reset";
 import { authContinueRoute } from "./auth/continue";
+import { authStatusRoute } from "./auth/status";
 import { dashboardRoute } from "./auth/dashboard-route";
 import { meRoute, logoutRoute } from "./api/me";
 import type { AuthEnv } from "./auth/types";
@@ -33,6 +35,7 @@ const app = new Hono<AuthEnv>();
 // S1 scaffold wires /health + /api/version. S5 (#97) adds POST /webhook/github.
 // S6 (#98) adds /api/graph, /api/issues, /api/issues/*, /admin/sync.
 app.get("/api/version", versionRoute);
+app.get("/api/release", releaseRoute);
 
 // POST /webhook/github — HMAC-verified GitHub org webhooks (S5, #97).
 app.post("/webhook/github", webhookRoute);
@@ -77,7 +80,12 @@ app.get("/health", async (c) => {
   } catch {
     // db unreachable → report status without failing the request
   }
-  return c.json({ status: "ok", db_reachable: dbReachable, issue_count: issueCount });
+  return c.json({
+    status: "ok",
+    db_reachable: dbReachable,
+    issue_count: issueCount,
+    release: c.env.APP_RELEASE ?? "unknown",
+  });
 });
 
 // ── Auth routes (#145, S2) ───────────────────────────────────────────────────
@@ -85,6 +93,7 @@ app.get("/login", loginRoute);
 app.get("/oauth/callback", callbackRoute);
 app.get("/auth/reset", authResetRoute);
 app.get("/auth/continue", authContinueRoute);
+app.get("/auth/status", authStatusRoute);
 app.get("/install/complete", installCompleteRoute);
 app.use("/api/me", requireSession);
 app.get("/api/me", meRoute);

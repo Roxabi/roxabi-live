@@ -7,8 +7,8 @@ import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import {
   AUTH_NO_CACHE,
+  clearSessionCookieHeaders,
   readSessionToken,
-  clearSessionCookie,
 } from "../auth/cookies";
 import { deleteSession } from "../auth/session";
 import { zkAccountKeyEnabled } from "../auth/zk-flags";
@@ -85,12 +85,12 @@ export async function logoutRoute(c: Context<AuthEnv>): Promise<Response> {
     await deleteSession(c.env.DB, raw);
   }
 
-  return new Response(null, {
-    status: 204,
-    headers: {
-      "Set-Cookie": clearSessionCookie(),
-      "Clear-Site-Data": '"cache", "cookies", "storage"',
-      ...AUTH_NO_CACHE,
-    },
+  const headers = new Headers({
+    "Clear-Site-Data": '"cache", "cookies", "storage"',
+    ...AUTH_NO_CACHE,
   });
+  for (const cookie of clearSessionCookieHeaders()) {
+    headers.append("Set-Cookie", cookie);
+  }
+  return new Response(null, { status: 204, headers });
 }

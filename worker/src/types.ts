@@ -46,4 +46,6 @@ export interface Env {
   ZK_ACCOUNT_KEY?: string;
   /** Feature flag: structure-only server sync (#216 PR 6). Default off. */
   ZK_STRUCTURE_ONLY?: string;
+  /** Deployed app release tag (e.g. 0.17.6) — wrangler [vars], not corpus /api/version. */
+  APP_RELEASE?: string;
 }

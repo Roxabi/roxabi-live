@@ -21,5 +21,8 @@ export type AuthEnv = {
 // Constants
 // ---------------------------------------------------------------------------
 
-export const SESSION_COOKIE = "__Host-session";
+/** Primary session cookie (no __Host- prefix — broader browser support, e.g. Opera). */
+export const SESSION_COOKIE = "roxabi_session";
+/** Legacy name — still read/cleared during migration. */
+export const LEGACY_SESSION_COOKIE = "__Host-session";
 export const SESSION_TTL_SECONDS = 28800; // 8 hours

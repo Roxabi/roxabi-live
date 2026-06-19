@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.6](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.5...roxabi-live/v0.17.6) (2026-06-19)
+
+
+### Bug Fixes
+
+* **auth:** rename session cookie to `roxabi_session` (drop `__Host-` prefix) + purge legacy cookie — fixes Opera/normal-profile OAuth loops
+* **ops:** add `GET /api/release` and `GET /auth/status` for deploy + session diagnostics (`APP_RELEASE` var)
+
+
 ## [0.17.5](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.4...roxabi-live/v0.17.5) (2026-06-19)
 
 
