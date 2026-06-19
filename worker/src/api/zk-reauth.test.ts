@@ -4,6 +4,10 @@ import type { Env } from "../types";
 import { consumeZkReauthRoute } from "./zk-reauth";
 import type { AuthEnv, SessionContext } from "../auth/types";
 import { captureDb } from "../test-utils";
+import {
+  recordConsumeReauthSuccess,
+  isConsumeReauthRateLimited,
+} from "../auth/zk-reauth";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -84,5 +88,69 @@ describe("consumeZkReauthRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(410);
+  });
+});
+
+describe("recordConsumeReauthSuccess — atomic UPSERT", () => {
+  it("emits a single SQL statement with no prior SELECT", async () => {
+    const { db, stmts } = captureDb(() => []);
+    await recordConsumeReauthSuccess(db, 7);
+    const syncStmts = stmts().filter((s) => s.sql.includes("sync_control"));
+    expect(syncStmts).toHaveLength(1);
+    expect(syncStmts[0].sql).toMatch(/ON CONFLICT/i);
+    expect(syncStmts[0].sql).not.toMatch(/^SELECT/i);
+  });
+
+  it("SQL contains json_extract increment pattern", async () => {
+    const { db, stmts } = captureDb(() => []);
+    await recordConsumeReauthSuccess(db, 7);
+    const stmt = stmts().find((s) => s.sql.includes("sync_control"));
+    expect(stmt?.sql).toMatch(/json_extract/i);
+    expect(stmt?.sql).toMatch(/CAST/i);
+    expect(stmt?.sql).toMatch(/\+ 1/);
+  });
+
+  it("binds current hour key", async () => {
+    const { db, stmts } = captureDb(() => []);
+    const before = new Date().toISOString().slice(0, 13);
+    await recordConsumeReauthSuccess(db, 7);
+    const after = new Date().toISOString().slice(0, 13);
+    const stmt = stmts().find((s) => s.sql.includes("sync_control"));
+    // hourKey appears multiple times in bind args (5 total); must include current hour
+    expect(stmt?.args.some((a) => a === before || a === after)).toBe(true);
+  });
+});
+
+describe("isConsumeReauthRateLimited", () => {
+  it("returns true when count at threshold", async () => {
+    const currentHour = new Date().toISOString().slice(0, 13);
+    const { db } = captureDb((sql) => {
+      if (sql.includes("sync_control") && sql.includes("SELECT")) {
+        return [{ value: JSON.stringify({ hour: currentHour, count: 10 }) }];
+      }
+      return [];
+    });
+    expect(await isConsumeReauthRateLimited(db, 7)).toBe(true);
+  });
+
+  it("returns false when count below threshold", async () => {
+    const currentHour = new Date().toISOString().slice(0, 13);
+    const { db } = captureDb((sql) => {
+      if (sql.includes("sync_control") && sql.includes("SELECT")) {
+        return [{ value: JSON.stringify({ hour: currentHour, count: 9 }) }];
+      }
+      return [];
+    });
+    expect(await isConsumeReauthRateLimited(db, 7)).toBe(false);
+  });
+
+  it("returns false when stored hour differs (counter reset)", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("sync_control") && sql.includes("SELECT")) {
+        return [{ value: JSON.stringify({ hour: "2020-01-01T00", count: 99 }) }];
+      }
+      return [];
+    });
+    expect(await isConsumeReauthRateLimited(db, 7)).toBe(false);
   });
 });

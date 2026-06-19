@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { postZkResetRoute, purgeUserZkData } from "./zk-reset";
 import type { AuthEnv, SessionContext } from "../auth/types";
-import { makeFakeDb, makeFakeStmt } from "../test-utils";
+import { captureDb, makeFakeDb, makeFakeStmt } from "../test-utils";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -146,6 +146,79 @@ describe("postZkResetRoute", () => {
     );
     expect(consumeIdx).toBeGreaterThanOrEqual(0);
     expect(purgeIdx).toBeGreaterThan(consumeIdx);
+  });
+});
+
+describe("postZkResetRoute — recordResetSuccess atomic UPSERT", () => {
+  it("emits a single sync_control INSERT (no pre-SELECT for increment) on success", async () => {
+    const captured: { sql: string; args: unknown[] }[] = [];
+    const db = makeFakeDb((sql, args) => {
+      captured.push({ sql, args: args ?? [] });
+      let rows: Record<string, unknown>[] = [];
+      let changes = 0;
+      // rate-limit SELECT → not limited (count=0)
+      if (sql.includes("sync_control") && sql.includes("SELECT")) {
+        rows = [];
+      } else if (sql.includes("zk_reauth_proofs") && sql.includes("SELECT")) {
+        // issueReauthProof lookup → found
+        rows = [{ ok: 1 }];
+      } else if (sql.includes("zk_reauth_proofs") && sql.includes("DELETE")) {
+        // consumeReauthProof → consumed
+        rows = [{ ok: 1 }];
+        changes = 1;
+      } else if (sql.includes("SELECT DISTINCT issue_key FROM zk_payloads WHERE user_id")) {
+        rows = [];
+      } else if (sql.includes("SELECT COUNT(*)")) {
+        rows = [{ n: 0 }];
+      } else if (sql.includes("SELECT DISTINCT issue_key FROM zk_payloads")) {
+        rows = [];
+      } else if (sql.startsWith("DELETE") || sql.includes("UPDATE")) {
+        changes = 1;
+      }
+      return makeFakeStmt(sql, args, rows, changes);
+    });
+
+    await makeApp(db).request(
+      "/api/zk/reset",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reauth_proof: VALID_PROOF }),
+      },
+      makeEnv(db),
+    );
+
+    const syncInserts = captured.filter(
+      (s) => s.sql.includes("sync_control") && s.sql.includes("INSERT"),
+    );
+    expect(syncInserts.length).toBeGreaterThanOrEqual(1);
+    const upsert = syncInserts.find((s) => /ON CONFLICT/i.test(s.sql));
+    expect(upsert).toBeDefined();
+    expect(upsert?.sql).toMatch(/json_extract/i);
+    expect(upsert?.sql).toMatch(/CAST/i);
+    expect(upsert?.sql).toMatch(/\+ 1/);
+  });
+
+  it("returns 429 when reset rate limited", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("sync_control") && sql.includes("SELECT")) {
+        return [{ value: JSON.stringify({ hour: new Date().toISOString().slice(0, 13), count: 3 }) }];
+      }
+      return [];
+    });
+    const app = makeApp(db);
+    const res = await app.request(
+      "/api/zk/reset",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reauth_proof: VALID_PROOF }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(429);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("rate_limited");
   });
 });
 

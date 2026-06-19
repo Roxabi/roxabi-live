@@ -8,32 +8,19 @@ const REAUTH_TTL_MINUTES = 5;
 const MAX_CONSUME_PER_HOUR = 10;
 const CODE_RE = /^[0-9a-f]{32}$/;
 
-async function readConsumeCount(
-  db: D1Database,
-  userId: number,
-): Promise<{ hourKey: string; count: number }> {
-  const hourKey = new Date().toISOString().slice(0, 13);
-  const rowKey = `zk_reauth_consume:${userId}`;
-  const row = await db
-    .prepare(
-      `SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?`,
-    )
-    .bind(rowKey)
-    .first<{ value: string }>();
+function currentHourKey(): string {
+  return new Date().toISOString().slice(0, 13);
+}
 
-  let count = 0;
-  let storedHour = hourKey;
-  if (row?.value) {
-    try {
-      const parsed = JSON.parse(row.value) as { hour?: string; count?: number };
-      storedHour = parsed.hour ?? hourKey;
-      count = typeof parsed.count === "number" ? parsed.count : 0;
-    } catch {
-      count = 0;
-    }
+function parseCount(value: string | null | undefined, hourKey: string): number {
+  if (!value) return 0;
+  try {
+    const parsed = JSON.parse(value) as { hour?: string; count?: number };
+    if (parsed.hour !== hourKey) return 0;
+    return typeof parsed.count === "number" ? parsed.count : 0;
+  } catch {
+    return 0;
   }
-  if (storedHour !== hourKey) count = 0;
-  return { hourKey, count };
 }
 
 /** Rate limit POST /api/zk/consume-reauth (defense in depth). */
@@ -41,25 +28,40 @@ export async function isConsumeReauthRateLimited(
   db: D1Database,
   userId: number,
 ): Promise<boolean> {
-  const { count } = await readConsumeCount(db, userId);
-  return count >= MAX_CONSUME_PER_HOUR;
+  const hourKey = currentHourKey();
+  const rowKey = `zk_reauth_consume:${userId}`;
+  const row = await db
+    .prepare(`SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?`)
+    .bind(rowKey)
+    .first<{ value: string }>();
+  return parseCount(row?.value, hourKey) >= MAX_CONSUME_PER_HOUR;
 }
 
+/**
+ * Atomically increment the consume-reauth counter for the current hour.
+ * A single INSERT … ON CONFLICT DO UPDATE performs the read-modify-write in
+ * one SQL statement, preventing lost increments under concurrent isolates.
+ */
 export async function recordConsumeReauthSuccess(
   db: D1Database,
   userId: number,
 ): Promise<void> {
-  const { hourKey, count } = await readConsumeCount(db, userId);
+  const hourKey = currentHourKey();
   const rowKey = `zk_reauth_consume:${userId}`;
   await db
     .prepare(
       `INSERT INTO sync_control (tenant_id, key, value, updated_at)
-       VALUES (0, ?, ?, datetime('now'))
+       VALUES (0, ?, json_object('hour', ?, 'count', 1), datetime('now'))
        ON CONFLICT(tenant_id, key) DO UPDATE SET
-         value = excluded.value,
+         value = CASE
+           WHEN json_extract(value, '$.hour') = ?
+           THEN json_object('hour', ?,
+                  'count', CAST(json_extract(value, '$.count') AS INTEGER) + 1)
+           ELSE json_object('hour', ?, 'count', 1)
+         END,
          updated_at = datetime('now')`,
     )
-    .bind(rowKey, JSON.stringify({ hour: hourKey, count: count + 1 }))
+    .bind(rowKey, hourKey, hourKey, hourKey, hourKey)
     .run();
 }
 
