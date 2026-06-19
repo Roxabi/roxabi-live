@@ -12,7 +12,8 @@ import {
   deleteSession,
   requireSession,
 } from "./session";
-import { sessionCookie, clearSessionCookie, sessionRedirectHtml } from "./cookies";
+import { sessionCookie, clearSessionCookie } from "./cookies";
+import { authNavigateHtml } from "./post-oauth";
 import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
 import type { AuthEnv, SessionContext } from "./types";
 import type { Env } from "../types";
@@ -421,27 +422,26 @@ describe("requireSession", () => {
 });
 
 // ---------------------------------------------------------------------------
-// sessionRedirectHtml
+// authNavigateHtml
 // ---------------------------------------------------------------------------
 
-describe("sessionRedirectHtml", () => {
-  it("returns 200 HTML with Set-Cookie and destination in body", async () => {
-    const res = sessionRedirectHtml("/dashboard?install=1", "a".repeat(64));
+describe("authNavigateHtml", () => {
+  it("returns 200 HTML with destination in body", async () => {
+    const res = authNavigateHtml("/dashboard?zk_handoff=abc", [
+      "roxabi_session=x; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=28800",
+    ]);
     expect(res.status).toBe(200);
-    expect(res.headers.get("Set-Cookie")).toContain("roxabi_session=");
     expect(res.headers.get("Cache-Control")).toContain("no-store");
-    expect(res.headers.get("Vary")).toBe("Cookie");
     const body = await res.text();
-    expect(body).toContain("/auth/continue");
+    expect(body).toContain("/dashboard");
     expect(body).toContain("/api/me");
     expect(body).toContain("location.replace");
-    expect(body).not.toContain("http-equiv");
   });
 
   it("rejects open-redirect destinations", async () => {
-    const res = sessionRedirectHtml("//evil.test", "tok");
+    const res = authNavigateHtml("//evil.test");
     const body = await res.text();
-    expect(body).toContain("/auth/continue?to=%2Fdashboard");
+    expect(body).toContain("/dashboard");
     expect(body).not.toContain("//evil");
   });
 });

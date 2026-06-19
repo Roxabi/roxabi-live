@@ -210,42 +210,23 @@ describe("requireSession auth gate", () => {
   // -------------------------------------------------------------------------
 
   describe("GET /install/complete — post-install return", () => {
-    it("returns 302 to /login?redirect=/dashboard without touching DB", async () => {
+    it("returns 302 to /dashboard without touching DB", async () => {
       const db = makeDbThatMustNotBeCalled();
       const env = makeEnv(db);
       const res = await app.request("/install/complete", {}, env);
       expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe(
-        "/login?install=1&redirect=/dashboard",
-      );
+      expect(res.headers.get("Location")).toBe("/dashboard");
       expect(res.headers.get("Cache-Control")).toContain("no-store");
       expect(db.prepare).not.toHaveBeenCalled();
     });
   });
 
-  describe("GET /auth/exchange — post-OAuth cookie hop", () => {
-    it("returns 400 when code is missing", async () => {
+  describe("GET /auth/exchange — legacy shim", () => {
+    it("returns 400 when no session cookie", async () => {
       const db = makeDbThatMustNotBeCalled();
       const env = makeEnv(db);
       const res = await app.request("/auth/exchange", {}, env);
       expect(res.status).toBe(400);
-    });
-  });
-
-  describe("GET /auth/continue — post-OAuth hop", () => {
-    it("redirects to login when no session cookie", async () => {
-      const db = makeDbThatMustNotBeCalled();
-      const env = makeEnv(db);
-      const res = await app.request(
-        "/auth/continue?to=%2Fdashboard%3Finstall%3D1",
-        {},
-        env,
-      );
-      expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe(
-        "/login?redirect=%2Fdashboard%3Finstall%3D1",
-      );
-      expect(res.headers.get("Cache-Control")).toContain("no-store");
     });
   });
 

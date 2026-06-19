@@ -1,33 +1,17 @@
-// auth.js — Auth gate state machine, consent persistence, API wrapper
-// Exports: AuthError, api, hasConsent, setConsent, resolveView, requireAuthGate, getSessionProfile
+// auth.js — Server-owned onboarding gate (install → consent → ready)
 
-import { githubInstallUrl, partitionInstallTargets } from './github-install.js';
 import { renderOnboardingSteps } from './onboarding.js';
 
 const $ = id => document.getElementById(id);
 
 export const DASHBOARD_PATH = '/dashboard';
 
+const CONSENT_PREFIX = 'roxabi:consent:';
+
 /** Safe login URL with post-auth return path (defaults to dashboard). */
 export function loginUrl(redirect = DASHBOARD_PATH) {
   return `/login?redirect=${encodeURIComponent(redirect)}`;
 }
-
-/** Re-OAuth after GitHub App install — install=1 is a /login flag, not redirect=. */
-export function refreshInstallLoginUrl(redirect = DASHBOARD_PATH) {
-  return `/login?install=1&redirect=${encodeURIComponent(redirect)}`;
-}
-
-/** @deprecated Server gates /dashboard; client redirect causes OAuth loops. */
-function showSessionLost() {
-  const el = document.getElementById('error-msg');
-  if (el) {
-    el.hidden = false;
-    el.textContent = 'Session expired. Reload the page or sign in again from the homepage.';
-  }
-}
-
-// ─── AuthError ────────────────────────────────────────────────────────────────
 
 export class AuthError extends Error {
   constructor(msg = 'Not authenticated') {
@@ -36,9 +20,6 @@ export class AuthError extends Error {
   }
 }
 
-// ─── API wrapper ──────────────────────────────────────────────────────────────
-
-/** fetch wrapper — throws AuthError on 401, Error on other non-ok responses. */
 export async function api(path, opts) {
   const resp = await fetch(path, opts);
   if (resp.status === 401) throw new AuthError();
@@ -46,90 +27,89 @@ export async function api(path, opts) {
   return resp;
 }
 
-// ─── Consent persistence ──────────────────────────────────────────────────────
-
-const CONSENT_PREFIX = 'roxabi:consent:';
-
-/** Returns true if the user has previously acknowledged the operator-read consent. */
-export function hasConsent(login) {
+/** @deprecated localStorage bridge — removed after one release */
+function hasLegacyConsent(login) {
   return Boolean(localStorage.getItem(CONSENT_PREFIX + login));
 }
 
-/** Persists consent acknowledgement for this login (ISO timestamp). */
-export function setConsent(login) {
-  localStorage.setItem(CONSENT_PREFIX + login, new Date().toISOString());
+function clearLegacyConsent(login) {
+  localStorage.removeItem(CONSENT_PREFIX + login);
 }
 
-// ─── View resolution (pure) ───────────────────────────────────────────────────
-
-/**
- * Resolve which view to show.
- * Pure: no DOM, no storage, no fetch — call sites handle side-effects.
- *
- * @param {{ user: { github_id: number, github_login: string }, active_tenant_id: number|null, installations: Array<{ tenant_id: number, account_login: string, account_type: string }> }} me
- * @param {boolean} consented
- * @returns {'install'|'consent'|'dashboard'}
- */
-export function resolveView(me, consented) {
-  if (me.install_pending || me.installations.length === 0) return 'install';
-  if (!consented) return 'consent';
-  return 'dashboard';
+async function migrateLegacyConsent(me) {
+  const login = me.user.github_login;
+  if (me.onboarding_step !== 'consent' || !hasLegacyConsent(login)) return me;
+  try {
+    await api('/api/consent', { method: 'POST' });
+    clearLegacyConsent(login);
+    return fetchMe();
+  } catch {
+    return me;
+  }
 }
 
-// ─── Internal: /api/me ────────────────────────────────────────────────────────
-
-/** Fetches /api/me. Throws AuthError if 401 (no session). */
 async function fetchMe() {
   const resp = await api('/api/me');
   return resp.json();
 }
 
-/** Session profile from /api/me — for dashboard bootstrap after auth gate. */
 export async function getSessionProfile() {
   return fetchMe();
 }
 
-/** True when server exposes ZK_ACCOUNT_KEY feature (#216 PR 1b). */
-export function isZkAccountKeyEnabled(me) {
-  return me?.user?.zk_account_key_enabled === true;
+function showSessionLost() {
+  const el = document.getElementById('error-msg');
+  if (el) {
+    el.hidden = false;
+    el.textContent = 'Session expirée. Rechargez la page ou reconnectez-vous depuis l’accueil.';
+  }
 }
 
-// ─── Internal: render install CTA ────────────────────────────────────────────
+function renderInstallOption(opt) {
+  if (opt.kind === 'picker') {
+    return `
+      <a class="install-option" href="${escHtml(opt.url)}" role="listitem">
+        <span class="install-option-title">Organisation</span>
+        <span class="install-option-name">Choisir sur GitHub</span>
+        <span class="install-option-hint">GitHub liste les organisations où vous pouvez installer l'app</span>
+      </a>`;
+  }
+  const title = opt.kind === 'personal' ? 'Compte personnel' : 'Organisation';
+  const hint =
+    opt.kind === 'personal'
+      ? 'Vos dépôts uniquement — idéal en solo'
+      : 'Installer sur cette org — tous les dépôts ou une sélection sur GitHub';
+  return `
+    <a class="install-option" href="${escHtml(opt.url)}" role="listitem">
+      <span class="install-option-title">${title}</span>
+      <span class="install-option-name">${escHtml(opt.login ?? '')}</span>
+      <span class="install-option-hint">${hint}</span>
+    </a>`;
+}
 
-/**
- * @param {{ user: { github_id: number, github_login: string }, install_targets?: Array<{ id: number, login: string, type: string }> }} me
- */
+async function pollInstallRefresh(maxAttempts = 15) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const resp = await fetch('/api/install/refresh', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    if (resp.status === 200) return resp.json();
+    if (resp.status === 202) {
+      const body = await resp.json().catch(() => ({}));
+      await new Promise(r => setTimeout(r, body.retry_after_ms ?? 2000));
+      continue;
+    }
+    throw new Error(`/api/install/refresh ${resp.status}`);
+  }
+  return null;
+}
+
 function renderInstallCta(me) {
   document.body.classList.add('gated');
   const el = $('auth-install');
-  const targets = me.install_targets ?? [];
-  const { personal, orgs } = partitionInstallTargets(targets);
   const login = escHtml(me.user.github_login);
-
-  const personalUrl = personal ? githubInstallUrl(personal) : githubInstallUrl();
-  const orgCards = orgs.length
-    ? orgs.map(org => `
-        <a
-          class="install-option"
-          href="${escHtml(githubInstallUrl(org))}"
-          role="listitem"
-        >
-          <span class="install-option-title">Organisation</span>
-          <span class="install-option-name">${escHtml(org.login)}</span>
-          <span class="install-option-hint">Installer sur cette org — tous les dépôts ou une sélection sur GitHub</span>
-        </a>
-      `).join('')
-    : `
-        <a
-          class="install-option"
-          href="${escHtml(githubInstallUrl())}"
-          role="listitem"
-        >
-          <span class="install-option-title">Organisation</span>
-          <span class="install-option-name">Choisir sur GitHub</span>
-          <span class="install-option-hint">GitHub liste les organisations où vous pouvez installer l'app</span>
-        </a>
-      `;
+  const options = (me.install_options ?? []).map(renderInstallOption).join('');
 
   el.innerHTML = `
     ${renderOnboardingSteps('install')}
@@ -141,16 +121,7 @@ function renderInstallCta(me) {
         ou dépôts sélectionnés uniquement.
       </p>
       <div class="install-options" role="list">
-        <a
-          class="install-option"
-          href="${escHtml(personalUrl)}"
-          role="listitem"
-        >
-          <span class="install-option-title">Compte personnel</span>
-          <span class="install-option-name">${login}</span>
-          <span class="install-option-hint">Vos dépôts uniquement — idéal en solo</span>
-        </a>
-        ${orgCards}
+        ${options}
         <div class="install-option install-option-info" role="listitem">
           <span class="install-option-title">Dépôts sélectionnés</span>
           <span class="install-option-hint">
@@ -166,34 +137,49 @@ function renderInstallCta(me) {
       </p>
       <div class="install-actions">
         <button type="button" class="consent-btn-secondary" id="install-logout">Se déconnecter</button>
-        <a href="${escHtml(refreshInstallLoginUrl(DASHBOARD_PATH))}" class="auth-login-btn" id="install-continue">J'ai installé — continuer</a>
+        <button type="button" class="auth-login-btn" id="install-continue">J'ai installé — continuer</button>
       </div>
+      <p class="install-note" id="install-refresh-hint" hidden></p>
     </div>
   `;
   el.removeAttribute('hidden');
 
-  const firstInstallLink = el.querySelector('.install-option[href]');
-  firstInstallLink?.focus();
+  el.querySelector('.install-option[href]')?.focus();
 
   $('install-logout')?.addEventListener('click', async () => {
     await api('/logout', { method: 'POST' }).catch(() => {});
     location.href = '/';
   });
 
-  const pageUrl = new URL(location.href);
-  if (pageUrl.searchParams.has('install')) {
-    pageUrl.searchParams.delete('install');
-    history.replaceState(null, '', pageUrl.pathname + pageUrl.search + pageUrl.hash);
-  }
+  $('install-continue')?.addEventListener('click', async () => {
+    const btn = $('install-continue');
+    const hint = $('install-refresh-hint');
+    btn.disabled = true;
+    btn.textContent = 'Vérification…';
+    try {
+      const refreshed = await pollInstallRefresh();
+      if (refreshed?.onboarding_step) {
+        location.reload();
+        return;
+      }
+      if (hint) {
+        hint.hidden = false;
+        hint.innerHTML =
+          'Installation pas encore détectée. Attendez quelques secondes et réessayez, ou ' +
+          '<a href="/login?intent=install&amp;redirect=%2Fdashboard">reconnectez-vous via GitHub</a>.';
+      }
+    } catch {
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = 'Erreur réseau — réessayez dans un instant.';
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'J\'ai installé — continuer';
+    }
+  });
 }
 
-// ─── Internal: render consent gate ───────────────────────────────────────────
-
-/**
- * Renders the consent overlay and resolves when the user acknowledges.
- * @param {{ user: { github_id: number, github_login: string }, active_tenant_id: number|null, installations: Array<{ tenant_id: number, account_login: string, account_type: string }> }} me
- * @returns {Promise<void>} resolves on ACK
- */
 function renderConsentGate(me) {
   return new Promise(resolve => {
     document.body.classList.add('gated');
@@ -230,11 +216,8 @@ function renderConsentGate(me) {
 
     const ackBtn = $('consent-ack');
     const logoutBtn = $('consent-logout');
-
-    // F3: focus first interactive element after show
     ackBtn.focus();
 
-    // F3: Tab trap — cycle between logoutBtn and ackBtn only
     el.addEventListener('keydown', e => {
       if (e.key !== 'Tab') return;
       if (e.shiftKey) {
@@ -242,29 +225,29 @@ function renderConsentGate(me) {
           e.preventDefault();
           ackBtn.focus();
         }
-      } else {
-        if (document.activeElement === ackBtn) {
-          e.preventDefault();
-          logoutBtn.focus();
-        }
+      } else if (document.activeElement === ackBtn) {
+        e.preventDefault();
+        logoutBtn.focus();
       }
     });
 
-    ackBtn.addEventListener('click', () => {
-      setConsent(me.user.github_login);
-      el.setAttribute('hidden', '');
-      resolve();
+    ackBtn.addEventListener('click', async () => {
+      ackBtn.disabled = true;
+      try {
+        await api('/api/consent', { method: 'POST' });
+        el.setAttribute('hidden', '');
+        resolve();
+      } catch {
+        ackBtn.disabled = false;
+      }
     });
 
-    // F6: route through api() instead of bare fetch
     logoutBtn.addEventListener('click', async () => {
       await api('/logout', { method: 'POST' }).catch(() => {});
       location.reload();
     });
   });
 }
-
-// ─── Internal: render org picker ─────────────────────────────────────────────
 
 function renderOrgPicker(me) {
   const sel = $('org-picker');
@@ -289,20 +272,15 @@ function renderOrgPicker(me) {
       });
       location.reload();
     } catch {
-      // revert selection to last known active tenant
       if (me.active_tenant_id != null) sel.value = String(me.active_tenant_id);
     }
   });
 }
 
-// ─── Internal: wire user menu (avatar dropdown) ───────────────────────────────
-
 async function wireUserMenu(me) {
   const { wireUserMenu: mount } = await import('./user-menu.js');
   mount(me);
 }
-
-// ─── Internal: escape HTML ────────────────────────────────────────────────────
 
 export function escHtml(str) {
   return String(str)
@@ -313,19 +291,13 @@ export function escHtml(str) {
     .replace(/'/g, '&#x27;');
 }
 
-// ─── requireAuthGate (async orchestrator) ─────────────────────────────────────
+export function isZkAccountKeyEnabled(me) {
+  return me?.user?.zk_account_key_enabled === true;
+}
 
 /**
- * Runs the full auth gate flow.
- *
- * SC1 render-block: callers MUST check the returned view and skip
- * fetch('/api/graph') (and all other /api/* data calls) until this returns
- * 'dashboard'. This is a frontend render-gate, NOT an authz boundary — the
- * server already scopes /api/* to the active session+tenant. The gate here
- * exists so the UI never fires graph data fetches for unauthenticated or
- * unconsented users, which would produce confusing 401/empty-graph errors.
- *
- * @returns {Promise<'landing'|'install'|'consent'|'dashboard'>}
+ * Server-owned onboarding gate.
+ * @returns {Promise<'landing'|'install'|'consent'|'ready'>}
  */
 export async function requireAuthGate() {
   let me;
@@ -339,26 +311,24 @@ export async function requireAuthGate() {
     throw e;
   }
 
-  const consented = hasConsent(me.user.github_login);
-  const view = resolveView(me, consented);
+  me = await migrateLegacyConsent(me);
+  const step = me.onboarding_step ?? 'install';
 
-  if (view === 'install') {
+  if (step === 'install') {
     renderInstallCta(me);
     return 'install';
   }
 
-  if (view === 'consent') {
+  if (step === 'consent') {
     await renderConsentGate(me);
-    // After ACK, remove gate class and wire persistent UI before returning 'dashboard'
     document.body.classList.remove('gated');
     renderOrgPicker(me);
     await wireUserMenu(me);
-    return 'dashboard';
+    return 'ready';
   }
 
-  // view === 'dashboard': already consented, wire persistent UI immediately
   document.body.classList.remove('gated');
   renderOrgPicker(me);
   await wireUserMenu(me);
-  return 'dashboard';
+  return 'ready';
 }

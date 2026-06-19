@@ -1,7 +1,6 @@
 // settings.js — account settings panel
 
 import { api, escHtml } from './auth.js';
-import { githubInstallUrl } from './github-install.js';
 import { getThemePref, setThemePref, applyThemePref } from './theme.js';
 import {
   rewrapAccountKeyBackup,
@@ -43,9 +42,9 @@ export function openSettings(me) {
   const displayName = getDisplayName(login);
   const themePref = getThemePref();
   const installations = me.installations ?? [];
-  const installUrl = githubInstallUrl(
-    me.install_targets?.find((t) => t.type === 'User') ?? undefined,
-  );
+  const personalOpt = (me.install_options ?? []).find(o => o.kind === 'personal');
+  const pickerOpt = (me.install_options ?? []).find(o => o.kind === 'picker');
+  const installUrl = personalOpt?.url ?? pickerOpt?.url ?? 'https://github.com/apps/roxabi-live/installations/new';
 
   gate.innerHTML = `
     <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">

@@ -108,62 +108,6 @@ export function sessionCookieHeaders(rawToken: string): string[] {
   return [sessionCookie(rawToken), expireCookie(LEGACY_SESSION_COOKIE)];
 }
 
-/**
- * 200 HTML shell that sets the session cookie then navigates client-side.
- * Polls /api/me until the cookie is visible before /auth/continue hop.
- */
-export function sessionRedirectHtml(dest: string, rawToken: string): Response {
-  const safeDest = sanitizeAuthRedirect(dest);
-  const continueUrl = `/auth/continue?to=${encodeURIComponent(safeDest)}`;
-  const html = `<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<title>Connexion…</title>
-</head>
-<body>
-<p id="msg">Connexion en cours…</p>
-<script>
-(function (next) {
-  var tries = 0;
-  var max = 40;
-  function go() { location.replace(next); }
-  function poll() {
-    fetch("/api/me", { credentials: "same-origin", cache: "no-store" })
-      .then(function (r) {
-        if (r.ok) return go();
-        if (++tries >= max) {
-          document.getElementById("msg").innerHTML =
-            'Session lente — <a href="' + next + '">continuer</a>';
-          return;
-        }
-        setTimeout(poll, 150);
-      })
-      .catch(function () {
-        if (++tries >= max) {
-          document.getElementById("msg").innerHTML =
-            'Session lente — <a href="' + next + '">continuer</a>';
-          return;
-        }
-        setTimeout(poll, 150);
-      });
-  }
-  setTimeout(poll, 50);
-})(${JSON.stringify(continueUrl)});
-</script>
-<noscript><p><a href="${encodeURI(continueUrl)}">Continuer</a></p></noscript>
-</body>
-</html>`;
-  const headers = new Headers({
-    "Content-Type": "text/html; charset=utf-8",
-    ...AUTH_NO_CACHE,
-  });
-  for (const cookie of sessionCookieHeaders(rawToken)) {
-    headers.append("Set-Cookie", cookie);
-  }
-  return new Response(html, { status: 200, headers });
-}
-
 // ---------------------------------------------------------------------------
 // Token reader
 // ---------------------------------------------------------------------------

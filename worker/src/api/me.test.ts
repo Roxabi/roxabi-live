@@ -222,7 +222,7 @@ describe("meRoute", () => {
     ]);
     const { db } = captureDb((sql) => {
       if (sql.includes("install_targets_json")) {
-        return [{ zk_opt_in: 1, install_targets_json: targetsJson }];
+        return [{ zk_opt_in: 1, install_targets_json: targetsJson, consent_at: null }];
       }
       if (sql.includes("user_installations")) return [];
       return [];
@@ -247,7 +247,7 @@ describe("meRoute", () => {
   it("suppresses install_targets once a tenant is linked", async () => {
     const { db } = captureDb((sql) => {
       if (sql.includes("install_targets_json")) {
-        return [{ zk_opt_in: 1, install_targets_json: "[]" }];
+        return [{ zk_opt_in: 1, install_targets_json: "[]", consent_at: "2026-01-01T00:00:00Z" }];
       }
       if (sql.includes("user_installations")) {
         return [{ tenant_id: 9, account_login: "Roxabi", account_type: "Organization" }];

@@ -283,6 +283,13 @@ describe("tenant_repo_access table", () => {
 // Suite 7 — tenants table
 // ---------------------------------------------------------------------------
 
+describe("users.consent_at column", () => {
+  it("exists after 0020 migration", () => {
+    const cols = getColumnNames(db, "users");
+    expect(cols).toContain("consent_at");
+  });
+});
+
 describe("oauth_exchange table", () => {
   it("has code primary key (0019)", () => {
     expect(getPkColumns(db, "oauth_exchange")).toEqual(["code"]);
