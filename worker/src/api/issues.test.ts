@@ -15,17 +15,19 @@ vi.mock("../auth/repoAccess", () => ({
 
 vi.mock("../auth/session", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../auth/session")>();
+  const injectSession = (async (c, next) => {
+    c.set("session", {
+      userId: 1,
+      tenantId: 1,
+      githubId: 1001,
+      githubLogin: "octocat",
+    });
+    await next();
+  }) as typeof actual.requireSession;
   return {
     ...actual,
-    requireSession: (async (c, next) => {
-      c.set("session", {
-        userId: 1,
-        tenantId: 1,
-        githubId: 1001,
-        githubLogin: "octocat",
-      });
-      await next();
-    }) as typeof actual.requireSession,
+    requireSession: injectSession,
+    requireLinkedTenant: injectSession,
   };
 });
 

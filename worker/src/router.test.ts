@@ -209,6 +209,22 @@ describe("requireSession auth gate", () => {
   // Positive control — valid session cookie must NOT produce 401
   // -------------------------------------------------------------------------
 
+  describe("install-pending session — linked tenant required", () => {
+    it("GET /api/graph returns 401 when session has null tenantId", async () => {
+      const db = makeSessionDb({
+        ...STUB_SESSION,
+        tenantId: null,
+      });
+      const env = makeEnv(db);
+      const res = await app.request(
+        "/api/graph",
+        { headers: { Cookie: `__Host-session=${VALID_RAW_TOKEN}` } },
+        env,
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
   describe("positive control — valid session cookie", () => {
     it("GET /api/issues with valid session does not return 401", async () => {
       // Arrange — DB answers validateSession's query with a valid row

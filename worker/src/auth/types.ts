@@ -6,7 +6,8 @@ import type { Env } from "../types";
 
 export interface SessionContext {
   userId: number;
-  tenantId: number;
+  /** null while the user is signed in but has not linked a GitHub App installation yet */
+  tenantId: number | null;
   githubId: number;
   githubLogin: string;
 }

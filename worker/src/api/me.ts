@@ -8,6 +8,7 @@ import type { AuthEnv } from "../auth/types";
 import { readSessionToken, clearSessionCookie } from "../auth/cookies";
 import { deleteSession } from "../auth/session";
 import { zkAccountKeyEnabled } from "../auth/zk-flags";
+import { parseInstallTargets } from "../auth/github-install";
 
 // ---------------------------------------------------------------------------
 // GET /api/me
@@ -24,9 +25,9 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
   }
 
   const userRow = await c.env.DB
-    .prepare(`SELECT zk_opt_in FROM users WHERE id = ?`)
+    .prepare(`SELECT zk_opt_in, install_targets_json FROM users WHERE id = ?`)
     .bind(s.userId)
-    .first<{ zk_opt_in: number }>();
+    .first<{ zk_opt_in: number; install_targets_json: string | null }>();
 
   const enrolledRow = await c.env.DB
     .prepare(
@@ -43,6 +44,12 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
     .bind(s.userId)
     .all<{ tenant_id: number; account_login: string; account_type: string }>();
 
+  const installations = rows.results;
+  const installTargets =
+    installations.length === 0
+      ? parseInstallTargets(userRow?.install_targets_json)
+      : [];
+
   return c.json({
     user: {
       github_id: s.githubId,
@@ -52,7 +59,9 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
       zk_account_key_enabled: zkAccountKeyEnabled(c.env),
     },
     active_tenant_id: s.tenantId,
-    installations: rows.results,
+    install_pending: s.tenantId == null,
+    install_targets: installTargets,
+    installations,
   });
 }
 
