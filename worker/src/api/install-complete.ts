@@ -14,5 +14,5 @@ import { authRedirect } from "../auth/cookies";
 export async function installCompleteRoute(
   c: Context<{ Bindings: Env }>,
 ): Promise<Response> {
-  return authRedirect("/login?redirect=/dashboard");
+  return authRedirect("/login?redirect=/dashboard?install=1");
 }

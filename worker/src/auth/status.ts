@@ -16,8 +16,22 @@ export async function authStatusRoute(
   const legacy = readNamedCookie(cookieHeader, LEGACY_SESSION_COOKIE);
   const token = readSessionToken(c);
   let sessionValid = false;
+  let tenantId: number | null = null;
+  let installations = 0;
   if (token) {
-    sessionValid = !!(await validateSession(c.env.DB, token));
+    const session = await validateSession(c.env.DB, token);
+    sessionValid = session != null;
+    if (session) {
+      tenantId = session.tenantId;
+      const row = await c.env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM user_installations ui
+         JOIN tenants t ON t.id = ui.tenant_id AND t.deleted_at IS NULL
+         WHERE ui.user_id = ?`,
+      )
+        .bind(session.userId)
+        .first<{ n: number }>();
+      installations = row?.n ?? 0;
+    }
   }
 
   return c.json(
@@ -28,6 +42,8 @@ export async function authStatusRoute(
         [LEGACY_SESSION_COOKIE]: legacy != null,
       },
       session_valid: sessionValid,
+      tenant_id: tenantId,
+      installations,
     },
     200,
     AUTH_NO_CACHE,

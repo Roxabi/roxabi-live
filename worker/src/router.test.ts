@@ -215,7 +215,9 @@ describe("requireSession auth gate", () => {
       const env = makeEnv(db);
       const res = await app.request("/install/complete", {}, env);
       expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe("/login?redirect=/dashboard");
+      expect(res.headers.get("Location")).toBe(
+        "/login?redirect=/dashboard?install=1",
+      );
       expect(res.headers.get("Cache-Control")).toContain("no-store");
       expect(db.prepare).not.toHaveBeenCalled();
     });

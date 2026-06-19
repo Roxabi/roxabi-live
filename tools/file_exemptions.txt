@@ -14,7 +14,7 @@ worker/src/webhook/mutations.ts  # 339 lines — #180 D1 write helpers for webho
 worker/src/sync/sync.test.ts  # 1729 lines — #180 integration harness for runSync; #216 structure-only
 worker/src/api/zk-key-backup.test.ts  # 506 lines — #216 backup API security + CAS/reauth tests; fp enforcement + atomic UPSERT tests
 worker/src/webhook/handlers.test.ts  # 945 lines — #180 webhook handler contract tests
-worker/src/auth/oauth.test.ts  # 1065 lines — #180 OAuth + install-pending; auth/exchange cookie hop + install=1 short-circuit
+worker/src/auth/oauth.test.ts  # 1067 lines — #180 OAuth + install-pending; exchange inline dashboard + install linked-count gate
 worker/src/api/issues.test.ts  # 710 lines — #180 tenant-scoped issues API tests; #216 zk redaction
 worker/src/api/graph.test.ts  # 745 lines — #180 tenant-scoped graph + #142 S2 zk + closed_under_open_epic
 worker/src/migrations.test.ts  # 317 lines — #216 zk_key_backups + zk_reauth_proofs + oauth_exchange schema tests
