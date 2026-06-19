@@ -56,7 +56,7 @@ export function serveLoginPrompt(
       La connexion est la première étape — l'installation de l'app et la
       synchronisation suivront ensuite.
     </p>
-    <a class="auth-login-btn login-prompt-github" href="${encodeURI(continueUrl)}">
+    <a class="auth-login-btn login-prompt-github" href="${continueUrl}">
       Continuer avec GitHub
     </a>
     <p class="login-prompt-foot"><a href="/">Retour à l'accueil</a></p>

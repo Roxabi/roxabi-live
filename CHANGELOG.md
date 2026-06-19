@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.18.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.18.0...roxabi-live/v0.18.1) (2026-06-19)
+
+
+### Bug Fixes
+
+* **auth:** fix login prompt double-encoded `redirect` (`%252F`) — OAuth link now uses single `%2F`
+* **auth:** `/dashboard/?code=` forwards to `/auth/exchange` (or `/oauth/callback` with `state`) instead of looping through `/login`
+* **auth:** strip `code`/`state` from `/login?redirect=` targets; decode once-encoded `%2F` paths in `sanitizeAuthRedirect`
+
+
 ## [0.18.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.9...roxabi-live/v0.18.0) (2026-06-19)
 
 
