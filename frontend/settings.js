@@ -8,7 +8,8 @@ import {
   unwrapAccountKey,
   saveDeviceSession,
 } from './zk-crypto.js';
-import { updateKeyBackup, setZkSession } from './zk-enroll.js';
+import { updateKeyBackup } from './zk-enroll.js';
+import { setZkSession } from './zk-session.js';
 import { getZkReauthProof, zkReauthLoginUrl } from './zk-github.js';
 import { clearLocalZkState } from './zk-reset.js';
 
