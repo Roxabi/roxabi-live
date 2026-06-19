@@ -2,6 +2,7 @@
 // Exports: AuthError, api, hasConsent, setConsent, resolveView, requireAuthGate, getSessionProfile
 
 import { githubInstallUrl, partitionInstallTargets } from './github-install.js';
+import { renderOnboardingSteps } from './onboarding.js';
 
 const $ = id => document.getElementById(id);
 
@@ -115,7 +116,7 @@ function renderInstallCta(me) {
         >
           <span class="install-option-title">Organisation</span>
           <span class="install-option-name">${escHtml(org.login)}</span>
-          <span class="install-option-hint">Install on this org — choose all repos or selected repos on GitHub</span>
+          <span class="install-option-hint">Installer sur cette org — tous les dépôts ou une sélection sur GitHub</span>
         </a>
       `).join('')
     : `
@@ -125,18 +126,19 @@ function renderInstallCta(me) {
           role="listitem"
         >
           <span class="install-option-title">Organisation</span>
-          <span class="install-option-name">Pick on GitHub</span>
-          <span class="install-option-hint">GitHub will show every org where you can install or request access</span>
+          <span class="install-option-name">Choisir sur GitHub</span>
+          <span class="install-option-hint">GitHub liste les organisations où vous pouvez installer l'app</span>
         </a>
       `;
 
   el.innerHTML = `
+    ${renderOnboardingSteps('install')}
     <div class="install-panel">
-      <h2>Install Roxabi Live on GitHub</h2>
+      <h2>Installer Roxabi Live sur GitHub</h2>
       <p class="install-lead">
-        Signed in as <strong>${login}</strong>. Choose where to install the app.
-        GitHub handles permissions and repository access — you can install on your
-        personal account, an organisation, or limit access to specific repositories.
+        Connecté en tant que <strong>${login}</strong> (étape&nbsp;1 terminée).
+        Choisissez où installer l'application&nbsp;: compte personnel, organisation,
+        ou dépôts sélectionnés uniquement.
       </p>
       <div class="install-options" role="list">
         <a
@@ -144,27 +146,27 @@ function renderInstallCta(me) {
           href="${escHtml(personalUrl)}"
           role="listitem"
         >
-          <span class="install-option-title">Personal account</span>
+          <span class="install-option-title">Compte personnel</span>
           <span class="install-option-name">${login}</span>
-          <span class="install-option-hint">Your repos only — good for solo projects</span>
+          <span class="install-option-hint">Vos dépôts uniquement — idéal en solo</span>
         </a>
         ${orgCards}
         <div class="install-option install-option-info" role="listitem">
-          <span class="install-option-title">Specific repositories only</span>
+          <span class="install-option-title">Dépôts sélectionnés</span>
           <span class="install-option-hint">
-            Pick an account above, then on GitHub choose <strong>Only select repositories</strong>
-            and select the repos you want Roxabi Live to read.
+            Choisissez un compte ci-dessus, puis sur GitHub&nbsp;:
+            <strong>Only select repositories</strong> et sélectionnez les dépôts à synchroniser.
           </span>
         </div>
       </div>
       <p class="install-note">
-        You'll be taken to GitHub to choose repositories, then brought back here
-        automatically. If GitHub doesn't return you, come back and click
-        <strong>Continue</strong>.
+        GitHub vous demandera quels dépôts autoriser, puis vous ramènera ici.
+        Si la redirection échoue, revenez et cliquez
+        <strong>J'ai installé — continuer</strong>.
       </p>
       <div class="install-actions">
-        <button type="button" class="consent-btn-secondary" id="install-logout">Sign out</button>
-        <a href="${escHtml(refreshInstallLoginUrl(DASHBOARD_PATH))}" class="auth-login-btn" id="install-continue">I've installed — continue</a>
+        <button type="button" class="consent-btn-secondary" id="install-logout">Se déconnecter</button>
+        <a href="${escHtml(refreshInstallLoginUrl(DASHBOARD_PATH))}" class="auth-login-btn" id="install-continue">J'ai installé — continuer</a>
       </div>
     </div>
   `;
@@ -197,29 +199,30 @@ function renderConsentGate(me) {
     document.body.classList.add('gated');
     const el = $('consent-gate');
     el.innerHTML = `
+      ${renderOnboardingSteps('consent')}
       <div class="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="consent-title">
-        <h2 id="consent-title">Operator data access</h2>
+        <h2 id="consent-title">Accès aux données</h2>
         <p>
-          Roxabi Live reads your GitHub organisation data on your behalf to build
-          the dependency graph. The following access is required:
+          L'application est installée. Avant la première synchronisation, confirmez
+          que Roxabi Live peut lire les métadonnées GitHub suivantes&nbsp;:
         </p>
         <div class="consent-scopes">
-          <div class="consent-scope-item">Read issues, labels, milestones, and sub-issue relationships</div>
-          <div class="consent-scope-item">Read repository metadata (name, visibility, archived status)</div>
-          <div class="consent-scope-item">Data is stored in Cloudflare D1 and scoped to your organisation</div>
+          <div class="consent-scope-item">Issues, labels, milestones et relations parent/enfant</div>
+          <div class="consent-scope-item">Métadonnées des dépôts (nom, visibilité, archivage)</div>
+          <div class="consent-scope-item">Données stockées dans Cloudflare D1, limitées à votre organisation</div>
         </div>
         <p>
-          Signed in as <strong>${escHtml(me.user.github_login)}</strong>.
-          You can revoke access at any time from your
-          <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">GitHub App settings</a>.
+          Connecté en tant que <strong>${escHtml(me.user.github_login)}</strong>.
+          Vous pouvez révoquer l'accès depuis vos
+          <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">paramètres GitHub</a>.
         </p>
         <p class="consent-warning">
-          <strong>Issue titles and bodies are encrypted client-side before storage.</strong>
-          Graph structure (state, blockers, labels) remains visible to the operator.
+          <strong>Les titres et corps d'issues sont chiffrés côté client avant stockage.</strong>
+          La structure du graphe (état, blockers, labels) reste lisible par l'opérateur.
         </p>
         <div class="consent-actions">
-          <button class="consent-btn-secondary" id="consent-logout">Sign out</button>
-          <button class="consent-btn-primary" id="consent-ack">I understand — continue</button>
+          <button class="consent-btn-secondary" id="consent-logout">Se déconnecter</button>
+          <button class="consent-btn-primary" id="consent-ack">J'ai compris — lancer la synchronisation</button>
         </div>
       </div>
     `;

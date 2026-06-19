@@ -21,6 +21,7 @@ import { validateSession } from "./session";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
 import { createOAuthExchange } from "./oauthExchange";
+import { serveLoginPrompt } from "./login-prompt";
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -91,6 +92,15 @@ export async function loginRoute(
         return authRedirect(cleanRedirect);
       }
     }
+  }
+
+  const autoStart =
+    c.req.query("go") === "1" ||
+    c.req.query("install") === "1" ||
+    c.req.query("reauth") === "1" ||
+    c.req.query("zk") === "1";
+  if (!autoStart) {
+    return serveLoginPrompt(c, cleanRedirect);
   }
 
   // 16 random bytes → 32 hex chars
