@@ -20,6 +20,8 @@ import {
 } from './zk-sync.js';
 import { requireZkEnrollmentGate } from './zk-enroll.js';
 import { waitForInitialSync } from './initial-sync.js';
+import { applyThemePref, toggleThemeQuick, wireThemeMediaListener } from './theme.js';
+import { resumeSettingsFromUrl } from './settings.js';
 
 const $ = id => document.getElementById(id);
 
@@ -382,6 +384,7 @@ async function init() {
     reconcileZkResetPendingAfterReauth();
     const me = await getSessionProfile();
     sessionGithubLogin = me.user?.github_login ?? '';
+    resumeSettingsFromUrl(me);
     const zkAccountKeyEnabled = isZkAccountKeyEnabled(me);
     sessionZkAccountKeyEnabled = zkAccountKeyEnabled;
 
@@ -427,20 +430,8 @@ async function init() {
 }
 
 // ─── Theme ────────────────────────────────────────────────────────────────
-const themeBtn = $('theme-btn');
-const htmlEl   = document.documentElement;
-let theme = localStorage.getItem('v6:theme')
-  || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-
-function applyTheme(t) {
-  htmlEl.setAttribute('data-theme', t);
-  themeBtn.textContent = t === 'dark' ? '🌙' : '☀️';
-  localStorage.setItem('v6:theme', t);
-}
-themeBtn.addEventListener('click', () => {
-  theme = theme === 'dark' ? 'light' : 'dark';
-  applyTheme(theme);
-});
-applyTheme(theme);
+wireThemeMediaListener();
+$('theme-btn')?.addEventListener('click', () => toggleThemeQuick());
+applyThemePref();
 
 init();

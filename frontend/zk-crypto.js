@@ -10,6 +10,8 @@ const DB_NAME = 'roxabi-zk-v1';
 const STORE_NAME = 'keypairs';
 const META_DB_NAME = 'roxabi-zk-v2';
 const META_STORE_NAME = 'account_meta';
+const DEVICE_STORE_NAME = 'device_session';
+const META_DB_VERSION = 2;
 const HKDF_INFO = new TextEncoder().encode('roxabi-zk-ecies-v1');
 const HKDF_SALT = new Uint8Array(32);
 
@@ -104,9 +106,15 @@ async function idbDelete(login) {
 
 function openMetaDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(META_DB_NAME, 1);
+    const req = indexedDB.open(META_DB_NAME, META_DB_VERSION);
     req.onupgradeneeded = () => {
-      req.result.createObjectStore(META_STORE_NAME);
+      const db = req.result;
+      if (!db.objectStoreNames.contains(META_STORE_NAME)) {
+        db.createObjectStore(META_STORE_NAME);
+      }
+      if (!db.objectStoreNames.contains(DEVICE_STORE_NAME)) {
+        db.createObjectStore(DEVICE_STORE_NAME);
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -170,6 +178,55 @@ export async function getAccountMeta(githubLogin) {
 /** Remove enrollment metadata after server-side ZK reset (#216). */
 export async function deleteAccountMeta(githubLogin) {
   await metaIdbDelete(githubLogin);
+}
+
+async function deviceIdbGet(login) {
+  const db = await openMetaDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DEVICE_STORE_NAME, 'readonly');
+    const req = tx.objectStore(DEVICE_STORE_NAME).get(login);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function deviceIdbPut(login, record) {
+  const db = await openMetaDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DEVICE_STORE_NAME, 'readwrite');
+    tx.objectStore(DEVICE_STORE_NAME).put(record, login);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function deviceIdbDelete(login) {
+  const db = await openMetaDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DEVICE_STORE_NAME, 'readwrite');
+    tx.objectStore(DEVICE_STORE_NAME).delete(login);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Persist unlocked accountKey on this device (IndexedDB). Passphrase stays out of
+ * storage — only needed on new devices or after explicit Lock / reset.
+ * @param {CryptoKey} accountKey non-extractable session key
+ * @param {string} keyFp server backup fingerprint
+ */
+export async function saveDeviceSession(githubLogin, accountKey, keyFp) {
+  await deviceIdbPut(githubLogin, { accountKey, key_fp: keyFp });
+}
+
+/** @returns {Promise<{ accountKey: CryptoKey, key_fp: string }|null>} */
+export async function loadDeviceSession(githubLogin) {
+  return deviceIdbGet(githubLogin);
+}
+
+export async function clearDeviceSession(githubLogin) {
+  await deviceIdbDelete(githubLogin);
 }
 
 async function generateKeyPair() {
@@ -375,14 +432,11 @@ export async function wrapAccountKey(passphrase, accountKey) {
  * @param {{ kdf_params: string|object, wrap_iv: string, wrapped_key: string }} backup
  * @returns {Promise<CryptoKey>} non-extractable session accountKey
  */
-export async function unwrapAccountKey(passphrase, backup) {
+async function decryptWrappedAccountKeyRaw(passphrase, backup) {
   const blob =
     typeof backup.kdf_params === 'string'
       ? JSON.parse(backup.kdf_params)
       : backup.kdf_params;
-  // Pin KDF cost client-side: never trust server-supplied m/t/p (a malicious or
-  // compromised operator could return weakened params to make offline
-  // brute-force of the passphrase cheap). Only the salt comes from the blob.
   if (
     blob.m !== ARGON2_PARAMS.m ||
     blob.t !== ARGON2_PARAMS.t ||
@@ -392,11 +446,15 @@ export async function unwrapAccountKey(passphrase, backup) {
   }
   const salt = hexDecode(blob.salt);
   const wrappingKey = await deriveWrappingKey(passphrase, salt, ARGON2_PARAMS);
-  const rawAccountKey = await crypto.subtle.decrypt(
+  return crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: b64Decode(backup.wrap_iv) },
     wrappingKey,
     b64Decode(backup.wrapped_key),
   );
+}
+
+export async function unwrapAccountKey(passphrase, backup) {
+  const rawAccountKey = await decryptWrappedAccountKeyRaw(passphrase, backup);
   return crypto.subtle.importKey(
     'raw',
     rawAccountKey,
@@ -404,6 +462,19 @@ export async function unwrapAccountKey(passphrase, backup) {
     false,
     ['encrypt', 'decrypt'],
   );
+}
+
+/** Re-wrap an existing backup with a new passphrase (rotation). */
+export async function rewrapAccountKeyBackup(currentPassphrase, newPassphrase, backup) {
+  const rawAccountKey = await decryptWrappedAccountKeyRaw(currentPassphrase, backup);
+  const extractable = await crypto.subtle.importKey(
+    'raw',
+    rawAccountKey,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt'],
+  );
+  return wrapAccountKey(newPassphrase, extractable);
 }
 
 /** v2 envelope encrypt `{ title, body? }` with accountKey. */

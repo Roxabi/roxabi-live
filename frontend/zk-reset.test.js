@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const apiMock = vi.fn();
 const deleteZkKeyPairMock = vi.fn();
 const deleteAccountMetaMock = vi.fn();
+const clearDeviceSessionMock = vi.fn();
 const clearZkSessionMock = vi.fn();
 const getZkReauthProofMock = vi.fn();
 const clearZkReauthProofMock = vi.fn();
@@ -11,6 +12,7 @@ vi.mock('./auth.js', () => ({ api: (...args) => apiMock(...args) }));
 vi.mock('./zk-crypto.js', () => ({
   deleteZkKeyPair: (...args) => deleteZkKeyPairMock(...args),
   deleteAccountMeta: (...args) => deleteAccountMetaMock(...args),
+  clearDeviceSession: (...args) => clearDeviceSessionMock(...args),
 }));
 vi.mock('./zk-session.js', () => ({
   clearZkSession: () => clearZkSessionMock(),
@@ -57,6 +59,7 @@ describe('zk-reset', () => {
     expect(clearZkSessionMock).toHaveBeenCalled();
     expect(deleteZkKeyPairMock).toHaveBeenCalledWith('alice');
     expect(deleteAccountMetaMock).toHaveBeenCalledWith('alice');
+    expect(clearDeviceSessionMock).toHaveBeenCalledWith('alice');
     expect(clearZkReauthProofMock).toHaveBeenCalled();
   });
 

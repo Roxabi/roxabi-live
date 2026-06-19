@@ -9,6 +9,9 @@ import {
   hasZkKeyPair,
   saveAccountMeta,
   parseEnvelopeVersion,
+  saveDeviceSession,
+  loadDeviceSession,
+  clearDeviceSession,
 } from './zk-crypto.js';
 import {
   isZkUnlocked,
@@ -43,9 +46,31 @@ export { isZkUnlocked, getSessionAccountKey, getSessionKeyFp } from './zk-sessio
 export function lockZkSession() {
   if (!isZkUnlocked()) return;
   clearZkSession();
+  if (gateGithubLogin) {
+    clearDeviceSession(gateGithubLogin).catch(() => {});
+  }
   zkLog('zk.lock.explicit');
   updateLockButton();
   showUnlockGate().catch(() => {});
+}
+
+/**
+ * Restore unlocked session from this device's IndexedDB when key_fp matches
+ * the server backup (same browser, reload / new tab — no passphrase re-entry).
+ */
+export async function tryRestoreDeviceZkSession(githubLogin) {
+  if (isZkUnlocked()) return true;
+  try {
+    const backup = await fetchKeyBackup();
+    const local = await loadDeviceSession(githubLogin);
+    if (!local?.accountKey || local.key_fp !== backup.key_fp) return false;
+    setZkSession(local.accountKey, local.key_fp);
+    zkLog('zk.device.restore', { key_fp: local.key_fp });
+    updateLockButton();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function fetchKeyBackup() {
@@ -115,6 +140,7 @@ export async function enrollAccountKey(passphrase, githubLogin) {
   );
 
   setZkSession(session, wrapped.key_fp);
+  await saveDeviceSession(githubLogin, session, wrapped.key_fp);
   zkLog('zk.enroll.success', {
     key_fp: wrapped.key_fp,
     kdf_duration_ms: Math.round(performance.now() - t0),
@@ -130,6 +156,7 @@ export async function unlockAccountKey(passphrase) {
     const accountKey = await unwrapAccountKey(passphrase, backup);
     setZkSession(accountKey, backup.key_fp);
     if (gateGithubLogin) {
+      await saveDeviceSession(gateGithubLogin, accountKey, backup.key_fp);
       const payloads = await fetchPayloadRows();
       if (payloadsHaveV1(payloads) && (await hasZkKeyPair(gateGithubLogin))) {
         await migrateV1PayloadsToAccountKey(
@@ -211,8 +238,8 @@ export function showEnrollGate(githubLogin) {
       `
         <p>
           Choose a passphrase to protect your encryption key. It never leaves this browser;
-          only a wrapped backup is stored on the server. You will need this passphrase on
-          every new device and after locking.
+          only a wrapped backup is stored on the server. This device remembers your key
+          after setup — you will need the passphrase on other devices or after Lock.
         </p>
         <form class="zk-form" id="zk-enroll-form">
           <label class="zk-field">
@@ -381,8 +408,12 @@ export async function requireZkEnrollmentGate(me, githubLogin) {
   });
   setZkPageRestoreHandler(() => {
     if (me.user?.zk_enrolled === true && !isZkUnlocked()) {
-      updateLockButton();
-      showUnlockGate().catch(() => {});
+      tryRestoreDeviceZkSession(githubLogin).then((restored) => {
+        if (!restored) {
+          updateLockButton();
+          showUnlockGate().catch(() => {});
+        }
+      });
     }
   });
 
@@ -401,7 +432,9 @@ export async function requireZkEnrollmentGate(me, githubLogin) {
   }
 
   if (!isZkUnlocked()) {
-    await showUnlockGate();
+    if (!(await tryRestoreDeviceZkSession(githubLogin))) {
+      await showUnlockGate();
+    }
     return true;
   }
 
