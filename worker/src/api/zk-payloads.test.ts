@@ -76,7 +76,7 @@ describe("putZkPayloadsRoute", () => {
         body: JSON.stringify({
           payloads: [{
             issue_key: "Roxabi/live#42",
-            pubkey_fp: "deadbeef",
+            pubkey_fp: "deadbeef1234567890abcdef12345678",
             encrypted_payload: "envelope-json",
           }],
         }),
@@ -101,7 +101,7 @@ describe("putZkPayloadsRoute", () => {
         body: JSON.stringify({
           payloads: [{
             issue_key: "Roxabi/live#7",
-            key_fp: "cafebabe12345678",
+            key_fp: "cafebabe1234567890abcdef12345678",
             encrypted_payload: "v2-envelope",
           }],
         }),
@@ -110,8 +110,8 @@ describe("putZkPayloadsRoute", () => {
     );
     expect(res.status).toBe(200);
     const upsert = stmts().find((s) => s.sql.includes("INSERT INTO zk_payloads"));
-    expect(upsert!.args[2]).toBe("cafebabe12345678");
-    expect(upsert!.args[3]).toBe("cafebabe12345678");
+    expect(upsert!.args[2]).toBe("cafebabe1234567890abcdef12345678");
+    expect(upsert!.args[3]).toBe("cafebabe1234567890abcdef12345678");
   });
 
   it("scrubs plaintext titles from issues.payload after upsert", async () => {
@@ -124,7 +124,7 @@ describe("putZkPayloadsRoute", () => {
         body: JSON.stringify({
           payloads: [{
             issue_key: "Roxabi/live#99",
-            pubkey_fp: "deadbeef",
+            pubkey_fp: "deadbeef1234567890abcdef12345678",
             encrypted_payload: "envelope-json",
           }],
         }),

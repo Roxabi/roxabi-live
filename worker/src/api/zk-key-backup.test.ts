@@ -20,7 +20,7 @@ const STUB_SESSION: SessionContext = {
 };
 
 const VALID_BODY = {
-  key_fp: "deadbeef12345678",
+  key_fp: "deadbeef1234567890abcdef12345678",
   kdf_params: JSON.stringify({ m: 65536, t: 3, p: 1 }),
   wrap_iv: "iv-b64",
   wrapped_key: "wrapped-b64",
@@ -103,6 +103,39 @@ describe("putZkKeyBackupRoute", () => {
       makeEnv(db, { ZK_ACCOUNT_KEY: "0" }),
     );
     expect(res.status).toBe(403);
+  });
+
+  it("accepts a 32-char hex key_fp", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("INSERT INTO zk_key_backups")) return [{ user_id: 7 }];
+      return [];
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(VALID_BODY),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects an 8-char key_fp (too short)", async () => {
+    const { db } = captureDb(() => []);
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...VALID_BODY, key_fp: "abcd1234" }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("invalid key_fp");
   });
 
   it("rejects weak kdf_params", async () => {
@@ -358,7 +391,7 @@ describe("putZkKeyBackupRoute", () => {
 
   it("rotates key_fp when rotation=true and reauth valid", async () => {
     const proof = "0123456789abcdef0123456789abcdef";
-    const newFp = "cafebabe12345678";
+    const newFp = "cafebabe1234567890abcdef12345678";
     const captured: ReturnType<typeof makeFakeStmt>[] = [];
     const db = makeFakeDb((sql, args) => {
       let rows: Record<string, unknown>[] = [];
