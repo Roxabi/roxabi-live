@@ -1,7 +1,7 @@
 // zk-reset.js — lost-passphrase recovery: wipe server + local ZK state (#216)
 
 import { api } from './auth.js';
-import { deleteAccountMeta, deleteZkKeyPair } from './zk-crypto.js';
+import { deleteAccountMeta, deleteZkKeyPair, clearDeviceSession } from './zk-crypto.js';
 import { clearZkSession } from './zk-session.js';
 import {
   getZkReauthProof,
@@ -46,6 +46,12 @@ export async function clearLocalZkState(githubLogin) {
   } catch (e) {
     cleanupOk = false;
     console.warn('[zk] deleteAccountMeta failed — clear site data manually', e);
+  }
+  try {
+    await clearDeviceSession(githubLogin);
+  } catch (e) {
+    cleanupOk = false;
+    console.warn('[zk] clearDeviceSession failed — clear site data manually', e);
   }
   return cleanupOk;
 }

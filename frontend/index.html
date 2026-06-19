@@ -25,7 +25,15 @@
       </div>
       <select id="org-picker" class="org-picker" aria-label="Active organisation" hidden></select>
       <button id="zk-lock-btn" class="theme-btn" type="button" hidden title="Lock encryption">Lock</button>
-      <button id="logout-btn" class="theme-btn" type="button" hidden>Sign out</button>
+      <div id="user-menu-wrap" class="user-menu-wrap" hidden>
+        <button id="user-menu-btn" class="user-avatar-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Account menu">
+          <img id="user-menu-avatar" class="user-avatar-img" alt="" width="28" height="28" />
+        </button>
+        <div id="user-menu-panel" class="user-menu-panel" role="menu" hidden>
+          <button type="button" class="user-menu-item" id="user-menu-settings" role="menuitem">Settings</button>
+          <button type="button" class="user-menu-item user-menu-item-danger" id="user-menu-signout" role="menuitem">Sign out</button>
+        </div>
+      </div>
       <button id="theme-btn" class="theme-btn" type="button" title="Toggle theme" aria-label="Toggle theme">🌙</button>
     </div>
   </header>
@@ -99,7 +107,6 @@
       <div class="segs" id="graph-edge-segs" role="group" aria-label="Parent visibility"></div>
     </span>
   </div>
-  <div id="operator-notice" class="operator-notice" hidden></div>
   <div id="zk-migration-notice" class="zk-migration-notice" hidden></div>
 </div>
 
@@ -119,6 +126,7 @@
 <div id="consent-gate" class="consent-gate" hidden></div>
 <div id="zk-gate" class="zk-gate" hidden></div>
 <div id="initial-sync-gate" class="initial-sync-gate" hidden></div>
+<div id="settings-gate" class="settings-gate" hidden></div>
 
 <script type="module" src="state.js"></script>
 <script type="module" src="pivot.js"></script>

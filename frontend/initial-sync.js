@@ -9,7 +9,8 @@ const MAX_WAIT_MS = 180_000;
 
 /**
  * Poll /api/sync/status until the bootstrap reconcile finishes or times out.
- * Shows a full-screen overlay while issue_count === 0 on a fresh install.
+ * Keeps the overlay until sync_running clears — not only while issue_count === 0
+ * (the first issues can land while the full reconcile is still running).
  */
 export async function waitForInitialSync() {
   const gate = $('initial-sync-gate');
@@ -17,16 +18,18 @@ export async function waitForInitialSync() {
 
   const started = Date.now();
   let status = await fetchStatus();
-  if (!status?.initial_sync) return;
+  if (!status?.initial_sync && !status?.sync_running) return;
 
   showOverlay(gate, status.sync_running);
 
-  while (status.initial_sync && status.issue_count === 0) {
+  while (status.sync_running || status.initial_sync) {
     if (Date.now() - started > MAX_WAIT_MS) {
       setOverlayMessage(
         gate,
         'Synchronisation terminée',
-        'Aucun issue trouvé pour les dépôts accessibles. Vérifie les repos sélectionnés sur GitHub.',
+        status.issue_count > 0
+          ? 'Import partiel — actualise la page dans quelques instants si des issues manquent.'
+          : 'Aucun issue trouvé pour les dépôts accessibles. Vérifie les repos sélectionnés sur GitHub.',
       );
       await sleep(2200);
       break;
@@ -40,7 +43,7 @@ export async function waitForInitialSync() {
         'Première synchronisation en cours',
         'Import des issues, labels et dépendances depuis GitHub…',
       );
-    } else {
+    } else if (status.initial_sync) {
       setOverlayMessage(
         gate,
         'Préparation de la synchronisation',

@@ -284,39 +284,11 @@ function renderOrgPicker(me) {
   });
 }
 
-// ─── Internal: render operator notice ────────────────────────────────────────
+// ─── Internal: wire user menu (avatar dropdown) ───────────────────────────────
 
-function renderOperatorNotice(_me) {
-  const el = $('operator-notice');
-  el.innerHTML = `
-    <div class="operator-notice-main">
-      <strong>Private mode is always on.</strong>
-      Issue titles and bodies are encrypted in your browser before they are stored.
-      Graph structure (state, blockers, milestones) stays visible to the operator.
-      <a href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">Manage app access</a>
-    </div>
-    <p class="zk-opt-in-hint">
-      <a href="/login?zk=1" id="zk-github-link">Link GitHub</a>
-      to sync issue bodies on this device (token is kept in this tab only).
-      When passphrase backup is enabled, unlock first to seal or decrypt content.
-    </p>
-    <p class="zk-opt-in-hint">
-      Each teammate encrypts their own view of issue titles.
-      You will see <strong>(sealed)</strong> on issues another teammate sealed until you link GitHub and sync.
-    </p>
-  `;
-  el.removeAttribute('hidden');
-}
-
-// ─── Internal: wire logout ────────────────────────────────────────────────────
-
-function wireLogout() {
-  const btn = $('logout-btn');
-  btn.removeAttribute('hidden');
-  btn.addEventListener('click', async () => {
-    await api('/logout', { method: 'POST' }).catch(() => {});
-    location.reload();
-  });
+async function wireUserMenu(me) {
+  const { wireUserMenu: mount } = await import('./user-menu.js');
+  mount(me);
 }
 
 // ─── Internal: escape HTML ────────────────────────────────────────────────────
@@ -369,15 +341,13 @@ export async function requireAuthGate() {
     // After ACK, remove gate class and wire persistent UI before returning 'dashboard'
     document.body.classList.remove('gated');
     renderOrgPicker(me);
-    renderOperatorNotice(me);
-    wireLogout();
+    await wireUserMenu(me);
     return 'dashboard';
   }
 
   // view === 'dashboard': already consented, wire persistent UI immediately
   document.body.classList.remove('gated');
   renderOrgPicker(me);
-  renderOperatorNotice(me);
-  wireLogout();
+  await wireUserMenu(me);
   return 'dashboard';
 }
