@@ -478,3 +478,60 @@ describe("putZkKeyBackupRoute", () => {
     expect(body.error).toBe("reauth_required");
   });
 });
+
+describe("recordBackupPutSuccess — atomic UPSERT", () => {
+  it("emits a single sync_control INSERT with ON CONFLICT on successful enroll", async () => {
+    const { db, stmts } = captureDb((sql) => {
+      if (sql.includes("zk_key_backups") && sql.includes("SELECT")) return [];
+      if (sql.includes("INSERT INTO zk_key_backups")) return [{ user_id: 7 }];
+      return [];
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(VALID_BODY),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(200);
+
+    const syncInserts = stmts().filter(
+      (s) => s.sql.includes("sync_control") && s.sql.includes("INSERT"),
+    );
+    expect(syncInserts).toHaveLength(1);
+    expect(syncInserts[0].sql).toMatch(/ON CONFLICT/i);
+    expect(syncInserts[0].sql).toMatch(/json_extract/i);
+    expect(syncInserts[0].sql).toMatch(/CAST/i);
+    expect(syncInserts[0].sql).toMatch(/\+ 1/);
+    // Must NOT contain a pre-SELECT for the increment
+    const syncSelects = stmts().filter(
+      (s) => s.sql.includes("sync_control") && s.sql.includes("SELECT"),
+    );
+    // Only the rate-limit check SELECT is allowed (isBackupPutRateLimited); no second SELECT for increment
+    expect(syncSelects.length).toBeLessThanOrEqual(1);
+  });
+
+  it("binds current hour key in the UPSERT", async () => {
+    const { db, stmts } = captureDb((sql) => {
+      if (sql.includes("zk_key_backups") && sql.includes("SELECT")) return [];
+      if (sql.includes("INSERT INTO zk_key_backups")) return [{ user_id: 7 }];
+      return [];
+    });
+    await makeApp(db).request(
+      "/api/zk/key-backup",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(VALID_BODY),
+      },
+      makeEnv(db),
+    );
+    const before = new Date().toISOString().slice(0, 13);
+    const upsert = stmts().find(
+      (s) => s.sql.includes("sync_control") && s.sql.includes("INSERT"),
+    );
+    expect(upsert?.args.some((a) => String(a).startsWith(before.slice(0, 10)))).toBe(true);
+  });
+});

@@ -13,55 +13,59 @@ import { writeZkAudit } from "../observability/zk-events";
 const REAUTH_PROOF_RE = /^[0-9a-f]{32}$/;
 const MAX_RESET_PER_HOUR = 3;
 
-async function readResetCount(
-  db: D1Database,
-  userId: number,
-): Promise<{ hourKey: string; count: number }> {
-  const hourKey = new Date().toISOString().slice(0, 13);
-  const rowKey = `zk_reset:${userId}`;
-  const row = await db
-    .prepare(`SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?`)
-    .bind(rowKey)
-    .first<{ value: string }>();
+function resetHourKey(): string {
+  return new Date().toISOString().slice(0, 13);
+}
 
-  let count = 0;
-  let storedHour = hourKey;
-  if (row?.value) {
-    try {
-      const parsed = JSON.parse(row.value) as { hour?: string; count?: number };
-      storedHour = parsed.hour ?? hourKey;
-      count = typeof parsed.count === "number" ? parsed.count : 0;
-    } catch {
-      count = 0;
-    }
+function parseResetCount(value: string | null | undefined, hourKey: string): number {
+  if (!value) return 0;
+  try {
+    const parsed = JSON.parse(value) as { hour?: string; count?: number };
+    if (parsed.hour !== hourKey) return 0;
+    return typeof parsed.count === "number" ? parsed.count : 0;
+  } catch {
+    return 0;
   }
-  if (storedHour !== hourKey) count = 0;
-  return { hourKey, count };
 }
 
 async function isResetRateLimited(
   db: D1Database,
   userId: number,
 ): Promise<boolean> {
-  const { count } = await readResetCount(db, userId);
-  return count >= MAX_RESET_PER_HOUR;
+  const hourKey = resetHourKey();
+  const rowKey = `zk_reset:${userId}`;
+  const row = await db
+    .prepare(`SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?`)
+    .bind(rowKey)
+    .first<{ value: string }>();
+  return parseResetCount(row?.value, hourKey) >= MAX_RESET_PER_HOUR;
 }
 
+/**
+ * Atomically increment the reset counter for the current hour.
+ * A single INSERT … ON CONFLICT DO UPDATE performs the read-modify-write in
+ * one SQL statement, preventing lost increments under concurrent isolates.
+ */
 async function recordResetSuccess(
   db: D1Database,
   userId: number,
 ): Promise<void> {
-  const { hourKey, count } = await readResetCount(db, userId);
+  const hourKey = resetHourKey();
   const rowKey = `zk_reset:${userId}`;
   await db
     .prepare(
       `INSERT INTO sync_control (tenant_id, key, value, updated_at)
-       VALUES (0, ?, ?, datetime('now'))
+       VALUES (0, ?, json_object('hour', ?, 'count', 1), datetime('now'))
        ON CONFLICT(tenant_id, key) DO UPDATE SET
-         value = excluded.value,
+         value = CASE
+           WHEN json_extract(value, '$.hour') = ?
+           THEN json_object('hour', ?,
+                  'count', CAST(json_extract(value, '$.count') AS INTEGER) + 1)
+           ELSE json_object('hour', ?, 'count', 1)
+         END,
          updated_at = datetime('now')`,
     )
-    .bind(rowKey, JSON.stringify({ hour: hourKey, count: count + 1 }))
+    .bind(rowKey, hourKey, hourKey, hourKey, hourKey)
     .run();
 }
 
