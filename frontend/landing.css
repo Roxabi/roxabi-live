@@ -40,10 +40,16 @@ html {
 body {
   background: var(--bg);
   color: var(--text);
+  display: flex;
+  flex-direction: column;
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.55;
   min-height: 100vh;
+}
+
+.landing-main {
+  flex: 1;
 }
 
 body::before {
@@ -283,16 +289,6 @@ body::before {
 .landing-feature p {
   color: var(--text-muted);
   font-size: 14px;
-}
-
-.landing-footer {
-  border-top: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 13px;
-  margin: 0 auto;
-  max-width: 1080px;
-  padding: 24px;
-  text-align: center;
 }
 
 @media (max-width: 860px) {

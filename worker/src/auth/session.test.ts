@@ -12,7 +12,7 @@ import {
   deleteSession,
   requireSession,
 } from "./session";
-import { sessionCookie, clearSessionCookie } from "./cookies";
+import { sessionCookie, clearSessionCookie, sessionRedirectHtml } from "./cookies";
 import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
 import type { AuthEnv, SessionContext } from "./types";
 import type { Env } from "../types";
@@ -417,6 +417,29 @@ describe("requireSession", () => {
     );
     // Assert — no __Host-session cookie → 401
     expect(res.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sessionRedirectHtml
+// ---------------------------------------------------------------------------
+
+describe("sessionRedirectHtml", () => {
+  it("returns 200 HTML with Set-Cookie and destination in body", async () => {
+    const res = sessionRedirectHtml("/dashboard?install=1", "a".repeat(64));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Set-Cookie")).toContain("__Host-session=");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const body = await res.text();
+    expect(body).toContain("/dashboard?install=1");
+    expect(body).toContain("location.replace");
+  });
+
+  it("rejects open-redirect destinations", async () => {
+    const res = sessionRedirectHtml("//evil.test", "tok");
+    const body = await res.text();
+    expect(body).toContain("/dashboard");
+    expect(body).not.toContain("//evil");
   });
 });
 

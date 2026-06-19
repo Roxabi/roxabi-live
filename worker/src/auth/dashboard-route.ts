@@ -9,19 +9,27 @@ import { readSessionToken } from "./cookies";
 import { validateSession } from "./session";
 
 export const DASHBOARD_PATH = "/dashboard";
-export const DASHBOARD_LOGIN = `/login?redirect=${encodeURIComponent(DASHBOARD_PATH)}`;
+
+/** Build /login?redirect=… preserving dashboard query (e.g. ?install=1). */
+export function dashboardLoginUrl(reqUrl: URL): string {
+  const redirectPath = reqUrl.pathname + reqUrl.search;
+  return `/login?redirect=${encodeURIComponent(redirectPath)}`;
+}
 
 export async function dashboardRoute(
   c: Context<AuthEnv>,
 ): Promise<Response> {
+  const reqUrl = new URL(c.req.url);
+  const loginDest = dashboardLoginUrl(reqUrl);
+
   const token = readSessionToken(c);
   if (!token) {
-    return c.redirect(DASHBOARD_LOGIN, 302);
+    return c.redirect(loginDest, 302);
   }
 
   const session = await validateSession(c.env.DB, token);
   if (!session) {
-    return c.redirect(DASHBOARD_LOGIN, 302);
+    return c.redirect(loginDest, 302);
   }
 
   const assetUrl = new URL(c.req.url);

@@ -11,7 +11,7 @@
 import type { Context } from "hono";
 import type { Env } from "../types";
 import { mintSession } from "./session";
-import { sessionCookie } from "./cookies";
+import { sessionRedirectHtml } from "./cookies";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
 // ---------------------------------------------------------------------------
@@ -234,13 +234,10 @@ export async function callbackRoute(
     const installDest = new URL(redirectAfter, origin);
     installDest.searchParams.set("install", "1");
 
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: `${installDest.pathname}${installDest.search}`,
-        "Set-Cookie": sessionCookie(rawToken),
-      },
-    });
+    return sessionRedirectHtml(
+      `${installDest.pathname}${installDest.search}`,
+      rawToken,
+    );
   }
 
   // Upsert user — get internal id
@@ -321,11 +318,5 @@ export async function callbackRoute(
     }
   }
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: redirectAfter,
-      "Set-Cookie": sessionCookie(rawToken),
-    },
-  });
+  return sessionRedirectHtml(redirectAfter, rawToken);
 }

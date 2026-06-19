@@ -20,6 +20,38 @@ export function clearSessionCookie(): string {
   return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
 }
 
+/**
+ * 200 HTML shell that sets the session cookie then navigates client-side.
+ * Avoids 302+Set-Cookie races where the browser follows Location before
+ * committing __Host-session (ERR_TOO_MANY_REDIRECTS on /dashboard?install=1).
+ */
+export function sessionRedirectHtml(dest: string, rawToken: string): Response {
+  const safeDest =
+    dest.startsWith("/") && !dest.startsWith("//") && !/[\r\n\0]/.test(dest)
+      ? dest
+      : "/dashboard";
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0;url=${encodeURI(safeDest)}">
+<title>Signing in…</title>
+</head>
+<body>
+<p>Signing in… <a href="${encodeURI(safeDest)}">Continue</a></p>
+<script>location.replace(${JSON.stringify(safeDest)});</script>
+</body>
+</html>`;
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Set-Cookie": sessionCookie(rawToken),
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Token reader
 // ---------------------------------------------------------------------------

@@ -12,8 +12,13 @@ export function loginUrl(redirect = DASHBOARD_PATH) {
   return `/login?redirect=${encodeURIComponent(redirect)}`;
 }
 
-function redirectToLogin() {
-  location.replace(loginUrl());
+/** @deprecated Server gates /dashboard; client redirect causes OAuth loops. */
+function showSessionLost() {
+  const el = document.getElementById('error-msg');
+  if (el) {
+    el.hidden = false;
+    el.textContent = 'Session expired. Reload the page or sign in again from the homepage.';
+  }
 }
 
 // ─── AuthError ────────────────────────────────────────────────────────────────
@@ -154,7 +159,7 @@ function renderInstallCta(me) {
       </p>
       <div class="install-actions">
         <button type="button" class="consent-btn-secondary" id="install-logout">Sign out</button>
-        <a href="${escHtml(loginUrl())}" class="auth-login-btn" id="install-continue">I've installed — continue</a>
+        <a href="${escHtml(loginUrl(`${DASHBOARD_PATH}?install=1`))}" class="auth-login-btn" id="install-continue">I've installed — continue</a>
       </div>
     </div>
   `;
@@ -320,7 +325,7 @@ export async function requireAuthGate() {
     me = await fetchMe();
   } catch (e) {
     if (e instanceof AuthError) {
-      redirectToLogin();
+      showSessionLost();
       return 'landing';
     }
     throw e;

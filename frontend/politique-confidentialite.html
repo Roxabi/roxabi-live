@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Politique de confidentialité · Roxabi Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="landing.css">
+<link rel="stylesheet" href="legal.css">
+</head>
+<body class="legal-page">
+<header class="legal-header">
+  <a class="legal-back" href="/">← Accueil</a>
+  <a class="legal-brand" href="/">Roxabi Live</a>
+</header>
+
+<main class="legal-main">
+  <h1>Politique de confidentialité</h1>
+  <p class="legal-updated">Dernière mise à jour : 19 juin 2026</p>
+
+  <p>
+    La présente politique décrit comment Roxabi Live (<strong>live.roxabi.dev</strong>)
+    traite les données personnelles dans le cadre de son service de visualisation
+    de graphes de dépendances GitHub.
+  </p>
+
+  <h2>1. Responsable du traitement</h2>
+  <p>
+    <strong>Mickael Bouly</strong> — contact :
+    <a href="mailto:mickael@bouly.io">mickael@bouly.io</a>
+  </p>
+
+  <h2>2. Données traitées</h2>
+  <ul>
+    <li><strong>Identité GitHub</strong> : identifiant, login, avatar (via OAuth).</li>
+    <li><strong>Données d'organisation</strong> : métadonnées de dépôts, issues (état, labels, relations, milestones), synchronisées via l'application GitHub.</li>
+    <li><strong>Contenu chiffré</strong> : titres et corps d'issues chiffrés côté client avant stockage ; Roxabi Live ne conserve pas ces contenus en clair sur le serveur.</li>
+    <li><strong>Données techniques</strong> : journaux d'exécution du service (horodatage, statut des requêtes), cookies de session.</li>
+  </ul>
+
+  <h2>3. Finalités et bases légales</h2>
+  <ul>
+    <li><strong>Fourniture du service</strong> (exécution du contrat / intérêt légitime) : authentification, affichage du graphe, synchronisation GitHub.</li>
+    <li><strong>Sécurité</strong> (intérêt légitime) : protection des comptes, détection d'abus, intégrité de la plateforme.</li>
+    <li><strong>Support</strong> (intérêt légitime) : réponse aux demandes envoyées à l'éditeur.</li>
+  </ul>
+
+  <h2>4. Durée de conservation</h2>
+  <ul>
+    <li>Session utilisateur : 8 heures (cookie), révocable via déconnexion.</li>
+    <li>Données de corpus (issues, graphe) : conservées tant que le compte / l'installation GitHub est active ; suppression sur demande ou retrait de l'application.</li>
+    <li>Journaux techniques : durée limitée (quelques jours à quelques semaines selon l'infrastructure).</li>
+  </ul>
+
+  <h2>5. Sous-traitants</h2>
+  <p>Les données peuvent être traitées par :</p>
+  <ul>
+    <li><strong>Cloudflare, Inc.</strong> — hébergement Worker, base D1, stockage R2 (audit).</li>
+    <li><strong>GitHub, Inc.</strong> — authentification OAuth et source des données issues (sous votre contrôle via l'installation de l'application).</li>
+  </ul>
+
+  <h2>6. Transferts hors UE</h2>
+  <p>
+    Cloudflare et GitHub peuvent traiter des données aux États-Unis. Ces prestataires
+    appliquent des garanties contractuelles (clauses types, certifications) conformes
+    au RGPD.
+  </p>
+
+  <h2>7. Vos droits</h2>
+  <p>
+    Conformément au RGPD, vous disposez des droits d'accès, de rectification,
+    d'effacement, de limitation, d'opposition et de portabilité. Pour les exercer :
+    <a href="mailto:mickael@bouly.io">mickael@bouly.io</a>.
+    Vous pouvez introduire une réclamation auprès de la CNIL (<a href="https://www.cnil.fr" rel="noopener noreferrer" target="_blank">www.cnil.fr</a>).
+  </p>
+
+  <h2>8. Cookies</h2>
+  <p>
+    Roxabi Live utilise un cookie strictement nécessaire (<code>__Host-session</code>)
+    pour maintenir votre session après connexion GitHub. Aucun cookie publicitaire
+    n'est déposé. Les préférences d'interface (thème, consentement) peuvent être
+    stockées localement dans votre navigateur (<code>localStorage</code>).
+  </p>
+</main>
+
+<footer class="site-footer">
+  <nav class="site-footer-nav" aria-label="Liens légaux">
+    <a href="/mentions-legales">Mentions légales</a>
+    <a href="/politique-confidentialite" aria-current="page">Politique de confidentialité</a>
+    <a href="/conditions-utilisation">Conditions d'utilisation</a>
+  </nav>
+  <p class="site-footer-copy">© 2026 Roxabi Live · Dep-Graph v6</p>
+</footer>
+</body>
+</html>
