@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.14.0...roxabi-live/v0.15.0) (2026-06-19)
+
+
+### Features
+
+* **sync:** auto bootstrap corpus sync after GitHub App install — OAuth, webhooks, and `/api/sync/status` trigger `runSync` when the DB is empty
+* **frontend:** initial sync loading overlay with spinner while the first reconcile imports issues from GitHub
+
 ## [0.14.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.13.1...roxabi-live/v0.14.0) (2026-06-19)
 
 
