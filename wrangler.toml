@@ -32,6 +32,8 @@ ZK_STRUCTURE_ONLY = "1"
 [assets]
 directory = "./frontend"
 binding   = "ASSETS"
+# /dashboard/* must hit the Worker auth gate before ASSETS serves dashboard/index.html.
+run_worker_first = [ "/dashboard", "/dashboard/*" ]
 
 [triggers]
 # Daily reconcile (was hourly "0 * * * *", #80). The webhook path handles real-time
