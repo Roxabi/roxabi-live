@@ -48,7 +48,7 @@ function showZkMigrationNotice() {
   zkMigrationNotice.textContent = '';
   const msg = document.createElement('span');
   msg.textContent =
-    ‘Encryption upgrade incomplete — open Roxabi on your original device to finish, or some older items can’t be decrypted.’;
+    'Encryption upgrade incomplete — open Roxabi on your original device to finish, or some older items can\'t be decrypted.';
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'zk-migration-notice-dismiss';
