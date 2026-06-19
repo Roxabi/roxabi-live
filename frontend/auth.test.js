@@ -10,6 +10,18 @@ describe('resolveView', () => {
     account_type: 'Organization',
   };
 
+  describe('when install_pending is true', () => {
+    it("returns 'install' even if installations is non-empty", () => {
+      const me = {
+        user: { github_id: 42, github_login: 'alice' },
+        active_tenant_id: null,
+        install_pending: true,
+        installations: [installationFixture],
+      };
+      expect(resolveView(me, true)).toBe('install');
+    });
+  });
+
   describe('when installations is empty', () => {
     it("returns 'install' regardless of consent", () => {
       // Arrange

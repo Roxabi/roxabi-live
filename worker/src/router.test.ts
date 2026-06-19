@@ -209,6 +209,17 @@ describe("requireSession auth gate", () => {
   // Positive control — valid session cookie must NOT produce 401
   // -------------------------------------------------------------------------
 
+  describe("GET /install/complete — post-install return", () => {
+    it("returns 302 to /login?redirect=/ without touching DB", async () => {
+      const db = makeDbThatMustNotBeCalled();
+      const env = makeEnv(db);
+      const res = await app.request("/install/complete", {}, env);
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/login?redirect=/");
+      expect(db.prepare).not.toHaveBeenCalled();
+    });
+  });
+
   describe("install-pending session — linked tenant required", () => {
     it("GET /api/graph returns 401 when session has null tenantId", async () => {
       const db = makeSessionDb({
@@ -219,6 +230,27 @@ describe("requireSession auth gate", () => {
       const res = await app.request(
         "/api/graph",
         { headers: { Cookie: `__Host-session=${VALID_RAW_TOKEN}` } },
+        env,
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it("POST /api/zk-opt-in returns 401 when session has null tenantId", async () => {
+      const db = makeSessionDb({
+        ...STUB_SESSION,
+        tenantId: null,
+      });
+      const env = makeEnv(db);
+      const res = await app.request(
+        "/api/zk-opt-in",
+        {
+          method: "POST",
+          headers: {
+            Cookie: `__Host-session=${VALID_RAW_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ opt_in: true }),
+        },
         env,
       );
       expect(res.status).toBe(401);

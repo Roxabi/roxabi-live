@@ -2,6 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { githubInstallUrl, partitionInstallTargets } from './github-install.js';
 
 describe('githubInstallUrl', () => {
+  it('returns base install URL without target', () => {
+    expect(githubInstallUrl()).toBe('https://github.com/apps/roxabi-live/installations/new');
+  });
+
+  it('builds personal account deep link', () => {
+    const url = new URL(githubInstallUrl({ id: 42, login: 'alice', type: 'User' }));
+    expect(url.searchParams.get('target_id')).toBe('42');
+    expect(url.searchParams.get('target_type')).toBe('User');
+  });
+
   it('builds org deep link', () => {
     const url = new URL(githubInstallUrl({ id: 9, login: 'Roxabi', type: 'Organization' }));
     expect(url.searchParams.get('target_id')).toBe('9');

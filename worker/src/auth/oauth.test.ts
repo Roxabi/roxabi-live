@@ -1133,6 +1133,54 @@ describe("callbackRoute", () => {
       expect(sessionsInsert!.args[1]).toBeNull();
     });
 
+    it("still mints install-pending session when /user/orgs fails (User target only)", async () => {
+      const stateValue = "3".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeZeroInstallDb(captured);
+      let fetchCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          fetchCallCount++;
+          if (fetchCallCount === 1) {
+            return new Response(JSON.stringify({ access_token: "tok" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          } else if (fetchCallCount === 2) {
+            return new Response(JSON.stringify({ id: 42, login: "alice" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          } else if (fetchCallCount === 3) {
+            return new Response(JSON.stringify({ installations: [] }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return new Response("error", { status: 500 });
+        }),
+      );
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Set-Cookie")).toContain("__Host-session=");
+      const usersInsert = captured.find(
+        (s) =>
+          s.sql.toLowerCase().includes("insert") &&
+          s.sql.toLowerCase().includes("users"),
+      );
+      const targets = JSON.parse(String(usersInsert!.args[2])) as Array<{
+        type: string;
+      }>;
+      expect(targets).toHaveLength(1);
+      expect(targets[0].type).toBe("User");
+    });
+
     it("upserts user with install_targets_json when installations is empty", async () => {
       // Arrange
       const stateValue = "2".repeat(32);

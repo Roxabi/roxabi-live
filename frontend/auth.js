@@ -49,7 +49,7 @@ export function setConsent(login) {
  * @returns {'install'|'consent'|'dashboard'}
  */
 export function resolveView(me, consented) {
-  if (me.installations.length === 0) return 'install';
+  if (me.install_pending || me.installations.length === 0) return 'install';
   if (!consented) return 'consent';
   return 'dashboard';
 }
@@ -105,6 +105,7 @@ function renderInstallCta(me) {
           href="${escHtml(githubInstallUrl(org))}"
           target="_blank"
           rel="noopener noreferrer"
+          role="listitem"
         >
           <span class="install-option-title">Organisation</span>
           <span class="install-option-name">${escHtml(org.login)}</span>
@@ -117,6 +118,7 @@ function renderInstallCta(me) {
           href="${escHtml(githubInstallUrl())}"
           target="_blank"
           rel="noopener noreferrer"
+          role="listitem"
         >
           <span class="install-option-title">Organisation</span>
           <span class="install-option-name">Pick on GitHub</span>
@@ -154,8 +156,8 @@ function renderInstallCta(me) {
         </div>
       </div>
       <p class="install-note">
-        Installation opens on GitHub in a new tab. When you are done, return here and continue —
-        we will pick up the new installation automatically.
+        Installation opens on GitHub in a new tab. When you are done, return here and
+        <strong>Continue</strong> to sign in again — GitHub will expose the new installation.
       </p>
       <div class="install-actions">
         <button type="button" class="consent-btn-secondary" id="install-logout">Sign out</button>
@@ -165,15 +167,18 @@ function renderInstallCta(me) {
   `;
   el.removeAttribute('hidden');
 
+  const firstInstallLink = el.querySelector('.install-option[href]');
+  firstInstallLink?.focus();
+
   $('install-logout')?.addEventListener('click', async () => {
     await api('/logout', { method: 'POST' }).catch(() => {});
     location.href = '/';
   });
 
-  if (location.search.includes('install=1')) {
-    const clean = new URL(location.href);
-    clean.searchParams.delete('install');
-    history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
+  const pageUrl = new URL(location.href);
+  if (pageUrl.searchParams.has('install')) {
+    pageUrl.searchParams.delete('install');
+    history.replaceState(null, '', pageUrl.pathname + pageUrl.search + pageUrl.hash);
   }
 }
 
