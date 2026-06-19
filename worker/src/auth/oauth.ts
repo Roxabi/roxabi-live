@@ -13,7 +13,7 @@ import type { Env } from "../types";
 import { mintSession } from "./session";
 import {
   authRedirect,
-  clearSessionCookie,
+  clearSessionCookieHeaders,
   readSessionToken,
   sanitizeAuthRedirect,
   sessionRedirectHtml,
@@ -92,7 +92,7 @@ export async function loginRoute(
   dest.searchParams.set("redirect_uri", redirectUri);
   dest.searchParams.set("state", state);
 
-  return authRedirect(dest.toString(), { "Set-Cookie": clearSessionCookie() });
+  return authRedirect(dest.toString(), clearSessionCookieHeaders());
 }
 
 // ---------------------------------------------------------------------------

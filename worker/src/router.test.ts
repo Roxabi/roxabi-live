@@ -246,7 +246,7 @@ describe("requireSession auth gate", () => {
       expect(res.status).toBe(302);
       expect(res.headers.get("Location")).toBe("/");
       expect(res.headers.get("Clear-Site-Data")).toContain("cache");
-      expect(res.headers.get("Set-Cookie")).toContain("__Host-session=;");
+      expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=;");
       expect(res.headers.get("Cache-Control")).toContain("no-store");
     });
   });

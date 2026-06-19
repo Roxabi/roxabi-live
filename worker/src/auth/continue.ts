@@ -6,7 +6,7 @@ import type { Context } from "hono";
 import type { AuthEnv } from "./types";
 import {
   authRedirect,
-  clearSessionCookie,
+  clearSessionCookieHeaders,
   readSessionToken,
   sanitizeAuthRedirect,
 } from "./cookies";
@@ -25,7 +25,7 @@ export async function authContinueRoute(
 
   const session = await validateSession(c.env.DB, token);
   if (!session) {
-    return authRedirect(loginDest, { "Set-Cookie": clearSessionCookie() });
+    return authRedirect(loginDest, clearSessionCookieHeaders());
   }
 
   return authRedirect(dest);

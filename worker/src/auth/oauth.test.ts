@@ -682,7 +682,7 @@ describe("callbackRoute", () => {
       expect(uiStmt).toBeDefined();
     });
 
-    it("returns 200 HTML redirect with Set-Cookie __Host-session containing HttpOnly Secure SameSite=Strict Path=/ and NO Domain", async () => {
+    it("returns 200 HTML redirect with Set-Cookie roxabi_session containing HttpOnly Secure SameSite=Lax Path=/ and NO Domain", async () => {
       // Arrange
       const stateValue = "e".repeat(32);
       const captured: FakeStmt[] = [];
@@ -706,7 +706,7 @@ describe("callbackRoute", () => {
       // Assert
       expect(res.status).toBe(200);
       const cookie = res.headers.get("Set-Cookie") ?? "";
-      expect(cookie).toContain("__Host-session=");
+      expect(cookie).toContain("roxabi_session=");
       expect(cookie).toContain("HttpOnly");
       expect(cookie).toContain("Secure");
       expect(cookie).toContain("SameSite=Lax");
@@ -742,7 +742,7 @@ describe("callbackRoute", () => {
       expect(body).toContain("/auth/continue?to=%2Fdashboard");
       expect(res.headers.get("Location")).toBeNull();
       const cookie = res.headers.get("Set-Cookie") ?? "";
-      expect(cookie).toContain("__Host-session=");
+      expect(cookie).toContain("roxabi_session=");
     });
 
     it("uses two DB.batch round-trips (tenants + links) instead of a per-install loop", async () => {
@@ -762,7 +762,7 @@ describe("callbackRoute", () => {
       );
       // Behavioral outcome, not just call shape: the two batches must yield HTML redirect + cookie.
       expect(res.status).toBe(200);
-      expect(res.headers.get("Set-Cookie")).toContain("__Host-session");
+      expect(res.headers.get("Set-Cookie")).toContain("roxabi_session");
       expect((db as unknown as { batch: ReturnType<typeof vi.fn> }).batch).toHaveBeenCalledTimes(2);
     });
 
@@ -800,7 +800,7 @@ describe("callbackRoute", () => {
         env,
       );
       expect(res.status).toBe(200);
-      expect(res.headers.get("Set-Cookie")).toContain("__Host-session");
+      expect(res.headers.get("Set-Cookie")).toContain("roxabi_session");
       const tenantUpserts = captured.filter(
         (s) =>
           s.sql.toLowerCase().includes("tenants") &&
@@ -931,7 +931,7 @@ describe("callbackRoute", () => {
 
       // Assert — first request succeeds with session cookie
       expect(res1.status).toBe(200);
-      expect(res1.headers.get("Set-Cookie")).toContain("__Host-session=");
+      expect(res1.headers.get("Set-Cookie")).toContain("roxabi_session=");
 
       // Assert — second request fails (state row gone after first consume)
       expect(res2.status).toBe(400);
@@ -1197,7 +1197,7 @@ describe("callbackRoute", () => {
       );
 
       // Assert
-      expect(res.headers.get("Set-Cookie")).toContain("__Host-session=");
+      expect(res.headers.get("Set-Cookie")).toContain("roxabi_session=");
     });
 
     it("inserts install-pending session (tenant_id null) when installations is empty", async () => {
@@ -1260,7 +1260,7 @@ describe("callbackRoute", () => {
         env,
       );
       expect(res.status).toBe(200);
-      expect(res.headers.get("Set-Cookie")).toContain("__Host-session=");
+      expect(res.headers.get("Set-Cookie")).toContain("roxabi_session=");
       const usersInsert = captured.find(
         (s) =>
           s.sql.toLowerCase().includes("insert") &&

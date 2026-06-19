@@ -7,7 +7,7 @@ import type { Context } from "hono";
 import type { AuthEnv } from "./types";
 import {
   authRedirect,
-  clearSessionCookie,
+  clearSessionCookieHeaders,
   readSessionToken,
   withAuthNoCache,
 } from "./cookies";
@@ -35,7 +35,7 @@ export async function dashboardRoute(
   const session = await validateSession(c.env.DB, token);
   if (!session) {
     // Drop stale cookie so /login → OAuth → callback does not loop with a dead token.
-    return authRedirect(loginDest, { "Set-Cookie": clearSessionCookie() });
+    return authRedirect(loginDest, clearSessionCookieHeaders());
   }
 
   const assetUrl = new URL(c.req.url);

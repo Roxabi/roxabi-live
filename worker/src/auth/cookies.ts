@@ -1,5 +1,9 @@
 import type { Context } from "hono";
-import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
+import {
+  LEGACY_SESSION_COOKIE,
+  SESSION_COOKIE,
+  SESSION_TTL_SECONDS,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Auth response cache policy — never cache session-gated redirects/HTML.
@@ -23,12 +27,14 @@ export function sanitizeAuthRedirect(raw: string | undefined): string {
 /** 302 redirect that must not be stored by the browser or CDN. */
 export function authRedirect(
   location: string,
-  extra?: Record<string, string>,
+  extraSetCookies: string[] = [],
+  extraHeaders: Record<string, string> = {},
 ): Response {
-  return new Response(null, {
-    status: 302,
-    headers: { Location: location, ...AUTH_NO_CACHE, ...extra },
-  });
+  const headers = new Headers({ Location: location, ...AUTH_NO_CACHE, ...extraHeaders });
+  for (const cookie of extraSetCookies) {
+    headers.append("Set-Cookie", cookie);
+  }
+  return new Response(null, { status: 302, headers });
 }
 
 /** Apply auth no-cache headers to an existing response (e.g. ASSETS HTML). */
@@ -44,31 +50,38 @@ export function withAuthNoCache(res: Response): Response {
 // Cookie helpers (pure, synchronous)
 // ---------------------------------------------------------------------------
 
-/**
- * Build a Set-Cookie header value for the session token.
- * __Host- prefix requires: Secure, Path=/, no Domain.
- */
-export function sessionCookie(rawToken: string): string {
-  // Lax (not Strict): OAuth return is a cross-site top-level navigation from GitHub.
-  return `${SESSION_COOKIE}=${rawToken}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`;
+function expireCookie(name: string): string {
+  return `${name}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 }
 
 /**
- * Build a Set-Cookie header value that immediately expires the session cookie.
+ * Build a Set-Cookie header value for the session token.
  */
+export function sessionCookie(rawToken: string): string {
+  return `${SESSION_COOKIE}=${rawToken}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`;
+}
+
+/** Expire primary + legacy session cookies. */
+export function clearSessionCookieHeaders(): string[] {
+  return [expireCookie(SESSION_COOKIE), expireCookie(LEGACY_SESSION_COOKIE)];
+}
+
+/** @deprecated use clearSessionCookieHeaders — first legacy clear line for tests */
 export function clearSessionCookie(): string {
-  return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+  return clearSessionCookieHeaders()[0];
+}
+
+/** Set new session and expire legacy __Host-session. */
+export function sessionCookieHeaders(rawToken: string): string[] {
+  return [sessionCookie(rawToken), expireCookie(LEGACY_SESSION_COOKIE)];
 }
 
 /**
  * 200 HTML shell that sets the session cookie then navigates client-side.
- * Avoids 302+Set-Cookie races where the browser follows Location before
- * committing __Host-session (ERR_TOO_MANY_REDIRECTS on /dashboard?install=1).
- * Navigation is deferred (no meta refresh) so Set-Cookie is committed first.
+ * Polls /api/me until the cookie is visible before /auth/continue hop.
  */
 export function sessionRedirectHtml(dest: string, rawToken: string): Response {
   const safeDest = sanitizeAuthRedirect(dest);
-  // Server-side hop confirms the cookie before the final dashboard load.
   const continueUrl = `/auth/continue?to=${encodeURIComponent(safeDest)}`;
   const html = `<!DOCTYPE html>
 <html lang="fr">
@@ -109,37 +122,45 @@ export function sessionRedirectHtml(dest: string, rawToken: string): Response {
 <noscript><p><a href="${encodeURI(continueUrl)}">Continuer</a></p></noscript>
 </body>
 </html>`;
-  return new Response(html, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Set-Cookie": sessionCookie(rawToken),
-      ...AUTH_NO_CACHE,
-    },
+  const headers = new Headers({
+    "Content-Type": "text/html; charset=utf-8",
+    ...AUTH_NO_CACHE,
   });
+  for (const cookie of sessionCookieHeaders(rawToken)) {
+    headers.append("Set-Cookie", cookie);
+  }
+  return new Response(html, { status: 200, headers });
 }
 
 // ---------------------------------------------------------------------------
 // Token reader
 // ---------------------------------------------------------------------------
 
-/**
- * Parse the __Host-session cookie value from the Cookie header.
- * Returns null if the cookie is absent or the header is missing.
- */
-export function readSessionToken(c: Context): string | null {
-  const cookieHeader = c.req.header("Cookie");
+/** Parse a named cookie from the Cookie header. */
+export function readNamedCookie(
+  cookieHeader: string | undefined,
+  name: string,
+): string | null {
   if (!cookieHeader) return null;
-
   let last: string | null = null;
   for (const part of cookieHeader.split(";")) {
     const trimmed = part.trim();
     const eqIdx = trimmed.indexOf("=");
     if (eqIdx === -1) continue;
-    const name = trimmed.slice(0, eqIdx).trim();
-    if (name === SESSION_COOKIE) {
+    if (trimmed.slice(0, eqIdx).trim() === name) {
       last = trimmed.slice(eqIdx + 1).trim() || null;
     }
   }
   return last;
+}
+
+/**
+ * Parse session cookie — prefers roxabi_session, falls back to legacy __Host-session.
+ */
+export function readSessionToken(c: Context): string | null {
+  const header = c.req.header("Cookie");
+  return (
+    readNamedCookie(header, SESSION_COOKIE) ??
+    readNamedCookie(header, LEGACY_SESSION_COOKIE)
+  );
 }

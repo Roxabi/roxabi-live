@@ -428,7 +428,7 @@ describe("sessionRedirectHtml", () => {
   it("returns 200 HTML with Set-Cookie and destination in body", async () => {
     const res = sessionRedirectHtml("/dashboard?install=1", "a".repeat(64));
     expect(res.status).toBe(200);
-    expect(res.headers.get("Set-Cookie")).toContain("__Host-session=");
+    expect(res.headers.get("Set-Cookie")).toContain("roxabi_session=");
     expect(res.headers.get("Cache-Control")).toContain("no-store");
     expect(res.headers.get("Vary")).toBe("Cookie");
     const body = await res.text();
@@ -451,11 +451,11 @@ describe("sessionRedirectHtml", () => {
 // ---------------------------------------------------------------------------
 
 describe("sessionCookie", () => {
-  it("contains __Host-session=<rawToken>", () => {
+  it("contains roxabi_session=<rawToken>", () => {
     // Arrange + Act
     const cookie = sessionCookie("abc123");
     // Assert
-    expect(cookie).toContain("__Host-session=abc123");
+    expect(cookie).toContain("roxabi_session=abc123");
   });
 
   it("contains HttpOnly flag", () => {
@@ -508,11 +508,11 @@ describe("sessionCookie", () => {
 // ---------------------------------------------------------------------------
 
 describe("clearSessionCookie", () => {
-  it("contains __Host-session= (empty value)", () => {
+  it("contains roxabi_session= (empty value)", () => {
     // Arrange + Act
     const cookie = clearSessionCookie();
     // Assert
-    expect(cookie).toContain("__Host-session=");
+    expect(cookie).toContain("roxabi_session=");
   });
 
   it("contains Max-Age=0 to expire the cookie immediately", () => {
@@ -553,7 +553,7 @@ describe("clearSessionCookie", () => {
 // ---------------------------------------------------------------------------
 
 describe("SESSION_COOKIE constant", () => {
-  it("equals '__Host-session'", () => {
-    expect(SESSION_COOKIE).toBe("__Host-session");
+  it("equals 'roxabi_session'", () => {
+    expect(SESSION_COOKIE).toBe("roxabi_session");
   });
 });
