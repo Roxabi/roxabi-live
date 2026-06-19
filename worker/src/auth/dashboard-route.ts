@@ -6,10 +6,10 @@
 import type { Context } from "hono";
 import type { AuthEnv } from "./types";
 import {
+  AUTH_NO_CACHE,
   authRedirect,
   clearSessionCookieHeaders,
   readSessionToken,
-  withAuthNoCache,
 } from "./cookies";
 import { validateSession } from "./session";
 
@@ -38,10 +38,25 @@ export async function dashboardRoute(
     return authRedirect(loginDest, clearSessionCookieHeaders());
   }
 
+  return serveDashboardShell(c);
+}
+
+/** Serve dashboard/index.html with auth no-cache headers (optional Set-Cookie). */
+export async function serveDashboardShell(
+  c: Context<AuthEnv>,
+  extraSetCookies: string[] = [],
+): Promise<Response> {
   const assetUrl = new URL(c.req.url);
   assetUrl.pathname = "/dashboard/index.html";
   const assetRes = await c.env.ASSETS.fetch(
     new Request(assetUrl.toString(), c.req.raw),
   );
-  return withAuthNoCache(assetRes);
+  const headers = new Headers(assetRes.headers);
+  for (const [key, value] of Object.entries(AUTH_NO_CACHE)) {
+    headers.set(key, value);
+  }
+  for (const cookie of extraSetCookies) {
+    headers.append("Set-Cookie", cookie);
+  }
+  return new Response(assetRes.body, { status: assetRes.status, headers });
 }

@@ -24,6 +24,21 @@ export function sanitizeAuthRedirect(raw: string | undefined): string {
   return "/dashboard";
 }
 
+/** True when a relative path targets the dashboard shell. */
+export function isDashboardDest(path: string): boolean {
+  const url = new URL(path, "https://_/");
+  return url.pathname === "/dashboard" || url.pathname === "/dashboard/";
+}
+
+/** Remove ?install=1 — only needed to trigger server-side re-OAuth, not for rendering. */
+export function stripInstallParam(path: string): string {
+  const url = new URL(path, "https://_/");
+  if (!url.searchParams.has("install")) return path;
+  url.searchParams.delete("install");
+  const pathname = url.pathname.replace(/\/$/, "") || "/dashboard";
+  return `${pathname}${url.search}`;
+}
+
 /** 302 redirect that must not be stored by the browser or CDN. */
 export function authRedirect(
   location: string,

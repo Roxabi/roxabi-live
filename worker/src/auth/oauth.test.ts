@@ -342,29 +342,31 @@ describe("loginRoute", () => {
       expect(res.headers.get("Location")).not.toMatch(/^https:\/\/github\.com/);
     });
 
-    it("short-circuits to dashboard when redirect includes install=1 and session has a linked tenant", async () => {
+    it("short-circuits to dashboard without install=1 when session has a linked tenant", async () => {
       const validRow = {
         userId: 1,
         tenantId: 10,
         githubId: 42,
         githubLogin: "alice",
       };
-      const bindStmt = {
-        first: vi.fn().mockResolvedValue(validRow),
-        run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
-        all: vi.fn().mockResolvedValue({ results: [] }),
-        bind: vi.fn(function (this: unknown) {
-          return this;
-        }),
-      };
-      const stmt = {
-        first: vi.fn().mockResolvedValue(validRow),
-        run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
-        all: vi.fn().mockResolvedValue({ results: [] }),
-        bind: vi.fn(() => bindStmt),
-      };
       const db = {
-        prepare: vi.fn(() => stmt),
+        prepare: vi.fn((sql: string) => {
+          const stmt = {
+            sql,
+            first: vi.fn().mockImplementation(function (this: { sql: string }) {
+              if (this.sql.toLowerCase().includes("count")) {
+                return Promise.resolve({ n: 1 });
+              }
+              return Promise.resolve(validRow);
+            }),
+            run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+            all: vi.fn().mockResolvedValue({ results: [] }),
+            bind: vi.fn(function (this: unknown) {
+              return this;
+            }),
+          };
+          return stmt;
+        }),
         batch: vi.fn().mockResolvedValue([]),
         dump: vi.fn(),
         exec: vi.fn(),
@@ -382,7 +384,7 @@ describe("loginRoute", () => {
       );
 
       expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe("/dashboard?install=1");
+      expect(res.headers.get("Location")).toBe("/dashboard");
       expect(res.headers.get("Location")).not.toMatch(/^https:\/\/github\.com/);
     });
 

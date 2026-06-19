@@ -2,14 +2,17 @@
  * One-time OAuth session exchange (#145).
  *
  * Callback mints a session then 302s to GET /auth/exchange?code=…
- * Exchange consumes the code, sets roxabi_session via 302 Set-Cookie, redirects.
- * Avoids HTML+JS cookie races in browsers that drop Set-Cookie on 200 shells.
+ * Exchange sets roxabi_session and either serves dashboard HTML (200) or 302s.
+ * Serving dashboard inline avoids a follow-up navigation that drops Set-Cookie
+ * in some browsers (Opera/normal profile redirect loops).
  */
 
 import type { Context } from "hono";
 import type { AuthEnv } from "./types";
+import { serveDashboardShell } from "./dashboard-route";
 import {
   authRedirect,
+  isDashboardDest,
   sanitizeAuthRedirect,
   sessionCookieHeaders,
 } from "./cookies";
@@ -63,5 +66,10 @@ export async function authExchangeRoute(
     return c.json({ error: "expired" }, 400);
   }
 
-  return authRedirect(row.redirect_after, sessionCookieHeaders(row.session_token));
+  const cookies = sessionCookieHeaders(row.session_token);
+  if (isDashboardDest(row.redirect_after)) {
+    return serveDashboardShell(c, cookies);
+  }
+
+  return authRedirect(row.redirect_after, cookies);
 }

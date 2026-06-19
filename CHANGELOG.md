@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.17.8](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.7...roxabi-live/v0.17.8) (2026-06-19)
+
+
+### Bug Fixes
+
+* **auth:** `/auth/exchange` serves dashboard HTML (200 + Set-Cookie) — no post-cookie redirect hop
+* **auth:** strip `install=1` after linked OAuth; re-OAuth when install=1 but zero linked installations
+* **auth:** `/auth/status` reports `tenant_id` + `installations` for loop diagnosis
+
+
 ## [0.17.7](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.6...roxabi-live/v0.17.7) (2026-06-19)
 
 

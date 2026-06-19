@@ -15,6 +15,7 @@ import {
   authRedirect,
   readSessionToken,
   sanitizeAuthRedirect,
+  stripInstallParam,
 } from "./cookies";
 import { validateSession } from "./session";
 import { createUserTokenHandoff } from "./userTokenHandoff";
@@ -59,8 +60,17 @@ async function mustReOAuth(
   if (!token) return true;
   const session = await validateSession(c.env.DB, token);
   if (!session) return true;
-  // Post-install refresh only while session is still install-pending (no tenant).
-  return session.tenantId === null;
+  if (session.tenantId === null) return true;
+
+  const linked = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM user_installations ui
+     JOIN tenants t ON t.id = ui.tenant_id AND t.deleted_at IS NULL
+     WHERE ui.user_id = ?`,
+  )
+    .bind(session.userId)
+    .first<{ n: number }>();
+
+  return (linked?.n ?? 0) === 0;
 }
 
 export async function loginRoute(
@@ -75,7 +85,11 @@ export async function loginRoute(
     if (token) {
       const session = await validateSession(c.env.DB, token);
       if (session) {
-        return authRedirect(redirectAfter);
+        let dest = redirectAfter;
+        if (session.tenantId != null && dest.includes("install=1")) {
+          dest = stripInstallParam(dest);
+        }
+        return authRedirect(dest);
       }
     }
   }
@@ -343,7 +357,7 @@ export async function callbackRoute(
   const exchangeCode = await createOAuthExchange(
     c.env.DB,
     rawToken,
-    redirectAfter,
+    stripInstallParam(redirectAfter),
   );
   return authRedirect(`/auth/exchange?code=${exchangeCode}`);
 }
