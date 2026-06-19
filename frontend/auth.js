@@ -5,6 +5,17 @@ import { githubInstallUrl, partitionInstallTargets } from './github-install.js';
 
 const $ = id => document.getElementById(id);
 
+export const DASHBOARD_PATH = '/dashboard';
+
+/** Safe login URL with post-auth return path (defaults to dashboard). */
+export function loginUrl(redirect = DASHBOARD_PATH) {
+  return `/login?redirect=${encodeURIComponent(redirect)}`;
+}
+
+function redirectToLogin() {
+  location.replace(loginUrl());
+}
+
 // ─── AuthError ────────────────────────────────────────────────────────────────
 
 export class AuthError extends Error {
@@ -70,19 +81,6 @@ export async function getSessionProfile() {
 /** True when server exposes ZK_ACCOUNT_KEY feature (#216 PR 1b). */
 export function isZkAccountKeyEnabled(me) {
   return me?.user?.zk_account_key_enabled === true;
-}
-
-// ─── Internal: render landing ─────────────────────────────────────────────────
-
-function renderLanding() {
-  document.body.classList.add('gated');
-  const el = $('auth-landing');
-  el.innerHTML = `
-    <h2>Welcome to Roxabi Live</h2>
-    <p>Sign in with GitHub to view your organisation's dependency graph.</p>
-    <a href="/login" class="auth-login-btn" aria-label="Sign in with GitHub">Sign in with GitHub</a>
-  `;
-  el.removeAttribute('hidden');
 }
 
 // ─── Internal: render install CTA ────────────────────────────────────────────
@@ -156,7 +154,7 @@ function renderInstallCta(me) {
       </p>
       <div class="install-actions">
         <button type="button" class="consent-btn-secondary" id="install-logout">Sign out</button>
-        <a href="/login?redirect=/" class="auth-login-btn" id="install-continue">I've installed — continue</a>
+        <a href="${escHtml(loginUrl())}" class="auth-login-btn" id="install-continue">I've installed — continue</a>
       </div>
     </div>
   `;
@@ -322,7 +320,7 @@ export async function requireAuthGate() {
     me = await fetchMe();
   } catch (e) {
     if (e instanceof AuthError) {
-      renderLanding();
+      redirectToLogin();
       return 'landing';
     }
     throw e;

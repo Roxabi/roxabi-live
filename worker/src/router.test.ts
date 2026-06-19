@@ -210,12 +210,12 @@ describe("requireSession auth gate", () => {
   // -------------------------------------------------------------------------
 
   describe("GET /install/complete — post-install return", () => {
-    it("returns 302 to /login?redirect=/ without touching DB", async () => {
+    it("returns 302 to /login?redirect=/dashboard without touching DB", async () => {
       const db = makeDbThatMustNotBeCalled();
       const env = makeEnv(db);
       const res = await app.request("/install/complete", {}, env);
       expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe("/login?redirect=/");
+      expect(res.headers.get("Location")).toBe("/login?redirect=/dashboard");
       expect(db.prepare).not.toHaveBeenCalled();
     });
   });

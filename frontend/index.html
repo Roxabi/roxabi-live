@@ -1,137 +1,80 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="fr" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dep-Graph v6 · Roxabi Live</title>
+<title>Roxabi Live — Graphe de dépendances GitHub</title>
+<meta name="description" content="Cockpit opérationnel pour visualiser issues, blockers et dépendances de votre organisation GitHub.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="app.css">
-<link rel="stylesheet" href="auth.css">
-<link rel="stylesheet" href="graph.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="landing.css">
 </head>
 <body>
-<div class="sticky-head">
-  <header class="page-header">
+<header class="landing-header">
+  <a class="landing-brand" href="/">
+    <span class="landing-brand-mark">v6</span>
+    <span class="landing-brand-name">Roxabi Live</span>
+  </a>
+  <a id="landing-cta" class="landing-cta" href="/login?redirect=%2Fdashboard">Se connecter</a>
+</header>
+
+<main class="landing-main">
+  <section class="landing-hero">
     <div>
-      <h1>Dep-Graph <span class="accent">v6</span> · Roxabi Live</h1>
-      <div class="subtitle" id="subtitle">Loading…</div>
-    </div>
-    <div class="header-actions">
-      <div class="segs view-segs" role="group" aria-label="View">
-        <button id="btn-table" class="seg on" data-v="table" aria-pressed="true"  title="Table"><span class="ico">⊞</span> Table</button>
-        <button id="btn-list"  class="seg"    data-v="list"  aria-pressed="false" title="List"><span class="ico">≡</span> List</button>
-        <button id="btn-graph" class="seg"    data-v="graph" aria-pressed="false" title="Graph"><span class="ico">⋈</span> Graph</button>
+      <p class="landing-eyebrow">Operations cockpit</p>
+      <h1>Votre graphe de dépendances <span>GitHub</span>, en temps réel</h1>
+      <p class="landing-lead">
+        Roxabi Live synchronise issues, blockers et relations parent/enfant
+        pour donner une vue claire de ce qui est prêt, bloqué ou terminé —
+        en tableau, liste ou graphe interactif.
+      </p>
+      <div class="landing-hero-actions">
+        <a id="landing-hero-cta" class="landing-cta" href="/login?redirect=%2Fdashboard">Se connecter</a>
+        <a class="landing-hero-secondary" href="#features">Découvrir</a>
       </div>
-      <select id="org-picker" class="org-picker" aria-label="Active organisation" hidden></select>
-      <button id="zk-lock-btn" class="theme-btn" type="button" hidden title="Lock encryption">Lock</button>
-      <div id="user-menu-wrap" class="user-menu-wrap" hidden>
-        <button id="user-menu-btn" class="user-avatar-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Account menu">
-          <img id="user-menu-avatar" class="user-avatar-img" alt="" width="28" height="28" />
-        </button>
-        <div id="user-menu-panel" class="user-menu-panel" role="menu" hidden>
-          <button type="button" class="user-menu-item" id="user-menu-settings" role="menuitem">Settings</button>
-          <button type="button" class="user-menu-item user-menu-item-danger" id="user-menu-signout" role="menuitem">Sign out</button>
-        </div>
+    </div>
+
+    <div class="landing-preview" aria-hidden="true">
+      <div class="landing-preview-bar">
+        <span class="landing-preview-dot"></span>
+        <span class="landing-preview-dot"></span>
+        <span class="landing-preview-dot"></span>
+        <span class="landing-preview-title">dep-graph · ready / blocked / done</span>
       </div>
-      <button id="theme-btn" class="theme-btn" type="button" title="Toggle theme" aria-label="Toggle theme">🌙</button>
+      <div class="landing-preview-grid">
+        <div class="landing-preview-cell accent"></div>
+        <div class="landing-preview-cell"></div>
+        <div class="landing-preview-cell accent"></div>
+        <div class="landing-preview-cell"></div>
+        <div class="landing-preview-cell accent"></div>
+        <div class="landing-preview-cell"></div>
+        <div class="landing-preview-cell"></div>
+        <div class="landing-preview-cell accent"></div>
+        <div class="landing-preview-cell"></div>
+      </div>
     </div>
-  </header>
+  </section>
 
-  <div class="toolbar">
-    <div class="ms-wrap">
-      <button id="ms-repo-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by repo">
-        <span class="ms-placeholder">All repos</span>
-      </button>
-      <button id="ms-repo-clear" class="ms-clear-inline" aria-label="Clear repo filter" hidden>×</button>
-      <div id="ms-repo-panel" class="ms-panel" hidden></div>
-    </div>
-
-    <div class="ms-wrap">
-      <button id="ms-milestone-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by milestone">
-        <span class="ms-placeholder">All milestones</span>
-      </button>
-      <button id="ms-milestone-clear" class="ms-clear-inline" aria-label="Clear milestone filter" hidden>×</button>
-      <div id="ms-milestone-panel" class="ms-panel" hidden></div>
-    </div>
-
-    <div class="ms-wrap">
-      <button id="ms-priority-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by priority">
-        <span class="ms-placeholder">All priorities</span>
-      </button>
-      <button id="ms-priority-clear" class="ms-clear-inline" aria-label="Clear priority filter" hidden>×</button>
-      <div id="ms-priority-panel" class="ms-panel" hidden></div>
-    </div>
-
-    <div class="ms-wrap">
-      <button id="ms-label-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by label">
-        <span class="ms-placeholder">All labels</span>
-      </button>
-      <button id="ms-label-clear" class="ms-clear-inline" aria-label="Clear label filter" hidden>×</button>
-      <div id="ms-label-panel" class="ms-panel" hidden></div>
-    </div>
-
-    <div class="ms-wrap">
-      <button id="ms-status-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by status">
-        <span class="ms-placeholder">All statuses</span>
-      </button>
-      <button id="ms-status-clear" class="ms-clear-inline" aria-label="Clear status filter" hidden>×</button>
-      <div id="ms-status-panel" class="ms-panel" hidden></div>
-    </div>
-
-    <div class="search-wrap">
-      <input type="search" id="search-input" placeholder="Search issues…" autocomplete="off" aria-label="Search issues">
-      <button id="search-clear" class="clear-btn" aria-label="Clear search" hidden>×</button>
-    </div>
-
-    <!-- Table-only: Pivot seg controls -->
-    <span class="pivot-controls" id="pivot-controls">
-      <span class="toolbar-label">Row</span>
-      <div class="segs" id="pivot-row-segs" role="group" aria-label="Pivot row dimension"></div>
-      <span class="toolbar-label">Col</span>
-      <div class="segs" id="pivot-col-segs" role="group" aria-label="Pivot column dimension"></div>
-      <span class="toolbar-label">Group</span>
-      <div class="segs" id="table-group-segs" role="group" aria-label="Group cells by"></div>
-    </span>
-
-    <!-- List-only: Group-by segs (2 levels) -->
-    <span class="list-controls" id="list-controls" style="display:none">
-      <span class="toolbar-label">Group</span>
-      <div class="segs" id="list-group-segs" role="group" aria-label="Primary grouping"></div>
-      <span class="toolbar-label">Then</span>
-      <div class="segs" id="list-group2-segs" role="group" aria-label="Secondary grouping"></div>
-    </span>
-
-    <!-- Shared: hide parent issues in all views (+ parent edges in graph) -->
-    <span class="graph-controls" id="graph-controls">
-      <div class="segs" id="graph-edge-segs" role="group" aria-label="Parent visibility"></div>
-    </span>
-  </div>
-  <div id="zk-migration-notice" class="zk-migration-notice" hidden></div>
-</div>
-
-<main>
-  <div id="view-table" class="view view-active" role="region" aria-label="Table view"></div>
-  <div id="view-list"  class="view"             role="region" aria-label="List view"></div>
-  <section id="graph-panel" class="view"        role="region" aria-label="Graph view" hidden></section>
-  <div id="error-msg" class="error-msg" hidden></div>
-  <div id="auth-landing" class="auth-view" hidden></div>
-  <div id="auth-install" class="auth-view" hidden></div>
+  <section id="features" class="landing-features">
+    <article class="landing-feature">
+      <h3>Vue multi-format</h3>
+      <p>Tableau pivot, liste groupée et graphe de dépendances — même corpus, trois angles de lecture.</p>
+    </article>
+    <article class="landing-feature">
+      <h3>Sync continue</h3>
+      <p>Webhook GitHub + réconciliation quotidienne. L'état du board reflète votre org sans export manuel.</p>
+    </article>
+    <article class="landing-feature">
+      <h3>Chiffrement côté client</h3>
+      <p>Titres et corps d'issues chiffrés avant stockage. La structure du graphe reste exploitable pour le pilotage.</p>
+    </article>
+  </section>
 </main>
 
-<footer class="page-footer">
-  <span>v6</span>
+<footer class="landing-footer">
+  <span>Roxabi Live · Dep-Graph v6</span>
 </footer>
 
-<div id="consent-gate" class="consent-gate" hidden></div>
-<div id="zk-gate" class="zk-gate" hidden></div>
-<div id="initial-sync-gate" class="initial-sync-gate" hidden></div>
-<div id="settings-gate" class="settings-gate" hidden></div>
-
-<script type="module" src="state.js"></script>
-<script type="module" src="pivot.js"></script>
-<script type="module" src="auth.js"></script>
-<script type="module" src="app.js"></script>
-<script type="module" src="graph.js"></script>
+<script type="module" src="landing.js"></script>
 </body>
 </html>

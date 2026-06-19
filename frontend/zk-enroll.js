@@ -1,6 +1,7 @@
 // zk-enroll.js — passphrase enrollment, unlock, lock UI (#216 PR 4)
 
 import { api, escHtml } from './auth.js';
+import { zkLoginUrl } from './zk-github.js';
 import {
   generateAccountKey,
   wrapAccountKey,
@@ -216,7 +217,7 @@ function renderDevice2Block() {
       </p>
       <p>
         Alternatively, after setup on the original device, you can
-        <a href="/login?zk=1">Link GitHub</a> here to re-seal content from GitHub.
+        <a href="${escHtml(zkLoginUrl())}">Link GitHub</a> here to re-seal content from GitHub.
       </p>
       <div class="zk-actions">
         <button type="button" class="consent-btn-secondary" id="zk-block-reload">Reload</button>

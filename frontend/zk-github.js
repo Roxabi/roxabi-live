@@ -53,7 +53,7 @@ export async function consumeZkReauthFromUrl() {
   }
 }
 
-export function zkReauthLoginUrl(redirect = '/') {
+export function zkReauthLoginUrl(redirect = '/dashboard') {
   const dest = encodeURIComponent(redirect);
   return `/login?reauth=1&redirect=${dest}`;
 }
@@ -79,7 +79,7 @@ export async function consumeZkHandoffFromUrl() {
   return true;
 }
 
-export function zkLoginUrl(redirect = '/') {
+export function zkLoginUrl(redirect = '/dashboard') {
   const dest = encodeURIComponent(redirect);
   return `/login?zk=1&redirect=${dest}`;
 }

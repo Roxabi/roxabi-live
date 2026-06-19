@@ -54,7 +54,7 @@ export function wireUserMenu(me) {
   $('user-menu-signout')?.addEventListener('click', async () => {
     close();
     await api('/logout', { method: 'POST' }).catch(() => {});
-    location.reload();
+    location.href = '/';
   });
 
   document.addEventListener('click', (e) => {
