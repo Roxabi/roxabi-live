@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.13.1...roxabi-live/v0.14.0) (2026-06-19)
+
+
+### Features
+
+* **auth:** guided GitHub App install UX — pending sessions, account/org/repo choices, post-install return ([#223](https://github.com/Roxabi/roxabi-live/pull/223))
+
+
+### Bug Fixes
+
+* **auth:** align `/api/me` install targets with `install_pending` and filter deleted tenants ([#223](https://github.com/Roxabi/roxabi-live/pull/223))
+* **auth:** fail-closed repo access when tenant is not linked ([#223](https://github.com/Roxabi/roxabi-live/pull/223))
+
 ## [0.13.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.13.0...roxabi-live/v0.13.1) (2026-06-19)
 
 
