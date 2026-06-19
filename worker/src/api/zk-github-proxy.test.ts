@@ -111,6 +111,31 @@ describe("zkGithubGraphqlRoute", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("rejects subscription operations without calling GitHub", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { db } = captureDb((sql) => {
+      if (sql.includes("zk_opt_in")) return [{ zk_opt_in: 1 }];
+      return [];
+    });
+    const res = await makeApp(db).request(
+      "/api/zk/github/graphql",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-GitHub-User-Token": "gho_test_token",
+        },
+        body: JSON.stringify({
+          query: "subscription { issueEvent { id } }",
+        }),
+      },
+      makeEnv(db),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json() as { error: string }).error).toBe("read_only");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("allows a query whose selection set contains a field named like a keyword", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ data: {} }), {
