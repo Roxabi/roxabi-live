@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.16.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.15.0...roxabi-live/v0.16.0) (2026-06-19)
+
+
+### Features
+
+* **zk:** dismissible banner when v1→v2 migration is incomplete ([#228](https://github.com/Roxabi/roxabi-live/pull/228))
+* **zk:** structure-only sync enabled in production with config coherence guards
+
+
+### Bug Fixes
+
+* **zk:** 48h security review hardening — client crypto, reset, migration, idle lock, backup/proxy/redaction server paths ([#225](https://github.com/Roxabi/roxabi-live/pull/225))
+* **zk:** tighten KEY_FP_RE to exactly 32 hex chars ([#227](https://github.com/Roxabi/roxabi-live/pull/227))
+* **zk:** atomic rate-limit counters via INSERT … ON CONFLICT DO UPDATE ([#230](https://github.com/Roxabi/roxabi-live/pull/230))
+* **sync:** re-seed `sync_control` sentinels after D1 wipe (migration `0018` + runtime guard)
+* **auth:** open GitHub App install in the same tab ([#231](https://github.com/Roxabi/roxabi-live/pull/231))
+* **sync:** defer bootstrap corpus sync until ZK passphrase enrollment ([#231](https://github.com/Roxabi/roxabi-live/pull/231))
+* **frontend:** ASCII quotes in ZK migration notice string
+
+
+### Documentation
+
+* **review:** post-merge review for PR #223 guided install UX ([#229](https://github.com/Roxabi/roxabi-live/pull/229))
+
+
+### Chores
+
+* **ci:** standardize Node 22 and add prod-dependency audit step
+
 ## [0.15.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.14.0...roxabi-live/v0.15.0) (2026-06-19)
 
 

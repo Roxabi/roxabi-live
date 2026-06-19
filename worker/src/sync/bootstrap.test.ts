@@ -8,6 +8,7 @@ import {
 } from "./bootstrap";
 
 vi.mock("./sync", () => ({
+  ensureGlobalSyncControlSeeded: vi.fn().mockResolvedValue(undefined),
   isHalted: vi.fn().mockResolvedValue(false),
   runSync: vi.fn().mockResolvedValue(undefined),
 }));
@@ -76,6 +77,45 @@ describe("maybeScheduleBootstrapSync", () => {
     expect(scheduled).toBe(false);
     expect(waitUntil).not.toHaveBeenCalled();
   });
+
+  it("skips when ZK_ACCOUNT_KEY is on and user is not enrolled", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("zk_key_backups")) return [];
+      return [];
+    });
+    const waitUntil = vi.fn();
+
+    const scheduled = await maybeScheduleBootstrapSync(
+      db,
+      { DB: db } as never,
+      { waitUntil } as unknown as ExecutionContext,
+      { userId: 1, zkAccountKeyEnabled: true },
+    );
+
+    expect(scheduled).toBe(false);
+    expect(waitUntil).not.toHaveBeenCalled();
+  });
+
+  it("queues runSync when ZK_ACCOUNT_KEY is on and user is enrolled", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("zk_key_backups")) return [{ ok: 1 }];
+      if (sql.includes("COUNT(*)")) return [{ n: 0 }];
+      if (sql.includes("sync_running")) return [{ value: "0" }];
+      if (sql.includes("bootstrap_at")) return [];
+      return [];
+    });
+    const waitUntil = vi.fn();
+
+    const scheduled = await maybeScheduleBootstrapSync(
+      db,
+      { DB: db } as never,
+      { waitUntil } as unknown as ExecutionContext,
+      { userId: 1, zkAccountKeyEnabled: true },
+    );
+
+    expect(scheduled).toBe(true);
+    expect(waitUntil).toHaveBeenCalledOnce();
+  });
 });
 
 describe("getSyncStatus", () => {
@@ -91,6 +131,24 @@ describe("getSyncStatus", () => {
       issue_count: 0,
       sync_running: true,
       initial_sync: true,
+    });
+  });
+
+  it("clears initial_sync when ZK is required but user is not enrolled", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("zk_key_backups")) return [];
+      if (sql.includes("COUNT(*)")) return [{ n: 0 }];
+      if (sql.includes("sync_running")) return [{ value: "0" }];
+      if (sql.includes("halted")) return [{ value: "0" }];
+      return [];
+    });
+
+    await expect(
+      getSyncStatus(db, true, { userId: 1, zkAccountKeyEnabled: true }),
+    ).resolves.toEqual({
+      issue_count: 0,
+      sync_running: false,
+      initial_sync: false,
     });
   });
 

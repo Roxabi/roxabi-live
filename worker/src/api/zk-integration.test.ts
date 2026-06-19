@@ -27,7 +27,7 @@ const ISSUE_KEY = "Roxabi/live#42";
 const REPO = "Roxabi/live";
 
 const VALID_BACKUP = {
-  key_fp: "deadbeef12345678",
+  key_fp: "deadbeef1234567890abcdef12345678",
   kdf_params: JSON.stringify({ m: 65536, t: 3, p: 1 }),
   wrap_iv: "iv-b64",
   wrapped_key: "wrapped-b64",

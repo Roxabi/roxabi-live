@@ -15,6 +15,8 @@ import {
   ensureAccountKeySealing,
   syncZkContentFromGitHub,
   SEALED_TITLE_LABEL,
+  isZkMigrationIncomplete,
+  clearZkMigrationIncomplete,
 } from './zk-sync.js';
 import { requireZkEnrollmentGate } from './zk-enroll.js';
 import { waitForInitialSync } from './initial-sync.js';
@@ -34,10 +36,31 @@ const listControls  = $('list-controls');
 const graphControls = $('graph-controls');
 const subtitle      = $('subtitle');
 const errorMsg      = $('error-msg');
+const zkMigrationNotice = $('zk-migration-notice');
 
 const PIVOT_DIMS = ['milestone', 'priority', 'repo', 'lane', 'size', 'none'];
 const LIST_DIMS  = ['milestone', 'priority', 'repo', 'lane', 'size', 'status', 'parent', 'none'];
 const TABLE_GROUP_DIMS = ['lane', 'parent', 'none'];
+
+// ─── ZK migration incomplete notice ─────────────────────────────────────────
+function showZkMigrationNotice() {
+  if (!isZkMigrationIncomplete()) return;
+  zkMigrationNotice.textContent = '';
+  const msg = document.createElement('span');
+  msg.textContent =
+    'Encryption upgrade incomplete — open Roxabi on your original device to finish, or some older items can\'t be decrypted.';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'zk-migration-notice-dismiss';
+  btn.title = 'Dismiss';
+  btn.textContent = '×';
+  btn.addEventListener('click', () => {
+    clearZkMigrationIncomplete();
+    zkMigrationNotice.hidden = true;
+  });
+  zkMigrationNotice.append(msg, btn);
+  zkMigrationNotice.hidden = false;
+}
 
 // ─── Seg group builder (click active to deactivate → 'none') ────────────────
 function buildSegs(container, values, current, onPick, opts = {}) {
@@ -379,6 +402,7 @@ async function init() {
       await applyZkDecryption(state.nodes, sessionGithubLogin, { accountKeyMode: true });
       state.nodesByKey = new Map(state.nodes.map((n) => [n.key, n]));
       render();
+      showZkMigrationNotice();
     }
     if (getGithubUserToken()) {
       try {

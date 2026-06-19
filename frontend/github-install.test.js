@@ -30,4 +30,16 @@ describe('partitionInstallTargets', () => {
     expect(personal?.login).toBe('alice');
     expect(orgs.map(o => o.login)).toEqual(['Roxabi', 'Other']);
   });
+
+  it('returns null personal and empty orgs for null input', () => {
+    const { personal, orgs } = partitionInstallTargets(null);
+    expect(personal).toBeNull();
+    expect(orgs).toEqual([]);
+  });
+
+  it('returns null personal and empty orgs for undefined input', () => {
+    const { personal, orgs } = partitionInstallTargets(undefined);
+    expect(personal).toBeNull();
+    expect(orgs).toEqual([]);
+  });
 });

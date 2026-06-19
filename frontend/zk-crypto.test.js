@@ -98,6 +98,26 @@ describe('zk-crypto accountKey v2', () => {
     expect(content.title).toBe('Wrapped key test');
   });
 
+  it('unwrapAccountKey rejects a backup with weakened KDF params', async () => {
+    const passphrase = 'strong-test-passphrase-216';
+    const backup = await wrapAccountKey(passphrase, accountKey);
+    // Operator tampers the stored kdf_params to a cheap cost (downgrade attempt).
+    const params = JSON.parse(backup.kdf_params);
+    const tampered = {
+      ...backup,
+      kdf_params: JSON.stringify({ ...params, m: 8, t: 1, p: 1 }),
+    };
+    await expect(unwrapAccountKey(passphrase, tampered)).rejects.toThrow(
+      'kdf_param_mismatch',
+    );
+  });
+
+  it('sealWithAccountKey uses a fresh IV per call', async () => {
+    const a = JSON.parse(await sealWithAccountKey(accountKey, { title: 'x' }));
+    const b = JSON.parse(await sealWithAccountKey(accountKey, { title: 'x' }));
+    expect(a.iv).not.toBe(b.iv);
+  });
+
   it('fingerprintAccountKey returns 32 hex chars', async () => {
     const fp = await fingerprintAccountKey(accountKey);
     expect(fp).toMatch(/^[0-9a-f]{32}$/);

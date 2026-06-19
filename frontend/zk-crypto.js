@@ -376,12 +376,22 @@ export async function wrapAccountKey(passphrase, accountKey) {
  * @returns {Promise<CryptoKey>} non-extractable session accountKey
  */
 export async function unwrapAccountKey(passphrase, backup) {
-  const params =
+  const blob =
     typeof backup.kdf_params === 'string'
       ? JSON.parse(backup.kdf_params)
       : backup.kdf_params;
-  const salt = hexDecode(params.salt);
-  const wrappingKey = await deriveWrappingKey(passphrase, salt, params);
+  // Pin KDF cost client-side: never trust server-supplied m/t/p (a malicious or
+  // compromised operator could return weakened params to make offline
+  // brute-force of the passphrase cheap). Only the salt comes from the blob.
+  if (
+    blob.m !== ARGON2_PARAMS.m ||
+    blob.t !== ARGON2_PARAMS.t ||
+    blob.p !== ARGON2_PARAMS.p
+  ) {
+    throw new Error('kdf_param_mismatch');
+  }
+  const salt = hexDecode(blob.salt);
+  const wrappingKey = await deriveWrappingKey(passphrase, salt, ARGON2_PARAMS);
   const rawAccountKey = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: b64Decode(backup.wrap_iv) },
     wrappingKey,

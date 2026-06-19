@@ -14,6 +14,29 @@ import { userZkOptIn } from "../auth/zk";
 
 const MAX_BODY_BYTES = 32 * 1024;
 
+/**
+ * Reject GraphQL documents containing a top-level `mutation`/`subscription`
+ * operation. The relay is read-only (issue content fetch); writes must flow
+ * through the user's own GitHub session, never the Worker token path. Scans at
+ * brace-depth 0 only, after stripping comments and string literals, so field
+ * names like `mutation` nested in a selection set do not false-positive.
+ */
+export function isReadOnlyGraphql(query: string): boolean {
+  const cleaned = query
+    .replace(/#[^\n\r]*/g, " ")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  let depth = 0;
+  const re = /[{}]|\b(?:query|mutation|subscription)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cleaned)) !== null) {
+    const tok = m[0];
+    if (tok === "{") depth++;
+    else if (tok === "}") depth = Math.max(0, depth - 1);
+    else if (depth === 0 && tok !== "query") return false;
+  }
+  return true;
+}
+
 export async function zkGithubGraphqlRoute(
   c: Context<AuthEnv>,
 ): Promise<Response> {
@@ -48,6 +71,10 @@ export async function zkGithubGraphqlRoute(
     typeof (parsed as { query: unknown }).query !== "string"
   ) {
     return c.json({ error: "query required" }, 400);
+  }
+
+  if (!isReadOnlyGraphql((parsed as { query: string }).query)) {
+    return c.json({ error: "read_only" }, 400);
   }
 
   const upstream = await fetch("https://api.github.com/graphql", {

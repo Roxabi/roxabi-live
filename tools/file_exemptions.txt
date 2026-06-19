@@ -4,15 +4,15 @@
 # The declared count is a local cap — exceeding it fails the gate.
 
 # Production sources above QG_FILE_MAX=300 (split deferred; cap prevents growth)
-worker/src/sync/sync.ts  # 1290 lines — #180 sync orchestrator; #216 structure-only sync path
+worker/src/sync/sync.ts  # 1304 lines — #180 sync orchestrator; #216 structure-only sync path
 worker/src/api/zk-key-backup.ts  # 340 lines — #216 passphrase backup API (enroll/update/rotation)
 worker/src/webhook/handlers.ts  # 462 lines — #180 issue webhook dispatch + bootstrap sync trigger
 worker/src/webhook/handlers-app.ts  # 369 lines — #180 GitHub App lifecycle handlers
 worker/src/webhook/mutations.ts  # 339 lines — #180 D1 write helpers for webhooks
 
 # Test files (colocated *.test.ts — exempt with local caps, not production code)
-worker/src/sync/sync.test.ts  # 1715 lines — #180 integration harness for runSync; #216 structure-only
-worker/src/api/zk-key-backup.test.ts  # 385 lines — #216 backup API security + CAS/reauth tests
+worker/src/sync/sync.test.ts  # 1729 lines — #180 integration harness for runSync; #216 structure-only
+worker/src/api/zk-key-backup.test.ts  # 506 lines — #216 backup API security + CAS/reauth tests; fp enforcement + atomic UPSERT tests
 worker/src/webhook/handlers.test.ts  # 945 lines — #180 webhook handler contract tests
 worker/src/auth/oauth.test.ts  # 931 lines — #180 OAuth + install-pending flow tests
 worker/src/api/issues.test.ts  # 710 lines — #180 tenant-scoped issues API tests; #216 zk redaction

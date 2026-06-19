@@ -95,6 +95,7 @@ export async function migrateV1PayloadsToAccountKey(githubLogin, accountKey, key
     (row) => parseEnvelopeVersion(row.encrypted_payload) === 1,
   );
   if (v1Rows.length === 0) {
+    clearZkMigrationIncomplete();
     await deleteZkKeyPair(githubLogin);
     return 0;
   }
@@ -122,9 +123,39 @@ export async function migrateV1PayloadsToAccountKey(githubLogin, accountKey, key
   }
 
   if (migrated.length === v1Rows.length) {
+    clearZkMigrationIncomplete();
     await deleteZkKeyPair(githubLogin);
+  } else {
+    // Partial migration: KEEP the v1 keypair (rows would otherwise orphan,
+    // permanently undecryptable) and signal the UI to prompt the user to finish
+    // on the original device. Never silently drop undecryptable v1 rows.
+    const skipped = v1Rows.length - migrated.length;
+    console.warn('[zk]', { event: 'zk.migrate.v1_to_v2.incomplete', skipped });
+    try {
+      sessionStorage.setItem('roxabi:zk-migrate-incomplete', String(skipped));
+    } catch {
+      /* sessionStorage unavailable */
+    }
   }
   return migrated.length;
+}
+
+/** Clear the partial-migration signal after a clean or complete migration. */
+export function clearZkMigrationIncomplete() {
+  try {
+    sessionStorage.removeItem('roxabi:zk-migrate-incomplete');
+  } catch {
+    /* sessionStorage unavailable */
+  }
+}
+
+/** True when the last v1→v2 migration left undecryptable rows behind. */
+export function isZkMigrationIncomplete() {
+  try {
+    return sessionStorage.getItem('roxabi:zk-migrate-incomplete') !== null;
+  } catch {
+    return false;
+  }
 }
 
 /**

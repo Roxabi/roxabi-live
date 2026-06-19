@@ -8,7 +8,7 @@ import { zkAccountKeyEnabled } from "../auth/zk-flags";
 import { consumeReauthProof, issueReauthProof } from "../auth/zk-reauth";
 import { writeZkAudit } from "../observability/zk-events";
 
-const KEY_FP_RE = /^[0-9a-f]{8,64}$/;
+const KEY_FP_RE = /^[0-9a-f]{32}$/;
 const MAX_WRAPPED_BYTES = 8 * 1024;
 const MAX_PUT_PER_HOUR = 5;
 const KDF_ALG = "argon2id";
@@ -63,60 +63,59 @@ interface BackupRow {
   updated_at: string;
 }
 
-async function readBackupPutCount(
-  db: D1Database,
-  userId: number,
-): Promise<{ hourKey: string; count: number }> {
-  const hourKey = new Date().toISOString().slice(0, 13);
-  const rowKey = `zk_backup_put:${userId}`;
-  const row = await db
-    .prepare(
-      `SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?`,
-    )
-    .bind(rowKey)
-    .first<{ value: string }>();
+function backupHourKey(): string {
+  return new Date().toISOString().slice(0, 13);
+}
 
-  let count = 0;
-  let storedHour = hourKey;
-  if (row?.value) {
-    try {
-      const parsed = JSON.parse(row.value) as { hour?: string; count?: number };
-      storedHour = parsed.hour ?? hourKey;
-      count = typeof parsed.count === "number" ? parsed.count : 0;
-    } catch {
-      count = 0;
-    }
+function parseBackupCount(value: string | null | undefined, hourKey: string): number {
+  if (!value) return 0;
+  try {
+    const parsed = JSON.parse(value) as { hour?: string; count?: number };
+    if (parsed.hour !== hourKey) return 0;
+    return typeof parsed.count === "number" ? parsed.count : 0;
+  } catch {
+    return 0;
   }
-
-  if (storedHour !== hourKey) {
-    count = 0;
-  }
-  return { hourKey, count };
 }
 
 async function isBackupPutRateLimited(
   db: D1Database,
   userId: number,
 ): Promise<boolean> {
-  const { count } = await readBackupPutCount(db, userId);
-  return count >= MAX_PUT_PER_HOUR;
+  const hourKey = backupHourKey();
+  const rowKey = `zk_backup_put:${userId}`;
+  const row = await db
+    .prepare(`SELECT value FROM sync_control WHERE tenant_id = 0 AND key = ?`)
+    .bind(rowKey)
+    .first<{ value: string }>();
+  return parseBackupCount(row?.value, hourKey) >= MAX_PUT_PER_HOUR;
 }
 
+/**
+ * Atomically increment the backup-put counter for the current hour.
+ * A single INSERT … ON CONFLICT DO UPDATE performs the read-modify-write in
+ * one SQL statement, preventing lost increments under concurrent isolates.
+ */
 async function recordBackupPutSuccess(
   db: D1Database,
   userId: number,
 ): Promise<void> {
-  const { hourKey, count } = await readBackupPutCount(db, userId);
+  const hourKey = backupHourKey();
   const rowKey = `zk_backup_put:${userId}`;
   await db
     .prepare(
       `INSERT INTO sync_control (tenant_id, key, value, updated_at)
-       VALUES (0, ?, ?, datetime('now'))
+       VALUES (0, ?, json_object('hour', ?, 'count', 1), datetime('now'))
        ON CONFLICT(tenant_id, key) DO UPDATE SET
-         value = excluded.value,
+         value = CASE
+           WHEN json_extract(value, '$.hour') = ?
+           THEN json_object('hour', ?,
+                  'count', CAST(json_extract(value, '$.count') AS INTEGER) + 1)
+           ELSE json_object('hour', ?, 'count', 1)
+         END,
          updated_at = datetime('now')`,
     )
-    .bind(rowKey, JSON.stringify({ hour: hourKey, count: count + 1 }))
+    .bind(rowKey, hourKey, hourKey, hourKey, hourKey)
     .run();
 }
 
@@ -296,6 +295,12 @@ export async function putZkKeyBackupRoute(
   const casVersion = existing.backup_version;
   const nextVersion = existing.backup_version + 1;
 
+  // Consume reauth proof BEFORE writing — prevents replay if the write is
+  // retried or races with a concurrent request using the same proof token.
+  if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
+    return c.json({ error: "reauth_required" }, 403);
+  }
+
   if (rotation) {
     const result = await c.env.DB
       .prepare(
@@ -322,9 +327,6 @@ export async function putZkKeyBackupRoute(
       .run();
     if (result.meta.changes === 0) {
       return c.json({ error: "backup_version_conflict" }, 409);
-    }
-    if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
-      return c.json({ error: "reauth_required" }, 403);
     }
     await recordBackupPutSuccess(c.env.DB, s.userId);
     await logBackupEvent(c.env, "zk.backup.rotated", s.userId, key_fp, nextVersion, true);
@@ -354,9 +356,6 @@ export async function putZkKeyBackupRoute(
     .run();
   if (result.meta.changes === 0) {
     return c.json({ error: "backup_version_conflict" }, 409);
-  }
-  if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
-    return c.json({ error: "reauth_required" }, 403);
   }
   await recordBackupPutSuccess(c.env.DB, s.userId);
   await logBackupEvent(c.env, "zk.backup.updated", s.userId, key_fp, nextVersion, false);
