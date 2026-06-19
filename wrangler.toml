@@ -23,7 +23,7 @@ routes = [
 ]
 
 [vars]
-APP_RELEASE = "0.18.1"
+APP_RELEASE = "0.18.2"
 ZK_ACCOUNT_KEY = "1"
 # structure-only MUST be "1" whenever ZK_ACCOUNT_KEY is "1" — otherwise the daily
 # cron re-fetches and stores plaintext issue titles in D1, breaking the ZK promise.
@@ -69,7 +69,7 @@ name = "roxabi-live-staging"
 workers_dev = true
 
 [env.staging.vars]
-APP_RELEASE = "0.18.1"
+APP_RELEASE = "0.18.2"
 ZK_ACCOUNT_KEY = "1"
 ZK_STRUCTURE_ONLY = "1"
 # `routes` is inheritable — without this explicit empty override a staging

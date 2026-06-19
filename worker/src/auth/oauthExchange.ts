@@ -13,9 +13,11 @@ import { serveDashboardShell } from "./dashboard-route";
 import {
   authRedirect,
   isDashboardDest,
+  readSessionToken,
   sanitizeAuthRedirect,
   sessionCookieHeaders,
 } from "./cookies";
+import { validateSession } from "./session";
 
 const EXCHANGE_TTL_MINUTES = 5;
 
@@ -63,6 +65,14 @@ export async function authExchangeRoute(
     .first<{ session_token: string; redirect_after: string }>();
 
   if (!row) {
+    // Code is one-shot; refresh or a second hop after Set-Cookie still has the session.
+    const token = readSessionToken(c);
+    if (token) {
+      const session = await validateSession(c.env.DB, token);
+      if (session) {
+        return serveDashboardShell(c);
+      }
+    }
     return c.json({ error: "expired" }, 400);
   }
 
