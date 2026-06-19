@@ -24,6 +24,15 @@ function destHasZkParams(path: string): boolean {
   );
 }
 
+function htmlAttrEscape(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/'/g, "&#x27;");
+}
+
 /** 200 HTML: poll /api/me until cookie is live, then location.replace(dest). */
 export function authNavigateHtml(
   dest: string,
@@ -43,30 +52,31 @@ export function authNavigateHtml(
   var tries = 0;
   var max = 40;
   function go() { location.replace(next); }
+  function showSlowLink() {
+    var msg = document.getElementById("msg");
+    msg.textContent = "";
+    var a = document.createElement("a");
+    a.href = next;
+    a.textContent = "continuer";
+    msg.appendChild(document.createTextNode("Session lente — "));
+    msg.appendChild(a);
+  }
   function poll() {
     fetch("/api/me", { credentials: "same-origin", cache: "no-store" })
       .then(function (r) {
         if (r.ok) return go();
-        if (++tries >= max) {
-          document.getElementById("msg").innerHTML =
-            'Session lente — <a href="' + next + '">continuer</a>';
-          return;
-        }
+        if (++tries >= max) return showSlowLink();
         setTimeout(poll, 150);
       })
       .catch(function () {
-        if (++tries >= max) {
-          document.getElementById("msg").innerHTML =
-            'Session lente — <a href="' + next + '">continuer</a>';
-          return;
-        }
+        if (++tries >= max) return showSlowLink();
         setTimeout(poll, 150);
       });
   }
   setTimeout(poll, 50);
 })(${JSON.stringify(safeDest)});
 </script>
-<noscript><p><a href="${encodeURI(safeDest)}">Continuer</a></p></noscript>
+<noscript><p><a href="${htmlAttrEscape(safeDest)}">Continuer</a></p></noscript>
 </body>
 </html>`;
   const headers = new Headers({

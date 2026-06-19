@@ -17,6 +17,7 @@ import { dashboardRoute } from "./auth/dashboard-route";
 import { meRoute, logoutRoute } from "./api/me";
 import type { AuthEnv } from "./auth/types";
 import { requireSession, requireLinkedTenant } from "./auth/session";
+import { requireSameOriginPost } from "./auth/csrf";
 import { installCompleteRoute } from "./api/install-complete";
 import { activeTenantRoute } from "./api/active-tenant";
 import { zkOptInRoute } from "./api/zk-opt-in";
@@ -99,26 +100,26 @@ app.get("/auth/status", authStatusRoute);
 app.get("/install/complete", installCompleteRoute);
 app.use("/api/me", requireSession);
 app.get("/api/me", meRoute);
-app.post("/api/consent", requireLinkedTenant, consentRoute);
-app.post("/api/install/refresh", requireSession, installRefreshRoute);
+app.post("/api/consent", requireSameOriginPost, requireLinkedTenant, consentRoute);
+app.post("/api/install/refresh", requireSameOriginPost, requireSession, installRefreshRoute);
 app.use("/api/sync/status", requireLinkedTenant);
 app.get("/api/sync/status", syncStatusRoute);
-app.post("/api/active-tenant", requireLinkedTenant, activeTenantRoute);
-app.post("/api/zk-opt-in", requireLinkedTenant, zkOptInRoute);
+app.post("/api/active-tenant", requireSameOriginPost, requireLinkedTenant, activeTenantRoute);
+app.post("/api/zk-opt-in", requireSameOriginPost, requireLinkedTenant, zkOptInRoute);
 app.use("/api/zk/payloads", requireLinkedTenant);
 app.get("/api/zk/payloads", listZkPayloadsRoute);
 app.put("/api/zk/payloads", putZkPayloadsRoute);
-app.post("/api/zk/consume-handoff", requireLinkedTenant, consumeZkHandoffRoute);
-app.post("/api/zk/consume-reauth", requireLinkedTenant, consumeZkReauthRoute);
+app.post("/api/zk/consume-handoff", requireSameOriginPost, requireLinkedTenant, consumeZkHandoffRoute);
+app.post("/api/zk/consume-reauth", requireSameOriginPost, requireLinkedTenant, consumeZkReauthRoute);
 app.use("/api/zk/key-backup", requireLinkedTenant);
 app.get("/api/zk/key-backup", getZkKeyBackupRoute);
 app.put("/api/zk/key-backup", putZkKeyBackupRoute);
 app.use("/api/zk/reset", requireLinkedTenant);
-app.post("/api/zk/reset", postZkResetRoute);
-app.post("/api/zk/github/graphql", requireLinkedTenant, zkGithubGraphqlRoute);
-// /logout is intentionally ungated: logoutRoute is null-safe + idempotent, and SameSite=Strict
-// blocks cross-site cookie submission — gating it would make a stale/expired cookie impossible to clear.
-app.post("/logout", logoutRoute);
+app.post("/api/zk/reset", requireSameOriginPost, postZkResetRoute);
+app.post("/api/zk/github/graphql", requireSameOriginPost, requireLinkedTenant, zkGithubGraphqlRoute);
+// /logout is ungated by session middleware (idempotent + null-safe). SameSite=Lax on session cookie
+// blocks most cross-site POSTs; requireSameOriginPost adds defense-in-depth.
+app.post("/logout", requireSameOriginPost, logoutRoute);
 
 // GET /dashboard — session-gated app shell (HTML only; JS/CSS served from ASSETS root).
 app.get("/dashboard", dashboardRoute);

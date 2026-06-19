@@ -10,7 +10,7 @@
 
 import type { Context } from "hono";
 import type { Env } from "../types";
-import { mintSession } from "./session";
+import { mintSession, revokeOtherSessions } from "./session";
 import {
   authRedirect,
   readSessionToken,
@@ -83,17 +83,18 @@ async function mustReOAuth(c: Context<{ Bindings: Env }>): Promise<boolean> {
   if (!token) return true;
   const session = await validateSession(c.env.DB, token);
   if (!session) return true;
-  if (session.tenantId === null) return true;
 
   const linked = await c.env.DB.prepare(
     `SELECT COUNT(*) AS n FROM user_installations ui
-     JOIN tenants t ON t.id = ui.tenant_id AND t.deleted_at IS NULL
+     JOIN tenants t ON t.id = ui.tenant_id AND t.deleted_at IS NULL AND t.suspended_at IS NULL
      WHERE ui.user_id = ?`,
   )
     .bind(session.userId)
     .first<{ n: number }>();
 
-  return (linked?.n ?? 0) === 0;
+  if ((linked?.n ?? 0) > 0) return false;
+  if (session.tenantId !== null) return false;
+  return true;
 }
 
 export async function loginRoute(
@@ -291,6 +292,7 @@ export async function callbackRoute(
     }
 
     const rawToken = await mintSession(c.env.DB, userRow.id, null);
+    await revokeOtherSessions(c.env.DB, userRow.id, rawToken);
     return completeOAuthSession(c, rawToken, redirectAfter);
   }
 
@@ -351,6 +353,7 @@ export async function callbackRoute(
 
   // Mint session tied to the first installation's tenant
   const rawToken = await mintSession(c.env.DB, userId, firstTenantId);
+  await revokeOtherSessions(c.env.DB, userId, rawToken);
 
   if (wantsReauth) {
     const reauthCode = await createZkReauthCode(c.env, userId);

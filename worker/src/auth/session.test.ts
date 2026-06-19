@@ -444,6 +444,22 @@ describe("authNavigateHtml", () => {
     expect(body).toContain("/dashboard");
     expect(body).not.toContain("//evil");
   });
+
+  it("rejects XSS payloads in redirect paths", async () => {
+    const res = authNavigateHtml('/dashboard" onclick="alert(1)');
+    const body = await res.text();
+    expect(body).not.toContain("onclick");
+    expect(body).toContain("/dashboard");
+  });
+
+  it("renders safe noscript fallback link for ZK destinations", async () => {
+    const res = authNavigateHtml("/dashboard?zk_handoff=abc");
+    const body = await res.text();
+    expect(body).toMatch(
+      /<noscript><p><a href="\/dashboard\?zk_handoff=abc">Continuer<\/a><\/p><\/noscript>/,
+    );
+    expect(body).not.toContain("<script>alert");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -87,22 +87,32 @@ function renderInstallOption(opt) {
     </a>`;
 }
 
-async function pollInstallRefresh(maxAttempts = 15) {
+/** @returns {{ linked: object|null, oauthFallback: string }} */
+export async function pollInstallRefresh(maxAttempts = 20) {
+  let oauthFallback = '/login?intent=install&redirect=%2Fdashboard';
   for (let i = 0; i < maxAttempts; i++) {
     const resp = await fetch('/api/install/refresh', {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',
     });
-    if (resp.status === 200) return resp.json();
+    if (resp.status === 401) throw new AuthError();
+    if (resp.status === 200) return { linked: await resp.json(), oauthFallback };
     if (resp.status === 202) {
       const body = await resp.json().catch(() => ({}));
+      if (body.oauth_fallback) oauthFallback = body.oauth_fallback;
       await new Promise(r => setTimeout(r, body.retry_after_ms ?? 2000));
       continue;
     }
     throw new Error(`/api/install/refresh ${resp.status}`);
   }
-  return null;
+  return { linked: null, oauthFallback };
+}
+
+export function onboardingStepFromMe(me) {
+  const step = me?.onboarding_step;
+  if (step === 'install' || step === 'consent' || step === 'ready') return step;
+  throw new Error('invalid onboarding_step');
 }
 
 function renderInstallCta(me) {
@@ -157,21 +167,25 @@ function renderInstallCta(me) {
     btn.disabled = true;
     btn.textContent = 'Vérification…';
     try {
-      const refreshed = await pollInstallRefresh();
-      if (refreshed?.onboarding_step) {
+      const { linked, oauthFallback } = await pollInstallRefresh();
+      if (linked?.onboarding_step) {
         location.reload();
         return;
       }
       if (hint) {
         hint.hidden = false;
+        const fallback = escHtml(oauthFallback);
         hint.innerHTML =
-          'Installation pas encore détectée. Attendez quelques secondes et réessayez, ou ' +
-          '<a href="/login?intent=install&amp;redirect=%2Fdashboard">reconnectez-vous via GitHub</a>.';
+          'Installation pas encore détectée après plusieurs tentatives. Réessayez ou ' +
+          `<a href="${fallback}">reconnectez-vous via GitHub</a>.`;
       }
-    } catch {
+    } catch (e) {
       if (hint) {
         hint.hidden = false;
-        hint.textContent = 'Erreur réseau — réessayez dans un instant.';
+        hint.textContent =
+          e instanceof AuthError
+            ? 'Session expirée — rechargez la page ou reconnectez-vous.'
+            : 'Erreur réseau — réessayez dans un instant.';
       }
     } finally {
       btn.disabled = false;
@@ -206,6 +220,7 @@ function renderConsentGate(me) {
           <strong>Les titres et corps d'issues sont chiffrés côté client avant stockage.</strong>
           La structure du graphe (état, blockers, labels) reste lisible par l'opérateur.
         </p>
+        <p class="consent-error" id="consent-error" hidden role="alert"></p>
         <div class="consent-actions">
           <button class="consent-btn-secondary" id="consent-logout">Se déconnecter</button>
           <button class="consent-btn-primary" id="consent-ack">J'ai compris — lancer la synchronisation</button>
@@ -233,12 +248,20 @@ function renderConsentGate(me) {
 
     ackBtn.addEventListener('click', async () => {
       ackBtn.disabled = true;
+      const errEl = $('consent-error');
+      if (errEl) errEl.hidden = true;
       try {
         await api('/api/consent', { method: 'POST' });
+        clearLegacyConsent(me.user.github_login);
         el.setAttribute('hidden', '');
         resolve();
       } catch {
         ackBtn.disabled = false;
+        if (errEl) {
+          errEl.hidden = false;
+          errEl.textContent =
+            'Enregistrement impossible — vérifiez votre connexion et réessayez.';
+        }
       }
     });
 
@@ -312,7 +335,13 @@ export async function requireAuthGate() {
   }
 
   me = await migrateLegacyConsent(me);
-  const step = me.onboarding_step ?? 'install';
+  let step;
+  try {
+    step = onboardingStepFromMe(me);
+  } catch {
+    showSessionLost();
+    return 'landing';
+  }
 
   if (step === 'install') {
     renderInstallCta(me);
