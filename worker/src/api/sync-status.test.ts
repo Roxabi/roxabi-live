@@ -46,11 +46,13 @@ function makeApp(db: D1Database, session = STUB_SESSION) {
   return app;
 }
 
-function makeEnv(db: D1Database): Env {
+function makeEnv(db: D1Database, overrides: Partial<Env> = {}): Env {
   return {
     DB: db,
     ASSETS: { fetch: async () => new Response("ok") } as unknown as Fetcher,
     GITHUB_WEBHOOK_SECRET: "",
+    ZK_ACCOUNT_KEY: "1",
+    ...overrides,
   } as unknown as Env;
 }
 
@@ -86,8 +88,29 @@ describe("GET /api/sync/status", () => {
       makeEnv(db),
       { waitUntil } as unknown as ExecutionContext,
     );
-    expect(maybeScheduleBootstrapSync).toHaveBeenCalled();
+    expect(maybeScheduleBootstrapSync).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      { userId: STUB_SESSION.userId, zkAccountKeyEnabled: true },
+    );
     expect(isGlobalSyncRunning).toHaveBeenCalled();
+  });
+
+  it("does not schedule bootstrap when initial_sync is false (ZK not enrolled)", async () => {
+    vi.mocked(getSyncStatus).mockResolvedValueOnce({
+      issue_count: 0,
+      sync_running: false,
+      initial_sync: false,
+    });
+    const { db } = captureDb();
+    await makeApp(db).request(
+      "/api/sync/status",
+      {},
+      makeEnv(db),
+      { waitUntil: vi.fn() } as unknown as ExecutionContext,
+    );
+    expect(maybeScheduleBootstrapSync).not.toHaveBeenCalled();
   });
 
   it("returns 401 without session", async () => {
