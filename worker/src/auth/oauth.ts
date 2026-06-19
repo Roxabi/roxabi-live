@@ -20,8 +20,29 @@ import {
 import { validateSession } from "./session";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
-import { createOAuthExchange } from "./oauthExchange";
+import { completeOAuthSession } from "./post-oauth";
 import { serveLoginPrompt } from "./login-prompt";
+
+export type LoginIntent = "signin" | "install" | "reauth" | "zk" | "prompt";
+
+/** Unified /login intent — legacy ?go=1 / ?install=1 aliases kept one release. */
+export function resolveLoginIntent(c: Context<{ Bindings: Env }>): LoginIntent {
+  const intent = c.req.query("intent");
+  if (
+    intent === "signin" ||
+    intent === "install" ||
+    intent === "reauth" ||
+    intent === "zk" ||
+    intent === "prompt"
+  ) {
+    return intent;
+  }
+  if (c.req.query("install") === "1") return "install";
+  if (c.req.query("reauth") === "1") return "reauth";
+  if (c.req.query("zk") === "1") return "zk";
+  if (c.req.query("go") === "1") return "signin";
+  return "prompt";
+}
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -54,9 +75,9 @@ function bytesToHex(bytes: Uint8Array): string {
  * re-triggers GitHub while the session cookie is already valid (redirect loop).
  */
 async function mustReOAuth(c: Context<{ Bindings: Env }>): Promise<boolean> {
-  if (c.req.query("reauth") === "1") return true;
-  if (c.req.query("zk") === "1") return true;
-  if (c.req.query("install") !== "1") return false;
+  const intent = resolveLoginIntent(c);
+  if (intent === "reauth" || intent === "zk") return true;
+  if (intent !== "install") return false;
 
   const token = readSessionToken(c);
   if (!token) return true;
@@ -79,8 +100,9 @@ export async function loginRoute(
   c: Context<{ Bindings: Env }>,
 ): Promise<Response> {
   const redirectAfter = sanitizeAuthRedirect(c.req.query("redirect") ?? undefined);
-  const zkTokenHandoff = c.req.query("zk") === "1" ? 1 : 0;
-  const reauth = c.req.query("reauth") === "1" ? 1 : 0;
+  const intent = resolveLoginIntent(c);
+  const zkTokenHandoff = intent === "zk" ? 1 : 0;
+  const reauth = intent === "reauth" ? 1 : 0;
 
   const cleanRedirect = stripInstallParam(redirectAfter);
 
@@ -94,12 +116,7 @@ export async function loginRoute(
     }
   }
 
-  const autoStart =
-    c.req.query("go") === "1" ||
-    c.req.query("install") === "1" ||
-    c.req.query("reauth") === "1" ||
-    c.req.query("zk") === "1";
-  if (!autoStart) {
+  if (intent === "prompt") {
     return serveLoginPrompt(c, cleanRedirect);
   }
 
@@ -274,15 +291,7 @@ export async function callbackRoute(
     }
 
     const rawToken = await mintSession(c.env.DB, userRow.id, null);
-    const installDest = new URL(redirectAfter, origin);
-    installDest.searchParams.set("install", "1");
-    const installPath = `${installDest.pathname}${installDest.search}`;
-    const exchangeCode = await createOAuthExchange(
-      c.env.DB,
-      rawToken,
-      installPath,
-    );
-    return authRedirect(`/auth/exchange?code=${exchangeCode}`);
+    return completeOAuthSession(c, rawToken, redirectAfter);
   }
 
   // Upsert user — get internal id
@@ -363,10 +372,9 @@ export async function callbackRoute(
     }
   }
 
-  const exchangeCode = await createOAuthExchange(
-    c.env.DB,
+  return completeOAuthSession(
+    c,
     rawToken,
     stripInstallParam(redirectAfter),
   );
-  return authRedirect(`/auth/exchange?code=${exchangeCode}`);
 }

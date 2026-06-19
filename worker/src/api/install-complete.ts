@@ -4,7 +4,7 @@
  * Operator config (GitHub App settings → Setup URL):
  *   https://live.roxabi.dev/install/complete
  *
- * Re-OAuth is required so we can fetch /user/installations and link tenants.
+ * Session already exists; dashboard calls POST /api/install/refresh to link tenants.
  */
 
 import type { Context } from "hono";
@@ -14,5 +14,5 @@ import { authRedirect } from "../auth/cookies";
 export async function installCompleteRoute(
   c: Context<{ Bindings: Env }>,
 ): Promise<Response> {
-  return authRedirect("/login?install=1&redirect=/dashboard");
+  return authRedirect("/dashboard");
 }

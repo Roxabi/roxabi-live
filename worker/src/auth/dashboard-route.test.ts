@@ -131,24 +131,7 @@ describe("GET /dashboard", () => {
     expect(env.ASSETS.fetch).toHaveBeenCalledOnce();
   });
 
-  it("forwards ?code&state to /oauth/callback (GitHub handoff)", async () => {
-    const db = makeSessionDb(null);
-    const env = makeEnv(db);
-
-    const res = await app.request(
-      "/dashboard/?code=ghcode&state=ghstate",
-      {},
-      env,
-    );
-
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe(
-      "/oauth/callback?code=ghcode&state=ghstate",
-    );
-    expect(env.ASSETS.fetch).not.toHaveBeenCalled();
-  });
-
-  it("forwards lone ?code to /auth/exchange (session handoff)", async () => {
+  it("redirects to login when ?code present without session", async () => {
     const db = makeSessionDb(null);
     const env = makeEnv(db);
 
@@ -159,9 +142,22 @@ describe("GET /dashboard", () => {
     );
 
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe(
-      "/auth/exchange?code=3021f76392ee418d8b6a9d70a5e8cd99",
+    expect(res.headers.get("Location")).toBe("/login?redirect=%2Fdashboard");
+    expect(env.ASSETS.fetch).not.toHaveBeenCalled();
+  });
+
+  it("strips ?code when session is already valid (refresh-safe)", async () => {
+    const db = makeSessionDb({ ...STUB_SESSION, tenantId: null });
+    const env = makeEnv(db);
+
+    const res = await app.request(
+      "/dashboard/?code=3021f76392ee418d8b6a9d70a5e8cd99&install=1",
+      { headers: { Cookie: `roxabi_session=${VALID_RAW_TOKEN}` } },
+      env,
     );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/dashboard");
     expect(env.ASSETS.fetch).not.toHaveBeenCalled();
   });
 

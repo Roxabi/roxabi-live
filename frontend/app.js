@@ -365,13 +365,10 @@ function startPolling() {
 }
 
 async function init() {
-  // SC1: requireAuthGate() gates all data fetches behind resolveView === 'dashboard'.
-  // This is a render-block (UX), not an authz boundary — /api/* is already
-  // session+tenant-scoped on the server. The gate prevents confusing 401/empty-graph
-  // errors for unauthenticated or unconsented users.
+  // SC1: requireAuthGate() gates data fetches until onboarding_step === 'ready'.
   try {
     const view = await requireAuthGate();
-    if (view !== 'dashboard') return; // auth gate is showing; do not fetch data
+    if (view !== 'ready') return;
   } catch (e) {
     if (e instanceof AuthError) return; // no session — landing view shown by requireAuthGate
     throw e;

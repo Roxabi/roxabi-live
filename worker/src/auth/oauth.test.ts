@@ -30,7 +30,9 @@ function applyBatchOverride(db: D1Database): void {
 function makeEnv(db: D1Database): Env {
   return {
     DB: db,
-    ASSETS: {} as Fetcher,
+    ASSETS: {
+      fetch: vi.fn(async () => new Response("<html>dashboard</html>", { status: 200 })),
+    } as unknown as Fetcher,
     GITHUB_WEBHOOK_SECRET: "webhook-secret",
     GITHUB_APP_ID: "12345",
     GITHUB_APP_CLIENT_ID: "Iv1.abc123",
@@ -69,9 +71,9 @@ describe("loginRoute", () => {
       const body = await res.text();
       expect(body).toContain("Continuer avec GitHub");
       expect(body).toContain("Connexion GitHub");
-      expect(body).toContain("/login?go=1");
+      expect(body).toContain("/login?intent=signin");
       expect(body).not.toContain("%252F");
-      expect(body).toContain('href="/login?go=1&redirect=%2Fdashboard"');
+      expect(body).toContain('href="/login?intent=signin&redirect=%2Fdashboard"');
       expect(res.headers.get("Location")).toBeNull();
       expect(stmts()).toHaveLength(0);
     });
@@ -765,11 +767,11 @@ describe("callbackRoute", () => {
       expect(uiStmt).toBeDefined();
     });
 
-    it("returns 302 to /auth/exchange (cookie set on exchange hop, not callback)", async () => {
+    it("serves dashboard HTML with Set-Cookie on callback (no exchange hop)", async () => {
       // Arrange
       const stateValue = "e".repeat(32);
       const captured: FakeStmt[] = [];
-      const db = makeHappyPathDb(captured);
+      const db = makeHappyPathDb(captured, "/dashboard");
 
       stubFetchSequence(
         "t",
@@ -787,14 +789,14 @@ describe("callbackRoute", () => {
       );
 
       // Assert
-      expect(res.status).toBe(302);
-      const location = res.headers.get("Location") ?? "";
-      expect(location).toMatch(/^\/auth\/exchange\?code=[0-9a-f]{32}$/);
-      expect(res.headers.get("Set-Cookie")).toBeNull();
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("dashboard");
+      expect(res.headers.get("Location")).toBeNull();
+      expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
       const exchangeInsert = captured.find((s) =>
         s.sql.toLowerCase().includes("oauth_exchange"),
       );
-      expect(exchangeInsert).toBeDefined();
+      expect(exchangeInsert).toBeUndefined();
     });
 
     it("redirects to redirect_after from state row when it is '/dashboard'", async () => {
@@ -818,20 +820,15 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — exchange row stores redirect_after for the cookie hop
-      expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
-      const exchangeInsert = captured.find((s) =>
-        s.sql.toLowerCase().includes("oauth_exchange"),
-      );
-      expect(exchangeInsert).toBeDefined();
-      expect(exchangeInsert!.args[2]).toBe("/dashboard");
+      // Assert — dashboard served inline with session cookie
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
     });
 
     it("uses two DB.batch round-trips (tenants + links) instead of a per-install loop", async () => {
       const stateValue = "h".repeat(32);
       const captured: FakeStmt[] = [];
-      const db = makeHappyPathDb(captured);
+      const db = makeHappyPathDb(captured, "/dashboard");
       stubFetchSequence(
         "t",
         { id: 42, login: "alice" },
@@ -843,16 +840,15 @@ describe("callbackRoute", () => {
         { method: "GET" },
         env,
       );
-      // Behavioral outcome, not just call shape: the two batches must yield exchange redirect.
-      expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
       expect((db as unknown as { batch: ReturnType<typeof vi.fn> }).batch).toHaveBeenCalledTimes(2);
     });
 
     it("handles multiple installations: distinct tenant ids route to the correct links + HTML redirect", async () => {
       const stateValue = "g".repeat(32);
       const captured: FakeStmt[] = [];
-      const db = makeHappyPathDb(captured);
+      const db = makeHappyPathDb(captured, "/dashboard");
       const idByInstall: Record<number, number> = { 9: 100, 11: 101 };
       (db as unknown as { batch: unknown }).batch = vi.fn(async (stmts: FakeStmt[]) =>
         stmts.map((s) => {
@@ -882,8 +878,8 @@ describe("callbackRoute", () => {
         { method: "GET" },
         env,
       );
-      expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
       const tenantUpserts = captured.filter(
         (s) =>
           s.sql.toLowerCase().includes("tenants") &&
@@ -1012,9 +1008,10 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — first request succeeds with exchange redirect
+      // Assert — first request succeeds with redirect + cookie
       expect(res1.status).toBe(302);
-      expect(res1.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
+      expect(res1.headers.get("Location")).toBe("/");
+      expect(res1.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
 
       // Assert — second request fails (state row gone after first consume)
       expect(res2.status).toBe(400);
@@ -1167,7 +1164,10 @@ describe("callbackRoute", () => {
      * Build a FakeD1 for zero-installation tests.
      * Tracks whether INSERT INTO users was ever called.
      */
-    function makeZeroInstallDb(captured: FakeStmt[]): D1Database {
+    function makeZeroInstallDb(
+      captured: FakeStmt[],
+      redirectAfter = "/dashboard",
+    ): D1Database {
       let oauthDeleteCallCount = 0;
       return makeFakeDb((sql, args) => {
         const isOauthDelete =
@@ -1176,7 +1176,7 @@ describe("callbackRoute", () => {
         oauthDeleteCallCount += isOauthDelete ? 1 : 0;
         const row =
           isOauthDelete && oauthDeleteCallCount === 1
-            ? ({ redirect_after: "/" } as FakeResult)
+            ? ({ redirect_after: redirectAfter } as FakeResult)
             : null;
         const isUsersInsert =
           sql.toLowerCase().includes("users") &&
@@ -1241,53 +1241,25 @@ describe("callbackRoute", () => {
       );
     }
 
-    it("redirects to exchange with ?install=1 destination when installations is empty", async () => {
-      // Arrange
+    it("serves dashboard with Set-Cookie when installations is empty (install-pending)", async () => {
       const stateValue = "f".repeat(32);
       const captured: FakeStmt[] = [];
       const db = makeZeroInstallDb(captured);
       stubZeroInstallFetch();
       const { app, env } = makeApp(db);
 
-      // Act
       const res = await app.request(
         `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
         { method: "GET" },
         env,
       );
 
-      // Assert — install=1 preserved in exchange redirect_after
-      expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
       const exchangeInsert = captured.find((s) =>
         s.sql.toLowerCase().includes("oauth_exchange"),
       );
-      expect(exchangeInsert).toBeDefined();
-      expect(String(exchangeInsert!.args[2])).toContain("install=1");
-    });
-
-    it("stores install-pending session token in oauth_exchange when installations is empty", async () => {
-      // Arrange
-      const stateValue = "0".repeat(32);
-      const captured: FakeStmt[] = [];
-      const db = makeZeroInstallDb(captured);
-      stubZeroInstallFetch();
-      const { app, env } = makeApp(db);
-
-      // Act
-      const res = await app.request(
-        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
-        { method: "GET" },
-        env,
-      );
-
-      // Assert
-      expect(res.status).toBe(302);
-      const exchangeInsert = captured.find((s) =>
-        s.sql.toLowerCase().includes("oauth_exchange"),
-      );
-      expect(exchangeInsert).toBeDefined();
-      expect(String(exchangeInsert!.args[1])).toHaveLength(64);
+      expect(exchangeInsert).toBeUndefined();
     });
 
     it("inserts install-pending session (tenant_id null) when installations is empty", async () => {
@@ -1349,8 +1321,8 @@ describe("callbackRoute", () => {
         { method: "GET" },
         env,
       );
-      expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
       const usersInsert = captured.find(
         (s) =>
           s.sql.toLowerCase().includes("insert") &&

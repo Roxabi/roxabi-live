@@ -184,8 +184,24 @@ export async function handleInstallation(
       return [upsertRepoAccess(db, tenantId, repo, isPrivateBit(r))];
     });
 
-    // Atomic: repo access + data-version bump.
-    await db.batch([...repoStmts, bumpDataVersion(db, nowIso)]);
+    const sender = (payload["sender"] as Record<string, unknown> | undefined) ?? {};
+    const senderGithubId = sender["id"] as number | undefined;
+    const linkStmts = [];
+    if (senderGithubId != null) {
+      const userId = await resolveUserId(db, senderGithubId);
+      if (userId != null) {
+        linkStmts.push(
+          db
+            .prepare(
+              `INSERT OR IGNORE INTO user_installations (user_id, tenant_id) VALUES (?, ?)`,
+            )
+            .bind(userId, tenantId),
+        );
+      }
+    }
+
+    // Atomic: repo access + user link + data-version bump.
+    await db.batch([...repoStmts, ...linkStmts, bumpDataVersion(db, nowIso)]);
     return;
   }
 

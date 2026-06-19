@@ -12,7 +12,7 @@ export function serveLoginPrompt(
   redirectAfter: string,
 ): Response {
   const dest = sanitizeAuthRedirect(redirectAfter);
-  const continueUrl = `/login?go=1&redirect=${encodeURIComponent(dest)}`;
+  const continueUrl = `/login?intent=signin&redirect=${encodeURIComponent(dest)}`;
 
   const html = `<!DOCTYPE html>
 <html lang="fr">

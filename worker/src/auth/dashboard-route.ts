@@ -1,9 +1,9 @@
 /**
  * GET /dashboard — session-gated shell for the dep-graph app.
- * Unauthenticated requests redirect to /login before any dashboard HTML is served.
  */
 
 import type { Context } from "hono";
+import type { Env } from "../types";
 import type { AuthEnv } from "./types";
 import {
   AUTH_NO_CACHE,
@@ -15,10 +15,9 @@ import { validateSession } from "./session";
 
 export const DASHBOARD_PATH = "/dashboard";
 
-/** Query params that must not round-trip through /login?redirect= (auth handoff / loops). */
-const DASHBOARD_LOGIN_STRIP = ["install", "code", "state"] as const;
+const DASHBOARD_LOGIN_STRIP = ["install", "code", "state", "intent"] as const;
 
-/** Build /login?redirect=… — never embed install=1 (use /login?install=1 instead). */
+/** Build /login?redirect=… — never embed install/intent flags in redirect=. */
 export function dashboardLoginUrl(reqUrl: URL): string {
   const pathUrl = new URL(reqUrl.pathname + reqUrl.search, "https://_/");
   for (const key of DASHBOARD_LOGIN_STRIP) {
@@ -29,7 +28,7 @@ export function dashboardLoginUrl(reqUrl: URL): string {
   return `/login?redirect=${encodeURIComponent(redirectPath)}`;
 }
 
-/** Strip one-shot auth handoff params from the dashboard URL (refresh-safe). */
+/** Strip stale auth handoff params from the dashboard URL (refresh-safe). */
 export function dashboardCleanUrl(reqUrl: URL): string | null {
   if (!reqUrl.searchParams.has("code") && !reqUrl.searchParams.has("state")) {
     return null;
@@ -49,45 +48,34 @@ export async function dashboardRoute(
   const loginDest = dashboardLoginUrl(reqUrl);
 
   const token = readSessionToken(c);
-  if (token) {
-    const session = await validateSession(c.env.DB, token);
-    if (session) {
-      const clean = dashboardCleanUrl(reqUrl);
-      if (clean) {
-        return authRedirect(clean);
-      }
-      return serveDashboardShell(c);
-    }
-    // Drop stale cookie so /login → OAuth → callback does not loop with a dead token.
+  if (!token) {
+    return authRedirect(loginDest);
+  }
+
+  const session = await validateSession(c.env.DB, token);
+  if (!session) {
     return authRedirect(loginDest, clearSessionCookieHeaders());
   }
 
-  // GitHub OAuth callback must not hit the session gate.
-  const handoffCode = reqUrl.searchParams.get("code");
-  if (handoffCode) {
-    const handoffState = reqUrl.searchParams.get("state");
-    if (handoffState) {
-      const callback = new URL("/oauth/callback", reqUrl.origin);
-      callback.search = reqUrl.search;
-      return authRedirect(`${callback.pathname}${callback.search}`);
-    }
-    return authRedirect(
-      `/auth/exchange?code=${encodeURIComponent(handoffCode)}`,
-    );
+  const clean = dashboardCleanUrl(reqUrl);
+  if (clean) {
+    return authRedirect(clean);
   }
 
-  return authRedirect(loginDest);
+  return serveDashboardShell(c.env, c.req.raw, c.req.url);
 }
 
 /** Serve dashboard/index.html with auth no-cache headers (optional Set-Cookie). */
 export async function serveDashboardShell(
-  c: Context<AuthEnv>,
+  env: Env,
+  raw: Request,
+  reqUrl: string,
   extraSetCookies: string[] = [],
 ): Promise<Response> {
-  const assetUrl = new URL(c.req.url);
+  const assetUrl = new URL(reqUrl);
   assetUrl.pathname = "/dashboard/index.html";
-  const assetRes = await c.env.ASSETS.fetch(
-    new Request(assetUrl.toString(), c.req.raw),
+  const assetRes = await env.ASSETS.fetch(
+    new Request(assetUrl.toString(), raw),
   );
   const headers = new Headers(assetRes.headers);
   for (const [key, value] of Object.entries(AUTH_NO_CACHE)) {
