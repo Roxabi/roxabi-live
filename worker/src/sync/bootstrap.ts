@@ -6,7 +6,7 @@
  */
 
 import type { Env } from "../types";
-import { isHalted, runSync } from "./sync";
+import { ensureGlobalSyncControlSeeded, isHalted, runSync } from "./sync";
 
 const BOOTSTRAP_KEY = "bootstrap_at";
 const BOOTSTRAP_COOLDOWN_MS = 120_000;
@@ -63,6 +63,8 @@ export async function maybeScheduleBootstrapSync(
   env: Env,
   ctx: ExecutionContext,
 ): Promise<boolean> {
+  await ensureGlobalSyncControlSeeded(db);
+
   if (await getIssueCount(db) > 0) return false;
   if (await isHalted(db)) return false;
   if (await isGlobalSyncRunning(db)) return false;

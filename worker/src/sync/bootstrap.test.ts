@@ -8,6 +8,7 @@ import {
 } from "./bootstrap";
 
 vi.mock("./sync", () => ({
+  ensureGlobalSyncControlSeeded: vi.fn().mockResolvedValue(undefined),
   isHalted: vi.fn().mockResolvedValue(false),
   runSync: vi.fn().mockResolvedValue(undefined),
 }));

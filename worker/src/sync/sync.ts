@@ -326,6 +326,31 @@ export async function batchChunked(
 // sync_control helpers
 // ---------------------------------------------------------------------------
 
+const GLOBAL_SYNC_CONTROL_SEEDS: ReadonlyArray<readonly [string, string]> = [
+  ["sync_running", "0"],
+  ["halted", "0"],
+  ["auth_failures", "0"],
+  ["sync_started_at", ""],
+  ["sync_slot", "0"],
+  ["data_version", ""],
+];
+
+/**
+ * Ensure tenant_id=0 sentinel rows exist. Required after a D1 data wipe while
+ * d1_migrations remains applied (migration seeds are INSERT OR IGNORE one-shot).
+ */
+export async function ensureGlobalSyncControlSeeded(db: D1Database): Promise<void> {
+  const now = new Date().toISOString();
+  const stmts = GLOBAL_SYNC_CONTROL_SEEDS.map(([key, value]) =>
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO sync_control (tenant_id, key, value, updated_at) VALUES (0, ?, ?, ?)`,
+      )
+      .bind(key, value, now),
+  );
+  await batchChunked(db, stmts);
+}
+
 export async function acquireSyncLock(db: D1Database, tenantId: number = 0): Promise<boolean> {
   const result = await db
     .prepare(
@@ -1373,6 +1398,8 @@ export async function discoverTenants(
 
 export async function runSync(env: Env): Promise<void> {
   const db = env.DB;
+
+  await ensureGlobalSyncControlSeeded(db);
 
   if (await isHalted(db)) {
     console.log("[sync] halted — skipping");

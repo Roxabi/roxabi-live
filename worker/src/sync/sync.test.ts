@@ -9,6 +9,7 @@ import {
   extractFromLabels,
   flushEdges,
   acquireSyncLock,
+  ensureGlobalSyncControlSeeded,
   isHalted,
   haltSync,
   getAuthFailures,
@@ -407,6 +408,33 @@ describe("UPSERT_ISSUE_SQL_STRUCTURE", () => {
 
   it("updates payload via excluded.payload on conflict", () => {
     expect(UPSERT_ISSUE_SQL_STRUCTURE).toMatch(/payload\s*=\s*excluded\.payload/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ensureGlobalSyncControlSeeded
+// ---------------------------------------------------------------------------
+
+describe("ensureGlobalSyncControlSeeded", () => {
+  it("inserts all global sentinel keys at tenant_id=0", async () => {
+    const capturedStmts: FakeStmt[] = [];
+    const db = makeFakeDb((sql, args) => {
+      const stmt = makeFakeStmt(sql, args, [], 0);
+      capturedStmts.push(stmt);
+      return stmt;
+    });
+
+    await ensureGlobalSyncControlSeeded(db);
+
+    expect(capturedStmts.length).toBeGreaterThanOrEqual(6);
+    for (const stmt of capturedStmts) {
+      expect(stmt.sql).toContain("INSERT OR IGNORE INTO sync_control");
+      expect(stmt.sql).toContain("VALUES (0, ?, ?, ?)");
+    }
+    const keys = capturedStmts.map((s) => s.args[0]);
+    expect(keys).toContain("sync_running");
+    expect(keys).toContain("halted");
+    expect(keys).toContain("auth_failures");
   });
 });
 
