@@ -283,6 +283,19 @@ describe("tenant_repo_access table", () => {
 // Suite 7 — tenants table
 // ---------------------------------------------------------------------------
 
+describe("oauth_exchange table", () => {
+  it("has code primary key (0019)", () => {
+    expect(getPkColumns(db, "oauth_exchange")).toEqual(["code"]);
+  });
+
+  it("has expected columns", () => {
+    const cols = getColumnNames(db, "oauth_exchange");
+    expect(cols).toContain("session_token");
+    expect(cols).toContain("redirect_after");
+    expect(cols).toContain("expires_at");
+  });
+});
+
 describe("user_token_handoffs table", () => {
   it("has code primary key (0011)", () => {
     expect(getPkColumns(db, "user_token_handoffs")).toEqual(["code"]);

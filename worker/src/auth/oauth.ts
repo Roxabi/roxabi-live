@@ -13,14 +13,13 @@ import type { Env } from "../types";
 import { mintSession } from "./session";
 import {
   authRedirect,
-  clearSessionCookieHeaders,
   readSessionToken,
   sanitizeAuthRedirect,
-  sessionRedirectHtml,
 } from "./cookies";
 import { validateSession } from "./session";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
+import { createOAuthExchange } from "./oauthExchange";
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -47,10 +46,21 @@ function bytesToHex(bytes: Uint8Array): string {
  * a query parameter — to prevent redirect-uri injection (D-6).
  */
 /** OAuth must run again (install handoff, ZK flows, explicit reauth). */
-function mustReOAuth(c: Context<{ Bindings: Env }>, redirectAfter: string): boolean {
+async function mustReOAuth(
+  c: Context<{ Bindings: Env }>,
+  redirectAfter: string,
+): Promise<boolean> {
   if (c.req.query("reauth") === "1") return true;
   if (c.req.query("zk") === "1") return true;
-  return redirectAfter.includes("install=1");
+
+  if (!redirectAfter.includes("install=1")) return false;
+
+  const token = readSessionToken(c);
+  if (!token) return true;
+  const session = await validateSession(c.env.DB, token);
+  if (!session) return true;
+  // Post-install refresh only while session is still install-pending (no tenant).
+  return session.tenantId === null;
 }
 
 export async function loginRoute(
@@ -60,7 +70,7 @@ export async function loginRoute(
   const zkTokenHandoff = c.req.query("zk") === "1" ? 1 : 0;
   const reauth = c.req.query("reauth") === "1" ? 1 : 0;
 
-  if (!mustReOAuth(c, redirectAfter)) {
+  if (!(await mustReOAuth(c, redirectAfter))) {
     const token = readSessionToken(c);
     if (token) {
       const session = await validateSession(c.env.DB, token);
@@ -92,7 +102,7 @@ export async function loginRoute(
   dest.searchParams.set("redirect_uri", redirectUri);
   dest.searchParams.set("state", state);
 
-  return authRedirect(dest.toString(), clearSessionCookieHeaders());
+  return authRedirect(dest.toString());
 }
 
 // ---------------------------------------------------------------------------
@@ -243,11 +253,13 @@ export async function callbackRoute(
     const rawToken = await mintSession(c.env.DB, userRow.id, null);
     const installDest = new URL(redirectAfter, origin);
     installDest.searchParams.set("install", "1");
-
-    return sessionRedirectHtml(
-      `${installDest.pathname}${installDest.search}`,
+    const installPath = `${installDest.pathname}${installDest.search}`;
+    const exchangeCode = await createOAuthExchange(
+      c.env.DB,
       rawToken,
+      installPath,
     );
+    return authRedirect(`/auth/exchange?code=${exchangeCode}`);
   }
 
   // Upsert user — get internal id
@@ -328,5 +340,10 @@ export async function callbackRoute(
     }
   }
 
-  return sessionRedirectHtml(redirectAfter, rawToken);
+  const exchangeCode = await createOAuthExchange(
+    c.env.DB,
+    rawToken,
+    redirectAfter,
+  );
+  return authRedirect(`/auth/exchange?code=${exchangeCode}`);
 }
