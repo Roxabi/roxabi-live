@@ -96,8 +96,7 @@ export async function putZkPayloadsRoute(
     }
     if (
       typeof key_fp_raw !== "string" ||
-      key_fp_raw.length < 8 ||
-      key_fp_raw.length > 128
+      !/^[0-9a-f]{32}$/.test(key_fp_raw)
     ) {
       return c.json({ error: "invalid key_fp" }, 400);
     }

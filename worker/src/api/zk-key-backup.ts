@@ -8,7 +8,7 @@ import { zkAccountKeyEnabled } from "../auth/zk-flags";
 import { consumeReauthProof, issueReauthProof } from "../auth/zk-reauth";
 import { writeZkAudit } from "../observability/zk-events";
 
-const KEY_FP_RE = /^[0-9a-f]{8,64}$/;
+const KEY_FP_RE = /^[0-9a-f]{32}$/;
 const MAX_WRAPPED_BYTES = 8 * 1024;
 const MAX_PUT_PER_HOUR = 5;
 const KDF_ALG = "argon2id";
