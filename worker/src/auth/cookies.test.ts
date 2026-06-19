@@ -19,4 +19,10 @@ describe("sanitizeAuthRedirect", () => {
     expect(sanitizeAuthRedirect("//evil")).toBe("/dashboard");
     expect(sanitizeAuthRedirect("https://evil")).toBe("/dashboard");
   });
+
+  it("rejects paths containing quotes or angle brackets", () => {
+    expect(sanitizeAuthRedirect('/x" onclick')).toBe("/dashboard");
+    expect(sanitizeAuthRedirect("/x<script>")).toBe("/dashboard");
+    expect(sanitizeAuthRedirect("/x'y")).toBe("/dashboard");
+  });
 });

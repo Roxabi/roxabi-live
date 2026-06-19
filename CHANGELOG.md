@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.19.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.19.0...roxabi-live/v0.19.1) (2026-06-19)
+
+
+### Bug Fixes
+
+* **auth:** verify `setSessionTenant` row count before returning `linked` from install-refresh
+* **auth:** exclude suspended tenants from install-refresh and `/api/me` installations
+* **auth:** stop `mustReOAuth` when webhook already linked `user_installations` (install intent short-circuit)
+* **auth:** harden post-OAuth HTML against XSS (`sanitizeAuthRedirect`, `authNavigateHtml`)
+* **auth:** revoke other active sessions on OAuth success
+* **auth:** same-origin CSRF guard on POST mutations
+* **frontend:** use server `oauth_fallback`, surface consent errors, strict `onboarding_step` gate
+
+
+## [0.19.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.18.1...roxabi-live/v0.19.0) (2026-06-19)
+
+
+### Features
+
+* **auth:** server-owned onboarding (`onboarding_step` in `/api/me`) — install → consent → ready
+* **auth:** `POST /api/install/refresh` links installs via webhook without full re-OAuth
+* **auth:** `POST /api/consent` persists operator acknowledgement in D1
+* **auth:** OAuth completes with 200 + Set-Cookie + inline dashboard (drops `/auth/exchange` hop)
+* **auth:** login intents `?intent=signin|install|reauth|zk`
+* **webhook:** `installation.created` links sender → `user_installations`
+
+
+### Changed
+
+* **auth:** remove `/auth/continue`, `sessionRedirectHtml`, and `frontend/github-install.js` (−264 LOC net)
+
+
 ## [0.18.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.18.0...roxabi-live/v0.18.1) (2026-06-19)
 
 

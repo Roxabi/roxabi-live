@@ -4,6 +4,7 @@
 
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
+import { buildMePayload } from "./me";
 
 export async function consentRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
@@ -23,5 +24,6 @@ export async function consentRoute(c: Context<AuthEnv>): Promise<Response> {
     return c.json({ error: "not_found" }, 404);
   }
 
-  return c.json({ consent_at: row.consent_at, onboarding_step: "ready" });
+  const payload = await buildMePayload(c.env, s);
+  return c.json({ ...payload, consent_at: row.consent_at });
 }
