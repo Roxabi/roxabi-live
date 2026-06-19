@@ -298,6 +298,94 @@ describe("loginRoute", () => {
       expect(insertStmt).toBeDefined();
       expect(insertStmt!.args[1]).toBe("/dashboard");
     });
+
+    it("redirects to redirect_after when session is already valid", async () => {
+      const validRow = {
+        userId: 1,
+        tenantId: 1,
+        githubId: 42,
+        githubLogin: "alice",
+      };
+      const bindStmt = {
+        first: vi.fn().mockResolvedValue(validRow),
+        run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+        all: vi.fn().mockResolvedValue({ results: [] }),
+        bind: vi.fn(function (this: unknown) {
+          return this;
+        }),
+      };
+      const stmt = {
+        first: vi.fn().mockResolvedValue(validRow),
+        run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+        all: vi.fn().mockResolvedValue({ results: [] }),
+        bind: vi.fn(() => bindStmt),
+      };
+      const db = {
+        prepare: vi.fn(() => stmt),
+        batch: vi.fn().mockResolvedValue([]),
+        dump: vi.fn(),
+        exec: vi.fn(),
+      } as unknown as D1Database;
+
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        "http://localhost/login?redirect=/dash",
+        {
+          method: "GET",
+          headers: { Cookie: `__Host-session=${"a".repeat(64)}` },
+        },
+        env,
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/dash");
+      expect(res.headers.get("Location")).not.toMatch(/^https:\/\/github\.com/);
+    });
+
+    it("still starts OAuth when redirect includes install=1", async () => {
+      const validRow = {
+        userId: 1,
+        tenantId: null,
+        githubId: 42,
+        githubLogin: "alice",
+      };
+      const bindStmt = {
+        first: vi.fn().mockResolvedValue(validRow),
+        run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+        all: vi.fn().mockResolvedValue({ results: [] }),
+        bind: vi.fn(function (this: unknown) {
+          return this;
+        }),
+      };
+      const stmt = {
+        first: vi.fn().mockResolvedValue(validRow),
+        run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+        all: vi.fn().mockResolvedValue({ results: [] }),
+        bind: vi.fn(() => bindStmt),
+      };
+      const db = {
+        prepare: vi.fn(() => stmt),
+        batch: vi.fn().mockResolvedValue([]),
+        dump: vi.fn(),
+        exec: vi.fn(),
+      } as unknown as D1Database;
+
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        "http://localhost/login?redirect=" +
+          encodeURIComponent("/dashboard?install=1"),
+        {
+          method: "GET",
+          headers: { Cookie: `__Host-session=${"a".repeat(64)}` },
+        },
+        env,
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toMatch(
+        /^https:\/\/github\.com\/login\/oauth\/authorize/,
+      );
+    });
   });
 });
 

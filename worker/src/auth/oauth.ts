@@ -11,7 +11,8 @@
 import type { Context } from "hono";
 import type { Env } from "../types";
 import { mintSession } from "./session";
-import { sessionRedirectHtml } from "./cookies";
+import { readSessionToken, sessionRedirectHtml } from "./cookies";
+import { validateSession } from "./session";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
 // ---------------------------------------------------------------------------
@@ -50,12 +51,29 @@ function bytesToHex(bytes: Uint8Array): string {
  * endpoint.  The redirect_uri is derived from the request origin — never from
  * a query parameter — to prevent redirect-uri injection (D-6).
  */
+/** OAuth must run again (install handoff, ZK flows, explicit reauth). */
+function mustReOAuth(c: Context<{ Bindings: Env }>, redirectAfter: string): boolean {
+  if (c.req.query("reauth") === "1") return true;
+  if (c.req.query("zk") === "1") return true;
+  return redirectAfter.includes("install=1");
+}
+
 export async function loginRoute(
   c: Context<{ Bindings: Env }>,
 ): Promise<Response> {
   const redirectAfter = sanitizeRedirect(c.req.query("redirect") ?? undefined);
   const zkTokenHandoff = c.req.query("zk") === "1" ? 1 : 0;
   const reauth = c.req.query("reauth") === "1" ? 1 : 0;
+
+  if (!mustReOAuth(c, redirectAfter)) {
+    const token = readSessionToken(c);
+    if (token) {
+      const session = await validateSession(c.env.DB, token);
+      if (session) {
+        return c.redirect(redirectAfter, 302);
+      }
+    }
+  }
 
   // 16 random bytes → 32 hex chars
   const stateBytes = new Uint8Array(16);

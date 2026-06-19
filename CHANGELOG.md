@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.3](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.2...roxabi-live/v0.17.3) (2026-06-19)
+
+
+### Bug Fixes
+
+* **auth:** fix OAuth redirect loop on `/dashboard/?install=1` — defer post-callback navigation (no meta refresh), clear stale session cookie, skip redundant OAuth when session is valid
+
+
 ## [0.17.2](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.1...roxabi-live/v0.17.2) (2026-06-19)
 
 

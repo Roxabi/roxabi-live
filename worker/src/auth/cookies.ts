@@ -24,6 +24,7 @@ export function clearSessionCookie(): string {
  * 200 HTML shell that sets the session cookie then navigates client-side.
  * Avoids 302+Set-Cookie races where the browser follows Location before
  * committing __Host-session (ERR_TOO_MANY_REDIRECTS on /dashboard?install=1).
+ * Navigation is deferred (no meta refresh) so Set-Cookie is committed first.
  */
 export function sessionRedirectHtml(dest: string, rawToken: string): Response {
   const safeDest =
@@ -31,15 +32,19 @@ export function sessionRedirectHtml(dest: string, rawToken: string): Response {
       ? dest
       : "/dashboard";
   const html = `<!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0;url=${encodeURI(safeDest)}">
-<title>Signing in…</title>
+<title>Connexion…</title>
 </head>
 <body>
-<p>Signing in… <a href="${encodeURI(safeDest)}">Continue</a></p>
-<script>location.replace(${JSON.stringify(safeDest)});</script>
+<p>Connexion en cours…</p>
+<script>
+setTimeout(function () {
+  location.replace(${JSON.stringify(safeDest)});
+}, 100);
+</script>
+<noscript><p><a href="${encodeURI(safeDest)}">Continuer</a></p></noscript>
 </body>
 </html>`;
   return new Response(html, {
