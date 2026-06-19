@@ -1,6 +1,7 @@
 // initial-sync.js — first corpus sync overlay (#223 follow-up)
 
 import { api } from './auth.js';
+import { renderOnboardingSteps } from './onboarding.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -66,6 +67,7 @@ async function fetchStatus() {
 
 function showOverlay(gate, running) {
   gate.innerHTML = `
+    ${renderOnboardingSteps('sync')}
     <div class="initial-sync-dialog" role="status" aria-live="polite" aria-busy="true">
       <div class="initial-sync-spinner" aria-hidden="true"></div>
       <h2 id="initial-sync-title">${running ? 'Première synchronisation en cours' : 'Préparation de la synchronisation'}</h2>

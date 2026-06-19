@@ -55,84 +55,89 @@ function makeApp(db: D1Database) {
 
 describe("loginRoute", () => {
   describe("GET /login", () => {
-    it("returns 302 redirect", async () => {
-      // Arrange
-      const { db } = captureDb();
+    it("returns 200 HTML login prompt without go=1", async () => {
+      const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
 
-      // Act
       const res = await app.request(
         "http://localhost/login",
         { method: "GET" },
         env,
       );
 
-      // Assert
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Continuer avec GitHub");
+      expect(body).toContain("Connexion GitHub");
+      expect(body).toContain("/login?go=1");
+      expect(res.headers.get("Location")).toBeNull();
+      expect(stmts()).toHaveLength(0);
+    });
+
+    it("returns 302 redirect when go=1", async () => {
+      const { db } = captureDb();
+      const { app, env } = makeApp(db);
+
+      const res = await app.request(
+        "http://localhost/login?go=1",
+        { method: "GET" },
+        env,
+      );
+
       expect(res.status).toBe(302);
     });
 
-    it("Location starts with https://github.com/login/oauth/authorize", async () => {
-      // Arrange
+    it("Location starts with https://github.com/login/oauth/authorize when go=1", async () => {
       const { db } = captureDb();
       const { app, env } = makeApp(db);
 
-      // Act
       const res = await app.request(
-        "http://localhost/login",
+        "http://localhost/login?go=1",
         { method: "GET" },
         env,
       );
 
-      // Assert
       const location = res.headers.get("Location") ?? "";
       expect(location).toMatch(/^https:\/\/github\.com\/login\/oauth\/authorize/);
     });
 
-    it("Location query includes client_id matching env", async () => {
-      // Arrange
+    it("Location query includes client_id matching env when go=1", async () => {
       const { db } = captureDb();
       const { app, env } = makeApp(db);
 
-      // Act
       const res = await app.request(
-        "http://localhost/login",
+        "http://localhost/login?go=1",
         { method: "GET" },
         env,
       );
 
-      // Assert
       const location = res.headers.get("Location") ?? "";
       const url = new URL(location);
       expect(url.searchParams.get("client_id")).toBe("Iv1.abc123");
     });
 
-    it("Location query includes state as 32 hex chars", async () => {
-      // Arrange
+    it("Location query includes state as 32 hex chars when go=1", async () => {
       const { db } = captureDb();
       const { app, env } = makeApp(db);
 
-      // Act
       const res = await app.request(
-        "http://localhost/login",
+        "http://localhost/login?go=1",
         { method: "GET" },
         env,
       );
 
-      // Assert
       const location = res.headers.get("Location") ?? "";
       const url = new URL(location);
       const state = url.searchParams.get("state") ?? "";
       expect(state).toMatch(/^[0-9a-f]{32}$/);
     });
 
-    it("Location redirect_uri ends with /oauth/callback derived from request origin", async () => {
-      // Arrange
+    it("Location redirect_uri ends with /oauth/callback derived from request origin when go=1", async () => {
       const { db } = captureDb();
       const { app, env } = makeApp(db);
 
-      // Act
       const res = await app.request(
-        "http://myapp.example.com/login",
+        "http://myapp.example.com/login?go=1",
         { method: "GET" },
         env,
       );
@@ -151,7 +156,7 @@ describe("loginRoute", () => {
       const { app, env } = makeApp(db);
 
       // Act
-      await app.request("http://localhost/login", { method: "GET" }, env);
+      await app.request("http://localhost/login?go=1", { method: "GET" }, env);
 
       // Assert — state row has datetime('now', '+10 minutes')
       const insertStmt = stmts().find((s) =>
@@ -167,7 +172,7 @@ describe("loginRoute", () => {
       const { app, env } = makeApp(db);
 
       // Act
-      await app.request("http://localhost/login", { method: "GET" }, env);
+      await app.request("http://localhost/login?go=1", { method: "GET" }, env);
 
       // Assert
       const insertStmt = stmts().find((s) =>
@@ -186,7 +191,7 @@ describe("loginRoute", () => {
 
       // Act
       await app.request(
-        "http://localhost/login?redirect=/dash",
+        "http://localhost/login?go=1&redirect=/dash",
         { method: "GET" },
         env,
       );
@@ -206,7 +211,7 @@ describe("loginRoute", () => {
 
       // Act
       await app.request(
-        "http://localhost/login?redirect=//evil",
+        "http://localhost/login?go=1&redirect=//evil",
         { method: "GET" },
         env,
       );
@@ -226,7 +231,7 @@ describe("loginRoute", () => {
 
       // Act
       await app.request(
-        "http://localhost/login?redirect=https://evil",
+        "http://localhost/login?go=1&redirect=https://evil",
         { method: "GET" },
         env,
       );
@@ -246,7 +251,7 @@ describe("loginRoute", () => {
 
       // Act
       await app.request(
-        "http://localhost/login?redirect=/\\evil",
+        "http://localhost/login?go=1&redirect=/\\evil",
         { method: "GET" },
         env,
       );
@@ -266,7 +271,7 @@ describe("loginRoute", () => {
 
       // Act — encodeURIComponent so the URL parser doesn't strip the special chars
       await app.request(
-        "http://localhost/login?redirect=" + encodeURIComponent("/ok\r\nX-Injected: x"),
+        "http://localhost/login?go=1&redirect=" + encodeURIComponent("/ok\r\nX-Injected: x"),
         { method: "GET" },
         env,
       );
@@ -286,7 +291,7 @@ describe("loginRoute", () => {
 
       // Act — encodeURIComponent so the URL parser doesn't strip the NUL byte
       await app.request(
-        "http://localhost/login?redirect=" + encodeURIComponent("/ok\0null"),
+        "http://localhost/login?go=1&redirect=" + encodeURIComponent("/ok\0null"),
         { method: "GET" },
         env,
       );
@@ -329,7 +334,7 @@ describe("loginRoute", () => {
 
       const { app, env } = makeApp(db);
       const res = await app.request(
-        "http://localhost/login?redirect=/dash",
+        "http://localhost/login?go=1&redirect=/dash",
         {
           method: "GET",
           headers: { Cookie: `__Host-session=${"a".repeat(64)}` },

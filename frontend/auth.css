@@ -15,6 +15,122 @@
   display: none;
 }
 
+/* ─── Onboarding step progress ─────────────────────────────────────────────── */
+
+.onboarding-steps {
+  margin: 0 0 28px;
+  max-width: 520px;
+  width: 100%;
+}
+
+.onboarding-steps ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.onboarding-step {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 8px;
+}
+
+.onboarding-step-marker {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.onboarding-step--active {
+  color: var(--text);
+}
+
+.onboarding-step--active .onboarding-step-marker {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.onboarding-step--done {
+  color: var(--text-muted);
+}
+
+.onboarding-step--done .onboarding-step-marker {
+  background: color-mix(in oklch, var(--accent) 18%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 40%, var(--border));
+  color: var(--accent);
+}
+
+/* ─── Login prompt (GET /login step 1) ───────────────────────────────────── */
+
+.login-prompt-body {
+  background: var(--bg, #0d1117);
+  color: var(--text, #e6edf3);
+  min-height: 100vh;
+}
+
+.login-prompt {
+  min-height: calc(100vh - 56px);
+}
+
+.login-prompt-card {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 440px;
+  text-align: center;
+}
+
+.login-prompt-card h1 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.login-prompt-lead {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.login-prompt-github {
+  margin-top: 8px;
+}
+
+.login-prompt-foot {
+  font-size: 13px;
+  margin: 0;
+}
+
+.login-prompt-foot a {
+  color: var(--text-muted);
+}
+
+.initial-sync-gate .onboarding-steps {
+  margin-bottom: 20px;
+}
+
+.consent-gate .onboarding-steps {
+  margin-bottom: 16px;
+  width: 100%;
+}
+
 /* ─── Auth views (landing + install) ────────────────────────────────────────── */
 
 .auth-view {

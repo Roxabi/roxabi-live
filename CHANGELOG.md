@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.9...roxabi-live/v0.18.0) (2026-06-19)
+
+
+### Features
+
+* **onboarding:** 3-step flow in French — Connexion GitHub → Installation → Synchronisation (progress UI on install, consent, sync)
+* **auth:** `GET /login` shows step-1 prompt; OAuth starts via `?go=1` or `?install=1` (install refresh skips prompt)
+
+
 ## [0.17.9](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.8...roxabi-live/v0.17.9) (2026-06-19)
 
 
