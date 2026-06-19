@@ -1,5 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AuthError, api, hasConsent, setConsent, resolveView, escHtml } from './auth.js';
+import { AuthError, api, hasConsent, setConsent, resolveView, escHtml, loginUrl, DASHBOARD_PATH } from './auth.js';
+
+// ─── loginUrl ─────────────────────────────────────────────────────────────────
+
+describe('loginUrl', () => {
+  it('defaults to dashboard redirect', () => {
+    expect(loginUrl()).toBe('/login?redirect=%2Fdashboard');
+    expect(DASHBOARD_PATH).toBe('/dashboard');
+  });
+
+  it('encodes custom redirect paths', () => {
+    expect(loginUrl('/foo/bar')).toBe('/login?redirect=%2Ffoo%2Fbar');
+  });
+});
 
 // ─── resolveView (pure) ───────────────────────────────────────────────────────
 

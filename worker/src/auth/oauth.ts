@@ -26,7 +26,7 @@ import { createZkReauthCode } from "./zk-reauth";
  */
 function sanitizeRedirect(raw: string | undefined): string {
   if (raw && /^\/(?![/\\])/.test(raw) && !/[\r\n\0]/.test(raw)) return raw;
-  return "/";
+  return "/dashboard";
 }
 
 /**
@@ -128,7 +128,7 @@ export async function callbackRoute(
     return c.json({ error: "bad_request" }, 400);
   }
 
-  let redirectAfter = stateRow.redirect_after ?? "/";
+  let redirectAfter = stateRow.redirect_after ?? "/dashboard";
   const wantsZkHandoff = stateRow.zk_token_handoff === 1;
   const wantsReauth = stateRow.reauth === 1;
 

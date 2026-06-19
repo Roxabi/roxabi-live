@@ -7,6 +7,7 @@ import { adminSyncRoute } from "./api/admin";
 import { webhookRoute } from "./webhook/handlers";
 import { checkAdminAuth } from "./api/auth";
 import { loginRoute, callbackRoute } from "./auth/oauth";
+import { dashboardRoute } from "./auth/dashboard-route";
 import { meRoute, logoutRoute } from "./api/me";
 import type { AuthEnv } from "./auth/types";
 import { requireSession, requireLinkedTenant } from "./auth/session";
@@ -101,6 +102,10 @@ app.post("/api/zk/github/graphql", requireLinkedTenant, zkGithubGraphqlRoute);
 // /logout is intentionally ungated: logoutRoute is null-safe + idempotent, and SameSite=Strict
 // blocks cross-site cookie submission — gating it would make a stale/expired cookie impossible to clear.
 app.post("/logout", logoutRoute);
+
+// GET /dashboard — session-gated app shell (HTML only; JS/CSS served from ASSETS root).
+app.get("/dashboard", dashboardRoute);
+app.get("/dashboard/", dashboardRoute);
 
 // ── Static-assets fallback — last resort (frontend populated in S7, #99) ────
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));

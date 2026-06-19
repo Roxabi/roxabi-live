@@ -15,6 +15,6 @@ export async function installCompleteRoute(
 ): Promise<Response> {
   return new Response(null, {
     status: 302,
-    headers: { Location: "/login?redirect=/" },
+    headers: { Location: "/login?redirect=/dashboard" },
   });
 }

@@ -176,7 +176,7 @@ describe("loginRoute", () => {
       expect(insertStmt).toBeDefined();
       // args[0] = state (32 hex), args[1] = redirectAfter
       expect(insertStmt!.args[0]).toMatch(/^[0-9a-f]{32}$/);
-      expect(insertStmt!.args[1]).toBe("/"); // default when no ?redirect param
+      expect(insertStmt!.args[1]).toBe("/dashboard"); // default when no ?redirect param
     });
 
     it("?redirect=/dash stores '/dash' as redirect_after", async () => {
@@ -199,7 +199,7 @@ describe("loginRoute", () => {
       expect(insertStmt!.args[1]).toBe("/dash");
     });
 
-    it("?redirect=//evil stores '/' (open-redirect guard)", async () => {
+    it("?redirect=//evil stores '/dashboard' (open-redirect guard)", async () => {
       // Arrange
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
@@ -216,10 +216,10 @@ describe("loginRoute", () => {
         s.sql.toLowerCase().includes("oauth_state"),
       );
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/");
+      expect(insertStmt!.args[1]).toBe("/dashboard");
     });
 
-    it("?redirect=https://evil stores '/' (absolute URL guard)", async () => {
+    it("?redirect=https://evil stores '/dashboard' (absolute URL guard)", async () => {
       // Arrange
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
@@ -236,10 +236,10 @@ describe("loginRoute", () => {
         s.sql.toLowerCase().includes("oauth_state"),
       );
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/");
+      expect(insertStmt!.args[1]).toBe("/dashboard");
     });
 
-    it("?redirect=/\\evil stores '/' (backslash bypass guard)", async () => {
+    it("?redirect=/\\evil stores '/dashboard' (backslash bypass guard)", async () => {
       // Arrange — backslash-prefixed path; sanitizeRedirect regex (?![/\\]) rejects it
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
@@ -256,10 +256,10 @@ describe("loginRoute", () => {
         s.sql.toLowerCase().includes("oauth_state"),
       );
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/");
+      expect(insertStmt!.args[1]).toBe("/dashboard");
     });
 
-    it("?redirect=/ok\\r\\nX-Injected:x stores '/' (CRLF injection guard)", async () => {
+    it("?redirect=/ok\\r\\nX-Injected:x stores '/dashboard' (CRLF injection guard)", async () => {
       // Arrange — CRLF chars smuggled in the redirect param; sanitizeRedirect rejects via /[\r\n\0]/
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
@@ -276,10 +276,10 @@ describe("loginRoute", () => {
         s.sql.toLowerCase().includes("oauth_state"),
       );
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/");
+      expect(insertStmt!.args[1]).toBe("/dashboard");
     });
 
-    it("?redirect=/ok\\0null stores '/' (NUL injection guard)", async () => {
+    it("?redirect=/ok\\0null stores '/dashboard' (NUL injection guard)", async () => {
       // Arrange — NUL byte smuggled in the redirect param; sanitizeRedirect rejects via /[\r\n\0]/
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
@@ -296,7 +296,7 @@ describe("loginRoute", () => {
         s.sql.toLowerCase().includes("oauth_state"),
       );
       expect(insertStmt).toBeDefined();
-      expect(insertStmt!.args[1]).toBe("/");
+      expect(insertStmt!.args[1]).toBe("/dashboard");
     });
   });
 });
