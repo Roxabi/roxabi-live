@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.0...roxabi-live/v0.17.1) (2026-06-19)
+
+
+### Bug Fixes
+
+* **auth:** stop OAuth redirect loop on `/dashboard?install=1` — HTML shell with `Set-Cookie` before client navigation; preserve query string in login redirect
+
+
+### Features
+
+* **legal:** French legal pages (mentions légales, politique de confidentialité, CGU) with footer links on landing and dashboard
+
+
 ## [0.17.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.16.0...roxabi-live/v0.17.0) (2026-06-19)
 
 
