@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.16.0...roxabi-live/v0.17.0) (2026-06-19)
+
+
+### Features
+
+* **frontend:** public landing page at `/` with Se connecter CTA; dep-graph app moved to `/dashboard`
+* **auth:** server-side session gate on `/dashboard` — unauthenticated users redirect to `/login` before HTML loads
+
+
 ## [0.16.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.15.0...roxabi-live/v0.16.0) (2026-06-19)
 
 
