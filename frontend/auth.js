@@ -103,8 +103,6 @@ function renderInstallCta(me) {
         <a
           class="install-option"
           href="${escHtml(githubInstallUrl(org))}"
-          target="_blank"
-          rel="noopener noreferrer"
           role="listitem"
         >
           <span class="install-option-title">Organisation</span>
@@ -116,8 +114,6 @@ function renderInstallCta(me) {
         <a
           class="install-option"
           href="${escHtml(githubInstallUrl())}"
-          target="_blank"
-          rel="noopener noreferrer"
           role="listitem"
         >
           <span class="install-option-title">Organisation</span>
@@ -138,8 +134,6 @@ function renderInstallCta(me) {
         <a
           class="install-option"
           href="${escHtml(personalUrl)}"
-          target="_blank"
-          rel="noopener noreferrer"
           role="listitem"
         >
           <span class="install-option-title">Personal account</span>
@@ -156,8 +150,9 @@ function renderInstallCta(me) {
         </div>
       </div>
       <p class="install-note">
-        Installation opens on GitHub in a new tab. When you are done, return here and
-        <strong>Continue</strong> to sign in again — GitHub will expose the new installation.
+        You'll be taken to GitHub to choose repositories, then brought back here
+        automatically. If GitHub doesn't return you, come back and click
+        <strong>Continue</strong>.
       </p>
       <div class="install-actions">
         <button type="button" class="consent-btn-secondary" id="install-logout">Sign out</button>
