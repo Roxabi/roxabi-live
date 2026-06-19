@@ -9,7 +9,8 @@ import { checkAdminAuth } from "./api/auth";
 import { loginRoute, callbackRoute } from "./auth/oauth";
 import { meRoute, logoutRoute } from "./api/me";
 import type { AuthEnv } from "./auth/types";
-import { requireSession } from "./auth/session";
+import { requireSession, requireLinkedTenant } from "./auth/session";
+import { installCompleteRoute } from "./api/install-complete";
 import { activeTenantRoute } from "./api/active-tenant";
 import { zkOptInRoute } from "./api/zk-opt-in";
 import { listZkPayloadsRoute, putZkPayloadsRoute } from "./api/zk-payloads";
@@ -33,15 +34,15 @@ app.get("/api/version", versionRoute);
 app.post("/webhook/github", webhookRoute);
 
 // GET /api/graph — v6 graph payload: nodes + edges (S6, #98). Session-gated (#148).
-app.use("/api/graph", requireSession);
+app.use("/api/graph", requireLinkedTenant);
 app.get("/api/graph", graphRoute);
 
 // GET /api/issues — list with optional repo/state/label/limit/offset filters (S6, #98).
 // GET /api/issues/* — single issue by key (key contains owner/repo#N slash) (S6, #98).
 // List route MUST be registered before the wildcard so Hono's first-match wins.
 // Both paths need their own use() — /api/issues/* does NOT match bare /api/issues (#148).
-app.use("/api/issues", requireSession);
-app.use("/api/issues/*", requireSession);
+app.use("/api/issues", requireLinkedTenant);
+app.use("/api/issues/*", requireLinkedTenant);
 app.get("/api/issues", listIssuesRoute);
 app.get("/api/issues/*", getIssueRoute);
 
@@ -78,21 +79,22 @@ app.get("/health", async (c) => {
 // ── Auth routes (#145, S2) ───────────────────────────────────────────────────
 app.get("/login", loginRoute);
 app.get("/oauth/callback", callbackRoute);
+app.get("/install/complete", installCompleteRoute);
 app.use("/api/me", requireSession);
 app.get("/api/me", meRoute);
-app.post("/api/active-tenant", requireSession, activeTenantRoute);
-app.post("/api/zk-opt-in", requireSession, zkOptInRoute);
-app.use("/api/zk/payloads", requireSession);
+app.post("/api/active-tenant", requireLinkedTenant, activeTenantRoute);
+app.post("/api/zk-opt-in", requireLinkedTenant, zkOptInRoute);
+app.use("/api/zk/payloads", requireLinkedTenant);
 app.get("/api/zk/payloads", listZkPayloadsRoute);
 app.put("/api/zk/payloads", putZkPayloadsRoute);
-app.post("/api/zk/consume-handoff", requireSession, consumeZkHandoffRoute);
-app.post("/api/zk/consume-reauth", requireSession, consumeZkReauthRoute);
-app.use("/api/zk/key-backup", requireSession);
+app.post("/api/zk/consume-handoff", requireLinkedTenant, consumeZkHandoffRoute);
+app.post("/api/zk/consume-reauth", requireLinkedTenant, consumeZkReauthRoute);
+app.use("/api/zk/key-backup", requireLinkedTenant);
 app.get("/api/zk/key-backup", getZkKeyBackupRoute);
 app.put("/api/zk/key-backup", putZkKeyBackupRoute);
-app.use("/api/zk/reset", requireSession);
+app.use("/api/zk/reset", requireLinkedTenant);
 app.post("/api/zk/reset", postZkResetRoute);
-app.post("/api/zk/github/graphql", requireSession, zkGithubGraphqlRoute);
+app.post("/api/zk/github/graphql", requireLinkedTenant, zkGithubGraphqlRoute);
 // /logout is intentionally ungated: logoutRoute is null-safe + idempotent, and SameSite=Strict
 // blocks cross-site cookie submission — gating it would make a stale/expired cookie impossible to clear.
 app.post("/logout", logoutRoute);

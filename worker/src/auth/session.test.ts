@@ -154,6 +154,12 @@ describe("validateSession — SQL guard clauses", () => {
     expect(stmts()[0].sql).toContain("ui.tenant_id = s.tenant_id");
   });
 
+  it("SQL allows install-pending sessions when tenant_id IS NULL", async () => {
+    const { db, stmts } = captureDb();
+    await validateSession(db, "h".repeat(64));
+    expect(stmts()[0].sql).toContain("s.tenant_id IS NULL");
+  });
+
   it("passes the hash of rawToken as the bound arg (¬raw token itself)", async () => {
     // Arrange
     const { db, stmts } = captureDb();

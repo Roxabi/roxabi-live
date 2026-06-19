@@ -51,7 +51,7 @@ export async function resolveVisibleRepos(
 ): Promise<string[]> {
   const s = c.get("session");
   // Middleware guarantees session; guard defensively — fail-closed.
-  if (!s) {
+  if (!s || s.tenantId == null) {
     return [];
   }
 

@@ -71,6 +71,103 @@
   outline-offset: 3px;
 }
 
+/* ─── Install guide (post-OAuth, pre-installation) ─────────────────────────── */
+
+.install-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20px;
+  max-width: 560px;
+  text-align: left;
+}
+
+.install-panel h2 {
+  text-align: center;
+}
+
+.install-lead {
+  max-width: none;
+}
+
+.install-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.install-option {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  text-align: left;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.install-option:hover {
+  background: var(--bg-panel);
+  border-color: var(--border-hi);
+}
+
+.install-option:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.install-option-info {
+  cursor: default;
+}
+
+.install-option-info:hover {
+  background: var(--bg-card);
+  border-color: var(--border);
+}
+
+.install-option-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.install-option-name {
+  color: var(--text);
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.install-option-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.install-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: none;
+  text-align: center;
+}
+
+.install-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
 /* ─── Org picker (select in header-actions) ──────────────────────────────── */
 
 .org-picker {

@@ -14,11 +14,11 @@ worker/src/webhook/mutations.ts  # 339 lines — #180 D1 write helpers for webho
 worker/src/sync/sync.test.ts  # 1715 lines — #180 integration harness for runSync; #216 structure-only
 worker/src/api/zk-key-backup.test.ts  # 385 lines — #216 backup API security + CAS/reauth tests
 worker/src/webhook/handlers.test.ts  # 945 lines — #180 webhook handler contract tests
-worker/src/auth/oauth.test.ts  # 864 lines — #180 OAuth callback + batch tests
+worker/src/auth/oauth.test.ts  # 931 lines — #180 OAuth + install-pending flow tests
 worker/src/api/issues.test.ts  # 710 lines — #180 tenant-scoped issues API tests; #216 zk redaction
 worker/src/api/graph.test.ts  # 745 lines — #180 tenant-scoped graph + #142 S2 zk + closed_under_open_epic
 worker/src/migrations.test.ts  # 310 lines — #216 zk_key_backups + zk_reauth_proofs schema tests
 worker/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
 worker/src/webhook/handlers-app.test.ts  # 498 lines — #180 app lifecycle handler tests
 worker/src/auth/installToken.test.ts  # 470 lines — #180 install token + pagination tests
-worker/src/auth/session.test.ts  # 318 lines — #180 session middleware contract tests
+worker/src/auth/session.test.ts  # 323 lines — #180 session + install-pending SQL guard tests

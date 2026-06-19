@@ -36,12 +36,15 @@ function makeEnv(db: D1Database): Env {
  * then mounts meRoute + logoutRoute.
  * This tests the route handlers in isolation — independent of requireSession.
  */
-function makeApp(db: D1Database): Hono<AuthEnv> {
+function makeApp(
+  db: D1Database,
+  session: SessionContext = STUB_SESSION,
+): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
 
   // Stub middleware: injects session without any cookie/DB check
   app.use("*", async (c, next) => {
-    c.set("session", STUB_SESSION);
+    c.set("session", session);
     await next();
   });
 
@@ -210,6 +213,61 @@ describe("meRoute", () => {
     expect(res.status).toBe(200);
     const body = await res.json() as { active_tenant_id: number };
     expect(body.active_tenant_id).toBe(STUB_SESSION.tenantId);
+  });
+
+  it("returns install_pending and install_targets when session has no tenant", async () => {
+    const targetsJson = JSON.stringify([
+      { id: 42, login: "alice", type: "User" },
+      { id: 77, login: "Roxabi", type: "Organization" },
+    ]);
+    const { db } = captureDb((sql) => {
+      if (sql.includes("install_targets_json")) {
+        return [{ zk_opt_in: 1, install_targets_json: targetsJson }];
+      }
+      if (sql.includes("user_installations")) return [];
+      return [];
+    });
+    const pendingSession: SessionContext = {
+      ...STUB_SESSION,
+      tenantId: null,
+    };
+    const res = await makeApp(db, pendingSession).request("/api/me", {}, makeEnv(db));
+    const body = await res.json() as {
+      install_pending: boolean;
+      install_targets: Array<{ login: string }>;
+      active_tenant_id: number | null;
+      installations: unknown[];
+    };
+    expect(body.install_pending).toBe(true);
+    expect(body.active_tenant_id).toBeNull();
+    expect(body.installations).toEqual([]);
+    expect(body.install_targets.map((t) => t.login)).toEqual(["alice", "Roxabi"]);
+  });
+
+  it("suppresses install_targets once a tenant is linked", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("install_targets_json")) {
+        return [{ zk_opt_in: 1, install_targets_json: "[]" }];
+      }
+      if (sql.includes("user_installations")) {
+        return [{ tenant_id: 9, account_login: "Roxabi", account_type: "Organization" }];
+      }
+      return [];
+    });
+    const res = await makeApp(db).request("/api/me", {}, makeEnv(db));
+    const body = await res.json() as {
+      install_pending: boolean;
+      install_targets: unknown[];
+    };
+    expect(body.install_pending).toBe(false);
+    expect(body.install_targets).toEqual([]);
+  });
+
+  it("installations SELECT filters soft-deleted tenants", async () => {
+    const { db, stmts } = captureDb();
+    await makeApp(db).request("/api/me", {}, makeEnv(db));
+    const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
+    expect(installStmt!.sql).toContain("deleted_at IS NULL");
   });
 
   it("installations SELECT projects account_type (#148 SC7)", async () => {

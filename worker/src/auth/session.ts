@@ -36,7 +36,7 @@ async function sha256hex(s: string): Promise<string> {
 export async function mintSession(
   db: D1Database,
   userId: number,
-  tenantId: number,
+  tenantId: number | null,
 ): Promise<string> {
   const randomBytes = new Uint8Array(32);
   crypto.getRandomValues(randomBytes);
@@ -75,10 +75,15 @@ export async function validateSession(
        WHERE s.token_hash = ?
          AND s.expires_at > datetime('now')
          AND s.revoked_at IS NULL
-         AND NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = s.tenant_id AND t.suspended_at IS NOT NULL)
-         AND EXISTS (
-           SELECT 1 FROM user_installations ui
-           WHERE ui.user_id = s.user_id AND ui.tenant_id = s.tenant_id
+         AND (
+           s.tenant_id IS NULL
+           OR (
+             NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = s.tenant_id AND t.suspended_at IS NOT NULL)
+             AND EXISTS (
+               SELECT 1 FROM user_installations ui
+               WHERE ui.user_id = s.user_id AND ui.tenant_id = s.tenant_id
+             )
+           )
          )`,
     )
     .bind(hash)
@@ -143,6 +148,25 @@ export const requireSession: MiddlewareHandler<AuthEnv> = async (c, next) => {
 
   const ctx = await validateSession(c.env.DB, token);
   if (!ctx) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  c.set("session", ctx);
+  await next();
+};
+
+/**
+ * Session middleware for data routes — requires a linked GitHub App installation.
+ * Install-pending sessions (tenant_id IS NULL) receive 401.
+ */
+export const requireLinkedTenant: MiddlewareHandler<AuthEnv> = async (c, next) => {
+  const token = readSessionToken(c);
+  if (!token) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  const ctx = await validateSession(c.env.DB, token);
+  if (!ctx || ctx.tenantId == null) {
     return c.json({ error: "unauthorized" }, 401);
   }
 
