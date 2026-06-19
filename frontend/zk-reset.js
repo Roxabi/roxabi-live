@@ -22,6 +22,13 @@ export function clearZkResetPending() {
   sessionStorage.removeItem(RESET_PENDING_KEY);
 }
 
+/** Drop stale reset intent when OAuth step-up did not yield a proof. */
+export function reconcileZkResetPendingAfterReauth() {
+  if (isZkResetPending() && !getZkReauthProof()) {
+    clearZkResetPending();
+  }
+}
+
 /** Wipe browser key material after server reset. */
 export async function clearLocalZkState(githubLogin) {
   clearZkSession();
@@ -47,7 +54,12 @@ async function postZkReset() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reauth_proof }),
   });
-  const data = await resp.json();
+  let data = {};
+  try {
+    data = await resp.json();
+  } catch {
+    data = {};
+  }
   if (!resp.ok) {
     const err = new Error(data?.error ?? 'reset_failed');
     err.code = data?.error;
@@ -57,12 +69,33 @@ async function postZkReset() {
   return data;
 }
 
+/** If server already wiped enrollment, treat reset as complete locally. */
+export async function recoverFromPartialZkReset(githubLogin) {
+  try {
+    const meResp = await api('/api/me');
+    const me = await meResp.json();
+    if (me?.user?.zk_enrolled === false) {
+      await clearLocalZkState(githubLogin);
+      window.location.reload();
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
 /**
  * Full reset: server purge + local wipe, then enroll gate for new passphrase.
  * @param {string} githubLogin
  */
 export async function resetZkAccountAndReenroll(githubLogin) {
-  await postZkReset();
+  try {
+    await postZkReset();
+  } catch (err) {
+    if (await recoverFromPartialZkReset(githubLogin)) return;
+    throw err;
+  }
   await clearLocalZkState(githubLogin);
   window.location.reload();
 }
@@ -124,6 +157,7 @@ function renderResetExecute($, escHtml, renderZkDialog, githubLogin, onCancelled
       await resetZkAccountAndReenroll(githubLogin);
     } catch (err) {
       if (err?.code === 'reauth_required') {
+        if (await recoverFromPartialZkReset(githubLogin)) return;
         errorEl.textContent = 'Verification expired — try again.';
         clearZkReauthProof();
       } else if (err?.code === 'rate_limited') {
@@ -149,6 +183,10 @@ export function wireZkResetUi(ctx, githubLogin, onCancelled) {
   if (isZkResetPending() && getZkReauthProof()) {
     renderResetExecute($, escHtml, renderZkDialog, githubLogin, onCancelled);
     return true;
+  }
+
+  if (isZkResetPending() && !getZkReauthProof()) {
+    clearZkResetPending();
   }
 
   return false;

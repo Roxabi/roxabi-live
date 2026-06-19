@@ -134,6 +134,18 @@ describe("postZkResetRoute", () => {
     expect(
       captured.some((s) => s.sql.includes("DELETE FROM zk_key_backups")),
     ).toBe(true);
+
+    const consumeIdx = captured.findIndex(
+      (s) =>
+        s.sql.includes("zk_reauth_proofs") &&
+        s.sql.includes("DELETE") &&
+        s.sql.includes("RETURNING"),
+    );
+    const purgeIdx = captured.findIndex((s) =>
+      s.sql.includes("DELETE FROM zk_payloads"),
+    );
+    expect(consumeIdx).toBeGreaterThanOrEqual(0);
+    expect(purgeIdx).toBeGreaterThan(consumeIdx);
   });
 });
 
