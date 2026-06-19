@@ -9,12 +9,10 @@
 
 import type { Context } from "hono";
 import type { Env } from "../types";
+import { authRedirect } from "../auth/cookies";
 
 export async function installCompleteRoute(
   c: Context<{ Bindings: Env }>,
 ): Promise<Response> {
-  return new Response(null, {
-    status: 302,
-    headers: { Location: "/login?redirect=/dashboard" },
-  });
+  return authRedirect("/login?redirect=/dashboard");
 }

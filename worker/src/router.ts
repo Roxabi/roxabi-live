@@ -7,6 +7,7 @@ import { adminSyncRoute } from "./api/admin";
 import { webhookRoute } from "./webhook/handlers";
 import { checkAdminAuth } from "./api/auth";
 import { loginRoute, callbackRoute } from "./auth/oauth";
+import { authResetRoute } from "./auth/reset";
 import { dashboardRoute } from "./auth/dashboard-route";
 import { meRoute, logoutRoute } from "./api/me";
 import type { AuthEnv } from "./auth/types";
@@ -81,6 +82,7 @@ app.get("/health", async (c) => {
 // ── Auth routes (#145, S2) ───────────────────────────────────────────────────
 app.get("/login", loginRoute);
 app.get("/oauth/callback", callbackRoute);
+app.get("/auth/reset", authResetRoute);
 app.get("/install/complete", installCompleteRoute);
 app.use("/api/me", requireSession);
 app.get("/api/me", meRoute);

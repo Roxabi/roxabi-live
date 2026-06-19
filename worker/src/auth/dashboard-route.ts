@@ -5,7 +5,12 @@
 
 import type { Context } from "hono";
 import type { AuthEnv } from "./types";
-import { clearSessionCookie, readSessionToken } from "./cookies";
+import {
+  authRedirect,
+  clearSessionCookie,
+  readSessionToken,
+  withAuthNoCache,
+} from "./cookies";
 import { validateSession } from "./session";
 
 export const DASHBOARD_PATH = "/dashboard";
@@ -24,22 +29,19 @@ export async function dashboardRoute(
 
   const token = readSessionToken(c);
   if (!token) {
-    return c.redirect(loginDest, 302);
+    return authRedirect(loginDest);
   }
 
   const session = await validateSession(c.env.DB, token);
   if (!session) {
     // Drop stale cookie so /login → OAuth → callback does not loop with a dead token.
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: loginDest,
-        "Set-Cookie": clearSessionCookie(),
-      },
-    });
+    return authRedirect(loginDest, { "Set-Cookie": clearSessionCookie() });
   }
 
   const assetUrl = new URL(c.req.url);
   assetUrl.pathname = "/dashboard/index.html";
-  return c.env.ASSETS.fetch(new Request(assetUrl.toString(), c.req.raw));
+  const assetRes = await c.env.ASSETS.fetch(
+    new Request(assetUrl.toString(), c.req.raw),
+  );
+  return withAuthNoCache(assetRes);
 }

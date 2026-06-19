@@ -5,7 +5,11 @@
 
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
-import { readSessionToken, clearSessionCookie } from "../auth/cookies";
+import {
+  AUTH_NO_CACHE,
+  readSessionToken,
+  clearSessionCookie,
+} from "../auth/cookies";
 import { deleteSession } from "../auth/session";
 import { zkAccountKeyEnabled } from "../auth/zk-flags";
 import { parseInstallTargets } from "../auth/github-install";
@@ -83,6 +87,10 @@ export async function logoutRoute(c: Context<AuthEnv>): Promise<Response> {
 
   return new Response(null, {
     status: 204,
-    headers: { "Set-Cookie": clearSessionCookie() },
+    headers: {
+      "Set-Cookie": clearSessionCookie(),
+      "Clear-Site-Data": '"cache", "cookies", "storage"',
+      ...AUTH_NO_CACHE,
+    },
   });
 }

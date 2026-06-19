@@ -21,4 +21,4 @@ worker/src/migrations.test.ts  # 310 lines — #216 zk_key_backups + zk_reauth_p
 worker/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
 worker/src/webhook/handlers-app.test.ts  # 498 lines — #180 app lifecycle handler tests
 worker/src/auth/installToken.test.ts  # 470 lines — #180 install token + pagination tests
-worker/src/auth/session.test.ts  # 342 lines — #180 session + install-pending SQL guard; sessionRedirectHtml cookie tests
+worker/src/auth/session.test.ts  # 343 lines — #180 session + install-pending SQL guard; sessionRedirectHtml cookie tests
