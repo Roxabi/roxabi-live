@@ -342,7 +342,51 @@ describe("loginRoute", () => {
       expect(res.headers.get("Location")).not.toMatch(/^https:\/\/github\.com/);
     });
 
-    it("still starts OAuth when redirect includes install=1", async () => {
+    it("short-circuits to dashboard when redirect includes install=1 and session has a linked tenant", async () => {
+      const validRow = {
+        userId: 1,
+        tenantId: 10,
+        githubId: 42,
+        githubLogin: "alice",
+      };
+      const bindStmt = {
+        first: vi.fn().mockResolvedValue(validRow),
+        run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+        all: vi.fn().mockResolvedValue({ results: [] }),
+        bind: vi.fn(function (this: unknown) {
+          return this;
+        }),
+      };
+      const stmt = {
+        first: vi.fn().mockResolvedValue(validRow),
+        run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+        all: vi.fn().mockResolvedValue({ results: [] }),
+        bind: vi.fn(() => bindStmt),
+      };
+      const db = {
+        prepare: vi.fn(() => stmt),
+        batch: vi.fn().mockResolvedValue([]),
+        dump: vi.fn(),
+        exec: vi.fn(),
+      } as unknown as D1Database;
+
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        "http://localhost/login?redirect=" +
+          encodeURIComponent("/dashboard?install=1"),
+        {
+          method: "GET",
+          headers: { Cookie: `roxabi_session=${"a".repeat(64)}` },
+        },
+        env,
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/dashboard?install=1");
+      expect(res.headers.get("Location")).not.toMatch(/^https:\/\/github\.com/);
+    });
+
+    it("still starts OAuth when redirect includes install=1 and session is install-pending", async () => {
       const validRow = {
         userId: 1,
         tenantId: null,
@@ -682,7 +726,7 @@ describe("callbackRoute", () => {
       expect(uiStmt).toBeDefined();
     });
 
-    it("returns 200 HTML redirect with Set-Cookie roxabi_session containing HttpOnly Secure SameSite=Lax Path=/ and NO Domain", async () => {
+    it("returns 302 to /auth/exchange (cookie set on exchange hop, not callback)", async () => {
       // Arrange
       const stateValue = "e".repeat(32);
       const captured: FakeStmt[] = [];
@@ -704,15 +748,14 @@ describe("callbackRoute", () => {
       );
 
       // Assert
-      expect(res.status).toBe(200);
-      const cookie = res.headers.get("Set-Cookie") ?? "";
-      expect(cookie).toContain("roxabi_session=");
-      expect(cookie).toContain("HttpOnly");
-      expect(cookie).toContain("Secure");
-      expect(cookie).toContain("SameSite=Lax");
-      expect(cookie).toContain("Path=/");
-      expect(cookie).not.toContain("Domain");
-      expect(res.headers.get("Location")).toBeNull();
+      expect(res.status).toBe(302);
+      const location = res.headers.get("Location") ?? "";
+      expect(location).toMatch(/^\/auth\/exchange\?code=[0-9a-f]{32}$/);
+      expect(res.headers.get("Set-Cookie")).toBeNull();
+      const exchangeInsert = captured.find((s) =>
+        s.sql.toLowerCase().includes("oauth_exchange"),
+      );
+      expect(exchangeInsert).toBeDefined();
     });
 
     it("redirects to redirect_after from state row when it is '/dashboard'", async () => {
@@ -736,13 +779,14 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — HTML redirect must reflect the stored redirect_after via /auth/continue
-      expect(res.status).toBe(200);
-      const body = await res.text();
-      expect(body).toContain("/auth/continue?to=%2Fdashboard");
-      expect(res.headers.get("Location")).toBeNull();
-      const cookie = res.headers.get("Set-Cookie") ?? "";
-      expect(cookie).toContain("roxabi_session=");
+      // Assert — exchange row stores redirect_after for the cookie hop
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
+      const exchangeInsert = captured.find((s) =>
+        s.sql.toLowerCase().includes("oauth_exchange"),
+      );
+      expect(exchangeInsert).toBeDefined();
+      expect(exchangeInsert!.args[2]).toBe("/dashboard");
     });
 
     it("uses two DB.batch round-trips (tenants + links) instead of a per-install loop", async () => {
@@ -760,9 +804,9 @@ describe("callbackRoute", () => {
         { method: "GET" },
         env,
       );
-      // Behavioral outcome, not just call shape: the two batches must yield HTML redirect + cookie.
-      expect(res.status).toBe(200);
-      expect(res.headers.get("Set-Cookie")).toContain("roxabi_session");
+      // Behavioral outcome, not just call shape: the two batches must yield exchange redirect.
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
       expect((db as unknown as { batch: ReturnType<typeof vi.fn> }).batch).toHaveBeenCalledTimes(2);
     });
 
@@ -799,8 +843,8 @@ describe("callbackRoute", () => {
         { method: "GET" },
         env,
       );
-      expect(res.status).toBe(200);
-      expect(res.headers.get("Set-Cookie")).toContain("roxabi_session");
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
       const tenantUpserts = captured.filter(
         (s) =>
           s.sql.toLowerCase().includes("tenants") &&
@@ -841,7 +885,7 @@ describe("callbackRoute", () => {
   });
 
   describe("replay attack — behavioral single-use enforcement", () => {
-    it("first request mints session (200 HTML + Set-Cookie); second with same state returns 400", async () => {
+    it("first request mints session (302 exchange); second with same state returns 400", async () => {
       // Arrange — FakeD1 whose state-consume DELETE...RETURNING returns a row
       // on the first call and null on the second (simulating row deleted by first request).
       const stateValue = "aaaa0000bbbb1111cccc2222dddd3333";
@@ -929,9 +973,9 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — first request succeeds with session cookie
-      expect(res1.status).toBe(200);
-      expect(res1.headers.get("Set-Cookie")).toContain("roxabi_session=");
+      // Assert — first request succeeds with exchange redirect
+      expect(res1.status).toBe(302);
+      expect(res1.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
 
       // Assert — second request fails (state row gone after first consume)
       expect(res2.status).toBe(400);
@@ -1158,7 +1202,7 @@ describe("callbackRoute", () => {
       );
     }
 
-    it("returns HTML redirect to install guide with ?install=1 when installations is empty", async () => {
+    it("redirects to exchange with ?install=1 destination when installations is empty", async () => {
       // Arrange
       const stateValue = "f".repeat(32);
       const captured: FakeStmt[] = [];
@@ -1173,15 +1217,17 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — install=1 preserved in encoded continue target
-      expect(res.status).toBe(200);
-      const body = await res.text();
-      expect(body).toContain("install%3D1");
-      expect(body).not.toContain("github.com");
-      expect(res.headers.get("Location")).toBeNull();
+      // Assert — install=1 preserved in exchange redirect_after
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
+      const exchangeInsert = captured.find((s) =>
+        s.sql.toLowerCase().includes("oauth_exchange"),
+      );
+      expect(exchangeInsert).toBeDefined();
+      expect(String(exchangeInsert!.args[2])).toContain("install=1");
     });
 
-    it("sets install-pending session cookie when installations is empty", async () => {
+    it("stores install-pending session token in oauth_exchange when installations is empty", async () => {
       // Arrange
       const stateValue = "0".repeat(32);
       const captured: FakeStmt[] = [];
@@ -1197,7 +1243,12 @@ describe("callbackRoute", () => {
       );
 
       // Assert
-      expect(res.headers.get("Set-Cookie")).toContain("roxabi_session=");
+      expect(res.status).toBe(302);
+      const exchangeInsert = captured.find((s) =>
+        s.sql.toLowerCase().includes("oauth_exchange"),
+      );
+      expect(exchangeInsert).toBeDefined();
+      expect(String(exchangeInsert!.args[1])).toHaveLength(64);
     });
 
     it("inserts install-pending session (tenant_id null) when installations is empty", async () => {
@@ -1259,8 +1310,8 @@ describe("callbackRoute", () => {
         { method: "GET" },
         env,
       );
-      expect(res.status).toBe(200);
-      expect(res.headers.get("Set-Cookie")).toContain("roxabi_session=");
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toMatch(/^\/auth\/exchange\?code=/);
       const usersInsert = captured.find(
         (s) =>
           s.sql.toLowerCase().includes("insert") &&

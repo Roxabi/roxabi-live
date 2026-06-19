@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.7](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.6...roxabi-live/v0.17.7) (2026-06-19)
+
+
+### Bug Fixes
+
+* **auth:** OAuth callback → `GET /auth/exchange` server-side cookie hop (one-time D1 code) — eliminates HTML/JS cookie race causing `ERR_TOO_MANY_REDIRECTS` after GitHub login
+* **auth:** stop clearing session cookie before GitHub redirect; `install=1` only forces re-OAuth when session is still install-pending
+
+
 ## [0.17.6](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.5...roxabi-live/v0.17.6) (2026-06-19)
 
 

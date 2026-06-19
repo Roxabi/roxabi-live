@@ -221,6 +221,15 @@ describe("requireSession auth gate", () => {
     });
   });
 
+  describe("GET /auth/exchange — post-OAuth cookie hop", () => {
+    it("returns 400 when code is missing", async () => {
+      const db = makeDbThatMustNotBeCalled();
+      const env = makeEnv(db);
+      const res = await app.request("/auth/exchange", {}, env);
+      expect(res.status).toBe(400);
+    });
+  });
+
   describe("GET /auth/continue — post-OAuth hop", () => {
     it("redirects to login when no session cookie", async () => {
       const db = makeDbThatMustNotBeCalled();
