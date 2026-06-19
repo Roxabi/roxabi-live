@@ -29,12 +29,40 @@ export function dashboardLoginUrl(reqUrl: URL): string {
   return `/login?redirect=${encodeURIComponent(redirectPath)}`;
 }
 
+/** Strip one-shot auth handoff params from the dashboard URL (refresh-safe). */
+export function dashboardCleanUrl(reqUrl: URL): string | null {
+  if (!reqUrl.searchParams.has("code") && !reqUrl.searchParams.has("state")) {
+    return null;
+  }
+  const pathUrl = new URL(reqUrl.pathname + reqUrl.search, "https://_/");
+  for (const key of DASHBOARD_LOGIN_STRIP) {
+    pathUrl.searchParams.delete(key);
+  }
+  const pathname = pathUrl.pathname.replace(/\/$/, "") || "/dashboard";
+  return `${pathname}${pathUrl.search}`;
+}
+
 export async function dashboardRoute(
   c: Context<AuthEnv>,
 ): Promise<Response> {
   const reqUrl = new URL(c.req.url);
+  const loginDest = dashboardLoginUrl(reqUrl);
 
-  // OAuth callback or one-shot exchange must not hit the session gate (redirect loop).
+  const token = readSessionToken(c);
+  if (token) {
+    const session = await validateSession(c.env.DB, token);
+    if (session) {
+      const clean = dashboardCleanUrl(reqUrl);
+      if (clean) {
+        return authRedirect(clean);
+      }
+      return serveDashboardShell(c);
+    }
+    // Drop stale cookie so /login → OAuth → callback does not loop with a dead token.
+    return authRedirect(loginDest, clearSessionCookieHeaders());
+  }
+
+  // GitHub OAuth callback must not hit the session gate.
   const handoffCode = reqUrl.searchParams.get("code");
   if (handoffCode) {
     const handoffState = reqUrl.searchParams.get("state");
@@ -48,20 +76,7 @@ export async function dashboardRoute(
     );
   }
 
-  const loginDest = dashboardLoginUrl(reqUrl);
-
-  const token = readSessionToken(c);
-  if (!token) {
-    return authRedirect(loginDest);
-  }
-
-  const session = await validateSession(c.env.DB, token);
-  if (!session) {
-    // Drop stale cookie so /login → OAuth → callback does not loop with a dead token.
-    return authRedirect(loginDest, clearSessionCookieHeaders());
-  }
-
-  return serveDashboardShell(c);
+  return authRedirect(loginDest);
 }
 
 /** Serve dashboard/index.html with auth no-cache headers (optional Set-Cookie). */

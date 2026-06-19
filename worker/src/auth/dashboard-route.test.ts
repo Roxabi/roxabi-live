@@ -165,6 +165,21 @@ describe("GET /dashboard", () => {
     expect(env.ASSETS.fetch).not.toHaveBeenCalled();
   });
 
+  it("strips ?code when session is already valid (refresh-safe)", async () => {
+    const db = makeSessionDb({ ...STUB_SESSION, tenantId: null });
+    const env = makeEnv(db);
+
+    const res = await app.request(
+      "/dashboard/?code=3021f76392ee418d8b6a9d70a5e8cd99&install=1",
+      { headers: { Cookie: `roxabi_session=${VALID_RAW_TOKEN}` } },
+      env,
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/dashboard");
+    expect(env.ASSETS.fetch).not.toHaveBeenCalled();
+  });
+
 });
 
 describe("dashboardLoginUrl", () => {
