@@ -71,6 +71,7 @@ describe("GET /dashboard", () => {
     expect(res.headers.get("Location")).toBe(
       "/login?redirect=%2Fdashboard%2F%3Finstall%3D1",
     );
+    expect(res.headers.get("Cache-Control")).toContain("no-store");
     expect(env.ASSETS.fetch).not.toHaveBeenCalled();
   });
 
@@ -113,6 +114,7 @@ describe("GET /dashboard", () => {
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("dashboard-html");
+    expect(res.headers.get("Cache-Control")).toContain("no-store");
     expect(env.ASSETS.fetch).toHaveBeenCalledOnce();
   });
 

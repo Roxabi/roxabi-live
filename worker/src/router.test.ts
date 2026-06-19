@@ -216,7 +216,21 @@ describe("requireSession auth gate", () => {
       const res = await app.request("/install/complete", {}, env);
       expect(res.status).toBe(302);
       expect(res.headers.get("Location")).toBe("/login?redirect=/dashboard");
+      expect(res.headers.get("Cache-Control")).toContain("no-store");
       expect(db.prepare).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("GET /auth/reset — stuck-profile recovery", () => {
+    it("redirects home with Clear-Site-Data and clears session cookie", async () => {
+      const db = makeDbThatMustNotBeCalled();
+      const env = makeEnv(db);
+      const res = await app.request("/auth/reset", {}, env);
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/");
+      expect(res.headers.get("Clear-Site-Data")).toContain("cache");
+      expect(res.headers.get("Set-Cookie")).toContain("__Host-session=;");
+      expect(res.headers.get("Cache-Control")).toContain("no-store");
     });
   });
 

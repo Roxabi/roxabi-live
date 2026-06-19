@@ -11,7 +11,7 @@
 import type { Context } from "hono";
 import type { Env } from "../types";
 import { mintSession } from "./session";
-import { readSessionToken, sessionRedirectHtml } from "./cookies";
+import { authRedirect, readSessionToken, sessionRedirectHtml } from "./cookies";
 import { validateSession } from "./session";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
@@ -70,7 +70,7 @@ export async function loginRoute(
     if (token) {
       const session = await validateSession(c.env.DB, token);
       if (session) {
-        return c.redirect(redirectAfter, 302);
+        return authRedirect(redirectAfter);
       }
     }
   }
@@ -97,10 +97,7 @@ export async function loginRoute(
   dest.searchParams.set("redirect_uri", redirectUri);
   dest.searchParams.set("state", state);
 
-  return new Response(null, {
-    status: 302,
-    headers: { Location: dest.toString() },
-  });
+  return authRedirect(dest.toString());
 }
 
 // ---------------------------------------------------------------------------

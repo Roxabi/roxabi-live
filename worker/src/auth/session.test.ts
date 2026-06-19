@@ -429,7 +429,8 @@ describe("sessionRedirectHtml", () => {
     const res = sessionRedirectHtml("/dashboard?install=1", "a".repeat(64));
     expect(res.status).toBe(200);
     expect(res.headers.get("Set-Cookie")).toContain("__Host-session=");
-    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Cache-Control")).toContain("no-store");
+    expect(res.headers.get("Vary")).toBe("Cookie");
     const body = await res.text();
     expect(body).toContain("/dashboard?install=1");
     expect(body).toContain("location.replace");

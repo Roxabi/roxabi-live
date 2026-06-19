@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.4](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.3...roxabi-live/v0.17.4) (2026-06-19)
+
+
+### Bug Fixes
+
+* **auth:** forbid caching of session redirects (`Cache-Control: no-store` + `Vary: Cookie`) — fixes redirect loops in normal browser profiles when HTTP cache retained stale 302s
+* **auth:** add `GET /auth/reset` to clear cookies, storage, and cache then return home
+
+
 ## [0.17.3](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.2...roxabi-live/v0.17.3) (2026-06-19)
 
 

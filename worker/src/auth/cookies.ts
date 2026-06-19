@@ -2,6 +2,39 @@ import type { Context } from "hono";
 import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
 
 // ---------------------------------------------------------------------------
+// Auth response cache policy — never cache session-gated redirects/HTML.
+// Browsers may cache 302s without Cache-Control; private mode works because
+// its cache is empty while a normal profile keeps stale /dashboard → /login hops.
+// ---------------------------------------------------------------------------
+
+export const AUTH_NO_CACHE: Record<string, string> = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, private",
+  Pragma: "no-cache",
+  Expires: "0",
+  Vary: "Cookie",
+};
+
+/** 302 redirect that must not be stored by the browser or CDN. */
+export function authRedirect(
+  location: string,
+  extra?: Record<string, string>,
+): Response {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: location, ...AUTH_NO_CACHE, ...extra },
+  });
+}
+
+/** Apply auth no-cache headers to an existing response (e.g. ASSETS HTML). */
+export function withAuthNoCache(res: Response): Response {
+  const headers = new Headers(res.headers);
+  for (const [key, value] of Object.entries(AUTH_NO_CACHE)) {
+    headers.set(key, value);
+  }
+  return new Response(res.body, { status: res.status, headers });
+}
+
+// ---------------------------------------------------------------------------
 // Cookie helpers (pure, synchronous)
 // ---------------------------------------------------------------------------
 
@@ -52,7 +85,7 @@ setTimeout(function () {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Set-Cookie": sessionCookie(rawToken),
-      "Cache-Control": "no-store",
+      ...AUTH_NO_CACHE,
     },
   });
 }
