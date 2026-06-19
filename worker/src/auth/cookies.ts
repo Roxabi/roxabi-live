@@ -31,7 +31,11 @@ export function sanitizeAuthRedirect(raw: string | undefined): string {
     }
   }
 
-  if (/^\/(?![/\\])/.test(candidate) && !/[\r\n\0]/.test(candidate)) {
+  if (
+    /^\/(?![/\\])/.test(candidate) &&
+    !/[\r\n\0]/.test(candidate) &&
+    !/["'<>]/.test(candidate)
+  ) {
     return candidate;
   }
   return "/dashboard";

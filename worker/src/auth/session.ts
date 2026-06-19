@@ -102,10 +102,10 @@ export async function setSessionTenant(
   db: D1Database,
   rawToken: string,
   tenantId: number,
-): Promise<void> {
+): Promise<boolean> {
   const hash = await sha256hex(rawToken);
 
-  await db
+  const result = await db
     .prepare(
       `UPDATE sessions SET tenant_id = ?
        WHERE token_hash = ?
@@ -113,6 +113,24 @@ export async function setSessionTenant(
          AND expires_at > datetime('now')`,
     )
     .bind(tenantId, hash)
+    .run();
+
+  return (result.meta?.changes ?? 0) > 0;
+}
+
+/** Revoke all other active sessions for a user (keep current token). */
+export async function revokeOtherSessions(
+  db: D1Database,
+  userId: number,
+  keepRawToken: string,
+): Promise<void> {
+  const hash = await sha256hex(keepRawToken);
+  await db
+    .prepare(
+      `UPDATE sessions SET revoked_at = datetime('now')
+       WHERE user_id = ? AND token_hash != ? AND revoked_at IS NULL`,
+    )
+    .bind(userId, hash)
     .run();
 }
 

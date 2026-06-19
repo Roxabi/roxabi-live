@@ -266,6 +266,63 @@ describe("meRoute", () => {
     expect(installStmt?.sql).toContain("deleted_at IS NULL");
   });
 
+  it("installations SELECT filters suspended tenants", async () => {
+    const { db, stmts } = captureDb();
+    await makeApp(db).request("/api/me", {}, makeEnv(db));
+    const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
+    expect(installStmt!.sql).toContain("suspended_at IS NULL");
+  });
+
+  it("returns onboarding_step install when session has no tenant", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("install_targets_json")) {
+        return [{ zk_opt_in: 0, install_targets_json: "[]", consent_at: null }];
+      }
+      if (sql.includes("user_installations")) return [];
+      return [];
+    });
+    const pendingSession: SessionContext = { ...STUB_SESSION, tenantId: null };
+    const res = await makeApp(db, pendingSession).request("/api/me", {}, makeEnv(db));
+    const body = await res.json() as { onboarding_step: string };
+    expect(body.onboarding_step).toBe("install");
+  });
+
+  it("returns onboarding_step consent when linked but not consented", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("install_targets_json")) {
+        return [{ zk_opt_in: 0, install_targets_json: null, consent_at: null }];
+      }
+      if (sql.includes("user_installations")) {
+        return [{ tenant_id: 9, account_login: "Roxabi", account_type: "Organization" }];
+      }
+      return [];
+    });
+    const res = await makeApp(db).request("/api/me", {}, makeEnv(db));
+    const body = await res.json() as { onboarding_step: string; consent_at: null };
+    expect(body.onboarding_step).toBe("consent");
+    expect(body.consent_at).toBeNull();
+  });
+
+  it("returns install_options when install is pending", async () => {
+    const targetsJson = JSON.stringify([
+      { id: 42, login: "alice", type: "User" },
+    ]);
+    const { db } = captureDb((sql) => {
+      if (sql.includes("install_targets_json")) {
+        return [{ zk_opt_in: 0, install_targets_json: targetsJson, consent_at: null }];
+      }
+      if (sql.includes("user_installations")) return [];
+      return [];
+    });
+    const pendingSession: SessionContext = { ...STUB_SESSION, tenantId: null };
+    const res = await makeApp(db, pendingSession).request("/api/me", {}, makeEnv(db));
+    const body = await res.json() as {
+      install_options: Array<{ kind: string; login?: string }>;
+    };
+    expect(body.install_options[0]?.kind).toBe("personal");
+    expect(body.install_options[0]?.login).toBe("alice");
+  });
+
   it("installations SELECT projects account_type (#148 SC7)", async () => {
     // Arrange
     const { db, stmts } = captureDb();

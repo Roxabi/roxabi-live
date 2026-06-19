@@ -389,14 +389,23 @@ describe("loginRoute", () => {
         githubLogin: "alice",
       };
       const db = {
-        prepare: vi.fn(() => ({
-          first: vi.fn().mockResolvedValue(validRow),
-          run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
-          all: vi.fn().mockResolvedValue({ results: [] }),
-          bind: vi.fn(function (this: unknown) {
-            return this;
-          }),
-        })),
+        prepare: vi.fn((sql: string) => {
+          const stmt = {
+            sql,
+            first: vi.fn().mockImplementation(function (this: { sql: string }) {
+              if (this.sql.toLowerCase().includes("count")) {
+                return Promise.resolve({ n: 0 });
+              }
+              return Promise.resolve(validRow);
+            }),
+            run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+            all: vi.fn().mockResolvedValue({ results: [] }),
+            bind: vi.fn(function (this: unknown) {
+              return this;
+            }),
+          };
+          return stmt;
+        }),
         batch: vi.fn().mockResolvedValue([]),
         dump: vi.fn(),
         exec: vi.fn(),
@@ -416,6 +425,51 @@ describe("loginRoute", () => {
       expect(res.headers.get("Location")).toMatch(
         /^https:\/\/github\.com\/login\/oauth\/authorize/,
       );
+    });
+
+    it("short-circuits install intent when webhook already linked user_installations", async () => {
+      const validRow = {
+        userId: 1,
+        tenantId: null,
+        githubId: 42,
+        githubLogin: "alice",
+      };
+      const db = {
+        prepare: vi.fn((sql: string) => {
+          const stmt = {
+            sql,
+            first: vi.fn().mockImplementation(function (this: { sql: string }) {
+              if (this.sql.toLowerCase().includes("count")) {
+                return Promise.resolve({ n: 1 });
+              }
+              return Promise.resolve(validRow);
+            }),
+            run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }),
+            all: vi.fn().mockResolvedValue({ results: [] }),
+            bind: vi.fn(function (this: unknown) {
+              return this;
+            }),
+          };
+          return stmt;
+        }),
+        batch: vi.fn().mockResolvedValue([]),
+        dump: vi.fn(),
+        exec: vi.fn(),
+      } as unknown as D1Database;
+
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        "http://localhost/login?install=1&redirect=%2Fdashboard",
+        {
+          method: "GET",
+          headers: { Cookie: `roxabi_session=${"a".repeat(64)}` },
+        },
+        env,
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/dashboard");
+      expect(res.headers.get("Location")).not.toMatch(/^https:\/\/github\.com/);
     });
   });
 });

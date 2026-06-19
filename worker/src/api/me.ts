@@ -60,8 +60,8 @@ export async function buildMePayload(env: Env, session: SessionContext): Promise
     `SELECT ui.tenant_id AS tenant_id, t.account_login AS account_login, t.account_type AS account_type
        FROM user_installations ui
        JOIN tenants t ON t.id = ui.tenant_id
-       WHERE ui.user_id = ? AND t.deleted_at IS NULL`,
-  )
+       WHERE ui.user_id = ? AND t.deleted_at IS NULL AND t.suspended_at IS NULL`,
+    )
     .bind(session.userId)
     .all<{ tenant_id: number; account_login: string; account_type: string }>();
 

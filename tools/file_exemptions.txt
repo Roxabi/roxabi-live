@@ -14,11 +14,12 @@ worker/src/webhook/mutations.ts  # 339 lines — #180 D1 write helpers for webho
 worker/src/sync/sync.test.ts  # 1745 lines — #180 integration harness for runSync; #216 structure-only (+biome reflow)
 worker/src/api/zk-key-backup.test.ts  # 506 lines — #216 backup API security + CAS/reauth tests; fp enforcement + atomic UPSERT tests
 worker/src/webhook/handlers.test.ts  # 945 lines — #180 webhook handler contract tests
-worker/src/auth/oauth.test.ts  # 1112 lines — #180 OAuth + install-pending; login prompt step-1 + redirect-loop guards
+worker/src/auth/oauth.test.ts  # 1145 lines — #180 OAuth + install-pending; mustReOAuth webhook-link short-circuit
 worker/src/api/issues.test.ts  # 710 lines — #180 tenant-scoped issues API tests; #216 zk redaction
 worker/src/api/graph.test.ts  # 745 lines — #180 tenant-scoped graph + #142 S2 zk + closed_under_open_epic
 worker/src/migrations.test.ts  # 323 lines — schema tests incl. users.consent_at (0020)
 worker/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
-worker/src/webhook/handlers-app.test.ts  # 522 lines — #180 app lifecycle handler tests (+biome reflow)
+worker/src/webhook/handlers-app.test.ts  # 516 lines — #180 app lifecycle + sender→user_installations tests
 worker/src/auth/installToken.test.ts  # 470 lines — #180 install token + pagination tests
-worker/src/auth/session.test.ts  # 343 lines — #180 session + install-pending SQL guard; sessionRedirectHtml cookie tests
+worker/src/auth/session.test.ts  # 357 lines — #180 session + authNavigateHtml XSS guard tests
+worker/src/api/me.test.ts  # 335 lines — onboarding_step + install_options + suspended tenant filter tests

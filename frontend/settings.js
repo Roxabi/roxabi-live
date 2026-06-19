@@ -38,10 +38,11 @@ export function openSettings(me) {
   const displayName = getDisplayName(login);
   const themePref = getThemePref();
   const installations = me.installations ?? [];
-  const personalOpt = (me.install_options ?? []).find((o) => o.kind === "personal");
-  const pickerOpt = (me.install_options ?? []).find((o) => o.kind === "picker");
   const installUrl =
-    personalOpt?.url ?? pickerOpt?.url ?? "https://github.com/apps/roxabi-live/installations/new";
+    (me.install_options ?? []).find(o => o.kind === 'personal')?.url ??
+    (me.install_options ?? []).find(o => o.kind === 'picker')?.url ??
+    (me.install_options ?? [])[0]?.url ??
+    null;
 
   gate.innerHTML = `
     <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">

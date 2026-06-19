@@ -137,6 +137,27 @@ describe("handleInstallation", () => {
       expect(batchedSql(batched()).some((sql) => /INSERT INTO sync_control/.test(sql))).toBe(true);
     });
 
+    it("links sender to user_installations when sender has a local account", async () => {
+      const { db, batched } = seededDb({
+        tenant: activeTenant,
+        user: { id: 42, github_id: 99901 },
+      });
+      const payload = {
+        action: "created",
+        installation: { id: 555, account: { login: "Roxabi", type: "Organization" } },
+        repositories: [],
+        sender: { id: 99901, login: "alice" },
+      };
+
+      await handleInstallation(payload, db, fakeEnv());
+
+      const linkStmt = allBatchedStmts(batched()).find((s) =>
+        /user_installations/.test(s.sql),
+      );
+      expect(linkStmt).toBeDefined();
+      expect(linkStmt!.args).toEqual([42, activeTenant.id]);
+    });
+
     it("created with no repositories still bumps data_version (tenant row created)", async () => {
       // Arrange
       const { db, recorded, batched, batchFn } = seededDb({ tenant: activeTenant });
