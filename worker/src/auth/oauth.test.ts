@@ -1046,9 +1046,17 @@ describe("callbackRoute", () => {
                 headers: { "Content-Type": "application/json" },
               },
             );
-          } else {
+          } else if (fetchCallCount === 3) {
             return new Response(
               JSON.stringify({ installations: [] }),
+              {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          } else {
+            return new Response(
+              JSON.stringify([{ id: 77, login: "Roxabi" }]),
               {
                 status: 200,
                 headers: { "Content-Type": "application/json" },
@@ -1059,7 +1067,7 @@ describe("callbackRoute", () => {
       );
     }
 
-    it("returns 302 to GitHub app install page when installations is empty", async () => {
+    it("returns 302 to install guide with ?install=1 when installations is empty", async () => {
       // Arrange
       const stateValue = "f".repeat(32);
       const captured: FakeStmt[] = [];
@@ -1077,11 +1085,11 @@ describe("callbackRoute", () => {
       // Assert
       expect(res.status).toBe(302);
       const location = res.headers.get("Location") ?? "";
-      expect(location).toContain("github.com/apps/");
-      expect(location).toContain("installations/new");
+      expect(location).toContain("install=1");
+      expect(location).not.toContain("github.com");
     });
 
-    it("does NOT set a session cookie when installations is empty", async () => {
+    it("sets install-pending session cookie when installations is empty", async () => {
       // Arrange
       const stateValue = "0".repeat(32);
       const captured: FakeStmt[] = [];
@@ -1096,11 +1104,11 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — no Set-Cookie header when no installations
-      expect(res.headers.get("Set-Cookie")).toBeNull();
+      // Assert
+      expect(res.headers.get("Set-Cookie")).toContain("__Host-session=");
     });
 
-    it("does NOT insert a session row when installations is empty", async () => {
+    it("inserts install-pending session (tenant_id null) when installations is empty", async () => {
       // Arrange
       const stateValue = "1".repeat(32);
       const captured: FakeStmt[] = [];
@@ -1115,18 +1123,66 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — no INSERT INTO sessions statement
+      // Assert
       const sessionsInsert = captured.find(
         (s) =>
           s.sql.toLowerCase().includes("sessions") &&
           s.sql.toLowerCase().includes("insert"),
       );
-      expect(sessionsInsert).toBeUndefined();
+      expect(sessionsInsert).toBeDefined();
+      expect(sessionsInsert!.args[1]).toBeNull();
     });
 
-    it("F4 — does NOT insert a user row when installations is empty (no ghost users)", async () => {
-      // Arrange — F4: user upsert must happen AFTER the install check, so zero
-      // installations must never produce an INSERT INTO users.
+    it("still mints install-pending session when /user/orgs fails (User target only)", async () => {
+      const stateValue = "3".repeat(32);
+      const captured: FakeStmt[] = [];
+      const db = makeZeroInstallDb(captured);
+      let fetchCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          fetchCallCount++;
+          if (fetchCallCount === 1) {
+            return new Response(JSON.stringify({ access_token: "tok" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          } else if (fetchCallCount === 2) {
+            return new Response(JSON.stringify({ id: 42, login: "alice" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          } else if (fetchCallCount === 3) {
+            return new Response(JSON.stringify({ installations: [] }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return new Response("error", { status: 500 });
+        }),
+      );
+      const { app, env } = makeApp(db);
+      const res = await app.request(
+        `http://localhost/oauth/callback?code=mycode&state=${stateValue}`,
+        { method: "GET" },
+        env,
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Set-Cookie")).toContain("__Host-session=");
+      const usersInsert = captured.find(
+        (s) =>
+          s.sql.toLowerCase().includes("insert") &&
+          s.sql.toLowerCase().includes("users"),
+      );
+      const targets = JSON.parse(String(usersInsert!.args[2])) as Array<{
+        type: string;
+      }>;
+      expect(targets).toHaveLength(1);
+      expect(targets[0].type).toBe("User");
+    });
+
+    it("upserts user with install_targets_json when installations is empty", async () => {
+      // Arrange
       const stateValue = "2".repeat(32);
       const captured: FakeStmt[] = [];
       const db = makeZeroInstallDb(captured);
@@ -1140,13 +1196,24 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — no INSERT INTO users statement was executed
+      // Assert
       const usersInsert = captured.find(
         (s) =>
           s.sql.toLowerCase().includes("insert") &&
           s.sql.toLowerCase().includes("users"),
       );
-      expect(usersInsert).toBeUndefined();
+      expect(usersInsert).toBeDefined();
+      expect(usersInsert!.sql).toContain("install_targets_json");
+      const targets = JSON.parse(String(usersInsert!.args[2])) as Array<{
+        login: string;
+        type: string;
+      }>;
+      expect(targets.some((t) => t.login === "alice" && t.type === "User")).toBe(
+        true,
+      );
+      expect(targets.some((t) => t.login === "Roxabi" && t.type === "Organization")).toBe(
+        true,
+      );
     });
   });
 });

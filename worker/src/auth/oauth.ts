@@ -99,7 +99,7 @@ export async function loginRoute(
  *   2. Consume state — atomic single-use DELETE ... RETURNING (closes TOCTOU).
  *   3. Exchange code for access_token.
  *   4. Fetch /user and /user/installations.
- *   5. If no installations → redirect to app install page (no DB write, no session).
+ *   5. If no installations → upsert user, cache install targets, mint install-pending session.
  *   6. Upsert user → tenants → user_installations.
  *   7. Mint session tied to first installation, set __Host-session cookie.
  */
@@ -195,20 +195,64 @@ export async function callbackRoute(
     }>;
   };
 
-  // No installations — redirect to app install page, no session, no DB write
+  // No installations — mint install-pending session and show our install guide
   if (installations.length === 0) {
+    const orgsRes = await fetch(
+      "https://api.github.com/user/orgs?per_page=100",
+      { headers: ghHeaders },
+    );
+    const orgs = orgsRes.ok
+      ? ((await orgsRes.json()) as Array<{ id: number; login: string }>)
+      : [];
+
+    const installTargets = [
+      { id: ghUser.id, login: ghUser.login, type: "User" as const },
+      ...orgs.map((o) => ({
+        id: o.id,
+        login: o.login,
+        type: "Organization" as const,
+      })),
+    ];
+
+    const userRow = await c.env.DB.prepare(
+      `INSERT INTO users (github_id, github_login, zk_opt_in, install_targets_json)
+       VALUES (?, ?, 1, ?)
+       ON CONFLICT(github_id) DO UPDATE SET
+         github_login=excluded.github_login,
+         zk_opt_in=1,
+         install_targets_json=excluded.install_targets_json,
+         updated_at=datetime('now')
+       RETURNING id`,
+    )
+      .bind(ghUser.id, ghUser.login, JSON.stringify(installTargets))
+      .first<{ id: number }>();
+
+    if (!userRow) {
+      return c.json({ error: "db_error" }, 500);
+    }
+
+    const rawToken = await mintSession(c.env.DB, userRow.id, null);
+    const installDest = new URL(redirectAfter, origin);
+    installDest.searchParams.set("install", "1");
+
     return new Response(null, {
       status: 302,
       headers: {
-        Location: "https://github.com/apps/roxabi-live/installations/new",
+        Location: `${installDest.pathname}${installDest.search}`,
+        "Set-Cookie": sessionCookie(rawToken),
       },
     });
   }
 
   // Upsert user — get internal id
   const userRow = await c.env.DB.prepare(
-    `INSERT INTO users (github_id, github_login, zk_opt_in) VALUES (?, ?, 1)
-     ON CONFLICT(github_id) DO UPDATE SET github_login=excluded.github_login, zk_opt_in=1, updated_at=datetime('now')
+    `INSERT INTO users (github_id, github_login, zk_opt_in, install_targets_json)
+     VALUES (?, ?, 1, NULL)
+     ON CONFLICT(github_id) DO UPDATE SET
+       github_login=excluded.github_login,
+       zk_opt_in=1,
+       install_targets_json=NULL,
+       updated_at=datetime('now')
      RETURNING id`,
   )
     .bind(ghUser.id, ghUser.login)

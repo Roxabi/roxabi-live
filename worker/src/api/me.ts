@@ -8,6 +8,7 @@ import type { AuthEnv } from "../auth/types";
 import { readSessionToken, clearSessionCookie } from "../auth/cookies";
 import { deleteSession } from "../auth/session";
 import { zkAccountKeyEnabled } from "../auth/zk-flags";
+import { parseInstallTargets } from "../auth/github-install";
 
 // ---------------------------------------------------------------------------
 // GET /api/me
@@ -24,9 +25,9 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
   }
 
   const userRow = await c.env.DB
-    .prepare(`SELECT zk_opt_in FROM users WHERE id = ?`)
+    .prepare(`SELECT zk_opt_in, install_targets_json FROM users WHERE id = ?`)
     .bind(s.userId)
-    .first<{ zk_opt_in: number }>();
+    .first<{ zk_opt_in: number; install_targets_json: string | null }>();
 
   const enrolledRow = await c.env.DB
     .prepare(
@@ -38,10 +39,18 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
   const rows = await c.env.DB
     .prepare(
       `SELECT ui.tenant_id AS tenant_id, t.account_login AS account_login, t.account_type AS account_type
-       FROM user_installations ui JOIN tenants t ON t.id = ui.tenant_id WHERE ui.user_id = ?`,
+       FROM user_installations ui
+       JOIN tenants t ON t.id = ui.tenant_id
+       WHERE ui.user_id = ? AND t.deleted_at IS NULL`,
     )
     .bind(s.userId)
     .all<{ tenant_id: number; account_login: string; account_type: string }>();
+
+  const installations = rows.results;
+  const installPending = s.tenantId == null;
+  const installTargets = installPending
+    ? parseInstallTargets(userRow?.install_targets_json)
+    : [];
 
   return c.json({
     user: {
@@ -52,7 +61,9 @@ export async function meRoute(c: Context<AuthEnv>): Promise<Response> {
       zk_account_key_enabled: zkAccountKeyEnabled(c.env),
     },
     active_tenant_id: s.tenantId,
-    installations: rows.results,
+    install_pending: installPending,
+    install_targets: installTargets,
+    installations,
   });
 }
 

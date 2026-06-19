@@ -1,6 +1,8 @@
 // auth.js — Auth gate state machine, consent persistence, API wrapper
 // Exports: AuthError, api, hasConsent, setConsent, resolveView, requireAuthGate, getSessionProfile
 
+import { githubInstallUrl, partitionInstallTargets } from './github-install.js';
+
 const $ = id => document.getElementById(id);
 
 // ─── AuthError ────────────────────────────────────────────────────────────────
@@ -47,7 +49,7 @@ export function setConsent(login) {
  * @returns {'install'|'consent'|'dashboard'}
  */
 export function resolveView(me, consented) {
-  if (me.installations.length === 0) return 'install';
+  if (me.install_pending || me.installations.length === 0) return 'install';
   if (!consented) return 'consent';
   return 'dashboard';
 }
@@ -85,22 +87,99 @@ function renderLanding() {
 
 // ─── Internal: render install CTA ────────────────────────────────────────────
 
-function renderInstallCta() {
+/**
+ * @param {{ user: { github_id: number, github_login: string }, install_targets?: Array<{ id: number, login: string, type: string }> }} me
+ */
+function renderInstallCta(me) {
   document.body.classList.add('gated');
   const el = $('auth-install');
+  const targets = me.install_targets ?? [];
+  const { personal, orgs } = partitionInstallTargets(targets);
+  const login = escHtml(me.user.github_login);
+
+  const personalUrl = personal ? githubInstallUrl(personal) : githubInstallUrl();
+  const orgCards = orgs.length
+    ? orgs.map(org => `
+        <a
+          class="install-option"
+          href="${escHtml(githubInstallUrl(org))}"
+          target="_blank"
+          rel="noopener noreferrer"
+          role="listitem"
+        >
+          <span class="install-option-title">Organisation</span>
+          <span class="install-option-name">${escHtml(org.login)}</span>
+          <span class="install-option-hint">Install on this org — choose all repos or selected repos on GitHub</span>
+        </a>
+      `).join('')
+    : `
+        <a
+          class="install-option"
+          href="${escHtml(githubInstallUrl())}"
+          target="_blank"
+          rel="noopener noreferrer"
+          role="listitem"
+        >
+          <span class="install-option-title">Organisation</span>
+          <span class="install-option-name">Pick on GitHub</span>
+          <span class="install-option-hint">GitHub will show every org where you can install or request access</span>
+        </a>
+      `;
+
   el.innerHTML = `
-    <h2>Install the GitHub App</h2>
-    <p>No GitHub App installation found for your account. Install the Roxabi Live app on your organisation to get started.</p>
-    <a
-      href="https://github.com/apps/roxabi-live/installations/new"
-      class="auth-login-btn"
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="Install GitHub App"
-    >Install GitHub App</a>
-    <p><small>After installing, reload this page.</small></p>
+    <div class="install-panel">
+      <h2>Install Roxabi Live on GitHub</h2>
+      <p class="install-lead">
+        Signed in as <strong>${login}</strong>. Choose where to install the app.
+        GitHub handles permissions and repository access — you can install on your
+        personal account, an organisation, or limit access to specific repositories.
+      </p>
+      <div class="install-options" role="list">
+        <a
+          class="install-option"
+          href="${escHtml(personalUrl)}"
+          target="_blank"
+          rel="noopener noreferrer"
+          role="listitem"
+        >
+          <span class="install-option-title">Personal account</span>
+          <span class="install-option-name">${login}</span>
+          <span class="install-option-hint">Your repos only — good for solo projects</span>
+        </a>
+        ${orgCards}
+        <div class="install-option install-option-info" role="listitem">
+          <span class="install-option-title">Specific repositories only</span>
+          <span class="install-option-hint">
+            Pick an account above, then on GitHub choose <strong>Only select repositories</strong>
+            and select the repos you want Roxabi Live to read.
+          </span>
+        </div>
+      </div>
+      <p class="install-note">
+        Installation opens on GitHub in a new tab. When you are done, return here and
+        <strong>Continue</strong> to sign in again — GitHub will expose the new installation.
+      </p>
+      <div class="install-actions">
+        <button type="button" class="consent-btn-secondary" id="install-logout">Sign out</button>
+        <a href="/login?redirect=/" class="auth-login-btn" id="install-continue">I've installed — continue</a>
+      </div>
+    </div>
   `;
   el.removeAttribute('hidden');
+
+  const firstInstallLink = el.querySelector('.install-option[href]');
+  firstInstallLink?.focus();
+
+  $('install-logout')?.addEventListener('click', async () => {
+    await api('/logout', { method: 'POST' }).catch(() => {});
+    location.href = '/';
+  });
+
+  const pageUrl = new URL(location.href);
+  if (pageUrl.searchParams.has('install')) {
+    pageUrl.searchParams.delete('install');
+    history.replaceState(null, '', pageUrl.pathname + pageUrl.search + pageUrl.hash);
+  }
 }
 
 // ─── Internal: render consent gate ───────────────────────────────────────────
@@ -286,7 +365,7 @@ export async function requireAuthGate() {
   const view = resolveView(me, consented);
 
   if (view === 'install') {
-    renderInstallCta();
+    renderInstallCta(me);
     return 'install';
   }
 
