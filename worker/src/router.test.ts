@@ -221,6 +221,23 @@ describe("requireSession auth gate", () => {
     });
   });
 
+  describe("GET /auth/continue — post-OAuth hop", () => {
+    it("redirects to login when no session cookie", async () => {
+      const db = makeDbThatMustNotBeCalled();
+      const env = makeEnv(db);
+      const res = await app.request(
+        "/auth/continue?to=%2Fdashboard%3Finstall%3D1",
+        {},
+        env,
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe(
+        "/login?redirect=%2Fdashboard%3Finstall%3D1",
+      );
+      expect(res.headers.get("Cache-Control")).toContain("no-store");
+    });
+  });
+
   describe("GET /auth/reset — stuck-profile recovery", () => {
     it("redirects home with Clear-Site-Data and clears session cookie", async () => {
       const db = makeDbThatMustNotBeCalled();

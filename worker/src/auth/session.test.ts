@@ -432,16 +432,16 @@ describe("sessionRedirectHtml", () => {
     expect(res.headers.get("Cache-Control")).toContain("no-store");
     expect(res.headers.get("Vary")).toBe("Cookie");
     const body = await res.text();
-    expect(body).toContain("/dashboard?install=1");
+    expect(body).toContain("/auth/continue");
+    expect(body).toContain("/api/me");
     expect(body).toContain("location.replace");
-    expect(body).toContain("setTimeout");
     expect(body).not.toContain("http-equiv");
   });
 
   it("rejects open-redirect destinations", async () => {
     const res = sessionRedirectHtml("//evil.test", "tok");
     const body = await res.text();
-    expect(body).toContain("/dashboard");
+    expect(body).toContain("/auth/continue?to=%2Fdashboard");
     expect(body).not.toContain("//evil");
   });
 });
@@ -472,11 +472,11 @@ describe("sessionCookie", () => {
     expect(cookie).toContain("Secure");
   });
 
-  it("contains SameSite=Strict", () => {
+  it("contains SameSite=Lax for OAuth return navigations", () => {
     // Arrange + Act
     const cookie = sessionCookie("tok");
     // Assert
-    expect(cookie).toContain("SameSite=Strict");
+    expect(cookie).toContain("SameSite=Lax");
   });
 
   it("contains Path=/", () => {
@@ -532,9 +532,9 @@ describe("clearSessionCookie", () => {
     expect(cookie).toContain("Secure");
   });
 
-  it("contains SameSite=Strict", () => {
+  it("contains SameSite=Lax", () => {
     const cookie = clearSessionCookie();
-    expect(cookie).toContain("SameSite=Strict");
+    expect(cookie).toContain("SameSite=Lax");
   });
 
   it("contains Path=/", () => {
