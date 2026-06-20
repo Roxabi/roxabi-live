@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { postAccountDeleteRoute } from "./api/account-delete";
 import { activeTenantRoute } from "./api/active-tenant";
 import { adminSyncRoute } from "./api/admin";
 import { checkAdminAuth } from "./api/auth";
@@ -10,6 +11,7 @@ import { getIssueRoute, listIssuesRoute } from "./api/issues";
 import { logoutRoute, meRoute } from "./api/me";
 import { releaseRoute } from "./api/release";
 import { syncStatusRoute } from "./api/sync-status";
+import { e2eReauthProofRoute, e2eSeedRoute, e2eUserStateRoute } from "./api/test-harness";
 import { versionRoute } from "./api/version";
 import { zkGithubGraphqlRoute } from "./api/zk-github-proxy";
 import { consumeZkHandoffRoute } from "./api/zk-handoff";
@@ -129,6 +131,11 @@ app.post(
 // /logout is ungated by session middleware (idempotent + null-safe). SameSite=Lax on session cookie
 // blocks most cross-site POSTs; requireSameOriginPost adds defense-in-depth.
 app.post("/logout", requireSameOriginPost, logoutRoute);
+app.post("/api/account/delete", requireSameOriginPost, requireSession, postAccountDeleteRoute);
+
+app.post("/__test__/seed", e2eSeedRoute);
+app.get("/__test__/user-state", e2eUserStateRoute);
+app.post("/__test__/reauth-proof", e2eReauthProofRoute);
 
 // GET /dashboard — session-gated app shell (HTML only; JS/CSS served from ASSETS root).
 app.get("/dashboard", dashboardRoute);

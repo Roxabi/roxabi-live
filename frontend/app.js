@@ -488,23 +488,30 @@ function startPolling() {
 }
 
 async function init() {
-  // SC1: requireAuthGate() gates data fetches until onboarding_step === 'ready'.
   try {
+    await consumeZkHandoffFromUrl();
+    await consumeZkReauthFromUrl();
+    try {
+      const meEarly = await getSessionProfile();
+      if (await resumeSettingsFromUrl(meEarly)) return;
+    } catch (e) {
+      if (!(e instanceof AuthError)) throw e;
+    }
+
+    // SC1: requireAuthGate() gates data fetches until onboarding_step === 'ready'.
     const view = await requireAuthGate();
     if (view !== "ready") return;
   } catch (e) {
-    if (e instanceof AuthError) return; // no session — landing view shown by requireAuthGate
+    if (e instanceof AuthError) return;
     throw e;
   }
   restoreControls();
   try {
-    await consumeZkHandoffFromUrl();
-    await consumeZkReauthFromUrl();
     const { reconcileZkResetPendingAfterReauth } = await import("./zk-reset.js");
     reconcileZkResetPendingAfterReauth();
     const me = await getSessionProfile();
     sessionGithubLogin = me.user?.github_login ?? "";
-    resumeSettingsFromUrl(me);
+    if (await resumeSettingsFromUrl(me)) return;
     const zkAccountKeyEnabled = isZkAccountKeyEnabled(me);
     sessionZkAccountKeyEnabled = zkAccountKeyEnabled;
 

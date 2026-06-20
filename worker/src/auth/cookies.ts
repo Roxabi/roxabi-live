@@ -85,8 +85,9 @@ function expireCookie(name: string): string {
 /**
  * Build a Set-Cookie header value for the session token.
  */
-export function sessionCookie(rawToken: string): string {
-  return `${SESSION_COOKIE}=${rawToken}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`;
+export function sessionCookie(rawToken: string, opts?: { secure?: boolean }): string {
+  const secure = opts?.secure !== false ? "; Secure" : "";
+  return `${SESSION_COOKIE}=${rawToken}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`;
 }
 
 /** Expire primary + legacy session cookies. */
@@ -100,8 +101,8 @@ export function clearSessionCookie(): string {
 }
 
 /** Set new session and expire legacy __Host-session. */
-export function sessionCookieHeaders(rawToken: string): string[] {
-  return [sessionCookie(rawToken), expireCookie(LEGACY_SESSION_COOKIE)];
+export function sessionCookieHeaders(rawToken: string, opts?: { secure?: boolean }): string[] {
+  return [sessionCookie(rawToken, opts), expireCookie(LEGACY_SESSION_COOKIE)];
 }
 
 // ---------------------------------------------------------------------------

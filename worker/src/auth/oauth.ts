@@ -11,10 +11,10 @@
 import type { Context } from "hono";
 import type { Env } from "../types";
 import { authRedirect, readSessionToken, sanitizeAuthRedirect, stripInstallParam } from "./cookies";
+import { tryLinkInstallPendingSession } from "./link-install";
 import { serveLoginPrompt } from "./login-prompt";
 import { completeOAuthSession } from "./post-oauth";
-import { mintSession, revokeOtherSessions } from "./session";
-import { validateSession } from "./session";
+import { mintSession, revokeOtherSessions, validateSession } from "./session";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
 
@@ -105,6 +105,9 @@ export async function loginRoute(c: Context<{ Bindings: Env }>): Promise<Respons
     if (token) {
       const session = await validateSession(c.env.DB, token);
       if (session) {
+        if (intent === "install") {
+          await tryLinkInstallPendingSession(c.env.DB, token, session);
+        }
         return authRedirect(cleanRedirect);
       }
     }

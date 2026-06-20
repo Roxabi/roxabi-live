@@ -115,6 +115,19 @@ export function onboardingStepFromMe(me) {
   throw new Error("invalid onboarding_step");
 }
 
+/** After GitHub setup URL, link the new org/personal install without clicking Continue. */
+async function autoDetectInstall() {
+  try {
+    const { linked } = await pollInstallRefresh(12);
+    const step = linked?.onboarding_step;
+    if (step === "consent" || step === "ready") {
+      location.reload();
+    }
+  } catch {
+    /* webhook still in flight — user can click Continue */
+  }
+}
+
 function renderInstallCta(me) {
   document.body.classList.add("gated");
   const el = $("auth-install");
@@ -161,6 +174,8 @@ function renderInstallCta(me) {
     location.href = "/";
   });
 
+  autoDetectInstall();
+
   $("install-continue")?.addEventListener("click", async () => {
     const btn = $("install-continue");
     const hint = $("install-refresh-hint");
@@ -168,7 +183,8 @@ function renderInstallCta(me) {
     btn.textContent = "Vérification…";
     try {
       const { linked, oauthFallback } = await pollInstallRefresh();
-      if (linked?.onboarding_step) {
+      const step = linked?.onboarding_step;
+      if (step === "consent" || step === "ready") {
         location.reload();
         return;
       }
