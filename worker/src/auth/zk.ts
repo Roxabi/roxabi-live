@@ -8,10 +8,22 @@ export async function userZkOptIn(db: D1Database, userId: number): Promise<boole
   return row?.zk_opt_in === 1;
 }
 
-/** Issue keys that have at least one zk_payloads ciphertext row. */
+/** Issue keys sealed by any user — used by sync to avoid writing plaintext into D1. */
 export async function loadZkSealedIssueKeys(db: D1Database): Promise<Set<string>> {
   const rows = await db
     .prepare("SELECT DISTINCT issue_key FROM zk_payloads")
+    .all<{ issue_key: string }>();
+  return new Set((rows.results ?? []).map((r) => r.issue_key));
+}
+
+/** Issue keys sealed by a specific user — used for per-user API title redaction. */
+export async function loadZkSealedIssueKeysForUser(
+  db: D1Database,
+  userId: number,
+): Promise<Set<string>> {
+  const rows = await db
+    .prepare("SELECT DISTINCT issue_key FROM zk_payloads WHERE user_id = ?")
+    .bind(userId)
     .all<{ issue_key: string }>();
   return new Set((rows.results ?? []).map((r) => r.issue_key));
 }
@@ -24,7 +36,7 @@ export async function isIssueZkSealed(db: D1Database, issueKey: string): Promise
   return row != null;
 }
 
-/** API title field — null once a zk_payloads row exists for the issue. */
+/** API title field — null when the issue is sealed for the current viewer. */
 export function redactIssueTitle(
   title: string | null | undefined,
   issueKey: string,

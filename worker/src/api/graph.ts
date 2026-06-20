@@ -16,7 +16,7 @@
 import type { Context } from "hono";
 import { resolveVisibleRepos } from "../auth/repoAccess";
 import type { AuthEnv } from "../auth/types";
-import { loadZkSealedIssueKeys, redactIssueTitle } from "../auth/zk";
+import { loadZkSealedIssueKeysForUser, redactIssueTitle } from "../auth/zk";
 import {
   filterNodesByStatus,
   parseClosedUnderOpenEpicQuery,
@@ -118,7 +118,10 @@ interface EdgeRow {
 }
 
 export const graphRoute = async (c: Context<AuthEnv>) => {
-  const sealedKeys = await loadZkSealedIssueKeys(c.env.DB);
+  const session = c.get("session");
+  const sealedKeys = session
+    ? await loadZkSealedIssueKeysForUser(c.env.DB, session.userId)
+    : new Set<string>();
 
   const visible = await resolveVisibleRepos(c);
 

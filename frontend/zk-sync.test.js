@@ -45,15 +45,23 @@ describe("applyZkDecryption", () => {
     ensureZkKeyPairMock.mockReset();
   });
 
-  it("skips keypair fetch when account key mode is locked", async () => {
+  it("marks only user-sealed issues as locked when account key mode is locked", async () => {
     isZkUnlockedMock.mockReturnValue(false);
-    const nodes = [{ key: "Roxabi/live#1", title: null }];
+    apiMock.mockResolvedValue({
+      json: async () => ({
+        payloads: [{ issue_key: "Roxabi/live#1", encrypted_payload: "v2" }],
+      }),
+    });
+    const nodes = [
+      { key: "Roxabi/live#1", title: null },
+      { key: "Roxabi/live#2", title: null },
+    ];
 
     await applyZkDecryption(nodes, "alice", { accountKeyMode: true });
 
-    expect(apiMock).not.toHaveBeenCalled();
     expect(ensureZkKeyPairMock).not.toHaveBeenCalled();
     expect(nodes[0].title).toBe(LOCKED_TITLE_LABEL);
+    expect(nodes[1].title).toBeNull();
   });
 });
 

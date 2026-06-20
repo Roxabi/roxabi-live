@@ -260,16 +260,17 @@ export async function syncZkContentFromGitHub(nodes, githubLogin, githubToken) {
 export async function applyZkDecryption(nodes, githubLogin, opts = {}) {
   const { accountKeyMode = false } = opts;
 
+  const { payloads } = await api("/api/zk/payloads")
+    .then((r) => r.json())
+    .catch(() => ({ payloads: [] }));
+  const byKey = new Map((payloads ?? []).map((p) => [p.issue_key, p]));
+
   if (accountKeyMode && !isZkUnlocked()) {
     for (const node of nodes) {
-      if (node.title == null) node.title = LOCKED_TITLE_LABEL;
+      if (node.title == null && byKey.has(node.key)) node.title = LOCKED_TITLE_LABEL;
     }
     return;
   }
-
-  const resp = await api("/api/zk/payloads");
-  const { payloads } = await resp.json();
-  const byKey = new Map((payloads ?? []).map((p) => [p.issue_key, p]));
 
   if (isZkUnlocked()) {
     const accountKey = getSessionAccountKey();

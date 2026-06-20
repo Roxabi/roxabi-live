@@ -16,7 +16,6 @@ import { resumeSettingsFromUrl } from "./settings.js";
 import { annotateNodes, parseMilestone, setState, state } from "./state.js";
 import { applyThemePref, toggleThemeQuick, wireThemeMediaListener } from "./theme.js";
 import { repoTone } from "./tone.js";
-import { isZkUnlocked } from "./zk-enroll.js";
 import { requireZkEnrollmentGate } from "./zk-enroll.js";
 import {
   consumeZkHandoffFromUrl,
@@ -25,7 +24,6 @@ import {
   zkLoginUrl,
 } from "./zk-github.js";
 import {
-  LOCKED_TITLE_LABEL,
   applyZkDecryption,
   clearZkMigrationIncomplete,
   ensureAccountKeySealing,
@@ -462,14 +460,7 @@ async function loadAndRender(zkOptIn, githubLogin, zkAccountKeyEnabled = false) 
   const nodes = data.nodes || [];
   const edges = data.edges || [];
   if (zkOptIn) {
-    const skipDecrypt = zkAccountKeyEnabled && !isZkUnlocked();
-    if (!skipDecrypt) {
-      await applyZkDecryption(nodes, githubLogin, { accountKeyMode: zkAccountKeyEnabled });
-    } else {
-      for (const node of nodes) {
-        if (node.title == null) node.title = LOCKED_TITLE_LABEL;
-      }
-    }
+    await applyZkDecryption(nodes, githubLogin, { accountKeyMode: zkAccountKeyEnabled });
   }
   annotateNodes(nodes, edges);
   setState({ nodes, edges });

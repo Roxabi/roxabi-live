@@ -157,7 +157,7 @@ describe("GET /api/graph", () => {
       expect(Array.isArray(body.repos)).toBe(true);
     });
 
-    it("redacts titles when issue is zk-sealed", async () => {
+    it("redacts titles when the current user sealed the issue", async () => {
       const issue = {
         key: "Roxabi/roxabi-live#7",
         repo: "Roxabi/roxabi-live",
@@ -180,6 +180,38 @@ describe("GET /api/graph", () => {
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].title).toBeNull();
+    });
+
+    it("keeps titles visible when only another user sealed the issue", async () => {
+      const issue = {
+        key: "Roxabi/roxabi-live#8",
+        repo: "Roxabi/roxabi-live",
+        number: 8,
+        title: "Still visible",
+        state: "open",
+        url: null,
+        milestone: null,
+        lane: null,
+        priority: null,
+        size: null,
+        status: null,
+        is_stub: 0,
+        has_active_branch: 0,
+      };
+      const { db } = captureDb((sql, args) =>
+        dispatchByTable(sql, {
+          "from zk_payloads": args?.[0] === STUB_SESSION.userId ? [] : [{ issue_key: issue.key }],
+          tenant_repo_access: [{ repo: issue.repo, is_private: 0 }],
+          "from labels": [],
+          "from pr_state": [],
+          "from edges": [],
+          "from repos": [],
+          "from issues": [issue],
+        }),
+      );
+      const res = await testApp.request("/api/graph", {}, makeEnv(db));
+      const body = await res.json<{ nodes: Record<string, unknown>[] }>();
+      expect(body.nodes[0].title).toBe("Still visible");
     });
 
     it("maps IssueRow fields to Node shape", async () => {
