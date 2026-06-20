@@ -62,6 +62,7 @@ export default {
   "signIn.lead":
     "Sign in with GitHub to open your dashboard and resume reading the dependency graph.",
   "signIn.github": "Continue with GitHub",
+  "signIn.remember": "Keep me signed in for 30 days",
   "signIn.noAccount": "Don't have an account?",
   "signIn.createAccount": "Sign up",
   "signIn.backHome": "Back to home",
@@ -74,6 +75,7 @@ export default {
   "signUp.lead":
     "Sign up with GitHub, install the app on your repos, and read blockers as a graph on first sync.",
   "signUp.github": "Sign up with GitHub",
+  "signUp.remember": "Keep me signed in for 30 days",
   "signUp.hasAccount": "Already have an account?",
   "signUp.signIn": "Sign in",
   "signUp.backHome": "Back to home",

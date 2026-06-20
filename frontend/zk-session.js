@@ -1,6 +1,7 @@
 // zk-session.js — in-memory accountKey session (#216 PR 4)
 
 const IDLE_MS = 15 * 60 * 1000;
+const REMEMBER_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** @type {CryptoKey|null} */
 let sessionKey = null;
@@ -10,6 +11,7 @@ let idleTimer = null;
 let idleWired = false;
 let pageHideWired = false;
 let pageShowWired = false;
+let rememberMode = false;
 
 /** @type {(() => void)|null} */
 let onAutoLock = null;
@@ -28,6 +30,19 @@ export function getSessionAccountKey() {
 
 export function getSessionKeyFp() {
   return sessionKeyFp;
+}
+
+export function setZkRememberMode(active) {
+  rememberMode = Boolean(active);
+  if (sessionKey) resetIdleTimer();
+}
+
+export function isZkRememberMode() {
+  return rememberMode;
+}
+
+function currentIdleMs() {
+  return rememberMode ? REMEMBER_IDLE_MS : IDLE_MS;
 }
 
 export function setZkSession(accountKey, keyFp) {
@@ -50,9 +65,9 @@ function resetIdleTimer() {
   if (!sessionKey) return;
   idleTimer = setTimeout(() => {
     clearZkSession();
-    console.info("[zk]", { event: "zk.lock.idle" });
+    console.info("[zk]", { event: "zk.lock.idle", remember: rememberMode });
     onAutoLock?.();
-  }, IDLE_MS);
+  }, currentIdleMs());
 }
 
 /** Register callback when idle lock fires (e.g. show unlock gate). */

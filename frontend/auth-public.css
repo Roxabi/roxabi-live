@@ -91,6 +91,25 @@
   margin-bottom: 28px;
 }
 
+.auth-remember {
+  align-items: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  gap: 10px;
+  margin-bottom: 16px;
+  text-align: left;
+  user-select: none;
+}
+
+.auth-remember input {
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  height: 16px;
+  width: 16px;
+}
+
 .auth-github-btn {
   align-items: center;
   background: var(--text);

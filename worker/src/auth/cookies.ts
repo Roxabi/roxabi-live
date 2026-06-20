@@ -1,5 +1,10 @@
 import type { Context } from "hono";
-import { LEGACY_SESSION_COOKIE, SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
+import {
+  LEGACY_SESSION_COOKIE,
+  SESSION_COOKIE,
+  SESSION_TTL_SECONDS,
+  sessionTtlSeconds,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Auth response cache policy — never cache session-gated redirects/HTML.
@@ -85,8 +90,8 @@ function expireCookie(name: string): string {
 /**
  * Build a Set-Cookie header value for the session token.
  */
-export function sessionCookie(rawToken: string): string {
-  return `${SESSION_COOKIE}=${rawToken}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`;
+export function sessionCookie(rawToken: string, ttlSeconds = SESSION_TTL_SECONDS): string {
+  return `${SESSION_COOKIE}=${rawToken}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${ttlSeconds}`;
 }
 
 /** Expire primary + legacy session cookies. */
@@ -100,9 +105,11 @@ export function clearSessionCookie(): string {
 }
 
 /** Set new session and expire legacy __Host-session. */
-export function sessionCookieHeaders(rawToken: string): string[] {
-  return [sessionCookie(rawToken), expireCookie(LEGACY_SESSION_COOKIE)];
+export function sessionCookieHeaders(rawToken: string, ttlSeconds = SESSION_TTL_SECONDS): string[] {
+  return [sessionCookie(rawToken, ttlSeconds), expireCookie(LEGACY_SESSION_COOKIE)];
 }
+
+export { sessionTtlSeconds };
 
 // ---------------------------------------------------------------------------
 // Token reader

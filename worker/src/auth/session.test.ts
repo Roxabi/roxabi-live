@@ -10,7 +10,7 @@ import type { Env } from "../types";
 import { clearSessionCookie, sessionCookie } from "./cookies";
 import { authNavigateHtml } from "./post-oauth";
 import { deleteSession, mintSession, requireSession, validateSession } from "./session";
-import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
+import { SESSION_COOKIE, SESSION_TTL_REMEMBER_SECONDS, SESSION_TTL_SECONDS } from "./types";
 import type { AuthEnv, SessionContext } from "./types";
 
 import type { FakeResult } from "../test-utils";
@@ -27,13 +27,19 @@ const HEX64_RE = /^[0-9a-f]{64}$/;
 // ---------------------------------------------------------------------------
 
 describe("mintSession", () => {
-  it("INSERT SQL contains datetime('now', '+8 hours') for expires_at", async () => {
+  it("INSERT SQL contains datetime('now', '+8 hours') for expires_at by default", async () => {
     // Arrange
     const { db, stmts } = captureDb();
     // Act
     await mintSession(db, 7, 9);
     // Assert
     expect(stmts()[0].sql).toContain("datetime('now', '+8 hours')");
+  });
+
+  it("INSERT SQL uses '+30 days' when remember is true", async () => {
+    const { db, stmts } = captureDb();
+    await mintSession(db, 7, 9, true);
+    expect(stmts()[0].sql).toContain("datetime('now', '+30 days')");
   });
 
   it("binds exactly 3 args: [userId, tenantId, token_hash]", async () => {
@@ -498,13 +504,19 @@ describe("sessionCookie", () => {
     expect(cookie).toContain("Path=/");
   });
 
-  it("contains Max-Age=28800 (8 hours)", () => {
+  it("contains Max-Age=28800 (8 hours) by default", () => {
     // Arrange + Act
     const cookie = sessionCookie("tok");
     // Assert
     expect(cookie).toContain("Max-Age=28800");
     // Verify SESSION_TTL_SECONDS export matches
     expect(SESSION_TTL_SECONDS).toBe(28800);
+  });
+
+  it("contains Max-Age=2592000 (30 days) when ttl override is passed", () => {
+    const cookie = sessionCookie("tok", SESSION_TTL_REMEMBER_SECONDS);
+    expect(cookie).toContain(`Max-Age=${SESSION_TTL_REMEMBER_SECONDS}`);
+    expect(SESSION_TTL_REMEMBER_SECONDS).toBe(30 * 24 * 60 * 60);
   });
 
   it("does NOT contain Domain attribute (__Host- prefix requires omission)", () => {

@@ -14,6 +14,7 @@ import {
   isDashboardDest,
   sanitizeAuthRedirect,
   sessionCookieHeaders,
+  sessionTtlSeconds,
 } from "./cookies";
 import { serveDashboardShell } from "./dashboard-route";
 
@@ -89,8 +90,9 @@ export async function completeOAuthSession(
   c: Context<{ Bindings: Env }>,
   rawToken: string,
   redirectAfter: string,
+  remember = false,
 ): Promise<Response> {
-  const cookies = sessionCookieHeaders(rawToken);
+  const cookies = sessionCookieHeaders(rawToken, sessionTtlSeconds(remember));
   const dest = sanitizeAuthRedirect(redirectAfter);
 
   if (isDashboardDest(dest) && !destHasZkParams(dest)) {

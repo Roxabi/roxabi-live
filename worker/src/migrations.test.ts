@@ -307,6 +307,10 @@ describe("oauth_state zk_token_handoff", () => {
   it("has reauth column (0015)", () => {
     expect(getColumnNames(db, "oauth_state")).toContain("reauth");
   });
+
+  it("has remember column (0021)", () => {
+    expect(getColumnNames(db, "oauth_state")).toContain("remember");
+  });
 });
 
 describe("zk_reauth_proofs table", () => {

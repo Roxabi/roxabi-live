@@ -2,13 +2,18 @@
 
 import { api, escHtml, signOut } from "./auth.js";
 import {
+  REMEMBER_PASSPHRASE_PREF_KEY,
   clearDeviceSession,
+  clearRememberPassphrase,
   generateAccountKey,
+  hasRememberPassphrase,
   hasZkKeyPair,
   loadDeviceSession,
+  loadRememberPassphrase,
   parseEnvelopeVersion,
   saveAccountMeta,
   saveDeviceSession,
+  saveRememberPassphrase,
   sessionAccountKey,
   unwrapAccountKey,
   wrapAccountKey,
@@ -21,6 +26,7 @@ import {
   isZkUnlocked,
   setZkAutoLockHandler,
   setZkPageRestoreHandler,
+  setZkRememberMode,
   setZkSession,
   wireIdleLock,
   wirePageHideLock,
@@ -41,12 +47,56 @@ export { isZkUnlocked, getSessionAccountKey, getSessionKeyFp } from "./zk-sessio
 export function lockZkSession() {
   if (!isZkUnlocked()) return;
   clearZkSession();
+  setZkRememberMode(false);
   if (gateGithubLogin) {
     clearDeviceSession(gateGithubLogin).catch(() => {});
+    clearRememberPassphrase(gateGithubLogin).catch(() => {});
   }
   zkLog("zk.lock.explicit");
   updateLockButton();
   showUnlockGate().catch(() => {});
+}
+
+function zkRememberChecked() {
+  const box = document.getElementById("zk-remember");
+  return box instanceof HTMLInputElement && box.checked;
+}
+
+function wireZkRememberCheckbox() {
+  const box = document.getElementById("zk-remember");
+  if (!(box instanceof HTMLInputElement) || box.dataset.wired) return;
+  box.dataset.wired = "1";
+  if (localStorage.getItem(REMEMBER_PASSPHRASE_PREF_KEY) === "1") box.checked = true;
+  box.addEventListener("change", () => {
+    localStorage.setItem(REMEMBER_PASSPHRASE_PREF_KEY, box.checked ? "1" : "0");
+  });
+}
+
+async function applyZkRememberChoice(githubLogin, passphrase, remember) {
+  if (remember) {
+    await saveRememberPassphrase(githubLogin, passphrase);
+    setZkRememberMode(true);
+    localStorage.setItem(REMEMBER_PASSPHRASE_PREF_KEY, "1");
+  } else {
+    await clearRememberPassphrase(githubLogin);
+    setZkRememberMode(false);
+    localStorage.setItem(REMEMBER_PASSPHRASE_PREF_KEY, "0");
+  }
+}
+
+async function tryRememberAutoUnlock(githubLogin) {
+  if (isZkUnlocked()) return true;
+  const pass = await loadRememberPassphrase(githubLogin);
+  if (!pass) return false;
+  try {
+    await unlockAccountKey(pass);
+    setZkRememberMode(true);
+    return true;
+  } catch {
+    await clearRememberPassphrase(githubLogin);
+    setZkRememberMode(false);
+    return false;
+  }
 }
 
 /**
@@ -234,6 +284,10 @@ export function showEnrollGate(githubLogin) {
             <span>Confirm passphrase</span>
             <input type="password" id="zk-enroll-confirm" autocomplete="new-password" required minlength="8" />
           </label>
+          <label class="zk-remember">
+            <input type="checkbox" id="zk-remember" name="zk-remember" value="1" />
+            <span>Remember passphrase on this device for 30 days</span>
+          </label>
           <p class="zk-error" id="zk-enroll-error" hidden></p>
           <div class="zk-actions">
             <button type="button" class="consent-btn-secondary" id="zk-enroll-logout">Sign out</button>
@@ -250,6 +304,7 @@ export function showEnrollGate(githubLogin) {
     const submitBtn = $("zk-enroll-submit");
 
     passInput?.focus();
+    wireZkRememberCheckbox();
 
     $("zk-enroll-logout")?.addEventListener("click", () => signOut({ after: "reload" }));
 
@@ -273,6 +328,7 @@ export function showEnrollGate(githubLogin) {
       submitBtn.textContent = "Creating backup…";
       try {
         await enrollAccountKey(pass, githubLogin);
+        await applyZkRememberChoice(githubLogin, pass, zkRememberChecked());
         hideZkGate();
         resolve();
       } catch (err) {
@@ -308,6 +364,10 @@ export function showUnlockGate(githubLogin = gateGithubLogin) {
             <span>Passphrase</span>
             <input type="password" id="zk-unlock-pass" autocomplete="current-password" required />
           </label>
+          <label class="zk-remember">
+            <input type="checkbox" id="zk-remember" name="zk-remember" value="1" />
+            <span>Remember passphrase on this device for 30 days</span>
+          </label>
           <p class="zk-error" id="zk-unlock-error" hidden></p>
           <div class="zk-actions">
             <button type="button" class="consent-btn-link" id="zk-lost-pass">Lost passphrase?</button>
@@ -328,6 +388,7 @@ export function showUnlockGate(githubLogin = gateGithubLogin) {
     const submitBtn = $("zk-unlock-submit");
 
     passInput?.focus();
+    wireZkRememberCheckbox();
 
     $("zk-unlock-logout")?.addEventListener("click", () => signOut({ after: "reload" }));
 
@@ -337,7 +398,9 @@ export function showUnlockGate(githubLogin = gateGithubLogin) {
       submitBtn.disabled = true;
       submitBtn.textContent = "Unlocking…";
       try {
-        await unlockAccountKey(passInput.value);
+        const pass = passInput.value;
+        await unlockAccountKey(pass);
+        await applyZkRememberChoice(githubLogin, pass, zkRememberChecked());
         hideZkGate();
         resolve();
       } catch {
@@ -388,18 +451,29 @@ export async function requireZkEnrollmentGate(me, githubLogin) {
   wireIdleLock();
   wirePageHideLock();
   wireZkLockButton();
-  setZkAutoLockHandler(() => {
+  setZkAutoLockHandler(async () => {
     updateLockButton();
+    if (gateGithubLogin) {
+      if (await tryRestoreDeviceZkSession(gateGithubLogin)) return;
+      if (await tryRememberAutoUnlock(gateGithubLogin)) return;
+    }
     showUnlockGate().catch(() => {});
   });
   setZkPageRestoreHandler(() => {
     if (me.user?.zk_enrolled === true && !isZkUnlocked()) {
-      tryRestoreDeviceZkSession(githubLogin).then((restored) => {
-        if (!restored) {
+      (async () => {
+        if (await tryRestoreDeviceZkSession(githubLogin)) {
+          if (await hasRememberPassphrase(githubLogin)) setZkRememberMode(true);
           updateLockButton();
-          showUnlockGate().catch(() => {});
+          return;
         }
-      });
+        if (await tryRememberAutoUnlock(githubLogin)) {
+          updateLockButton();
+          return;
+        }
+        updateLockButton();
+        showUnlockGate().catch(() => {});
+      })();
     }
   });
 
@@ -419,7 +493,14 @@ export async function requireZkEnrollmentGate(me, githubLogin) {
 
   if (!isZkUnlocked()) {
     if (!(await tryRestoreDeviceZkSession(githubLogin))) {
-      await showUnlockGate();
+      if (!(await tryRememberAutoUnlock(githubLogin))) {
+        await showUnlockGate();
+      } else {
+        updateLockButton();
+      }
+    } else {
+      if (await hasRememberPassphrase(githubLogin)) setZkRememberMode(true);
+      updateLockButton();
     }
     return true;
   }

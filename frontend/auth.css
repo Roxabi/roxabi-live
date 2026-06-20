@@ -800,6 +800,23 @@ body.gated #error-msg {
   outline: none;
 }
 
+.zk-remember {
+  align-items: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+  user-select: none;
+}
+
+.zk-remember input {
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  height: 16px;
+  width: 16px;
+}
+
 .zk-error {
   color: #e85d5d;
   font-size: 12px;

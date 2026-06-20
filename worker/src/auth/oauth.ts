@@ -97,6 +97,7 @@ export async function loginRoute(c: Context<{ Bindings: Env }>): Promise<Respons
   const intent = resolveLoginIntent(c);
   const zkTokenHandoff = intent === "zk" ? 1 : 0;
   const reauth = intent === "reauth" ? 1 : 0;
+  const remember = c.req.query("remember") === "1" ? 1 : 0;
 
   const cleanRedirect = stripInstallParam(redirectAfter);
 
@@ -121,10 +122,10 @@ export async function loginRoute(c: Context<{ Bindings: Env }>): Promise<Respons
 
   // Store state in D1 — single-use, expires in 10 minutes
   await c.env.DB.prepare(
-    `INSERT INTO oauth_state (state, redirect_after, expires_at, zk_token_handoff, reauth)
-     VALUES (?, ?, datetime('now', '+10 minutes'), ?, ?)`,
+    `INSERT INTO oauth_state (state, redirect_after, expires_at, zk_token_handoff, reauth, remember)
+     VALUES (?, ?, datetime('now', '+10 minutes'), ?, ?, ?)`,
   )
-    .bind(state, cleanRedirect, zkTokenHandoff, reauth)
+    .bind(state, cleanRedirect, zkTokenHandoff, reauth, remember)
     .run();
 
   // Build GitHub authorize URL — redirect_uri derived from origin only (D-6)
@@ -167,13 +168,14 @@ export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Resp
   // Consume state — single-use + expiry guard in one atomic statement (closes TOCTOU)
   const stateRow = await c.env.DB.prepare(
     `DELETE FROM oauth_state WHERE state = ? AND expires_at > datetime('now')
-     RETURNING redirect_after, zk_token_handoff, reauth`,
+     RETURNING redirect_after, zk_token_handoff, reauth, remember`,
   )
     .bind(state)
     .first<{
       redirect_after: string | null;
       zk_token_handoff: number;
       reauth: number;
+      remember: number;
     }>();
 
   if (!stateRow) {
@@ -183,6 +185,7 @@ export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Resp
   let redirectAfter = stateRow.redirect_after ?? "/dashboard";
   const wantsZkHandoff = stateRow.zk_token_handoff === 1;
   const wantsReauth = stateRow.reauth === 1;
+  const rememberSession = stateRow.remember === 1;
 
   // Build redirect_uri from origin (D-6)
   const origin = new URL(c.req.url).origin;
@@ -275,9 +278,9 @@ export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Resp
       return c.json({ error: "db_error" }, 500);
     }
 
-    const rawToken = await mintSession(c.env.DB, userRow.id, null);
+    const rawToken = await mintSession(c.env.DB, userRow.id, null, rememberSession);
     await revokeOtherSessions(c.env.DB, userRow.id, rawToken);
-    return completeOAuthSession(c, rawToken, redirectAfter);
+    return completeOAuthSession(c, rawToken, redirectAfter, rememberSession);
   }
 
   // Upsert user — get internal id
@@ -336,7 +339,7 @@ export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Resp
   );
 
   // Mint session tied to the first installation's tenant
-  const rawToken = await mintSession(c.env.DB, userId, firstTenantId);
+  const rawToken = await mintSession(c.env.DB, userId, firstTenantId, rememberSession);
   await revokeOtherSessions(c.env.DB, userId, rawToken);
 
   if (wantsReauth) {
@@ -355,5 +358,5 @@ export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Resp
     }
   }
 
-  return completeOAuthSession(c, rawToken, stripInstallParam(redirectAfter));
+  return completeOAuthSession(c, rawToken, stripInstallParam(redirectAfter), rememberSession);
 }

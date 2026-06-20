@@ -250,6 +250,17 @@ describe("loginRoute", () => {
       expect(insertStmt?.args[1]).toBe("/dashboard");
     });
 
+    it("?remember=1 stores remember=1 in oauth_state", async () => {
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      await app.request("http://localhost/login?go=1&remember=1", { method: "GET" }, env);
+
+      const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt?.args?.at(-1)).toBe(1);
+    });
+
     it("redirects to redirect_after when session is already valid", async () => {
       const validRow = {
         userId: 1,

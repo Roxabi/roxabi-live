@@ -22,6 +22,22 @@ describe("auth-pages", () => {
     expect(location.replace).toHaveBeenCalledWith("/dashboard");
   });
 
+  it("appends remember=1 to OAuth URL when checkbox is checked", async () => {
+    fetch.mockResolvedValue({ ok: false });
+    document.body.innerHTML = `
+      <div id="public-topbar-mount"></div>
+      <div id="public-footer-mount"></div>
+      <input type="checkbox" id="auth-remember" checked />
+      <a id="auth-github-btn" href="#"></a>
+    `;
+
+    const { initAuthPage } = await import("./auth-pages.js");
+    await initAuthPage("signin");
+
+    const href = document.getElementById("auth-github-btn")?.getAttribute("href") ?? "";
+    expect(href).toContain("remember=1");
+  });
+
   it("renders the auth page for guests", async () => {
     fetch.mockResolvedValue({ ok: false });
 
