@@ -16,5 +16,5 @@ worker/src/migrations.test.ts  # 323 lines — schema tests incl. users.consent_
 worker/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
 worker/src/webhook/handlers-app.test.ts  # 538 lines — #180 app lifecycle + sender→user_installations tests (+biome reflow)
 worker/src/auth/installToken.test.ts  # 470 lines — #180 install token + pagination tests
-worker/src/auth/session.test.ts  # 357 lines — #180 session + authNavigateHtml XSS guard tests
+worker/src/auth/session.test.ts  # 370 lines — #180 session + remember-me TTL tests
 worker/src/api/me.test.ts  # 335 lines — onboarding_step + install_options + suspended tenant filter tests
