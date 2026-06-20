@@ -71,7 +71,14 @@ export async function serveDashboardShell(
   extraSetCookies: string[] = [],
 ): Promise<Response> {
   const assetUrl = new URL(reqUrl);
-  assetUrl.pathname = "/dashboard/index.html";
+  // Request the canonical directory form, NOT "/dashboard/index.html".
+  // Cloudflare Assets (default html_handling: "auto-trailing-slash") answers
+  // "/dashboard/index.html" with a 307 → "/dashboard/". serveDashboardShell
+  // propagates the asset status verbatim, so fetching the .html form turns this
+  // into a redirect that bounces back through dashboardRoute → 307 → … →
+  // ERR_TOO_MANY_REDIRECTS for any authenticated user. "/dashboard/" is the
+  // canonical 200 form and never redirects.
+  assetUrl.pathname = "/dashboard/";
   const assetRes = await env.ASSETS.fetch(new Request(assetUrl.toString(), raw));
   const headers = new Headers(assetRes.headers);
   for (const [key, value] of Object.entries(AUTH_NO_CACHE)) {

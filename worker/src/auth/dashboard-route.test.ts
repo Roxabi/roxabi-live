@@ -44,9 +44,16 @@ function makeEnv(db: D1Database, assetsBody = "dashboard-html"): Env {
   return {
     DB: db,
     ASSETS: {
+      // Emulate Cloudflare Assets default html_handling ("auto-trailing-slash"):
+      // "/dashboard/index.html" → 307 redirect to the canonical "/dashboard/".
+      // serveDashboardShell must request "/dashboard/" so it never propagates a
+      // 307 back to the browser (which caused ERR_TOO_MANY_REDIRECTS in prod).
       fetch: vi.fn(async (req: Request) => {
         const url = new URL(req.url);
-        expect(url.pathname).toBe("/dashboard/index.html");
+        if (url.pathname === "/dashboard/index.html") {
+          return new Response(null, { status: 307, headers: { Location: "/dashboard/" } });
+        }
+        expect(url.pathname).toBe("/dashboard/");
         return new Response(assetsBody, { status: 200 });
       }),
     } as unknown as Fetcher,
@@ -115,6 +122,22 @@ describe("GET /dashboard", () => {
     expect(await res.text()).toBe("dashboard-html");
     expect(res.headers.get("Cache-Control")).toContain("no-store");
     expect(env.ASSETS.fetch).toHaveBeenCalledOnce();
+  });
+
+  it("never propagates Cloudflare's index.html→dir 307 (no redirect loop)", async () => {
+    const db = makeSessionDb(STUB_SESSION);
+    const env = makeEnv(db);
+
+    const res = await app.request(
+      "/dashboard/",
+      { headers: { Cookie: `roxabi_session=${VALID_RAW_TOKEN}` } },
+      env,
+    );
+
+    // Must serve the shell (200), NOT bounce a 307 back to /dashboard/ → loop.
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Location")).toBeNull();
+    expect(await res.text()).toBe("dashboard-html");
   });
 
   it("allows install-pending sessions (null tenantId)", async () => {
