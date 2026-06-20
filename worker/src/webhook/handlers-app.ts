@@ -20,8 +20,8 @@
  */
 
 import type { Env } from "../types";
+import { bumpDataVersion } from "./mutations";
 import {
-  bumpDataVersion,
   cascadeRepoRename,
   deleteAllRepoAccessForTenant,
   deleteInstallTokensForTenant,
@@ -36,7 +36,7 @@ import {
   upsertRepo,
   upsertRepoAccess,
   upsertTenant,
-} from "./mutations";
+} from "./mutations-app";
 import { getTenantByInstallationId } from "./tenant";
 
 // ---------------------------------------------------------------------------

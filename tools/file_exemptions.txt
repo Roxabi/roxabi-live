@@ -7,7 +7,6 @@
 worker/src/sync/sync.ts  # 1306 lines — #180 sync orchestrator; #216 structure-only sync path (+biome reflow)
 worker/src/webhook/handlers.ts  # 462 lines — #180 issue webhook dispatch + bootstrap sync trigger
 worker/src/webhook/handlers-app.ts  # 384 lines — #180 GitHub App lifecycle + install sender→user_installations link
-worker/src/webhook/mutations.ts  # 339 lines — #180 D1 write helpers for webhooks
 
 # Test files (colocated *.test.ts — exempt with local caps, not production code)
 worker/src/sync/sync.test.ts  # 1745 lines — #180 integration harness for runSync; #216 structure-only (+biome reflow)
