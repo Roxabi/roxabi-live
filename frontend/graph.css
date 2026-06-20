@@ -8,7 +8,7 @@
 /* v4.8 color scheme: lanes map to named palette colors */
 #graph-panel {
   --status-ready: #22c55e;
-  --status-blocked: #f97316;
+  --status-blocked: #d97706;
   --status-done: #475569;
   --teal: #06b6d4;
   --red: #ef4444;
@@ -46,7 +46,7 @@
   --repo-blue: #3b82f6;
   --repo-pink: #ec4899;
   --repo-plum: #a855f7;
-  --repo-orange: #f97316;
+  --repo-orange: #d97706;
   --repo-red: #ef4444;
   --repo-lime: #84cc16;
   --repo-amber: #f59e0b;

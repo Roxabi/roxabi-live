@@ -59,7 +59,7 @@
 .auth-step--active .auth-step-marker {
   background: var(--accent);
   border-color: var(--accent);
-  color: oklch(1 0 0);
+  color: #0d1117;
 }
 
 .auth-step--pending .auth-step-marker {
@@ -79,8 +79,8 @@
 .auth-card h1 {
   font-family: var(--font-display);
   font-size: 1.65rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-weight: 900;
+  letter-spacing: -0.04em;
   margin-bottom: 12px;
 }
 
@@ -180,6 +180,6 @@
 }
 
 [data-theme="light"] .auth-github-btn {
-  background: #1a1d2b;
-  color: #fafafa;
+  background: #1c1917;
+  color: #f0ede6;
 }
