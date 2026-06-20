@@ -216,7 +216,7 @@ Each sync run writes a JSON audit record to R2 bucket `roxabi-live-logs` (stagin
 
 ### Client-side encryption (account key, #216)
 
-Per-user **account keys** replace per-device ECDH for content encryption. Passphrase-wrapped backups live in D1 (`zk_key_backups`); ciphertext in `zk_payloads` is keyed by `(user_id, issue_key)`. Graph structure stays shared; titles are redacted API-side once any user seals an issue.
+Per-user **account keys** replace per-device ECDH for content encryption. Passphrase-wrapped backups live in D1 (`zk_key_backups`); ciphertext in `zk_payloads` is keyed by `(user_id, issue_key)`. Graph structure stays shared; API title redaction is **per user** (`loadZkSealedIssueKeysForUser`). Sync still uses global sealed keys so plaintext is not written back into D1 after any seal.
 
 | Piece | Role |
 |-------|------|

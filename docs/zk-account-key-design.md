@@ -33,7 +33,7 @@ Marketing must describe this as **“client-side encryption”**, not strict zer
 | **Key material** | ECDH P-256 key pair per `github_login` in IndexedDB `roxabi-zk-v1` / `keypairs` | No cross-device recovery; new device = new key = cannot decrypt old ciphertext |
 | **Content crypto** | ECIES: ephemeral ECDH → HKDF → AES-GCM (`eciesEncrypt` / `sealContent`) | Self-encrypt-to-own-pubkey works on one device only |
 | **Ciphertext store** | `zk_payloads PRIMARY KEY (user_id, issue_key)` + `pubkey_fp NOT NULL` | Per-user rows; User B cannot read User A’s blobs |
-| **D1 redaction** | `loadZkSealedIssueKeys` → `redactIssueTitle` / `d1PayloadTitle`; `scrubIssuePayloads` wipes `issues.payload` | Redaction is reactive; sync still **fetches** titles from GitHub first |
+| **D1 redaction** | API: `loadZkSealedIssueKeysForUser` → `redactIssueTitle`; sync: `loadZkSealedIssueKeys` → `d1PayloadTitle`; `scrubIssuePayloads` wipes `issues.payload` on seal | API redaction per user; sync scrub global |
 | **Private mode** | Always on (`0013_zk_always_on.sql`); `ensurePrivateMode` in `app.js` on every load | Assumes single-device key; `zk_opt_in` forced to 1 client-side |
 | **GitHub content fetch** | User OAuth token in `sessionStorage` (`zk-github.js`); relay via `POST /api/zk/github/graphql` | Required for bodies and re-seal; token in tab memory |
 | **Graph structure** | Repo-canonical `issues` + `edges`; no `tenant_id` on data rows (#141) | Correct foundation for hybrid model |
@@ -43,7 +43,7 @@ Marketing must describe this as **“client-side encryption”**, not strict zer
 1. **Device loss** — Clearing IndexedDB or switching laptops breaks decryption with no recovery path.
 2. **Operator plaintext exposure at sync** — `ISSUES_QUERY` requests `title`; Worker memory sees plaintext during cron even when D1 stores `null` for sealed keys.
 3. **Legacy plaintext in D1** — `0012_scrub_zk_sealed_payloads.sql` scrubs only issues **with** `zk_payloads` rows; unsealed issues still expose `JSON_EXTRACT(payload,'$.title')` via `/api/graph` (`graph.ts` line 178).
-4. **Multi-user confusion** — User B sees `(sealed)` for issues User A sealed; must independently Link GitHub + fetch + seal (works today but undocumented; no shared team key by design).
+4. **Multi-user onboarding** — Each teammate must independently Link GitHub + fetch + seal; API redaction is per user (teammate seals no longer redact your API titles). No shared team key by design.
 5. **Weak passphrase story** — No KDF-backed backup exists yet; future export needs Argon2id, not PBKDF2-only.
 
 ---
@@ -56,7 +56,7 @@ Marketing must describe this as **“client-side encryption”**, not strict zer
 - Support **Device 1 enroll**, **Device 2 unlock**, and document **lost passphrase** + **transitional multi-device** behavior.
 - **Migrate** existing ECDH-encrypted `zk_payloads` to `accountKey` envelopes without data loss on the enrolling device.
 - **Structure-only server sync**: server GraphQL and webhooks never persist title/body; **purge legacy plaintext** in D1.
-- Preserve **hybrid multi-user**: shared graph, per-user ciphertext, global redaction on any seal.
+- Preserve **hybrid multi-user**: shared graph, per-user ciphertext, per-user API redaction; global D1 scrub on seal.
 - Ship **threat model table** suitable for security review and marketing copy.
 - Incremental PR plan mergeable behind **`ZK_ACCOUNT_KEY` feature flag from PR 1b**.
 
@@ -547,23 +547,24 @@ Only valid **after** Device 1 has enrolled and uploaded `zk_key_backups`. Passph
 
 1. User A enrolls (`PUT /api/zk/key-backup`), unlocks, optionally links GitHub for bodies.
 2. `PUT /api/zk/payloads` writes ciphertext rows for `user_id=A` with User A’s `accountKey`.
-3. `scrubIssuePayloads` (`worker/src/auth/zk.ts`) sets `issues.payload = {}` for those `issue_key`s.
-4. `loadZkSealedIssueKeys` → `SELECT DISTINCT issue_key FROM zk_payloads` includes those keys.
-5. **All users** receive `title: null` from `/api/graph` and `/api/issues` (`redactIssueTitle`).
+3. `scrubIssuePayloads` (`worker/src/auth/zk.ts`) sets `issues.payload = {}` for those `issue_key`s (global — shared `issues` row).
+4. **User A only** receives `title: null` from `/api/graph` and `/api/issues` (`loadZkSealedIssueKeysForUser` + `redactIssueTitle`).
 
 #### User B joins same tenant (org installation)
 
 1. User B logs in via same GitHub App installation (shared tenant, shared graph).
 2. User B enrolls with **own passphrase** → distinct `accountKey` and `zk_key_backups` row (`user_id=B`).
 3. Graph loads: structure visible (state, edges, labels, milestone, dev_state).
-4. For issues User A sealed: `applyZkDecryption` (`zk-sync.js`) finds no row for `user_id=B` → UI shows **`(sealed)`** (line 103).
+4. For issues User A sealed but User B has not: API may still return a title if D1 holds plaintext; with `ZK_STRUCTURE_ONLY`, titles are null until User B links GitHub.
 5. User B clicks **Link GitHub** (`/login?zk=1` → `consumeZkHandoffFromUrl`) → `syncZkContentFromGitHub` fetches title/body with User B’s OAuth token.
 6. User B seals → new `zk_payloads` rows for `user_id=B`; User B decrypts own rows on any enrolled device.
 7. User B **cannot** decrypt User A’s ciphertext (different `accountKey`). User A **cannot** decrypt User B’s.
 
-#### Any user seals → global redaction
+#### Per-user API redaction vs global D1 scrub
 
-`loadZkSealedIssueKeys` uses `SELECT DISTINCT issue_key FROM zk_payloads` — **any** user’s seal redacts D1/API title for that issue for everyone. This matches current `worker/src/auth/zk.ts` behavior and must not change.
+- **API reads** (`/api/graph`, `/api/issues`): `loadZkSealedIssueKeysForUser(user_id)` — only issues **this user** sealed return `title: null`.
+- **Sync writes**: `loadZkSealedIssueKeys` (global `DISTINCT issue_key`) — once **any** user seals, sync does not write plaintext titles back into D1 (`d1PayloadTitle`).
+- **On seal** (`PUT /api/zk/payloads`): `scrubIssuePayloads` wipes shared `issues.payload` for those keys (defense in depth).
 
 ```mermaid
 flowchart LR
@@ -584,10 +585,11 @@ flowchart LR
   PB -.->|encrypts titles for B| I
 ```
 
-**Product copy:** “Each teammate encrypts their own view of issue titles. You’ll see (sealed) until you link GitHub and sync.”
+**Product copy:** “Each teammate encrypts their own copy of issue titles. Link GitHub and sync to seal on your account.”
 
 **Support FAQ:**
-- *Why does my teammate see my titles but I see (sealed)?* — They sealed with their key; you haven’t yet.
+- *Why does my teammate see titles but I do not?* — They completed enroll + Link GitHub + seal; you have not yet.
+- *Does my teammate’s seal hide titles from me?* — No. API redaction is per user; only issues you sealed are redacted for you.
 - *Can we share one team passphrase?* — No (by design). See Alternatives: team key rejected.
 
 ---
@@ -705,7 +707,7 @@ flowchart LR
 | 2 | **Passphrase + Argon2id WASM → D1 `zk_key_backups`** | Bitwarden-proven; passphrase never on server. |
 | 3 | **Structure-only server sync** | Closes operator plaintext exposure during cron/webhook. |
 | 4 | **Hybrid multi-user: shared structure, per-user ciphertext** | Matches existing schema; no team key. |
-| 5 | **Global redaction on `DISTINCT issue_key`** | Any seal scrubs `issues.payload` for all. |
+| 5 | **Per-user API redaction; global sync scrub** | API: `loadZkSealedIssueKeysForUser`. Sync/scrub: global `DISTINCT issue_key` so D1 plaintext is not restored after any seal. |
 | 6 | **GitHub user token for content; App token for structure** | Minimal server content exposure. |
 | 7 | **Marketing: “client-side encryption” not “zero-knowledge”** | Honest residual trust labeling. |
 | 8 | **Reject team key, Gist, GitHub repo backup** | Escrow / URL leakage. |
