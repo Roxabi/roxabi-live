@@ -18,6 +18,7 @@ import { zkOptInRoute } from "./api/zk-opt-in";
 import { listZkPayloadsRoute, putZkPayloadsRoute } from "./api/zk-payloads";
 import { consumeZkReauthRoute } from "./api/zk-reauth";
 import { postZkResetRoute } from "./api/zk-reset";
+import { signInPageRoute, signUpPageRoute } from "./auth/auth-page-route";
 import { requireSameOriginPost } from "./auth/csrf";
 import { dashboardRoute } from "./auth/dashboard-route";
 import { callbackRoute, loginRoute } from "./auth/oauth";
@@ -129,6 +130,12 @@ app.post(
 // /logout is ungated by session middleware (idempotent + null-safe). SameSite=Lax on session cookie
 // blocks most cross-site POSTs; requireSameOriginPost adds defense-in-depth.
 app.post("/logout", requireSameOriginPost, logoutRoute);
+
+// GET /sign-in/, /sign-up/ — guest auth pages; signed-in users go to dashboard.
+app.get("/sign-in", signInPageRoute);
+app.get("/sign-in/", signInPageRoute);
+app.get("/sign-up", signUpPageRoute);
+app.get("/sign-up/", signUpPageRoute);
 
 // GET /dashboard — session-gated app shell (HTML only; JS/CSS served from ASSETS root).
 app.get("/dashboard", dashboardRoute);
