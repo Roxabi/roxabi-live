@@ -2,13 +2,18 @@
 
 import en from "./i18n/locales/en.js";
 import fr from "./i18n/locales/fr.js";
+import legalEn from "./i18n/locales/legal-en.js";
+import legalFr from "./i18n/locales/legal-fr.js";
 
 const STORAGE_KEY = "roxabi:locale";
 
 /** @typedef {'fr'|'en'} Locale */
 
 /** @type {Record<Locale, Record<string, string>>} */
-const CATALOG = { fr, en };
+const CATALOG = {
+  fr: { ...fr, ...legalFr },
+  en: { ...en, ...legalEn },
+};
 
 /** @returns {Locale} */
 export function normalizeLocale(value) {
@@ -47,6 +52,11 @@ export function t(locale, key) {
 /** @param {Locale} locale */
 export function applyTranslations(locale) {
   const loc = setLocale(locale);
+  for (const el of document.querySelectorAll("[data-i18n-html]")) {
+    const key = el.getAttribute("data-i18n-html");
+    if (!key) continue;
+    el.innerHTML = t(loc, key);
+  }
   for (const el of document.querySelectorAll("[data-i18n]")) {
     const key = el.getAttribute("data-i18n");
     if (!key) continue;
