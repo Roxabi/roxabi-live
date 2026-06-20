@@ -43,7 +43,7 @@ export function topbarHTML(variant = "full") {
   return `<header class="site-topbar">
   <div class="site-topbar-inner">
     <a class="site-brand" href="/">
-      <span class="site-brand-mark">v6</span>
+      <img class="site-brand-mark" src="/assets/logo/foundation-block-16.svg" alt="" width="24" height="24" />
       <span class="site-brand-name">Roxabi Live</span>
     </a>
     <nav class="site-nav" aria-label="Navigation principale">
@@ -67,7 +67,7 @@ export function footerHTML(active = null) {
     <a href="/politique-confidentialite" data-i18n="footer.privacy"${cur("privacy")}>Politique de confidentialité</a>
     <a href="/conditions-utilisation" data-i18n="footer.terms"${cur("terms")}>Conditions d'utilisation</a>
   </nav>
-  <p class="site-footer-copy" data-i18n="footer.copy">© 2026 Roxabi Live · Dep-Graph v6</p>
+  <p class="site-footer-copy" data-i18n="footer.copy">© 2026 Roxabi · Live</p>
 </footer>`;
 }
 

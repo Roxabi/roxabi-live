@@ -4,10 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Roxabi Live — Graphe de dépendances GitHub</title>
-<meta name="description" content="Cockpit opérationnel pour visualiser issues, blockers et dépendances de votre organisation GitHub.">
+<meta name="description" content="Couche de dépendances GitHub : issues, blockers et liens parent synchronisés par webhooks — tableau, liste ou graphe.">
+<link rel="icon" href="/assets/logo/foundation-block-16.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="site.css">
 <link rel="stylesheet" href="landing.css">
 </head>
@@ -17,19 +18,18 @@
 <main class="site-main">
   <section class="landing-hero">
     <div>
-      <p class="landing-eyebrow" data-i18n="hero.eyebrow">Operations cockpit</p>
+      <p class="landing-eyebrow" data-i18n="hero.eyebrow">Dep-graph · GitHub</p>
       <h1>
-        <span data-i18n="hero.title">Votre graphe de dépendances</span>
-        <span class="accent" data-i18n="hero.titleAccent">GitHub</span><span data-i18n="hero.titleSuffix">, en temps réel</span>
+        <span data-i18n="hero.title">Vous avez reconstruit cette vue</span>
+        <span class="accent" data-i18n="hero.titleAccent">trois fois</span><span data-i18n="hero.titleSuffix"> déjà.</span>
       </h1>
       <p class="landing-lead" data-i18n="hero.lead">
-        Roxabi Live synchronise issues, blockers et relations parent/enfant
-        pour donner une vue claire de ce qui est prêt, bloqué ou terminé —
-        en tableau, liste ou graphe interactif.
+        Les webhooks synchronisent issues, liens blocked-by et relations parent/enfant.
+        Même corpus en tableau pivot, liste groupée ou graphe — sans étape d'export.
       </p>
       <div class="landing-hero-actions">
-        <a id="hero-sign-up" class="btn btn-primary" href="/sign-up/" data-i18n="hero.ctaPrimary">Commencer gratuitement</a>
-        <a class="btn btn-ghost" href="#features" data-i18n="hero.ctaSecondary">Voir les fonctionnalités</a>
+        <a id="hero-sign-up" class="btn btn-primary" href="/sign-up/" data-i18n="hero.ctaPrimary">Brancher vos dépôts</a>
+        <a class="btn btn-ghost" href="#how" data-i18n="hero.ctaSecondary">Voir le mécanisme</a>
       </div>
       <div class="landing-stats" aria-hidden="true">
         <div class="landing-stat">
@@ -70,8 +70,8 @@
 
   <section id="features">
     <div class="landing-section-head">
-      <h2 data-i18n="features.title">Tout ce qu'il faut pour piloter</h2>
-      <p data-i18n="features.subtitle">Un seul corpus GitHub, trois angles de lecture — sans export manuel ni tableur.</p>
+      <h2 data-i18n="features.title">Ce que le graphe lit</h2>
+      <p data-i18n="features.subtitle">Un corpus GitHub. Trois vues inspectables. Le même chemin de sync.</p>
     </div>
     <div class="landing-bento">
       <article class="landing-bento-card landing-bento-card--wide landing-bento-card--accent">
@@ -95,7 +95,7 @@
 
   <section id="how" class="landing-how">
     <div class="landing-section-head">
-      <h2 data-i18n="how.title">Opérationnel en trois étapes</h2>
+      <h2 data-i18n="how.title">Trois étapes vers un graphe live</h2>
     </div>
     <div class="landing-steps">
       <article class="landing-step">
@@ -118,10 +118,10 @@
 
   <section id="landing-cta-band" class="landing-cta-band">
     <div>
-      <h2 data-i18n="cta.title">Prêt à clarifier vos dépendances ?</h2>
-      <p data-i18n="cta.lead">Rejoignez les équipes qui pilotent leurs blockers en temps réel.</p>
+      <h2 data-i18n="cta.title">Arrêtez d'exporter pour tracer les blockers</h2>
+      <p data-i18n="cta.lead">Connectez GitHub. Installez l'app. Le graphe se construit à partir de vos issues.</p>
     </div>
-    <a id="cta-sign-up" class="btn btn-primary" href="/sign-up/" data-i18n="cta.button">Créer un compte gratuit</a>
+    <a id="cta-sign-up" class="btn btn-primary" href="/sign-up/" data-i18n="cta.button">Créer un compte</a>
   </section>
 </main>
 

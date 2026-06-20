@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Roxabi">
+  <!-- Foundation Block — concept #17, refinement "C / Open top": a solid isometric
+       block whose top face is an open glowing aperture (the amber core). Transparent
+       background so it themes on any surface. Geometry shifted +4 in y to center the
+       cube's 12..52 extent within the 64 box. -->
+  <defs>
+    <radialGradient id="fbCore" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#fde68a"/>
+      <stop offset="35%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f0b429" stop-opacity="0.25"/>
+    </radialGradient>
+    <filter id="fbBloom" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="1.7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="fbBigBloom" x="-120%" y="-120%" width="340%" height="340%">
+      <feGaussianBlur stdDeviation="3.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <g transform="translate(0,4)">
+    <!-- Solid cube faces — three slate tones for 3D read -->
+    <polygon points="12,18 32,28 32,48 12,38" fill="#11161d"/>            <!-- left  (dark)  -->
+    <polygon points="52,18 52,38 32,48 32,28" fill="#171e27"/>            <!-- right (mid)   -->
+    <polygon points="32,8 52,18 32,28 12,18"  fill="#1c2431"/>            <!-- top   (light) -->
+
+    <!-- Open top: glow halo + inset glowing aperture (the core seen from above) -->
+    <ellipse cx="32" cy="18" rx="9" ry="5" fill="url(#fbCore)" filter="url(#fbBigBloom)" opacity="0.9"/>
+    <polygon points="32,12 44,18 32,24 20,18" fill="url(#fbCore)" stroke="#fbbf24" stroke-width="0.8" filter="url(#fbBloom)"/>
+
+    <!-- Amber edges -->
+    <path d="M32,8 52,18 52,38 32,48 12,38 12,18Z" fill="none" stroke="#f0b429" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M12,18 32,28 32,48 M52,18 32,28" fill="none" stroke="#f0b429" stroke-width="1.1" stroke-linejoin="round" opacity="0.75"/>
+  </g>
+</svg>

@@ -534,7 +534,7 @@
 #graph-panel.hl-active .gg-ilabel.hl-self {
   opacity: 1;
   z-index: 15;
-  box-shadow: 0 0 0 2px var(--accent), 0 0 14px rgba(232, 93, 4, 0.55);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 14px rgba(240, 180, 41, 0.55);
 }
 #graph-panel.hl-active .gg-node.hl-upstream,
 #graph-panel.hl-active .gg-ilabel.hl-upstream {

@@ -1,4 +1,4 @@
-/* site.css — public pages; tokens aligned with app.css (dashboard) */
+/* site.css — public pages; tokens per Roxabi BRAND-BOOK v1.8 (Open Stack) */
 
 :root,
 [data-theme="dark"] {
@@ -8,35 +8,35 @@
   --bg-card-hover: #1c2129;
   --border: #21262d;
   --border-hi: #30363d;
-  --text: #fafafa;
+  --text: #f0ede6;
   --text-muted: #8b93a1;
-  --accent: #e85d04;
-  --accent-hover: #f97316;
-  --accent-dim: rgba(232, 93, 4, 0.14);
-  --accent-glow: rgba(232, 93, 4, 0.35);
+  --accent: #f0b429;
+  --accent-hover: #f5c542;
+  --accent-dim: rgba(240, 180, 41, 0.14);
+  --accent-glow: rgba(240, 180, 41, 0.35);
   --success: #10b981;
   --panel-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
-  --font-display: "Outfit", system-ui, sans-serif;
+  --font-display: "Inter", system-ui, sans-serif;
   --font-body: "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 [data-theme="light"] {
-  --bg: #f5f2ec;
-  --bg-elevated: #ede9e0;
-  --bg-card: #faf8f4;
-  --bg-card-hover: #f0ece4;
-  --border: rgba(0, 0, 0, 0.09);
-  --border-hi: rgba(0, 0, 0, 0.18);
-  --text: #1a1d2b;
+  --bg: #f8f7f4;
+  --bg-elevated: #f0ede8;
+  --bg-card: #f0ede8;
+  --bg-card-hover: #e8e4dc;
+  --border: #d6cfc8;
+  --border-hi: #c4bcb3;
+  --text: #1c1917;
   --text-muted: #5a6070;
-  --accent: #b8760a;
-  --accent-hover: #9a6508;
-  --accent-dim: rgba(184, 118, 10, 0.12);
-  --accent-glow: rgba(184, 118, 10, 0.28);
+  --accent: #d97706;
+  --accent-hover: #b45309;
+  --accent-dim: rgba(217, 119, 6, 0.12);
+  --accent-glow: rgba(217, 119, 6, 0.28);
   --panel-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
 }
 
@@ -109,21 +109,16 @@ body::before {
 }
 
 .site-brand-mark {
-  background: var(--accent-dim);
-  border: 1px solid var(--border-hi);
-  border-radius: var(--radius-sm);
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 7px 9px;
+  display: block;
+  flex-shrink: 0;
+  height: 24px;
+  width: 24px;
 }
 
 .site-brand-name {
   font-family: var(--font-display);
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.02em;
 }
 
@@ -245,7 +240,7 @@ body::before {
 .btn-primary {
   background: var(--accent);
   border: 1px solid transparent;
-  color: #fff;
+  color: #0d1117;
 }
 
 .btn-primary:hover {
