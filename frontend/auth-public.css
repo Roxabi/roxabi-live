@@ -1,0 +1,183 @@
+/* auth-public.css — dedicated sign-in / sign-up pages */
+
+.auth-page-body {
+  min-height: 100vh;
+}
+
+.auth-page-main {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 auto;
+  max-width: 480px;
+  padding: 48px 24px 72px;
+  width: 100%;
+}
+
+.auth-steps {
+  margin-bottom: 32px;
+  width: 100%;
+}
+
+.auth-steps ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: center;
+  list-style: none;
+}
+
+.auth-step {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 8px;
+}
+
+.auth-step-marker {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.auth-step--active {
+  color: var(--text);
+}
+
+.auth-step--active .auth-step-marker {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: oklch(1 0 0);
+}
+
+.auth-step--pending .auth-step-marker {
+  background: var(--bg-card);
+}
+
+.auth-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
+  padding: 36px 32px;
+  text-align: center;
+  width: 100%;
+}
+
+.auth-card h1 {
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 12px;
+}
+
+.auth-card-lead {
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
+
+.auth-github-btn {
+  align-items: center;
+  background: var(--text);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--bg);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  gap: 10px;
+  justify-content: center;
+  padding: 12px 24px;
+  text-decoration: none;
+  transition: opacity 0.15s, transform 0.15s;
+  width: 100%;
+}
+
+.auth-github-btn:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.auth-github-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.auth-github-icon {
+  flex-shrink: 0;
+  height: 20px;
+  width: 20px;
+}
+
+.auth-card-foot {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 24px;
+}
+
+.auth-card-foot a {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.auth-card-foot a:hover {
+  text-decoration: underline;
+}
+
+.auth-back {
+  color: var(--text-muted);
+  display: inline-block;
+  font-size: 13px;
+  margin-top: 20px;
+  text-decoration: none;
+}
+
+.auth-back:hover {
+  color: var(--text);
+}
+
+.auth-benefits {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+  text-align: left;
+}
+
+.auth-benefit {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 14px;
+  gap: 10px;
+}
+
+.auth-benefit::before {
+  background: var(--success);
+  border-radius: 50%;
+  content: "";
+  flex-shrink: 0;
+  height: 6px;
+  width: 6px;
+}
+
+[data-theme="light"] .auth-github-btn {
+  background: oklch(0.2 0.02 275);
+  color: oklch(0.98 0 0);
+}

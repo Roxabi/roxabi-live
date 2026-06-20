@@ -1,38 +1,73 @@
 <!DOCTYPE html>
-<html lang="fr" data-theme="dark">
+<html lang="fr" data-theme="dark" data-i18n-title="meta.title" data-i18n-desc="meta.description">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Roxabi Live — Graphe de dépendances GitHub</title>
 <meta name="description" content="Cockpit opérationnel pour visualiser issues, blockers et dépendances de votre organisation GitHub.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="site.css">
 <link rel="stylesheet" href="landing.css">
 <link rel="stylesheet" href="legal.css">
 </head>
 <body>
-<header class="landing-topbar">
-  <div class="landing-topbar-inner">
-    <a class="landing-brand" href="/">
-      <span class="landing-brand-mark">v6</span>
-      <span class="landing-brand-name">Roxabi Live</span>
+<header class="site-topbar">
+  <div class="site-topbar-inner">
+    <a class="site-brand" href="/">
+      <span class="site-brand-mark">v6</span>
+      <span class="site-brand-name">Roxabi Live</span>
     </a>
-    <a id="landing-cta" class="landing-cta" href="/login?redirect=%2Fdashboard">Se connecter</a>
+    <nav class="site-nav" aria-label="Navigation principale">
+      <div class="site-nav-links">
+        <a href="#features" data-i18n="nav.features">Fonctionnalités</a>
+        <a href="#how" data-i18n="nav.howItWorks">Comment ça marche</a>
+        <a href="#features" data-i18n="nav.security">Sécurité</a>
+      </div>
+      <div class="site-nav-actions">
+        <label class="visually-hidden" for="locale-switcher" data-i18n="lang.switch">Langue</label>
+        <select id="locale-switcher" class="locale-switcher" aria-label="Language">
+          <option value="fr" data-i18n="lang.fr">Français</option>
+          <option value="en" data-i18n="lang.en">English</option>
+        </select>
+        <a id="nav-sign-in" class="btn btn-ghost" href="/sign-in/" data-i18n="nav.signIn">Se connecter</a>
+        <a id="nav-sign-up" class="btn btn-primary" href="/sign-up/" data-i18n="nav.signUp">Créer un compte</a>
+      </div>
+    </nav>
   </div>
 </header>
 
-<main class="landing-main">
+<main class="site-main">
   <section class="landing-hero">
     <div>
-      <p class="landing-eyebrow">Operations cockpit</p>
-      <h1>Votre graphe de dépendances <span>GitHub</span>, en temps réel</h1>
-      <p class="landing-lead">
+      <p class="landing-eyebrow" data-i18n="hero.eyebrow">Operations cockpit</p>
+      <h1>
+        <span data-i18n="hero.title">Votre graphe de dépendances</span>
+        <span class="accent" data-i18n="hero.titleAccent">GitHub</span><span data-i18n="hero.titleSuffix">, en temps réel</span>
+      </h1>
+      <p class="landing-lead" data-i18n="hero.lead">
         Roxabi Live synchronise issues, blockers et relations parent/enfant
         pour donner une vue claire de ce qui est prêt, bloqué ou terminé —
         en tableau, liste ou graphe interactif.
       </p>
       <div class="landing-hero-actions">
-        <a class="landing-hero-secondary" href="#features">Découvrir les fonctionnalités</a>
+        <a id="hero-sign-up" class="btn btn-primary" href="/sign-up/" data-i18n="hero.ctaPrimary">Commencer gratuitement</a>
+        <a class="btn btn-ghost" href="#features" data-i18n="hero.ctaSecondary">Voir les fonctionnalités</a>
+      </div>
+      <div class="landing-stats" aria-hidden="true">
+        <div class="landing-stat">
+          <span class="landing-stat-value">∞</span>
+          <span class="landing-stat-label" data-i18n="hero.stat.repos">Dépôts synchronisés</span>
+        </div>
+        <div class="landing-stat">
+          <span class="landing-stat-value">3</span>
+          <span class="landing-stat-label" data-i18n="hero.stat.views">Vues de lecture</span>
+        </div>
+        <div class="landing-stat">
+          <span class="landing-stat-value">ZK</span>
+          <span class="landing-stat-label" data-i18n="hero.stat.encryption">Chiffrement client</span>
+        </div>
       </div>
     </div>
 
@@ -57,31 +92,73 @@
     </div>
   </section>
 
-  <section id="features" class="landing-features">
-    <article class="landing-feature">
-      <h3>Vue multi-format</h3>
-      <p>Tableau pivot, liste groupée et graphe de dépendances — même corpus, trois angles de lecture.</p>
-    </article>
-    <article class="landing-feature">
-      <h3>Sync continue</h3>
-      <p>Webhook GitHub + réconciliation quotidienne. L'état du board reflète votre org sans export manuel.</p>
-    </article>
-    <article class="landing-feature">
-      <h3>Chiffrement côté client</h3>
-      <p>Titres et corps d'issues chiffrés avant stockage. La structure du graphe reste exploitable pour le pilotage.</p>
-    </article>
+  <section id="features">
+    <div class="landing-section-head">
+      <h2 data-i18n="features.title">Tout ce qu'il faut pour piloter</h2>
+      <p data-i18n="features.subtitle">Un seul corpus GitHub, trois angles de lecture — sans export manuel ni tableur.</p>
+    </div>
+    <div class="landing-bento">
+      <article class="landing-bento-card landing-bento-card--wide landing-bento-card--accent">
+        <h3 data-i18n="features.multiView.title">Vue multi-format</h3>
+        <p data-i18n="features.multiView.desc">Tableau pivot, liste groupée et graphe de dépendances. Même données, trois lectures complémentaires.</p>
+      </article>
+      <article class="landing-bento-card landing-bento-card--wide">
+        <h3 data-i18n="features.sync.title">Sync continue</h3>
+        <p data-i18n="features.sync.desc">Webhook GitHub + réconciliation quotidienne. L'état du board reflète votre org en continu.</p>
+      </article>
+      <article class="landing-bento-card landing-bento-card--tall">
+        <h3 data-i18n="features.zk.title">Chiffrement côté client</h3>
+        <p data-i18n="features.zk.desc">Titres et corps d'issues chiffrés avant stockage. La structure du graphe reste exploitable.</p>
+      </article>
+      <article class="landing-bento-card landing-bento-card--wide">
+        <h3 data-i18n="features.blockers.title">Blockers visibles</h3>
+        <p data-i18n="features.blockers.desc">Identifiez en un coup d'œil ce qui bloque la livraison et ce qui est prêt à partir.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="how" class="landing-how">
+    <div class="landing-section-head">
+      <h2 data-i18n="how.title">Opérationnel en trois étapes</h2>
+    </div>
+    <div class="landing-steps">
+      <article class="landing-step">
+        <span class="landing-step-num">1</span>
+        <h3 data-i18n="how.step1.title">Connectez GitHub</h3>
+        <p data-i18n="how.step1.desc">Authentification OAuth sécurisée. Aucun mot de passe à gérer.</p>
+      </article>
+      <article class="landing-step">
+        <span class="landing-step-num">2</span>
+        <h3 data-i18n="how.step2.title">Installez l'app</h3>
+        <p data-i18n="how.step2.desc">Choisissez vos dépôts ou votre organisation sur GitHub.</p>
+      </article>
+      <article class="landing-step">
+        <span class="landing-step-num">3</span>
+        <h3 data-i18n="how.step3.title">Pilotez</h3>
+        <p data-i18n="how.step3.desc">Le graphe se construit automatiquement à partir de vos issues.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="landing-cta-band">
+    <div>
+      <h2 data-i18n="cta.title">Prêt à clarifier vos dépendances ?</h2>
+      <p data-i18n="cta.lead">Rejoignez les équipes qui pilotent leurs blockers en temps réel.</p>
+    </div>
+    <a id="cta-sign-up" class="btn btn-primary" href="/sign-up/" data-i18n="cta.button">Créer un compte gratuit</a>
   </section>
 </main>
 
 <footer class="site-footer">
   <nav class="site-footer-nav" aria-label="Liens légaux">
-    <a href="/mentions-legales">Mentions légales</a>
-    <a href="/politique-confidentialite">Politique de confidentialité</a>
-    <a href="/conditions-utilisation">Conditions d'utilisation</a>
+    <a href="/mentions-legales" data-i18n="footer.legal">Mentions légales</a>
+    <a href="/politique-confidentialite" data-i18n="footer.privacy">Politique de confidentialité</a>
+    <a href="/conditions-utilisation" data-i18n="footer.terms">Conditions d'utilisation</a>
   </nav>
-  <p class="site-footer-copy">© 2026 Roxabi Live · Dep-Graph v6</p>
+  <p class="site-footer-copy" data-i18n="footer.copy">© 2026 Roxabi Live · Dep-Graph v6</p>
 </footer>
 
+<style>.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style>
 <script type="module" src="landing.js"></script>
 </body>
 </html>

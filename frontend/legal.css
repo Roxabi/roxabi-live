@@ -1,6 +1,7 @@
 /* legal.css — legal pages + shared site footer */
 
-.site-footer {
+.site-footer,
+.legal-page .site-footer {
   border-top: 1px solid var(--border);
   margin-top: auto;
   padding: 28px 24px 36px;

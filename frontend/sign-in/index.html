@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark" data-i18n-title="signIn.meta.title">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connexion · Roxabi Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/auth-public.css">
+</head>
+<body class="auth-page-body">
+<header class="site-topbar">
+  <div class="site-topbar-inner">
+    <a class="site-brand" href="/">
+      <span class="site-brand-mark">v6</span>
+      <span class="site-brand-name">Roxabi Live</span>
+    </a>
+    <div class="site-nav-actions">
+      <label class="visually-hidden" for="locale-switcher" data-i18n="lang.switch">Langue</label>
+      <select id="locale-switcher" class="locale-switcher" aria-label="Language">
+        <option value="fr" data-i18n="lang.fr">Français</option>
+        <option value="en" data-i18n="lang.en">English</option>
+      </select>
+    </div>
+  </div>
+</header>
+
+<main class="auth-page-main">
+  <nav class="auth-steps" aria-label="Progression">
+    <ol>
+      <li class="auth-step auth-step--active" aria-current="step">
+        <span class="auth-step-marker" aria-hidden="true">1</span>
+        <span data-i18n="signIn.step1">Connexion GitHub</span>
+      </li>
+      <li class="auth-step auth-step--pending">
+        <span class="auth-step-marker" aria-hidden="true">2</span>
+        <span data-i18n="signIn.step2">Installation</span>
+      </li>
+      <li class="auth-step auth-step--pending">
+        <span class="auth-step-marker" aria-hidden="true">3</span>
+        <span data-i18n="signIn.step3">Synchronisation</span>
+      </li>
+    </ol>
+  </nav>
+
+  <div class="auth-card">
+    <h1 data-i18n="signIn.title">Bon retour</h1>
+    <p class="auth-card-lead" data-i18n="signIn.lead">
+      Connectez-vous avec GitHub pour accéder à votre dashboard et reprendre le pilotage de vos dépendances.
+    </p>
+    <a id="auth-github-btn" class="auth-github-btn" href="/login?intent=signin&amp;redirect=%2Fdashboard">
+      <span data-i18n="signIn.github">Continuer avec GitHub</span>
+    </a>
+    <p class="auth-card-foot">
+      <span data-i18n="signIn.noAccount">Pas encore de compte ?</span>
+      <a id="auth-alt-link" href="/sign-up/" data-i18n="signIn.createAccount">Créer un compte</a>
+    </p>
+    <a class="auth-back" href="/" data-i18n="signIn.backHome">Retour à l'accueil</a>
+  </div>
+</main>
+
+<style>.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style>
+<script type="module">
+import { initAuthPage } from "/auth-pages.js";
+initAuthPage("signin");
+</script>
+</body>
+</html>

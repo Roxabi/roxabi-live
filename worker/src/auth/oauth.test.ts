@@ -57,20 +57,14 @@ function makeApp(db: D1Database) {
 
 describe("loginRoute", () => {
   describe("GET /login", () => {
-    it("returns 200 HTML login prompt without go=1", async () => {
+    it("redirects to /sign-in/ without intent=signin", async () => {
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
 
       const res = await app.request("http://localhost/login", { method: "GET" }, env);
 
-      expect(res.status).toBe(200);
-      const body = await res.text();
-      expect(body).toContain("Continuer avec GitHub");
-      expect(body).toContain("Connexion GitHub");
-      expect(body).toContain("/login?intent=signin");
-      expect(body).not.toContain("%252F");
-      expect(body).toContain('href="/login?intent=signin&redirect=%2Fdashboard"');
-      expect(res.headers.get("Location")).toBeNull();
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/sign-in/?redirect=%2Fdashboard");
       expect(stmts()).toHaveLength(0);
     });
 
