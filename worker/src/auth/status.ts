@@ -3,14 +3,12 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "./types";
 import { AUTH_NO_CACHE, readNamedCookie, readSessionToken } from "./cookies";
-import { LEGACY_SESSION_COOKIE, SESSION_COOKIE } from "./types";
 import { validateSession } from "./session";
+import type { AuthEnv } from "./types";
+import { LEGACY_SESSION_COOKIE, SESSION_COOKIE } from "./types";
 
-export async function authStatusRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function authStatusRoute(c: Context<AuthEnv>): Promise<Response> {
   const cookieHeader = c.req.header("Cookie");
   const primary = readNamedCookie(cookieHeader, SESSION_COOKIE);
   const legacy = readNamedCookie(cookieHeader, LEGACY_SESSION_COOKIE);

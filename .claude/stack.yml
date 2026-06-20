@@ -13,7 +13,7 @@ frontend:
   path: frontend
 
 build:
-  formatter: none  # no formatter configured for the worker; no lint/format script in worker/package.json
+  formatter: biome  # Biome (lint+format) over worker/src + frontend; config in biome.json (repo root)
 
 testing:
   unit: vitest
@@ -35,9 +35,8 @@ commands:
   test: cd worker && npm test
   typecheck: cd worker && npm run typecheck
   install: cd worker && npm ci
-  # lint and format: no script defined in worker/package.json and no tool configured
-  # (.pre-commit-config.yaml still references legacy ruff/pyright for frozen Python src/)
-  # Add lint/format here once a TS linter (eslint/biome) is wired up — see #136 follow-up
+  lint: cd worker && npm run lint  # biome check src ../frontend
+  format: cd worker && npm run format  # biome check --write src ../frontend
 
 artifacts:
   analyses: artifacts/analyses

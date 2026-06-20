@@ -1,7 +1,7 @@
-import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
-import type { Env } from "../types";
-import { app } from "../router";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveVisibleRepos } from "../auth/repoAccess";
+import { app } from "../router";
+import type { Env } from "../types";
 
 // #148: these are handler unit tests — they exercise listIssuesRoute/getIssueRoute
 // logic (row mapping, filter SQL, limit/offset clamping). The auth middleware is
@@ -95,9 +95,7 @@ function d1Prepare(stmt: {
  * The .bind() return value is what gets passed to DB.batch([...]), so
  * we embed _sql/_args on the bound object and read them back in batch().
  */
-function makeListEnvWithCapture(
-  opts: ListEnvOptions,
-): { env: Env; captured: CapturedCall[] } {
+function makeListEnvWithCapture(opts: ListEnvOptions): { env: Env; captured: CapturedCall[] } {
   const { countN, rows, labels = [] } = opts;
   const captured: CapturedCall[] = [];
 
@@ -135,10 +133,7 @@ function makeListEnvWithCapture(
       },
       batch: async (_stmts: unknown[]) => {
         // sql/args already captured in bind() above
-        return [
-          { results: [{ n: countN }] },
-          { results: rows },
-        ];
+        return [{ results: [{ n: countN }] }, { results: rows }];
       },
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
@@ -167,10 +162,7 @@ function makeListEnv(opts: ListEnvOptions): Env {
             return { results: [] };
           },
         }),
-      batch: async (_stmts: unknown[]) => [
-        { results: [{ n: countN }] },
-        { results: rows },
-      ],
+      batch: async (_stmts: unknown[]) => [{ results: [{ n: countN }] }, { results: rows }],
     },
     ASSETS: { fetch: async () => new Response("asset", { status: 200 }) },
     GITHUB_WEBHOOK_SECRET: "",
@@ -236,12 +228,7 @@ function makeGetEnvWithCapture(opts: GetEnvOptions): {
   env: Env;
   capturedSqls: string[];
 } {
-  const {
-    issueRow,
-    labels = [],
-    blocking = [],
-    blockedBy = [],
-  } = opts;
+  const { issueRow, labels = [], blocking = [], blockedBy = [] } = opts;
   const capturedSqls: string[] = [];
 
   const env = {
@@ -332,11 +319,7 @@ function makeIssueRow(overrides: Partial<Record<string, unknown>> = {}) {
 describe("GET /api/issues", () => {
   describe("response shape", () => {
     it("returns {issues, total, limit, offset}", async () => {
-      const res = await app.request(
-        "/api/issues",
-        {},
-        makeListEnv({ countN: 0, rows: [] }),
-      );
+      const res = await app.request("/api/issues", {}, makeListEnv({ countN: 0, rows: [] }));
 
       expect(res.status).toBe(200);
       const body = await res.json<Record<string, unknown>>();
@@ -347,21 +330,13 @@ describe("GET /api/issues", () => {
     });
 
     it("returns total from count query", async () => {
-      const res = await app.request(
-        "/api/issues",
-        {},
-        makeListEnv({ countN: 42, rows: [] }),
-      );
+      const res = await app.request("/api/issues", {}, makeListEnv({ countN: 42, rows: [] }));
       const body = await res.json<{ total: number }>();
       expect(body.total).toBe(42);
     });
 
     it("uses default limit=100 and offset=0", async () => {
-      const res = await app.request(
-        "/api/issues",
-        {},
-        makeListEnv({ countN: 0, rows: [] }),
-      );
+      const res = await app.request("/api/issues", {}, makeListEnv({ countN: 0, rows: [] }));
       const body = await res.json<{ limit: number; offset: number }>();
       expect(body.limit).toBe(100);
       expect(body.offset).toBe(0);
@@ -382,11 +357,7 @@ describe("GET /api/issues", () => {
   describe("issue rows mapping", () => {
     it("maps issue row fields", async () => {
       const row = makeIssueRow({ title: "My Issue", state: "closed", is_stub: 0 });
-      const res = await app.request(
-        "/api/issues",
-        {},
-        makeListEnv({ countN: 1, rows: [row] }),
-      );
+      const res = await app.request("/api/issues", {}, makeListEnv({ countN: 1, rows: [row] }));
       const body = await res.json<{ issues: Record<string, unknown>[] }>();
       const issue = body.issues[0];
 
@@ -399,22 +370,14 @@ describe("GET /api/issues", () => {
 
     it("coerces is_stub=1 to true", async () => {
       const row = makeIssueRow({ is_stub: 1 });
-      const res = await app.request(
-        "/api/issues",
-        {},
-        makeListEnv({ countN: 1, rows: [row] }),
-      );
+      const res = await app.request("/api/issues", {}, makeListEnv({ countN: 1, rows: [row] }));
       const body = await res.json<{ issues: Record<string, unknown>[] }>();
       expect(body.issues[0].is_stub).toBe(true);
     });
 
     it("coerces is_stub=0 to false", async () => {
       const row = makeIssueRow({ is_stub: 0 });
-      const res = await app.request(
-        "/api/issues",
-        {},
-        makeListEnv({ countN: 1, rows: [row] }),
-      );
+      const res = await app.request("/api/issues", {}, makeListEnv({ countN: 1, rows: [row] }));
       const body = await res.json<{ issues: Record<string, unknown>[] }>();
       expect(body.issues[0].is_stub).toBe(false);
     });
@@ -477,11 +440,7 @@ describe("GET /api/issues", () => {
 
   describe("empty result set — no labels query", () => {
     it("skips labels query when no rows returned", async () => {
-      const res = await app.request(
-        "/api/issues",
-        {},
-        makeListEnv({ countN: 0, rows: [] }),
-      );
+      const res = await app.request("/api/issues", {}, makeListEnv({ countN: 0, rows: [] }));
       expect(res.status).toBe(200);
       const body = await res.json<{ issues: unknown[] }>();
       expect(body.issues).toEqual([]);
@@ -494,11 +453,7 @@ describe("GET /api/issues", () => {
 describe("GET /api/issues/:key", () => {
   describe("400 on invalid key format", () => {
     it("returns 400 for bare string key", async () => {
-      const res = await app.request(
-        "/api/issues/invalid-key",
-        {},
-        makeGetEnv({ issueRow: null }),
-      );
+      const res = await app.request("/api/issues/invalid-key", {}, makeGetEnv({ issueRow: null }));
       expect(res.status).toBe(400);
       const body = await res.json<{ detail: string }>();
       expect(body.detail).toMatch(/invalid issue key/i);
@@ -515,11 +470,7 @@ describe("GET /api/issues/:key", () => {
 
     it("returns 400 for empty key", async () => {
       // /api/issues/ — matches list route, not wildcard; just validate the guard logic
-      const res = await app.request(
-        "/api/issues/noslash",
-        {},
-        makeGetEnv({ issueRow: null }),
-      );
+      const res = await app.request("/api/issues/noslash", {}, makeGetEnv({ issueRow: null }));
       expect(res.status).toBe(400);
     });
   });
@@ -594,9 +545,7 @@ describe("GET /api/issues/:key", () => {
 
     it("maps blocking edges", async () => {
       const row = makeIssueRow();
-      const blocking = [
-        { key: "Roxabi/roxabi-live#2", number: 2, repo: "Roxabi/roxabi-live" },
-      ];
+      const blocking = [{ key: "Roxabi/roxabi-live#2", number: 2, repo: "Roxabi/roxabi-live" }];
       const res = await app.request(
         "/api/issues/Roxabi/roxabi-live%231",
         {},
@@ -610,9 +559,7 @@ describe("GET /api/issues/:key", () => {
 
     it("maps blocked_by edges", async () => {
       const row = makeIssueRow();
-      const blockedBy = [
-        { key: "Roxabi/roxabi-live#3", number: 3, repo: "Roxabi/roxabi-live" },
-      ];
+      const blockedBy = [{ key: "Roxabi/roxabi-live#3", number: 3, repo: "Roxabi/roxabi-live" }];
       const res = await app.request(
         "/api/issues/Roxabi/roxabi-live%231",
         {},
@@ -699,9 +646,7 @@ describe("GET /api/issues — filter SQL params and clamping (FIX 4)", () => {
       const { env, captured } = makeListEnvWithCapture({ countN: 0, rows: [] });
       await app.request("/api/issues?label=bug", {}, env);
 
-      expect(
-        captured.some((c) => c.sql.includes("EXISTS") && c.sql.includes("labels")),
-      ).toBe(true);
+      expect(captured.some((c) => c.sql.includes("EXISTS") && c.sql.includes("labels"))).toBe(true);
       expect(captured.some((c) => c.args.includes("bug"))).toBe(true);
     });
 
@@ -817,8 +762,7 @@ describe("#148 tenant scoping", () => {
       DB: {
         prepare: (sql: string) => ({
           bind: (...args: unknown[]) => ({
-            first: async () =>
-              sql.includes("FROM issues WHERE key") ? makeIssueRow() : null,
+            first: async () => (sql.includes("FROM issues WHERE key") ? makeIssueRow() : null),
             all: async () => {
               if (sql.includes("FROM zk_payloads")) return { results: [] };
               if (sql.includes("e.dst_key = ?")) {

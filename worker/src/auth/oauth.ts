@@ -10,18 +10,13 @@
 
 import type { Context } from "hono";
 import type { Env } from "../types";
+import { authRedirect, readSessionToken, sanitizeAuthRedirect, stripInstallParam } from "./cookies";
+import { serveLoginPrompt } from "./login-prompt";
+import { completeOAuthSession } from "./post-oauth";
 import { mintSession, revokeOtherSessions } from "./session";
-import {
-  authRedirect,
-  readSessionToken,
-  sanitizeAuthRedirect,
-  stripInstallParam,
-} from "./cookies";
 import { validateSession } from "./session";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
-import { completeOAuthSession } from "./post-oauth";
-import { serveLoginPrompt } from "./login-prompt";
 
 export type LoginIntent = "signin" | "install" | "reauth" | "zk" | "prompt";
 
@@ -97,9 +92,7 @@ async function mustReOAuth(c: Context<{ Bindings: Env }>): Promise<boolean> {
   return true;
 }
 
-export async function loginRoute(
-  c: Context<{ Bindings: Env }>,
-): Promise<Response> {
+export async function loginRoute(c: Context<{ Bindings: Env }>): Promise<Response> {
   const redirectAfter = sanitizeAuthRedirect(c.req.query("redirect") ?? undefined);
   const intent = resolveLoginIntent(c);
   const zkTokenHandoff = intent === "zk" ? 1 : 0;
@@ -163,9 +156,7 @@ export async function loginRoute(
  *   6. Upsert user → tenants → user_installations.
  *   7. Mint session tied to first installation, set __Host-session cookie.
  */
-export async function callbackRoute(
-  c: Context<{ Bindings: Env }>,
-): Promise<Response> {
+export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Response> {
   const code = c.req.query("code");
   const state = c.req.query("state");
 
@@ -198,23 +189,20 @@ export async function callbackRoute(
   const redirectUri = `${origin}/oauth/callback`;
 
   // Exchange code for access_token
-  const tokenRes = await fetch(
-    "https://github.com/login/oauth/access_token",
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "roxabi-live",
-      },
-      body: JSON.stringify({
-        client_id: c.env.GITHUB_APP_CLIENT_ID,
-        client_secret: c.env.GITHUB_APP_CLIENT_SECRET,
-        code,
-        redirect_uri: redirectUri,
-      }),
+  const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "roxabi-live",
     },
-  );
+    body: JSON.stringify({
+      client_id: c.env.GITHUB_APP_CLIENT_ID,
+      client_secret: c.env.GITHUB_APP_CLIENT_SECRET,
+      code,
+      redirect_uri: redirectUri,
+    }),
+  });
 
   if (!tokenRes.ok) {
     return c.json({ error: "oauth_failed" }, 502);
@@ -241,10 +229,9 @@ export async function callbackRoute(
   const ghUser = (await userRes.json()) as { id: number; login: string };
 
   // Fetch user installations
-  const installRes = await fetch(
-    "https://api.github.com/user/installations",
-    { headers: ghHeaders },
-  );
+  const installRes = await fetch("https://api.github.com/user/installations", {
+    headers: ghHeaders,
+  });
   if (!installRes.ok) {
     return c.json({ error: "github_unavailable" }, 502);
   }
@@ -257,13 +244,10 @@ export async function callbackRoute(
 
   // No installations — mint install-pending session and show our install guide
   if (installations.length === 0) {
-    const orgsRes = await fetch(
-      "https://api.github.com/user/orgs?per_page=100",
-      { headers: ghHeaders },
-    );
-    const orgs = orgsRes.ok
-      ? ((await orgsRes.json()) as Array<{ id: number; login: string }>)
-      : [];
+    const orgsRes = await fetch("https://api.github.com/user/orgs?per_page=100", {
+      headers: ghHeaders,
+    });
+    const orgs = orgsRes.ok ? ((await orgsRes.json()) as Array<{ id: number; login: string }>) : [];
 
     const installTargets = [
       { id: ghUser.id, login: ghUser.login, type: "User" as const },
@@ -346,7 +330,7 @@ export async function callbackRoute(
   await c.env.DB.batch(
     tenantIds.map((tid) =>
       c.env.DB.prepare(
-        `INSERT OR IGNORE INTO user_installations (user_id, tenant_id) VALUES (?, ?)`,
+        "INSERT OR IGNORE INTO user_installations (user_id, tenant_id) VALUES (?, ?)",
       ).bind(userId, tid),
     ),
   );
@@ -362,11 +346,7 @@ export async function callbackRoute(
     redirectAfter = `${dest.pathname}${dest.search}`;
   } else if (wantsZkHandoff) {
     try {
-      const handoffCode = await createUserTokenHandoff(
-        c.env,
-        userId,
-        access_token,
-      );
+      const handoffCode = await createUserTokenHandoff(c.env, userId, access_token);
       const dest = new URL(redirectAfter, origin);
       dest.searchParams.set("zk_handoff", handoffCode);
       redirectAfter = `${dest.pathname}${dest.search}`;
@@ -375,9 +355,5 @@ export async function callbackRoute(
     }
   }
 
-  return completeOAuthSession(
-    c,
-    rawToken,
-    stripInstallParam(redirectAfter),
-  );
+  return completeOAuthSession(c, rawToken, stripInstallParam(redirectAfter));
 }

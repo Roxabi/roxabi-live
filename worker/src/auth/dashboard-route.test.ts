@@ -1,8 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
-import type { Env } from "../types";
-import type { SessionContext } from "./types";
+import { describe, expect, it, vi } from "vitest";
 import { app } from "../router";
+import type { Env } from "../types";
 import { dashboardLoginUrl } from "./dashboard-route";
+import type { SessionContext } from "./types";
 
 const VALID_RAW_TOKEN = "b".repeat(64);
 
@@ -135,11 +135,7 @@ describe("GET /dashboard", () => {
     const db = makeSessionDb(null);
     const env = makeEnv(db);
 
-    const res = await app.request(
-      "/dashboard/?code=3021f76392ee418d8b6a9d70a5e8cd99",
-      {},
-      env,
-    );
+    const res = await app.request("/dashboard/?code=3021f76392ee418d8b6a9d70a5e8cd99", {}, env);
 
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/login?redirect=%2Fdashboard");
@@ -175,7 +171,6 @@ describe("GET /dashboard", () => {
     expect(res.headers.get("Location")).toBe("/dashboard");
     expect(env.ASSETS.fetch).not.toHaveBeenCalled();
   });
-
 });
 
 describe("dashboardLoginUrl", () => {
@@ -183,8 +178,6 @@ describe("dashboardLoginUrl", () => {
     const url = new URL(
       "https://live.roxabi.dev/dashboard/?code=abc&state=xyz&install=1&view=graph",
     );
-    expect(dashboardLoginUrl(url)).toBe(
-      "/login?redirect=%2Fdashboard%3Fview%3Dgraph",
-    );
+    expect(dashboardLoginUrl(url)).toBe("/login?redirect=%2Fdashboard%3Fview%3Dgraph");
   });
 });

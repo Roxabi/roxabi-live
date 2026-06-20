@@ -78,7 +78,8 @@ export function computeGraphStatuses(
   const queue = nodes.filter((n) => statuses.get(n.key) === "blocked").map((n) => n.key);
   const visited = new Set(queue);
   while (queue.length > 0) {
-    const parentKey = queue.shift()!;
+    const parentKey = queue.shift();
+    if (parentKey === undefined) continue;
     for (const childKey of childrenBySrc.get(parentKey) ?? []) {
       if (visited.has(childKey)) continue;
       visited.add(childKey);
@@ -111,7 +112,8 @@ export function filterNodesByStatus<T extends { key: string; state: string }>(
   }
 
   return nodes.filter((n) => {
-    const status = statuses.get(n.key)!;
+    const status = statuses.get(n.key);
+    if (status === undefined) return false;
     if (allowed.has(status)) return true;
     if (!options.closedUnderOpenEpic || status !== "done") return false;
     const parentKey = parentByDst.get(n.key);

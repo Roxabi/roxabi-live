@@ -1,14 +1,9 @@
 repos:
   - repo: local
     hooks:
-      - id: lint
-        name: lint
-        entry: uv run ruff check .
-        language: system
-        pass_filenames: false
-      - id: typecheck
-        name: typecheck
-        entry: uv run pyright
+      - id: biome
+        name: biome (lint + format) — worker/src + frontend
+        entry: bash -c 'cd worker && npx biome check src ../frontend'
         language: system
         pass_filenames: false
       - id: trufflehog

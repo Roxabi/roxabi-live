@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { type FakeStmt, makeFakeDb, makeFakeStmt } from "../test-utils";
 import {
   BUMP_DATA_VERSION_SQL,
   UPSERT_ISSUE_FROM_WEBHOOK_SQL,
@@ -15,10 +16,6 @@ import {
   upsertPrState,
 } from "./mutations";
 import type { WebhookIssue } from "./mutations";
-import { makeFakeDb, makeFakeStmt, type FakeStmt } from "../test-utils";
-
-// FakeResult kept local: richer variant ({ value?, changes? }) used in captureDb casts
-type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
 
 /** Capture all statements produced via bind() calls on the FakeDb. */
 function captureDb(): { db: D1Database; stmts: () => FakeStmt[] } {
@@ -396,15 +393,7 @@ describe("upsertPrState", () => {
     // Arrange
     const { db, stmts } = captureDb();
     // Act
-    upsertPrState(
-      db,
-      "Roxabi/lyra",
-      5,
-      "open",
-      1,
-      '["Roxabi/lyra#42"]',
-      "2024-06-01T12:00:00Z",
-    );
+    upsertPrState(db, "Roxabi/lyra", 5, "open", 1, '["Roxabi/lyra#42"]', "2024-06-01T12:00:00Z");
     // Assert
     expect(stmts()[0].args).toEqual([
       "Roxabi/lyra",
@@ -493,20 +482,20 @@ describe("bumpDataVersion", () => {
 // ---------------------------------------------------------------------------
 
 import {
-  upsertTenant,
-  softDeleteTenant,
-  setTenantSuspended,
-  upsertRepoAccess,
-  deleteRepoAccess,
-  deleteAllRepoAccessForTenant,
-  setRepoPrivacy,
   cascadeRepoRename,
-  invalidateCacheByRepo,
-  invalidateCacheByUserRepo,
-  invalidateCacheByUser,
-  deleteSessionsForTenant,
+  deleteAllRepoAccessForTenant,
   deleteInstallTokensForTenant,
-} from "./mutations";
+  deleteRepoAccess,
+  deleteSessionsForTenant,
+  invalidateCacheByRepo,
+  invalidateCacheByUser,
+  invalidateCacheByUserRepo,
+  setRepoPrivacy,
+  setTenantSuspended,
+  softDeleteTenant,
+  upsertRepoAccess,
+  upsertTenant,
+} from "./mutations-app";
 
 describe("webhook mutations — tenant/repo/cache helpers (S4 #147)", () => {
   const now = "2026-06-14T12:00:00.000Z";
@@ -701,8 +690,8 @@ describe("webhook mutations — tenant/repo/cache helpers (S4 #147)", () => {
   describe("cascadeRepoRename", () => {
     const oldName = "OldOrg/old-repo";
     const newName = "NewOrg/new-repo";
-    const oldPrefix = oldName + "#";
-    const newPrefix = newName + "#";
+    const oldPrefix = `${oldName}#`;
+    const newPrefix = `${newName}#`;
     const oldPrefixLen = oldPrefix.length;
 
     it("returns exactly 5 prepared statements", () => {

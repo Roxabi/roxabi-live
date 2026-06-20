@@ -43,8 +43,7 @@ export function parseInstallTargets(raw: string | null | undefined): InstallTarg
         typeof t === "object" &&
         typeof (t as InstallTarget).id === "number" &&
         typeof (t as InstallTarget).login === "string" &&
-        ((t as InstallTarget).type === "User" ||
-          (t as InstallTarget).type === "Organization"),
+        ((t as InstallTarget).type === "User" || (t as InstallTarget).type === "Organization"),
     );
   } catch {
     return [];

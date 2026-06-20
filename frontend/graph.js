@@ -1,9 +1,9 @@
 // graph.js — v6 graph view with v5 layout
 // Uses layout.js for positioning and render_graph.js for DOM rendering
 
-import { state, filteredNodesForGraph } from './state.js';
-import { runLayout } from './layout.js';
-import { renderGraph, getEdgeElements, getLabelElements } from './render_graph.js';
+import { runLayout } from "./layout.js";
+import { getEdgeElements, getLabelElements, renderGraph } from "./render_graph.js";
+import { filteredNodesForGraph, state } from "./state.js";
 
 let loaded = false;
 
@@ -16,8 +16,8 @@ function getReachableKeys(edges, startKey, dir) {
     if (visited.has(k)) continue;
     visited.add(k);
     for (const e of edges) {
-      const next = dir === 'up' ? e.dataset.src : e.dataset.dst;
-      const cur = dir === 'up' ? e.dataset.dst : e.dataset.src;
+      const next = dir === "up" ? e.dataset.src : e.dataset.dst;
+      const cur = dir === "up" ? e.dataset.dst : e.dataset.src;
       if (cur === k && next) queue.push(next);
     }
   }
@@ -35,38 +35,43 @@ function applyHighlight(panel, edges, key) {
     byKey.get(k).push(el);
   }
 
-  panel.classList.add('hl-active');
-  (byKey.get(key) || []).forEach(n => n.classList.add('hl-self'));
+  panel.classList.add("hl-active");
+  (byKey.get(key) || []).forEach((n) => n.classList.add("hl-self"));
 
-  for (const k of getReachableKeys(edges, key, 'up')) {
-    (byKey.get(k) || []).forEach(n => n.classList.add('hl-upstream'));
+  for (const k of getReachableKeys(edges, key, "up")) {
+    (byKey.get(k) || []).forEach((n) => n.classList.add("hl-upstream"));
   }
-  for (const k of getReachableKeys(edges, key, 'down')) {
-    (byKey.get(k) || []).forEach(n => n.classList.add('hl-downstream'));
+  for (const k of getReachableKeys(edges, key, "down")) {
+    (byKey.get(k) || []).forEach((n) => n.classList.add("hl-downstream"));
   }
 
   for (const e of edges) {
     const src = e.dataset.src;
     const dst = e.dataset.dst;
     if (src && dst) {
-      const srcIsHl = (byKey.get(src) || []).some(n =>
-        n.classList.contains('hl-self') || n.classList.contains('hl-upstream') ||
-        n.classList.contains('hl-downstream')
+      const srcIsHl = (byKey.get(src) || []).some(
+        (n) =>
+          n.classList.contains("hl-self") ||
+          n.classList.contains("hl-upstream") ||
+          n.classList.contains("hl-downstream"),
       );
-      const dstIsHl = (byKey.get(dst) || []).some(n =>
-        n.classList.contains('hl-self') || n.classList.contains('hl-upstream') ||
-        n.classList.contains('hl-downstream')
+      const dstIsHl = (byKey.get(dst) || []).some(
+        (n) =>
+          n.classList.contains("hl-self") ||
+          n.classList.contains("hl-upstream") ||
+          n.classList.contains("hl-downstream"),
       );
-      if (srcIsHl && dstIsHl) e.classList.add('hl-edge');
+      if (srcIsHl && dstIsHl) e.classList.add("hl-edge");
     }
   }
 }
 
 function clearHighlight(panel, edges) {
-  panel.classList.remove('hl-active');
-  panel.querySelectorAll('.hl-self, .hl-upstream, .hl-downstream')
-    .forEach(el => el.classList.remove('hl-self', 'hl-upstream', 'hl-downstream'));
-  edges.forEach(e => e.classList.remove('hl-edge'));
+  panel.classList.remove("hl-active");
+  panel
+    .querySelectorAll(".hl-self, .hl-upstream, .hl-downstream")
+    .forEach((el) => el.classList.remove("hl-self", "hl-upstream", "hl-downstream"));
+  edges.forEach((e) => e.classList.remove("hl-edge"));
 }
 
 // ── Hover-chain highlight ─────────────────────────────────────────────────
@@ -75,22 +80,22 @@ function wireHoverChain(panel, edges) {
   const allItems = labels;
 
   for (const el of allItems) {
-    el.addEventListener('mouseenter', () => {
+    el.addEventListener("mouseenter", () => {
       clearHighlight(panel, edges);
       applyHighlight(panel, edges, el.dataset.iss);
     });
-    el.addEventListener('mouseleave', () => clearHighlight(panel, edges));
+    el.addEventListener("mouseleave", () => clearHighlight(panel, edges));
   }
 }
 
 // ── Search highlight (tree-based, no filtering) ─────────────────────────────
 function applySearchHighlight(panel, nodes, edges) {
-  const search = (state.search ?? '').trim().toLowerCase();
+  const search = (state.search ?? "").trim().toLowerCase();
   if (!search) return;
 
   // Find matching nodes
-  const matches = nodes.filter(n => {
-    const hay = `${n.key} ${n.title ?? ''} ${(n.labels ?? []).join(' ')}`.toLowerCase();
+  const matches = nodes.filter((n) => {
+    const hay = `${n.key} ${n.title ?? ""} ${(n.labels ?? []).join(" ")}`.toLowerCase();
     return hay.includes(search);
   });
 
@@ -106,19 +111,18 @@ let currentEdges = [];
 
 // ── Main graph initialization ────────────────────────────────────────────
 export async function initGraph() {
-  const panel = document.getElementById('graph-panel');
+  const panel = document.getElementById("graph-panel");
   if (!panel) return;
 
   // Graph filters by repo/milestone/priority/status, but search uses highlight.
   // Parent-node filtering (showParents=false) is applied inside applyFilters.
   const nodes = filteredNodesForGraph();
 
-  const nodeKeys = new Set(nodes.map(n => n.key));
+  const nodeKeys = new Set(nodes.map((n) => n.key));
 
   // Filter edges: only blocks edges, optionally include parent
-  const edges = state.edges.filter(e =>
-    nodeKeys.has(e.src) && nodeKeys.has(e.dst) &&
-    (e.kind === 'blocks' || state.showParents)
+  const edges = state.edges.filter(
+    (e) => nodeKeys.has(e.src) && nodeKeys.has(e.dst) && (e.kind === "blocks" || state.showParents),
   );
   currentEdges = [];
 
@@ -141,13 +145,13 @@ export async function initGraph() {
     loaded = true;
   } catch (e) {
     panel.innerHTML = `<div class="error-msg">Graph layout failed: ${e.message}</div>`;
-    console.error('Graph layout error:', e);
+    console.error("Graph layout error:", e);
   }
 }
 
 // ── Clear search highlight (for ESC key) ───────────────────────────────────
 export function clearSearchHighlight() {
-  const panel = document.getElementById('graph-panel');
+  const panel = document.getElementById("graph-panel");
   if (panel && currentEdges.length) {
     clearHighlight(panel, currentEdges);
   }

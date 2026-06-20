@@ -102,12 +102,9 @@ describe("filterNodesByStatus", () => {
       { src: "O/r#1", dst: "O/r#2", kind: "parent" },
       { src: "O/r#4", dst: "O/r#3", kind: "parent" },
     ];
-    const filtered = filterNodesByStatus(
-      allNodes,
-      parentEdges,
-      new Set(["ready", "blocked"]),
-      { closedUnderOpenEpic: true },
-    );
+    const filtered = filterNodesByStatus(allNodes, parentEdges, new Set(["ready", "blocked"]), {
+      closedUnderOpenEpic: true,
+    });
     expect(filtered.map((n) => n.key).sort()).toEqual(["O/r#1", "O/r#2"]);
   });
 });

@@ -6,8 +6,8 @@
  */
 
 import type { MiddlewareHandler } from "hono";
-import type { SessionContext, AuthEnv } from "./types";
 import { readSessionToken } from "./cookies";
+import type { AuthEnv, SessionContext } from "./types";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -137,16 +137,10 @@ export async function revokeOtherSessions(
 /**
  * Delete a session by raw token (hashes before querying).
  */
-export async function deleteSession(
-  db: D1Database,
-  rawToken: string,
-): Promise<void> {
+export async function deleteSession(db: D1Database, rawToken: string): Promise<void> {
   const hash = await sha256hex(rawToken);
 
-  await db
-    .prepare(`DELETE FROM sessions WHERE token_hash = ?`)
-    .bind(hash)
-    .run();
+  await db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(hash).run();
 }
 
 // ---------------------------------------------------------------------------

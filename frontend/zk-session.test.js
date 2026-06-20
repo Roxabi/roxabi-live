@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   clearZkSession,
@@ -8,9 +8,9 @@ const {
   setZkAutoLockHandler,
   wirePageHideLock,
   wireIdleLock,
-} = await import('./zk-session.js');
+} = await import("./zk-session.js");
 
-describe('wirePageHideLock BFCache restore', () => {
+describe("wirePageHideLock BFCache restore", () => {
   let restoreHandler;
 
   beforeEach(() => {
@@ -25,26 +25,26 @@ describe('wirePageHideLock BFCache restore', () => {
     setZkPageRestoreHandler(null);
   });
 
-  it('invokes page restore handler when BFCache restores while locked', () => {
-    setZkSession({}, 'fp12345678');
-    window.dispatchEvent(new PageTransitionEvent('pagehide'));
+  it("invokes page restore handler when BFCache restores while locked", () => {
+    setZkSession({}, "fp12345678");
+    window.dispatchEvent(new PageTransitionEvent("pagehide"));
     expect(isZkUnlocked()).toBe(false);
 
-    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
 
     expect(restoreHandler).toHaveBeenCalledTimes(1);
   });
 
-  it('does not invoke restore handler when session is still unlocked', () => {
-    setZkSession({}, 'fp12345678');
+  it("does not invoke restore handler when session is still unlocked", () => {
+    setZkSession({}, "fp12345678");
 
-    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
 
     expect(restoreHandler).not.toHaveBeenCalled();
   });
 });
 
-describe('wireIdleLock', () => {
+describe("wireIdleLock", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     clearZkSession();
@@ -56,11 +56,11 @@ describe('wireIdleLock', () => {
     setZkAutoLockHandler(null);
   });
 
-  it('fires auto-lock handler after 15 minutes idle', () => {
+  it("fires auto-lock handler after 15 minutes idle", () => {
     const onLock = vi.fn();
     setZkAutoLockHandler(onLock);
     wireIdleLock();
-    setZkSession({}, 'fp12345678');
+    setZkSession({}, "fp12345678");
 
     vi.advanceTimersByTime(15 * 60 * 1000);
 

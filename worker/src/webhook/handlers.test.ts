@@ -1,15 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Env } from "../types";
+import { webhookRoute } from "./handlers";
+import { handleDeps, handleIssues, handleSubIssues } from "./handlers-issues";
 import {
-  handleDeps,
-  handleIssues,
   handleMilestone,
   handlePullRequest,
   handleRefCreate,
   handleRefDelete,
-  handleSubIssues,
-  webhookRoute,
-} from "./handlers";
-import type { Env } from "../types";
+} from "./handlers-ref";
 
 // ---------------------------------------------------------------------------
 // Module mocks — must be at top level before imports resolve
@@ -40,10 +38,15 @@ vi.mock("../auth/installToken", () => ({
   resolveInstallToken: vi.fn(),
 }));
 
+import { resolveInstallToken } from "../auth/installToken";
 import { fetchIssueDeps } from "../sync/graphql";
 import { syncBranches } from "../sync/sync";
-import { resolveInstallToken } from "../auth/installToken";
-import { makeFakeDb, makeFakeStmt, captureDb as dispatchCaptureDb, type FakeStmt } from "../test-utils";
+import {
+  type FakeStmt,
+  captureDb as dispatchCaptureDb,
+  makeFakeDb,
+  makeFakeStmt,
+} from "../test-utils";
 
 // FakeResult kept local: richer variant ({ value?, changes? }) used in captureDb casts
 type FakeResult = { value?: string; changes?: number; [k: string]: unknown };
@@ -265,8 +268,8 @@ describe("handleIssues", () => {
       // Assert — a stmt with DELETE FROM issues was run
       const deletedStmt = stmts().find((s) => s.sql.includes("DELETE FROM issues"));
       expect(deletedStmt).toBeDefined();
-      expect(vi.mocked(deletedStmt!.run)).toHaveBeenCalled();
-      expect(deletedStmt!.args).toContain(`${REPO}#42`);
+      expect(vi.mocked(deletedStmt?.run)).toHaveBeenCalled();
+      expect(deletedStmt?.args).toContain(`${REPO}#42`);
     });
 
     it("runs DELETE FROM issues for action=transferred", async () => {
@@ -280,7 +283,7 @@ describe("handleIssues", () => {
       // Assert
       const deletedStmt = stmts().find((s) => s.sql.includes("DELETE FROM issues"));
       expect(deletedStmt).toBeDefined();
-      expect(vi.mocked(deletedStmt!.run)).toHaveBeenCalled();
+      expect(vi.mocked(deletedStmt?.run)).toHaveBeenCalled();
     });
 
     it("guard: deleting the deleted/transferred check would break test — no batch called", async () => {
@@ -319,8 +322,8 @@ describe("handleDeps", () => {
       // Assert — INSERT OR IGNORE INTO edges with kind=blocks
       const edgeStmt = stmts().find((s) => s.sql.includes("INSERT OR IGNORE INTO edges"));
       expect(edgeStmt).toBeDefined();
-      expect(edgeStmt!.args).toEqual([`${REPO}#10`, `${REPO}#42`, "blocks"]);
-      expect(vi.mocked(edgeStmt!.run)).toHaveBeenCalled();
+      expect(edgeStmt?.args).toEqual([`${REPO}#10`, `${REPO}#42`, "blocks"]);
+      expect(vi.mocked(edgeStmt?.run)).toHaveBeenCalled();
     });
   });
 
@@ -342,8 +345,8 @@ describe("handleDeps", () => {
       // Assert
       const edgeStmt = stmts().find((s) => s.sql.includes("DELETE FROM edges"));
       expect(edgeStmt).toBeDefined();
-      expect(edgeStmt!.args).toEqual([`${REPO}#10`, `${REPO}#42`, "blocks"]);
-      expect(vi.mocked(edgeStmt!.run)).toHaveBeenCalled();
+      expect(edgeStmt?.args).toEqual([`${REPO}#10`, `${REPO}#42`, "blocks"]);
+      expect(vi.mocked(edgeStmt?.run)).toHaveBeenCalled();
     });
   });
 
@@ -444,7 +447,7 @@ describe("handleDeps", () => {
 
       let patAccessCount = 0;
       const envWithSpy: Env = { ...baseEnv, DB: db };
-      delete (envWithSpy as unknown as Record<string, unknown>)["GITHUB_TOKEN"];
+      (envWithSpy as unknown as Record<string, unknown>).GITHUB_TOKEN = undefined;
       Object.defineProperty(envWithSpy, "GITHUB_TOKEN", {
         get() {
           patAccessCount++;
@@ -506,8 +509,8 @@ describe("handleSubIssues", () => {
       // Assert — INSERT OR IGNORE INTO edges with kind=parent
       const edgeStmt = stmts().find((s) => s.sql.includes("INSERT OR IGNORE INTO edges"));
       expect(edgeStmt).toBeDefined();
-      expect(edgeStmt!.args).toEqual([`${REPO}#10`, `${REPO}#42`, "parent"]);
-      expect(vi.mocked(edgeStmt!.run)).toHaveBeenCalled();
+      expect(edgeStmt?.args).toEqual([`${REPO}#10`, `${REPO}#42`, "parent"]);
+      expect(vi.mocked(edgeStmt?.run)).toHaveBeenCalled();
     });
   });
 
@@ -530,8 +533,8 @@ describe("handleSubIssues", () => {
       // Assert
       const edgeStmt = stmts().find((s) => s.sql.includes("DELETE FROM edges"));
       expect(edgeStmt).toBeDefined();
-      expect(edgeStmt!.args).toEqual([`${REPO}#10`, `${REPO}#42`, "parent"]);
-      expect(vi.mocked(edgeStmt!.run)).toHaveBeenCalled();
+      expect(edgeStmt?.args).toEqual([`${REPO}#10`, `${REPO}#42`, "parent"]);
+      expect(vi.mocked(edgeStmt?.run)).toHaveBeenCalled();
     });
   });
 
@@ -576,8 +579,8 @@ describe("handleRefCreate", () => {
     // Assert — UPDATE issues SET has_active_branch=1
     const branchStmt = stmts().find((s) => s.sql.includes("has_active_branch=1"));
     expect(branchStmt).toBeDefined();
-    expect(branchStmt!.args).toEqual([REPO, 42]);
-    expect(vi.mocked(branchStmt!.run)).toHaveBeenCalled();
+    expect(branchStmt?.args).toEqual([REPO, 42]);
+    expect(vi.mocked(branchStmt?.run)).toHaveBeenCalled();
   });
 
   it("no-op for non-matching branch name", async () => {
@@ -703,7 +706,7 @@ describe("handleRefDelete", () => {
 
     let patAccessCount = 0;
     const envWithSpy: Env = { ...baseEnv, DB: db };
-    delete (envWithSpy as unknown as Record<string, unknown>)["GITHUB_TOKEN"];
+    (envWithSpy as unknown as Record<string, unknown>).GITHUB_TOKEN = undefined;
     Object.defineProperty(envWithSpy, "GITHUB_TOKEN", {
       get() {
         patAccessCount++;
@@ -770,8 +773,8 @@ describe("handlePullRequest", () => {
     // Assert — upsertPrState ran with state=closed
     const prStmt = stmts().find((s) => s.sql.includes("INSERT INTO pr_state"));
     expect(prStmt).toBeDefined();
-    expect(prStmt!.args[2]).toBe("closed"); // state
-    expect(vi.mocked(prStmt!.run)).toHaveBeenCalled();
+    expect(prStmt?.args[2]).toBe("closed"); // state
+    expect(vi.mocked(prStmt?.run)).toHaveBeenCalled();
   });
 
   it("upserts pr_state with has_reviewed_label=1 when reviewed label present", async () => {
@@ -789,7 +792,7 @@ describe("handlePullRequest", () => {
     // Assert
     const prStmt = stmts().find((s) => s.sql.includes("INSERT INTO pr_state"));
     expect(prStmt).toBeDefined();
-    expect(prStmt!.args[3]).toBe(1); // has_reviewed_label
+    expect(prStmt?.args[3]).toBe(1); // has_reviewed_label
   });
 
   it("upserts pr_state with has_reviewed_label=0 when reviewed label absent", async () => {
@@ -802,7 +805,7 @@ describe("handlePullRequest", () => {
 
     // Assert
     const prStmt = stmts().find((s) => s.sql.includes("INSERT INTO pr_state"));
-    expect(prStmt!.args[3]).toBe(0); // has_reviewed_label
+    expect(prStmt?.args[3]).toBe(0); // has_reviewed_label
   });
 
   it("extracts closing issue keys from body 'fixes #12' keyword", async () => {
@@ -819,7 +822,7 @@ describe("handlePullRequest", () => {
     // Assert — closing_issue_keys JSON contains repo#12 and repo#34
     const prStmt = stmts().find((s) => s.sql.includes("INSERT INTO pr_state"));
     expect(prStmt).toBeDefined();
-    const closingJson = prStmt!.args[4] as string;
+    const closingJson = prStmt?.args[4] as string;
     const closing = JSON.parse(closingJson) as string[];
     expect(closing).toContain(`${REPO}#12`);
     expect(closing).toContain(`${REPO}#34`);
@@ -835,7 +838,7 @@ describe("handlePullRequest", () => {
 
     // Assert
     const prStmt = stmts().find((s) => s.sql.includes("INSERT INTO pr_state"));
-    const closingJson = prStmt!.args[4] as string;
+    const closingJson = prStmt?.args[4] as string;
     expect(JSON.parse(closingJson)).toEqual([]);
   });
 
@@ -868,11 +871,13 @@ describe("handleMilestone", () => {
     await handleMilestone(payload, db);
 
     // Assert — UPDATE issues SET milestone
-    const renameStmt = stmts().find((s) => s.sql.includes("UPDATE issues") && s.sql.includes("milestone"));
+    const renameStmt = stmts().find(
+      (s) => s.sql.includes("UPDATE issues") && s.sql.includes("milestone"),
+    );
     expect(renameStmt).toBeDefined();
     // binds (newTitle, repo, oldTitle)
-    expect(renameStmt!.args).toEqual(["Sprint 2", REPO, "Sprint 1"]);
-    expect(vi.mocked(renameStmt!.run)).toHaveBeenCalled();
+    expect(renameStmt?.args).toEqual(["Sprint 2", REPO, "Sprint 1"]);
+    expect(vi.mocked(renameStmt?.run)).toHaveBeenCalled();
   });
 
   it("no-op when action=edited but no changes.title (description-only edit)", async () => {
@@ -1018,8 +1023,8 @@ describe("webhookRoute", () => {
 
       // Assert
       expect(res.status).toBe(200);
-      expect(json["ok"]).toBe(true);
-      expect(json["ignored"]).toBe("unknown_event_xyz");
+      expect(json.ok).toBe(true);
+      expect(json.ignored).toBe("unknown_event_xyz");
     });
   });
 
@@ -1063,7 +1068,7 @@ describe("webhookRoute", () => {
       // Assert
       expect(res.status).toBe(200);
       const json = (await res.json()) as Record<string, unknown>;
-      expect(json["ok"]).toBe(true);
+      expect(json.ok).toBe(true);
     });
   });
 
@@ -1102,13 +1107,11 @@ describe("webhookRoute", () => {
       expect(vi.mocked(db.batch)).toHaveBeenCalled();
 
       const recorded = db._recorded;
-      const bumpStmt = recorded.find(
-        (s) => s.sql.includes("sync_control") && s.args.length >= 1,
-      );
+      const bumpStmt = recorded.find((s) => s.sql.includes("sync_control") && s.args.length >= 1);
       expect(bumpStmt).toBeDefined();
       // First arg is the ISO timestamp — must be a non-empty string.
-      expect(typeof bumpStmt!.args[0]).toBe("string");
-      expect((bumpStmt!.args[0] as string).length).toBeGreaterThan(0);
+      expect(typeof bumpStmt?.args[0]).toBe("string");
+      expect((bumpStmt?.args[0] as string).length).toBeGreaterThan(0);
     });
 
     it("does NOT bump data_version for an unknown (ignored) event", async () => {
@@ -1120,7 +1123,7 @@ describe("webhookRoute", () => {
 
       // Assert — response carries ignored flag
       const json = (await res.json()) as Record<string, unknown>;
-      expect(json["ignored"]).toBe("unknown_event_xyz");
+      expect(json.ignored).toBe("unknown_event_xyz");
 
       // db.batch must NOT have been called (no bump, no handler writes)
       expect(vi.mocked(db.batch)).not.toHaveBeenCalled();
@@ -1145,10 +1148,7 @@ describe("webhookRoute", () => {
         repository: { full_name: REPO },
       };
 
-      const { res, db } = await dispatchWithDb(
-        JSON.stringify(payload),
-        "issue_dependencies",
-      );
+      const { res, db } = await dispatchWithDb(JSON.stringify(payload), "issue_dependencies");
 
       expect(res.status).toBe(200);
 

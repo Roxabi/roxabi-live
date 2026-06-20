@@ -6,9 +6,9 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "../auth/types";
 import { readSessionToken } from "../auth/cookies";
 import { setSessionTenant } from "../auth/session";
+import type { AuthEnv } from "../auth/types";
 import { buildMePayload } from "./me";
 
 export const OAUTH_FALLBACK = "/login?intent=install&redirect=%2Fdashboard";
@@ -19,9 +19,7 @@ const INSTALLATIONS_SQL = `SELECT ui.tenant_id AS tenant_id, t.account_login AS 
        WHERE ui.user_id = ? AND t.deleted_at IS NULL AND t.suspended_at IS NULL
        ORDER BY ui.tenant_id`;
 
-export async function installRefreshRoute(
-  c: Context<AuthEnv>,
-): Promise<Response> {
+export async function installRefreshRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
   if (!s) {
     return c.json({ error: "unauthorized" }, 401);
@@ -47,11 +45,7 @@ export async function installRefreshRoute(
   const rawToken = readSessionToken(c);
 
   if (rawToken && activeTenantId == null && installations.length === 1) {
-    const upgraded = await setSessionTenant(
-      c.env.DB,
-      rawToken,
-      installations[0].tenant_id,
-    );
+    const upgraded = await setSessionTenant(c.env.DB, rawToken, installations[0].tenant_id);
     if (!upgraded) {
       return c.json({ error: "unauthorized" }, 401);
     }

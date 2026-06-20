@@ -9,8 +9,8 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "../auth/types";
 import { resolveVisibleRepos } from "../auth/repoAccess";
+import type { AuthEnv } from "../auth/types";
 import { loadZkSealedIssueKeys, redactIssueTitle } from "../auth/zk";
 
 const ISSUE_KEY_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+#[0-9]+$/;
@@ -56,8 +56,14 @@ export const listIssuesRoute = async (c: Context<AuthEnv>) => {
 
   const rawLimit = url.searchParams.get("limit");
   const rawOffset = url.searchParams.get("offset");
-  const rawLimitParsed = rawLimit !== null && !isNaN(parseInt(rawLimit, 10)) ? parseInt(rawLimit, 10) : 100;
-  const rawOffsetParsed = rawOffset !== null && !isNaN(parseInt(rawOffset, 10)) ? parseInt(rawOffset, 10) : 0;
+  const rawLimitParsed =
+    rawLimit !== null && !Number.isNaN(Number.parseInt(rawLimit, 10))
+      ? Number.parseInt(rawLimit, 10)
+      : 100;
+  const rawOffsetParsed =
+    rawOffset !== null && !Number.isNaN(Number.parseInt(rawOffset, 10))
+      ? Number.parseInt(rawOffset, 10)
+      : 0;
   // clamp: public endpoint — bound result-set size (Worker 128MB budget) and reject negative offset
   const limit = Math.max(1, Math.min(rawLimitParsed, 500));
   const offset = Math.max(0, rawOffsetParsed);
@@ -86,14 +92,10 @@ export const listIssuesRoute = async (c: Context<AuthEnv>) => {
     params.push(label);
   }
 
-  const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const countSql = `SELECT COUNT(*) AS n FROM issues ${where}`;
-  const dataSql =
-    `SELECT issues.key, issues.repo, issues.number, JSON_EXTRACT(issues.payload,'$.title') AS title,` +
-    ` issues.state, issues.url, issues.milestone, issues.is_stub,` +
-    ` issues.created_at, issues.updated_at, issues.closed_at` +
-    ` FROM issues ${where} ORDER BY issues.updated_at ASC LIMIT ? OFFSET ?`;
+  const dataSql = `SELECT issues.key, issues.repo, issues.number, JSON_EXTRACT(issues.payload,'$.title') AS title, issues.state, issues.url, issues.milestone, issues.is_stub, issues.created_at, issues.updated_at, issues.closed_at FROM issues ${where} ORDER BY issues.updated_at ASC LIMIT ? OFFSET ?`;
 
   // D1 batch for count + data in one round-trip
   const [countResult, dataResult] = await c.env.DB.batch<CountRow | IssueListRow>([
@@ -101,7 +103,7 @@ export const listIssuesRoute = async (c: Context<AuthEnv>) => {
     c.env.DB.prepare(dataSql).bind(...params, limit, offset),
   ]);
 
-  const total = ((countResult.results[0] as CountRow | undefined)?.n) ?? 0;
+  const total = (countResult.results[0] as CountRow | undefined)?.n ?? 0;
   const rows = dataResult.results as IssueListRow[];
 
   // Fetch labels for returned keys in one IN(...) query
@@ -152,10 +154,7 @@ export const getIssueRoute = async (c: Context<AuthEnv>) => {
   const rawKey = decodeURIComponent(c.req.path.slice("/api/issues/".length));
 
   if (!ISSUE_KEY_RE.test(rawKey)) {
-    return c.json(
-      { detail: "invalid issue key; expected '<owner>/<repo>#<number>'" },
-      400,
-    );
+    return c.json({ detail: "invalid issue key; expected '<owner>/<repo>#<number>'" }, 400);
   }
 
   if (visible.length === 0) {
@@ -164,10 +163,10 @@ export const getIssueRoute = async (c: Context<AuthEnv>) => {
 
   const ph = visible.map(() => "?").join(",");
 
-  const issueSql =
-    "SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone, is_stub," +
-    ` created_at, updated_at, closed_at FROM issues WHERE key = ? AND repo IN (${ph})`;
-  const row = await c.env.DB.prepare(issueSql).bind(rawKey, ...visible).first<IssueListRow>();
+  const issueSql = `SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone, is_stub, created_at, updated_at, closed_at FROM issues WHERE key = ? AND repo IN (${ph})`;
+  const row = await c.env.DB.prepare(issueSql)
+    .bind(rawKey, ...visible)
+    .first<IssueListRow>();
 
   if (!row) {
     return c.json({ detail: "Issue not found" }, 404);
@@ -187,17 +186,13 @@ export const getIssueRoute = async (c: Context<AuthEnv>) => {
   // the caller can't see is dropped entirely — no key/number disclosure — matching the
   // both-endpoints-visible rule graph.ts enforces.
   const blockingResult = await c.env.DB.prepare(
-    "SELECT e.dst_key AS key, i.number, i.repo" +
-      ` FROM edges e JOIN issues i ON i.key = e.dst_key AND i.repo IN (${ph})` +
-      " WHERE e.src_key = ? AND e.kind = 'blocks'",
+    `SELECT e.dst_key AS key, i.number, i.repo FROM edges e JOIN issues i ON i.key = e.dst_key AND i.repo IN (${ph}) WHERE e.src_key = ? AND e.kind = 'blocks'`,
   )
     .bind(...visible, rawKey)
     .all<EdgeJoinRow>();
 
   const blockedByResult = await c.env.DB.prepare(
-    "SELECT e.src_key AS key, i.number, i.repo" +
-      ` FROM edges e JOIN issues i ON i.key = e.src_key AND i.repo IN (${ph})` +
-      " WHERE e.dst_key = ? AND e.kind = 'blocks'",
+    `SELECT e.src_key AS key, i.number, i.repo FROM edges e JOIN issues i ON i.key = e.src_key AND i.repo IN (${ph}) WHERE e.dst_key = ? AND e.kind = 'blocks'`,
   )
     .bind(...visible, rawKey)
     .all<EdgeJoinRow>();

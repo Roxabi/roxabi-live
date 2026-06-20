@@ -1,21 +1,17 @@
 // zk-reset.js — lost-passphrase recovery: wipe server + local ZK state (#216)
 
-import { api } from './auth.js';
-import { deleteAccountMeta, deleteZkKeyPair, clearDeviceSession } from './zk-crypto.js';
-import { clearZkSession } from './zk-session.js';
-import {
-  getZkReauthProof,
-  clearZkReauthProof,
-  zkReauthLoginUrl,
-} from './zk-github.js';
-const RESET_PENDING_KEY = 'roxabi:zk-reset-pending';
+import { api } from "./auth.js";
+import { clearDeviceSession, deleteAccountMeta, deleteZkKeyPair } from "./zk-crypto.js";
+import { clearZkReauthProof, getZkReauthProof, zkReauthLoginUrl } from "./zk-github.js";
+import { clearZkSession } from "./zk-session.js";
+const RESET_PENDING_KEY = "roxabi:zk-reset-pending";
 
 export function isZkResetPending() {
-  return sessionStorage.getItem(RESET_PENDING_KEY) === '1';
+  return sessionStorage.getItem(RESET_PENDING_KEY) === "1";
 }
 
 export function setZkResetPending() {
-  sessionStorage.setItem(RESET_PENDING_KEY, '1');
+  sessionStorage.setItem(RESET_PENDING_KEY, "1");
 }
 
 export function clearZkResetPending() {
@@ -39,29 +35,29 @@ export async function clearLocalZkState(githubLogin) {
     await deleteZkKeyPair(githubLogin);
   } catch (e) {
     cleanupOk = false;
-    console.warn('[zk] deleteZkKeyPair failed — clear site data manually', e);
+    console.warn("[zk] deleteZkKeyPair failed — clear site data manually", e);
   }
   try {
     await deleteAccountMeta(githubLogin);
   } catch (e) {
     cleanupOk = false;
-    console.warn('[zk] deleteAccountMeta failed — clear site data manually', e);
+    console.warn("[zk] deleteAccountMeta failed — clear site data manually", e);
   }
   try {
     await clearDeviceSession(githubLogin);
   } catch (e) {
     cleanupOk = false;
-    console.warn('[zk] clearDeviceSession failed — clear site data manually', e);
+    console.warn("[zk] clearDeviceSession failed — clear site data manually", e);
   }
   return cleanupOk;
 }
 
 async function postZkReset() {
   const reauth_proof = getZkReauthProof();
-  if (!reauth_proof) throw new Error('reauth_required');
-  const resp = await api('/api/zk/reset', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  if (!reauth_proof) throw new Error("reauth_required");
+  const resp = await api("/api/zk/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reauth_proof }),
   });
   let data = {};
@@ -71,7 +67,7 @@ async function postZkReset() {
     data = {};
   }
   if (!resp.ok) {
-    const err = new Error(data?.error ?? 'reset_failed');
+    const err = new Error(data?.error ?? "reset_failed");
     err.code = data?.error;
     throw err;
   }
@@ -82,7 +78,7 @@ async function postZkReset() {
 /** If server already wiped enrollment, treat reset as complete locally. */
 export async function recoverFromPartialZkReset(githubLogin) {
   try {
-    const meResp = await api('/api/me');
+    const meResp = await api("/api/me");
     const me = await meResp.json();
     if (me?.user?.zk_enrolled === false) {
       await clearLocalZkState(githubLogin);
@@ -107,7 +103,7 @@ export async function resetZkAccountAndReenroll(githubLogin) {
     // so never run partial-reset recovery (it would wipe local keys / lock out
     // the user on a merely-expired proof). Only genuine partial-reset signals
     // (network error / 5xx / reset_failed) may trigger recovery.
-    if (err?.code !== 'reauth_required' && err?.message !== 'reauth_required') {
+    if (err?.code !== "reauth_required" && err?.message !== "reauth_required") {
       if (await recoverFromPartialZkReset(githubLogin)) return;
     }
     throw err;
@@ -118,7 +114,7 @@ export async function resetZkAccountAndReenroll(githubLogin) {
 
 function renderResetWarning($, escHtml, renderZkDialog, onCancelled) {
   renderZkDialog(
-    'Reset encryption?',
+    "Reset encryption?",
     `
       <p class="consent-warning">
         <strong>This cannot be undone.</strong>
@@ -134,11 +130,11 @@ function renderResetWarning($, escHtml, renderZkDialog, onCancelled) {
       </div>
     `,
   );
-  $('zk-reset-cancel')?.addEventListener('click', () => {
+  $("zk-reset-cancel")?.addEventListener("click", () => {
     clearZkResetPending();
     onCancelled?.();
   });
-  $('zk-reset-verify')?.addEventListener('click', () => {
+  $("zk-reset-verify")?.addEventListener("click", () => {
     setZkResetPending();
     const redirect = `${window.location.pathname}${window.location.search}`;
     window.location.href = zkReauthLoginUrl(redirect);
@@ -147,7 +143,7 @@ function renderResetWarning($, escHtml, renderZkDialog, onCancelled) {
 
 function renderResetExecute($, escHtml, renderZkDialog, githubLogin, onCancelled) {
   renderZkDialog(
-    'Confirm reset',
+    "Confirm reset",
     `
       <p>GitHub verified. Delete all your encrypted data and set a new passphrase?</p>
       <p class="zk-error" id="zk-reset-error" hidden></p>
@@ -158,33 +154,33 @@ function renderResetExecute($, escHtml, renderZkDialog, githubLogin, onCancelled
     `,
   );
 
-  const errorEl = $('zk-reset-error');
-  const confirmBtn = $('zk-reset-confirm');
+  const errorEl = $("zk-reset-error");
+  const confirmBtn = $("zk-reset-confirm");
 
-  $('zk-reset-abort')?.addEventListener('click', () => {
+  $("zk-reset-abort")?.addEventListener("click", () => {
     clearZkResetPending();
     clearZkReauthProof();
     onCancelled?.();
   });
 
-  confirmBtn?.addEventListener('click', async () => {
+  confirmBtn?.addEventListener("click", async () => {
     errorEl.hidden = true;
     confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Resetting…';
+    confirmBtn.textContent = "Resetting…";
     try {
       await resetZkAccountAndReenroll(githubLogin);
     } catch (err) {
-      if (err?.code === 'reauth_required' || err?.message === 'reauth_required') {
-        errorEl.textContent = 'Verification expired — try again.';
+      if (err?.code === "reauth_required" || err?.message === "reauth_required") {
+        errorEl.textContent = "Verification expired — try again.";
         clearZkReauthProof();
-      } else if (err?.code === 'rate_limited') {
-        errorEl.textContent = 'Too many resets — try again later.';
+      } else if (err?.code === "rate_limited") {
+        errorEl.textContent = "Too many resets — try again later.";
       } else {
-        errorEl.textContent = 'Reset failed. Try again.';
+        errorEl.textContent = "Reset failed. Try again.";
       }
       errorEl.hidden = false;
       confirmBtn.disabled = false;
-      confirmBtn.textContent = 'Reset and start over';
+      confirmBtn.textContent = "Reset and start over";
     }
   });
 }

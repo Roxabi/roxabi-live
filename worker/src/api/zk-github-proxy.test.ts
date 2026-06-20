@@ -1,9 +1,9 @@
-import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
-import type { Env } from "../types";
-import { zkGithubGraphqlRoute } from "./zk-github-proxy";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv, SessionContext } from "../auth/types";
 import { captureDb } from "../test-utils";
+import type { Env } from "../types";
+import { zkGithubGraphqlRoute } from "./zk-github-proxy";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -24,7 +24,7 @@ function makeEnv(db: D1Database): Env {
   } as unknown as Env;
 }
 
-function makeApp(db: D1Database): Hono<AuthEnv> {
+function makeApp(_db: D1Database): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
   app.use("*", async (c, next) => {
     c.set("session", STUB_SESSION);
@@ -107,7 +107,7 @@ describe("zkGithubGraphqlRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(400);
-    expect((await res.json() as { error: string }).error).toBe("read_only");
+    expect(((await res.json()) as { error: string }).error).toBe("read_only");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -132,7 +132,7 @@ describe("zkGithubGraphqlRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(400);
-    expect((await res.json() as { error: string }).error).toBe("read_only");
+    expect(((await res.json()) as { error: string }).error).toBe("read_only");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

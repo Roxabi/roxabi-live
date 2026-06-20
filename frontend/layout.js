@@ -12,7 +12,7 @@ const MAX_BAND_GAP_PX = 80;
 const MIN_CONTAINER_H = 320;
 
 function msIdx(ms, msCodes) {
-  if (!ms || ms === '(None)') return -1;
+  if (!ms || ms === "(None)") return -1;
   const idx = msCodes.indexOf(ms);
   return idx >= 0 ? idx : 99;
 }
@@ -86,7 +86,7 @@ function uniformCells(n, gridSize) {
   if (n <= 0) return [];
   if (n === 1) return [Math.floor(gridSize / 2)];
   const step = (gridSize - 1) / (n - 1);
-  return [...Array(n).keys()].map(i => Math.round(i * step));
+  return [...Array(n).keys()].map((i) => Math.round(i * step));
 }
 
 function getParentCells(task, allTasks, ms, cellOf, xOf, gridSize) {
@@ -94,7 +94,7 @@ function getParentCells(task, allTasks, ms, cellOf, xOf, gridSize) {
   for (const parent of allTasks) {
     if (parent.key === task.key) continue;
     const edges = task._blockers || [];
-    const isParent = edges.some(e => e.src === parent.key);
+    const isParent = edges.some((e) => e.src === parent.key);
     if (!isParent) continue;
 
     const pNum = parent.key;
@@ -108,18 +108,16 @@ function getParentCells(task, allTasks, ms, cellOf, xOf, gridSize) {
 }
 
 export function layoutV5(nodes, edges) {
-  const laneSet = new Set(nodes.map(n => n.lane).filter(Boolean));
+  const laneSet = new Set(nodes.map((n) => n.lane).filter(Boolean));
   const laneOrder = [...laneSet].sort();
 
   const msMap = new Map();
   for (const n of nodes) {
-    const code = n.milestone_code ?? '-';
+    const code = n.milestone_code ?? "-";
     const sortKey = n.milestone_sort_key ?? 9999;
     if (!msMap.has(code)) msMap.set(code, sortKey);
   }
-  const msCodes = [...msMap.entries()]
-    .sort((a, b) => a[1] - b[1])
-    .map(([code]) => code);
+  const msCodes = [...msMap.entries()].sort((a, b) => a[1] - b[1]).map(([code]) => code);
 
   const blockersByDst = new Map();
   for (const e of edges) {
@@ -132,7 +130,7 @@ export function layoutV5(nodes, edges) {
 
   const byMsDepth = new Map();
   for (const n of nodes) {
-    const ms = n.milestone_code ?? '-';
+    const ms = n.milestone_code ?? "-";
     const depth = n._depth ?? 0;
     if (!byMsDepth.has(ms)) byMsDepth.set(ms, new Map());
     if (!byMsDepth.get(ms).has(depth)) byMsDepth.get(ms).set(depth, []);
@@ -146,12 +144,12 @@ export function layoutV5(nodes, edges) {
   // Memoize across calls (DAG traversal must not collapse to 0 when reached via
   // a second path) and use an in-flight `stack` set strictly for cycle break
   // (returns 0 on detected cycle, mirroring the previous behaviour).
-  const nodesByKey = new Map(nodes.map(n => [n.key, n]));
+  const nodesByKey = new Map(nodes.map((n) => [n.key, n]));
   const depthCache = new Map();
   function computeDepth(node, stack = new Set()) {
     const cached = depthCache.get(node.key);
     if (cached !== undefined) return cached;
-    if (stack.has(node.key)) return 0;  // cycle break
+    if (stack.has(node.key)) return 0; // cycle break
     stack.add(node.key);
     let maxDepth = 0;
     for (const e of node._blockers || []) {
@@ -170,7 +168,7 @@ export function layoutV5(nodes, edges) {
 
   byMsDepth.clear();
   for (const n of nodes) {
-    const ms = n.milestone_code ?? '(None)';
+    const ms = n.milestone_code ?? "(None)";
     const depth = n._depth;
     if (!byMsDepth.has(ms)) byMsDepth.set(ms, new Map());
     if (!byMsDepth.get(ms).has(depth)) byMsDepth.get(ms).set(depth, []);
@@ -195,9 +193,12 @@ export function layoutV5(nodes, edges) {
 
     for (const depth of [...depths.keys()].sort((a, b) => a - b)) {
       const bandNodes = depths.get(depth);
-      bandNodes.sort((a, b) => laneIdx(a.lane, laneOrder) - laneIdx(b.lane, laneOrder) || a.key.localeCompare(b.key));
+      bandNodes.sort(
+        (a, b) =>
+          laneIdx(a.lane, laneOrder) - laneIdx(b.lane, laneOrder) || a.key.localeCompare(b.key),
+      );
 
-      const desired = bandNodes.map(n => {
+      const desired = bandNodes.map((n) => {
         const pc = getParentCells(n, nodes, ms, cellOf, xOf, gridSize);
         if (pc.length > 0) return Math.round(pc.reduce((a, b) => a + b, 0) / pc.length);
         const uniform = uniformCells(bandNodes.length, gridSize);
@@ -250,20 +251,21 @@ export function layoutV5(nodes, edges) {
   for (const [ms, ys] of ysByMs) {
     const top = Math.min(...ys) - stepY / 2;
     const bot = Math.max(...ys) + stepY / 2;
-    const msNode = nodes.find(n => (n.milestone_code ?? '(None)') === ms);
+    const msNode = nodes.find((n) => (n.milestone_code ?? "(None)") === ms);
     milestoneInfo.push({
       code: ms,
       name: msNode?.milestone_name || null,
       y: Math.max(top, 1.0),
-      height: Math.min(bot, 99.0) - Math.max(top, 1.0)
+      height: Math.min(bot, 99.0) - Math.max(top, 1.0),
     });
   }
   milestoneInfo.sort((a, b) => msIdx(a.code, msCodes) - msIdx(b.code, msCodes));
 
   const bandSpanPct = (Y_BOT - Y_TOP) / 100;
-  const containerH = nBands > 1
-    ? Math.max(MIN_CONTAINER_H, (MAX_BAND_GAP_PX * (nBands - 1)) / bandSpanPct + 80)
-    : MIN_CONTAINER_H;
+  const containerH =
+    nBands > 1
+      ? Math.max(MIN_CONTAINER_H, (MAX_BAND_GAP_PX * (nBands - 1)) / bandSpanPct + 80)
+      : MIN_CONTAINER_H;
 
   return {
     positions,
@@ -271,7 +273,7 @@ export function layoutV5(nodes, edges) {
     lanes: laneOrder,
     width: 100,
     height: containerH,
-    usePercentage: true
+    usePercentage: true,
   };
 }
 

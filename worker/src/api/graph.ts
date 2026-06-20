@@ -14,8 +14,8 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "../auth/types";
 import { resolveVisibleRepos } from "../auth/repoAccess";
+import type { AuthEnv } from "../auth/types";
 import { loadZkSealedIssueKeys, redactIssueTitle } from "../auth/zk";
 import {
   filterNodesByStatus,
@@ -77,11 +77,7 @@ function laneFromLabels(labels: string[]): string | null {
  *   dev         — has_active_branch=1, no open PR
  *   idle        — no branch, no open PR; also forced for closed issues
  */
-function computeDevState(
-  issueState: string,
-  hasActiveBranch: number,
-  openPrs: PrInfo[],
-): DevState {
+function computeDevState(issueState: string, hasActiveBranch: number, openPrs: PrInfo[]): DevState {
   if (issueState === "closed") return "idle";
   if (openPrs.some((pr) => pr.has_reviewed_label)) return "pr_reviewed";
   if (openPrs.length > 0) return "pr_open";
@@ -135,7 +131,9 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
   // (a) labels → Map<issueKey, string[]> — scoped to visible issues only
   const labelRows = await c.env.DB.prepare(
     `SELECT issue_key, name FROM labels WHERE issue_key IN (SELECT key FROM issues WHERE repo IN (${ph}))`,
-  ).bind(...visible).all<LabelRow>();
+  )
+    .bind(...visible)
+    .all<LabelRow>();
   const labelsByIssue = new Map<string, string[]>();
   for (const row of labelRows.results) {
     const existing = labelsByIssue.get(row.issue_key);
@@ -152,7 +150,9 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
   // scoping here prevents any row for non-visible repos from entering the map.
   const prRows = await c.env.DB.prepare(
     `SELECT closing_issue_keys, has_reviewed_label FROM pr_state WHERE state = 'open' AND repo IN (${ph})`,
-  ).bind(...visible).all<PrStateRow>();
+  )
+    .bind(...visible)
+    .all<PrStateRow>();
   const openPrsByIssue = new Map<string, PrInfo[]>();
   for (const row of prRows.results) {
     if (!row.closing_issue_keys) continue;
@@ -175,9 +175,10 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
 
   // (c) issues — scoped to visible repos
   const issueRows = await c.env.DB.prepare(
-    "SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone," +
-      ` lane, priority, size, status, is_stub, has_active_branch FROM issues WHERE repo IN (${ph})`,
-  ).bind(...visible).all<IssueRow>();
+    `SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone, lane, priority, size, status, is_stub, has_active_branch FROM issues WHERE repo IN (${ph})`,
+  )
+    .bind(...visible)
+    .all<IssueRow>();
 
   const searchParams = new URL(c.req.url).searchParams;
   const statusFilter = parseStatusQuery(searchParams.get("status"));
@@ -189,11 +190,7 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
     const issueLabels = labelsByIssue.get(row.key) ?? [];
     const { code, name, sortKey } = parseMilestone(row.milestone);
     const openPrs = openPrsByIssue.get(row.key) ?? [];
-    const devState = computeDevState(
-      row.state,
-      Number(row.has_active_branch ?? 0),
-      openPrs,
-    );
+    const devState = computeDevState(row.state, Number(row.has_active_branch ?? 0), openPrs);
     return {
       key: row.key,
       repo: row.repo,
@@ -218,10 +215,10 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
   // (d) edges — both endpoints must be in visible repos; dangling edges to invisible
   // nodes are dropped (graph only draws an edge when both nodes are present)
   const edgeRows = await c.env.DB.prepare(
-    `SELECT src_key, dst_key, kind FROM edges` +
-      ` WHERE src_key IN (SELECT key FROM issues WHERE repo IN (${ph}))` +
-      ` AND dst_key IN (SELECT key FROM issues WHERE repo IN (${ph}))`,
-  ).bind(...visible, ...visible).all<EdgeRow>();
+    `SELECT src_key, dst_key, kind FROM edges WHERE src_key IN (SELECT key FROM issues WHERE repo IN (${ph})) AND dst_key IN (SELECT key FROM issues WHERE repo IN (${ph}))`,
+  )
+    .bind(...visible, ...visible)
+    .all<EdgeRow>();
 
   let edges: Edge[] = edgeRows.results.map((row) => ({
     src: row.src_key,
@@ -242,7 +239,9 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
   }
   const repoRows = await c.env.DB.prepare(
     `SELECT repo, archived FROM repos WHERE repo IN (${ph}) ORDER BY archived ASC, repo ASC`,
-  ).bind(...visible).all<RepoRow>();
+  )
+    .bind(...visible)
+    .all<RepoRow>();
   const repos = (repoRows.results ?? []).map((r) => ({
     repo: r.repo,
     archived: Boolean(r.archived),

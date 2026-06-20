@@ -51,7 +51,7 @@ describe("ghGraphql — request headers", () => {
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Bearer gh-token-abc");
+    expect(headers.Authorization).toBe("Bearer gh-token-abc");
   });
 
   it("sends User-Agent: roxabi-live-worker", async () => {
@@ -96,18 +96,17 @@ describe("ghGraphql — GraphQL errors", () => {
       makeFetchMock({
         ok: true,
         status: 200,
-        json: () =>
-          Promise.resolve({ errors: [{ message: "boom" }] }),
+        json: () => Promise.resolve({ errors: [{ message: "boom" }] }),
       }),
     );
 
-    await expect(
-      ghGraphql("query { viewer { login } }", {}, "token"),
-    ).rejects.toThrow(GraphQLError);
+    await expect(ghGraphql("query { viewer { login } }", {}, "token")).rejects.toThrow(
+      GraphQLError,
+    );
 
-    await expect(
-      ghGraphql("query { viewer { login } }", {}, "token"),
-    ).rejects.toThrow(/GraphQL errors/);
+    await expect(ghGraphql("query { viewer { login } }", {}, "token")).rejects.toThrow(
+      /GraphQL errors/,
+    );
   });
 });
 
@@ -117,10 +116,7 @@ describe("ghGraphql — GraphQL errors", () => {
 
 describe("ghGraphql — auth errors", () => {
   it("throws GraphQLError with isAuth=true on HTTP 401", async () => {
-    vi.stubGlobal(
-      "fetch",
-      makeFetchMock({ ok: false, status: 401 }),
-    );
+    vi.stubGlobal("fetch", makeFetchMock({ ok: false, status: 401 }));
 
     let caught: unknown;
     try {
@@ -134,10 +130,7 @@ describe("ghGraphql — auth errors", () => {
   });
 
   it("throws GraphQLError with isAuth=true on HTTP 403", async () => {
-    vi.stubGlobal(
-      "fetch",
-      makeFetchMock({ ok: false, status: 403 }),
-    );
+    vi.stubGlobal("fetch", makeFetchMock({ ok: false, status: 403 }));
 
     let caught: unknown;
     try {
@@ -184,9 +177,7 @@ describe("fetchIssueDeps — mapping", () => {
           issue: {
             number: 10,
             blockedBy: {
-              nodes: [
-                { number: 5, repository: { nameWithOwner: "Roxabi/roxabi-live" } },
-              ],
+              nodes: [{ number: 5, repository: { nameWithOwner: "Roxabi/roxabi-live" } }],
             },
             blocking: {
               nodes: [

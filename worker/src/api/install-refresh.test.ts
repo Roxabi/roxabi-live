@@ -1,18 +1,15 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
 import { Hono } from "hono";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv, SessionContext } from "../auth/types";
 import {
-  installRefreshRoute,
-  OAUTH_FALLBACK,
-} from "./install-refresh";
-import {
+  type FakeResult,
   captureDb,
   dispatchByTable,
   makeEnv,
-  makeFakeStmt,
   makeFakeDb,
-  type FakeResult,
+  makeFakeStmt,
 } from "../test-utils";
+import { OAUTH_FALLBACK, installRefreshRoute } from "./install-refresh";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -28,9 +25,7 @@ const PENDING_SESSION: SessionContext = {
   githubLogin: "alice",
 };
 
-function makeApp(
-  session: SessionContext | undefined,
-): Hono<AuthEnv> {
+function makeApp(session: SessionContext | undefined): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
   if (session) {
     app.use("*", async (c, next) => {
@@ -46,18 +41,10 @@ function meRows(): FakeResult[] {
   return [{ zk_opt_in: 0, install_targets_json: null, consent_at: null }];
 }
 
-async function postRefresh(
-  app: Hono<AuthEnv>,
-  db: D1Database,
-  cookie?: string,
-): Promise<Response> {
+async function postRefresh(app: Hono<AuthEnv>, db: D1Database, cookie?: string): Promise<Response> {
   const headers: Record<string, string> = {};
   if (cookie) headers.Cookie = cookie;
-  return await app.request(
-    "/api/install/refresh",
-    { method: "POST", headers },
-    makeEnv(db),
-  );
+  return await app.request("/api/install/refresh", { method: "POST", headers }, makeEnv(db));
 }
 
 describe("installRefreshRoute", () => {
@@ -76,7 +63,7 @@ describe("installRefreshRoute", () => {
     );
     const res = await postRefresh(makeApp(PENDING_SESSION), db, COOKIE);
     expect(res.status).toBe(202);
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       status: string;
       retry_after_ms: number;
       oauth_fallback: string;
@@ -95,7 +82,7 @@ describe("installRefreshRoute", () => {
     );
     await postRefresh(makeApp(PENDING_SESSION), db, COOKIE);
     const installStmt = stmts().find((s) => s.sql.includes("user_installations"));
-    expect(installStmt!.sql).toContain("suspended_at IS NULL");
+    expect(installStmt?.sql).toContain("suspended_at IS NULL");
   });
 
   it("returns 200 linked with me payload when installations exist", async () => {
@@ -110,7 +97,7 @@ describe("installRefreshRoute", () => {
     const linkedSession: SessionContext = { ...PENDING_SESSION, tenantId: 9 };
     const res = await postRefresh(makeApp(linkedSession), db, COOKIE);
     expect(res.status).toBe(200);
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       status: string;
       onboarding_step: string;
       installations: unknown[];
@@ -141,11 +128,9 @@ describe("installRefreshRoute", () => {
 
     const res = await postRefresh(makeApp(PENDING_SESSION), db, COOKIE);
     expect(res.status).toBe(200);
-    const updateStmt = captured.find((s) =>
-      s.sql.includes("UPDATE sessions SET tenant_id"),
-    );
+    const updateStmt = captured.find((s) => s.sql.includes("UPDATE sessions SET tenant_id"));
     expect(updateStmt).toBeDefined();
-    expect(updateStmt!.args[0]).toBe(5);
+    expect(updateStmt?.args[0]).toBe(5);
   });
 
   it("skips auto-switch when multiple installations exist", async () => {
@@ -167,18 +152,14 @@ describe("installRefreshRoute", () => {
 
     const res = await postRefresh(makeApp(PENDING_SESSION), db, COOKIE);
     expect(res.status).toBe(200);
-    const updateStmt = captured.find((s) =>
-      s.sql.includes("UPDATE sessions SET tenant_id"),
-    );
+    const updateStmt = captured.find((s) => s.sql.includes("UPDATE sessions SET tenant_id"));
     expect(updateStmt).toBeUndefined();
   });
 
   it("returns 401 when setSessionTenant affects zero rows", async () => {
     const { db } = captureDb((sql) =>
       dispatchByTable(sql, {
-        user_installations: [
-          { tenant_id: 5, account_login: "solo", account_type: "User" },
-        ],
+        user_installations: [{ tenant_id: 5, account_login: "solo", account_type: "User" }],
         users: meRows(),
       }),
     );

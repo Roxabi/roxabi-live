@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveOnboardingStep, buildInstallOptions } from "./onboarding";
+import { buildInstallOptions, deriveOnboardingStep } from "./onboarding";
 
 const SESSION = {
   userId: 1,
@@ -10,21 +10,15 @@ const SESSION = {
 
 describe("deriveOnboardingStep", () => {
   it("returns install when no linked installations", () => {
-    expect(
-      deriveOnboardingStep({ ...SESSION, tenantId: null }, [], null),
-    ).toBe("install");
+    expect(deriveOnboardingStep({ ...SESSION, tenantId: null }, [], null)).toBe("install");
   });
 
   it("returns consent when linked but no consent_at", () => {
-    expect(deriveOnboardingStep(SESSION, [{ tenant_id: 9 }], null)).toBe(
-      "consent",
-    );
+    expect(deriveOnboardingStep(SESSION, [{ tenant_id: 9 }], null)).toBe("consent");
   });
 
   it("returns ready when linked and consented", () => {
-    expect(
-      deriveOnboardingStep(SESSION, [{ tenant_id: 9 }], "2026-01-01"),
-    ).toBe("ready");
+    expect(deriveOnboardingStep(SESSION, [{ tenant_id: 9 }], "2026-01-01")).toBe("ready");
   });
 });
 

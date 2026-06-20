@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
 import { Hono } from "hono";
-import type { AuthEnv } from "./types";
+import { describe, expect, it } from "vitest";
+import { captureDb, makeEnv } from "../test-utils";
 import { requireSameOriginPost } from "./csrf";
-import { makeEnv, captureDb } from "../test-utils";
+import type { AuthEnv } from "./types";
 
 function makeApp(): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();

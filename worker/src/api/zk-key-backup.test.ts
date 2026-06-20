@@ -1,12 +1,9 @@
-import { describe, expect, it, afterEach, vi } from "vitest";
 import { Hono } from "hono";
-import type { Env } from "../types";
-import {
-  getZkKeyBackupRoute,
-  putZkKeyBackupRoute,
-} from "./zk-key-backup";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv, SessionContext } from "../auth/types";
 import { captureDb, makeFakeDb, makeFakeStmt } from "../test-utils";
+import type { Env } from "../types";
+import { getZkKeyBackupRoute, putZkKeyBackupRoute } from "./zk-key-backup";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -37,7 +34,7 @@ function makeEnv(db: D1Database, overrides: Partial<Env> = {}): Env {
   } as unknown as Env;
 }
 
-function makeApp(db: D1Database): Hono<AuthEnv> {
+function makeApp(_db: D1Database): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
   app.use("*", async (c, next) => {
     c.set("session", STUB_SESSION);
@@ -57,7 +54,7 @@ describe("getZkKeyBackupRoute", () => {
       makeEnv(db, { ZK_ACCOUNT_KEY: "0" }),
     );
     expect(res.status).toBe(403);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("zk_account_key_disabled");
   });
 
@@ -70,22 +67,24 @@ describe("getZkKeyBackupRoute", () => {
   it("returns backup row when enrolled", async () => {
     const { db } = captureDb((sql) => {
       if (sql.includes("zk_key_backups")) {
-        return [{
-          backup_version: 1,
-          kdf_alg: "argon2id",
-          kdf_params: "{}",
-          wrap_iv: "iv",
-          wrapped_key: "wk",
-          key_fp: "abcd1234",
-          created_at: "t1",
-          updated_at: "t2",
-        }];
+        return [
+          {
+            backup_version: 1,
+            kdf_alg: "argon2id",
+            kdf_params: "{}",
+            wrap_iv: "iv",
+            wrapped_key: "wk",
+            key_fp: "abcd1234",
+            created_at: "t1",
+            updated_at: "t2",
+          },
+        ];
       }
       return [];
     });
     const res = await makeApp(db).request("/api/zk/key-backup", {}, makeEnv(db));
     expect(res.status).toBe(200);
-    const body = await res.json() as { key_fp: string };
+    const body = (await res.json()) as { key_fp: string };
     expect(body.key_fp).toBe("abcd1234");
   });
 });
@@ -134,7 +133,7 @@ describe("putZkKeyBackupRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(400);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("invalid key_fp");
   });
 
@@ -153,7 +152,7 @@ describe("putZkKeyBackupRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(400);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("invalid kdf_params");
   });
 
@@ -245,7 +244,7 @@ describe("putZkKeyBackupRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(409);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("enrolled");
     const deleteProof = stmts().find(
       (s) => s.sql.includes("zk_reauth_proofs") && s.sql.includes("DELETE"),
@@ -292,7 +291,7 @@ describe("putZkKeyBackupRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { backup_version: number };
+    const body = (await res.json()) as { backup_version: number };
     expect(body.backup_version).toBe(2);
     const update = captured.find((s) => s.sql.includes("UPDATE zk_key_backups"));
     expect(update?.sql).toContain("backup_version = ?");
@@ -334,7 +333,7 @@ describe("putZkKeyBackupRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(409);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("backup_version_conflict");
     // Version mismatch short-circuits before re-auth — proof is NOT burned.
     const deleteProof = stmts().find(
@@ -378,7 +377,7 @@ describe("putZkKeyBackupRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(409);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("backup_version_conflict");
     // The proof WAS consumed before the failed CAS write (single-use, anti-replay).
     const deleteIdx = captured.findIndex(
@@ -428,7 +427,7 @@ describe("putZkKeyBackupRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { backup_version: number; key_fp: string };
+    const body = (await res.json()) as { backup_version: number; key_fp: string };
     expect(body.backup_version).toBe(3);
     expect(body.key_fp).toBe(newFp);
   });
@@ -436,7 +435,9 @@ describe("putZkKeyBackupRoute", () => {
   it("returns 429 when rate limited", async () => {
     const { db } = captureDb((sql) => {
       if (sql.includes("sync_control") && sql.includes("SELECT")) {
-        return [{ value: JSON.stringify({ hour: new Date().toISOString().slice(0, 13), count: 5 }) }];
+        return [
+          { value: JSON.stringify({ hour: new Date().toISOString().slice(0, 13), count: 5 }) },
+        ];
       }
       return [];
     });
@@ -450,7 +451,7 @@ describe("putZkKeyBackupRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(429);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("rate_limited");
   });
 
@@ -474,7 +475,7 @@ describe("putZkKeyBackupRoute", () => {
       makeEnv(db),
     );
     expect(res.status).toBe(403);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe("reauth_required");
   });
 });
@@ -529,9 +530,7 @@ describe("recordBackupPutSuccess — atomic UPSERT", () => {
       makeEnv(db),
     );
     const before = new Date().toISOString().slice(0, 13);
-    const upsert = stmts().find(
-      (s) => s.sql.includes("sync_control") && s.sql.includes("INSERT"),
-    );
+    const upsert = stmts().find((s) => s.sql.includes("sync_control") && s.sql.includes("INSERT"));
     expect(upsert?.args.some((a) => String(a).startsWith(before.slice(0, 10)))).toBe(true);
   });
 });

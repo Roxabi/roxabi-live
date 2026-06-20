@@ -3,9 +3,9 @@
  */
 
 import type { Context } from "hono";
-import type { AuthEnv } from "./types";
 import { authRedirect, clearSessionCookieHeaders, readSessionToken } from "./cookies";
 import { deleteSession } from "./session";
+import type { AuthEnv } from "./types";
 
 export async function authResetRoute(c: Context<AuthEnv>): Promise<Response> {
   const raw = readSessionToken(c);

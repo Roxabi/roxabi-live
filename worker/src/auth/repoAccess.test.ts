@@ -1,16 +1,8 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
 import type { Context } from "hono";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { STUB_SESSION, captureDb, dispatchByTable, makeEnv } from "../test-utils";
+import { checkPrivateAccess, resolveVisibleRepos } from "./repoAccess";
 import type { AuthEnv } from "./types";
-import {
-  resolveVisibleRepos,
-  checkPrivateAccess,
-} from "./repoAccess";
-import {
-  captureDb,
-  dispatchByTable,
-  STUB_SESSION,
-  makeEnv,
-} from "../test-utils";
 
 // ---------------------------------------------------------------------------
 // Mock installToken module
@@ -27,10 +19,7 @@ vi.mock("./installToken", () => ({
 // ---------------------------------------------------------------------------
 
 /** Build a minimal Hono Context stub carrying a session and DB env. */
-function makeCtx(
-  db: D1Database,
-  session: AuthEnv["Variables"]["session"],
-): Context<AuthEnv> {
+function makeCtx(db: D1Database, session: AuthEnv["Variables"]["session"]): Context<AuthEnv> {
   const env = makeEnv(db);
   return {
     get: (key: string) => (key === "session" ? session : undefined),
