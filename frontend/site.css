@@ -163,6 +163,12 @@ body::before {
   gap: 8px;
 }
 
+/* `display:flex` ties with UA [hidden]{display:none} — raise specificity */
+.nav-guest-actions[hidden],
+.user-menu-wrap[hidden] {
+  display: none;
+}
+
 .locale-flags {
   align-items: center;
   background: var(--bg-card);

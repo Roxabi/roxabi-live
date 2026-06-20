@@ -42,7 +42,6 @@ export async function wirePublicHeader(opts = {}) {
   }
 
   if (me?.user) {
-    hideLandingUserMenu();
     setHidden("nav-guest-actions", true);
     setCta("user-menu-dashboard", DASHBOARD_PATH, "nav.myDashboard");
     setCta("user-menu-profile", PROFILE_PATH, "nav.myProfile");
