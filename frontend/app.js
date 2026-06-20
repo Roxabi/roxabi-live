@@ -4,6 +4,7 @@ import {
   getSessionProfile,
   isZkAccountKeyEnabled,
   requireAuthGate,
+  stripStaleOAuthCallbackUrl,
 } from "./auth.js";
 import { clearSearchHighlight, initGraph } from "./graph.js";
 import { clearPinned } from "./hover.js";
@@ -502,6 +503,7 @@ function startPolling() {
 }
 
 async function init() {
+  stripStaleOAuthCallbackUrl();
   // SC1: requireAuthGate() gates data fetches until onboarding_step === 'ready'.
   try {
     const view = await requireAuthGate();

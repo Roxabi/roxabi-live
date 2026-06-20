@@ -7,6 +7,7 @@ import {
   onboardingStepFromMe,
   pollInstallRefresh,
   signOut,
+  stripStaleOAuthCallbackUrl,
 } from "./auth.js";
 
 describe("loginUrl", () => {
@@ -111,5 +112,28 @@ describe("pollInstallRefresh", () => {
   it("throws AuthError on 401", async () => {
     fetch.mockResolvedValueOnce({ status: 401, ok: false });
     await expect(pollInstallRefresh(1)).rejects.toBeInstanceOf(AuthError);
+  });
+});
+
+describe("stripStaleOAuthCallbackUrl", () => {
+  const replaceState = vi.fn();
+
+  beforeEach(() => {
+    replaceState.mockReset();
+    vi.stubGlobal("history", { ...history, replaceState });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("moves /oauth/callback to /dashboard and drops code/state", () => {
+    vi.stubGlobal("location", {
+      pathname: "/oauth/callback",
+      search: "?code=abc&state=xyz&zk_handoff=h1",
+      hash: "",
+    });
+    stripStaleOAuthCallbackUrl();
+    expect(replaceState).toHaveBeenCalledWith({}, "", "/dashboard?zk_handoff=h1");
   });
 });

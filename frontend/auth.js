@@ -8,6 +8,26 @@ export const DASHBOARD_PATH = "/dashboard";
 
 const CONSENT_PREFIX = "roxabi:consent:";
 
+const OAUTH_CALLBACK_STRIP = ["code", "state"];
+
+/**
+ * After OAuth, some browsers keep /oauth/callback?code=&state= in the address bar
+ * while running the dashboard app — strip stale params so init does not re-run oddly.
+ */
+export function stripStaleOAuthCallbackUrl() {
+  const path = window.location.pathname;
+  const params = new URLSearchParams(window.location.search);
+  const onCallback = path === "/oauth/callback";
+  const hasStale = OAUTH_CALLBACK_STRIP.some((k) => params.has(k));
+  if (!onCallback && !hasStale) return;
+
+  for (const k of OAUTH_CALLBACK_STRIP) params.delete(k);
+  const destPath = onCallback ? DASHBOARD_PATH : path;
+  const qs = params.toString();
+  const next = `${destPath}${qs ? `?${qs}` : ""}${window.location.hash}`;
+  window.history.replaceState({}, "", next);
+}
+
 /** Safe login URL with post-auth return path (defaults to dashboard). */
 export function loginUrl(redirect = DASHBOARD_PATH) {
   return `/login?redirect=${encodeURIComponent(redirect)}`;

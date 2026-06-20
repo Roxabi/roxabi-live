@@ -16,7 +16,6 @@ import {
   sessionCookieHeaders,
   sessionTtlSeconds,
 } from "./cookies";
-import { serveDashboardShell } from "./dashboard-route";
 
 function destHasZkParams(path: string): boolean {
   const url = new URL(path, "https://_/");
@@ -87,7 +86,7 @@ export function authNavigateHtml(dest: string, extraSetCookies: string[] = []): 
 
 /** Finish OAuth: set session cookie and deliver the post-auth destination. */
 export async function completeOAuthSession(
-  c: Context<{ Bindings: Env }>,
+  _c: Context<{ Bindings: Env }>,
   rawToken: string,
   redirectAfter: string,
   remember = false,
@@ -95,10 +94,9 @@ export async function completeOAuthSession(
   const cookies = sessionCookieHeaders(rawToken, sessionTtlSeconds(remember));
   const dest = sanitizeAuthRedirect(redirectAfter);
 
-  if (isDashboardDest(dest) && !destHasZkParams(dest)) {
-    return serveDashboardShell(c.env, c.req.raw, c.req.url, cookies);
-  }
-  if (destHasZkParams(dest)) {
+  // Always poll /api/me then navigate to dest — never serve the dashboard shell
+  // at /oauth/callback?code=&state= (stale URL caused repeated ZK key-backup fetches).
+  if (isDashboardDest(dest) || destHasZkParams(dest)) {
     return authNavigateHtml(dest, cookies);
   }
   return authRedirect(dest, cookies);

@@ -755,7 +755,7 @@ describe("callbackRoute", () => {
       expect(uiStmt).toBeDefined();
     });
 
-    it("serves dashboard HTML with Set-Cookie on callback (no exchange hop)", async () => {
+    it("returns navigate HTML with Set-Cookie on callback (poll then /dashboard)", async () => {
       // Arrange
       const stateValue = "e".repeat(32);
       const captured: FakeStmt[] = [];
@@ -776,7 +776,9 @@ describe("callbackRoute", () => {
 
       // Assert
       expect(res.status).toBe(200);
-      expect(await res.text()).toContain("dashboard");
+      const html = await res.text();
+      expect(html).toContain("Connexion en cours");
+      expect(html).toContain("/dashboard");
       expect(res.headers.get("Location")).toBeNull();
       expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
       const exchangeInsert = captured.find((s) => s.sql.toLowerCase().includes("oauth_exchange"));
