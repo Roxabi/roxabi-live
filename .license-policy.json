@@ -1,4 +1,5 @@
 {
+  "allowlist": ["pytest-timeout", "typing_extensions"],
   "allowedLicenses": [
     "MIT",
     "MIT-0",
