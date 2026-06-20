@@ -1,6 +1,6 @@
 // settings.js — account settings panel
 
-import { api, escHtml } from "./auth.js";
+import { DASHBOARD_PATH, api, escHtml } from "./auth.js";
 import { applyThemePref, getThemePref, setThemePref } from "./theme.js";
 import { rewrapAccountKeyBackup, saveDeviceSession, unwrapAccountKey } from "./zk-crypto.js";
 import { updateKeyBackup } from "./zk-enroll.js";
@@ -177,33 +177,48 @@ export function openSettings(me) {
   return { close, showPassphraseForm: () => $("settings-pass-form")?.removeAttribute("hidden") };
 }
 
-async function deleteAccountData(me, login) {
+/**
+ * Wipe server + local Roxabi state and sign out.
+ * @returns {Promise<boolean>} true when delete completed (caller should stop init)
+ */
+export async function deleteAccountData(me, login) {
   if (!confirm("Delete all your Roxabi Live data and sign out? This cannot be undone.")) {
-    return;
+    return false;
   }
 
+  const payload = {};
   if (me.user.zk_enrolled) {
-    if (!getZkReauthProof()) {
+    const proof = getZkReauthProof();
+    if (!proof) {
       sessionStorage.setItem(SETTINGS_ACTION_KEY, "delete");
-      location.href = zkReauthLoginUrl("/?settings=delete");
-      return;
+      location.href = zkReauthLoginUrl(`${DASHBOARD_PATH}?settings=delete`);
+      return true;
     }
-    try {
-      await api("/api/zk/reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reauth_proof: getZkReauthProof() }),
-      });
-    } catch {
-      alert("Could not delete encrypted data. Verify with GitHub and try again.");
-      return;
-    }
+    payload.reauth_proof = proof;
   }
 
+  try {
+    await api("/api/account/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    const code = err?.message?.includes("403") ? "reauth_required" : "delete_failed";
+    if (code === "reauth_required") {
+      sessionStorage.setItem(SETTINGS_ACTION_KEY, "delete");
+      location.href = zkReauthLoginUrl(`${DASHBOARD_PATH}?settings=delete`);
+      return true;
+    }
+    alert("Could not delete your data. Try again or use Lost passphrase to reset encryption.");
+    return false;
+  }
+
+  clearZkReauthProof();
   await clearLocalZkState(login);
   localStorage.removeItem(DISPLAY_NAME_PREFIX + login);
-  await api("/logout", { method: "POST" }).catch(() => {});
-  location.reload();
+  location.href = "/";
+  return true;
 }
 
 function wirePassphraseChange(login, closeSettings) {
@@ -213,7 +228,7 @@ function wirePassphraseChange(login, closeSettings) {
   $("settings-change-pass")?.addEventListener("click", () => {
     if (!getZkReauthProof()) {
       sessionStorage.setItem(SETTINGS_ACTION_KEY, "passphrase");
-      location.href = zkReauthLoginUrl("/?settings=passphrase");
+      location.href = zkReauthLoginUrl(`${DASHBOARD_PATH}?settings=passphrase`);
       return;
     }
     form?.removeAttribute("hidden");
@@ -276,14 +291,14 @@ function wirePassphraseChange(login, closeSettings) {
 }
 
 /** Resume settings flow after OAuth reauth redirect. */
-export function resumeSettingsFromUrl(me) {
+export async function resumeSettingsFromUrl(me) {
   const params = new URLSearchParams(window.location.search);
   const tab = params.get("settings");
-  if (!tab) return;
+  if (!tab) return false;
 
   const action = sessionStorage.getItem(SETTINGS_ACTION_KEY);
   sessionStorage.removeItem(SETTINGS_ACTION_KEY);
-  if (!getZkReauthProof()) return;
+  if (!getZkReauthProof()) return false;
 
   params.delete("settings");
   const qs = params.toString();
@@ -292,7 +307,10 @@ export function resumeSettingsFromUrl(me) {
   if (tab === "passphrase" && action === "passphrase") {
     const ui = openSettings(me);
     ui?.showPassphraseForm();
-  } else if (tab === "delete" && action === "delete") {
-    deleteAccountData(me, me.user.github_login);
+    return false;
   }
+  if (tab === "delete" && action === "delete") {
+    return deleteAccountData(me, me.user.github_login);
+  }
+  return false;
 }

@@ -152,6 +152,9 @@ describe("installRefreshRoute", () => {
 
     const res = await postRefresh(makeApp(PENDING_SESSION), db, COOKIE);
     expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; onboarding_step: string };
+    expect(body.status).toBe("choose_tenant");
+    expect(body.onboarding_step).toBe("install");
     const updateStmt = captured.find((s) => s.sql.includes("UPDATE sessions SET tenant_id"));
     expect(updateStmt).toBeUndefined();
   });
