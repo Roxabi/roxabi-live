@@ -3,7 +3,7 @@
  * Never enable in production.
  */
 
-import type { Context } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { sessionCookieHeaders } from "../auth/cookies";
 import { mintSession } from "../auth/session";
 import type { AuthEnv } from "../auth/types";
@@ -14,20 +14,27 @@ export function e2eEnabled(env: Env): boolean {
   return env.E2E_TEST_MODE === "1";
 }
 
+/** Gate /__test__/* — 404 when E2E_TEST_MODE is off (CI blocks the flag in wrangler.toml). */
+export const requireE2eMode: MiddlewareHandler<AuthEnv> = async (c, next) => {
+  if (!e2eEnabled(c.env)) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  await next();
+};
+
 interface SeedBody {
   github_id?: number;
   github_login?: string;
-  tenant_id?: number;
+  /** Session tenant; omit for default linked tenant. */
+  tenant_id?: number | null;
+  /** Mint install-pending session (tenant_id null) while keeping user_installations. */
+  install_pending?: boolean;
   consent?: boolean;
   zk_backup?: boolean;
 }
 
 /** POST /__test__/seed — mint session + optional zk backup for Playwright. */
 export async function e2eSeedRoute(c: Context<AuthEnv>): Promise<Response> {
-  if (!e2eEnabled(c.env)) {
-    return c.json({ error: "forbidden" }, 403);
-  }
-
   let body: SeedBody = {};
   try {
     body = (await c.req.json()) as SeedBody;
@@ -37,7 +44,7 @@ export async function e2eSeedRoute(c: Context<AuthEnv>): Promise<Response> {
 
   const githubId = body.github_id ?? 99001;
   const githubLogin = body.github_login ?? "e2e-user";
-  let tenantId = body.tenant_id ?? 1;
+  const installPending = body.install_pending === true;
 
   const tenantRow = await c.env.DB.prepare(
     `INSERT INTO tenants (installation_id, account_login, account_type)
@@ -47,7 +54,12 @@ export async function e2eSeedRoute(c: Context<AuthEnv>): Promise<Response> {
   )
     .bind(99001, "roxabi")
     .first<{ id: number }>();
-  if (tenantRow) tenantId = tenantRow.id;
+  const linkTenantId = tenantRow?.id ?? 1;
+  const sessionTenantId: number | null = installPending
+    ? null
+    : body.tenant_id !== undefined
+      ? body.tenant_id
+      : linkTenantId;
 
   const userRow = await c.env.DB.prepare(
     `INSERT INTO users (github_id, github_login, zk_opt_in, consent_at, install_targets_json)
@@ -68,7 +80,7 @@ export async function e2eSeedRoute(c: Context<AuthEnv>): Promise<Response> {
   await c.env.DB.prepare(
     "INSERT OR IGNORE INTO user_installations (user_id, tenant_id) VALUES (?, ?)",
   )
-    .bind(userId, tenantId)
+    .bind(userId, linkTenantId)
     .run();
 
   if (body.zk_backup) {
@@ -85,7 +97,7 @@ export async function e2eSeedRoute(c: Context<AuthEnv>): Promise<Response> {
     await c.env.DB.prepare("DELETE FROM zk_key_backups WHERE user_id = ?").bind(userId).run();
   }
 
-  const rawToken = await mintSession(c.env.DB, userId, tenantId);
+  const rawToken = await mintSession(c.env.DB, userId, sessionTenantId);
   const headers = new Headers({ "Content-Type": "application/json" });
   for (const cookie of sessionCookieHeaders(rawToken, { secure: false })) {
     headers.append("Set-Cookie", cookie);
@@ -104,10 +116,6 @@ export async function e2eSeedRoute(c: Context<AuthEnv>): Promise<Response> {
 
 /** GET /__test__/user-state?github_login= — inspect post-delete state. */
 export async function e2eUserStateRoute(c: Context<AuthEnv>): Promise<Response> {
-  if (!e2eEnabled(c.env)) {
-    return c.json({ error: "forbidden" }, 403);
-  }
-
   const login = c.req.query("github_login") ?? "e2e-user";
   const user = await c.env.DB.prepare("SELECT id, consent_at FROM users WHERE github_login = ?")
     .bind(login)
@@ -144,10 +152,6 @@ export async function e2eUserStateRoute(c: Context<AuthEnv>): Promise<Response> 
 
 /** POST /__test__/reauth-proof — mint zk reauth code for delete E2E. */
 export async function e2eReauthProofRoute(c: Context<AuthEnv>): Promise<Response> {
-  if (!e2eEnabled(c.env)) {
-    return c.json({ error: "forbidden" }, 403);
-  }
-
   let body: { user_id?: number } = {};
   try {
     body = (await c.req.json()) as { user_id?: number };

@@ -60,4 +60,47 @@ describe("tryLinkInstallPendingSession", () => {
     const tenantId = await tryLinkInstallPendingSession(db, "a".repeat(64), linked);
     expect(tenantId).toBe(3);
   });
+
+  it("returns null when no active installations exist", async () => {
+    const db = makeFakeDb((sql) => {
+      if (sql.includes("user_installations") && sql.includes("SELECT")) {
+        return makeFakeStmt(sql, [], []);
+      }
+      return makeFakeStmt(sql, [], []);
+    });
+    const tenantId = await tryLinkInstallPendingSession(db, "a".repeat(64), PENDING);
+    expect(tenantId).toBeNull();
+  });
+
+  it("returns null when session token is missing", async () => {
+    const db = makeFakeDb((sql) => {
+      if (sql.includes("user_installations") && sql.includes("SELECT")) {
+        return makeFakeStmt(
+          sql,
+          [],
+          [{ tenant_id: 9, account_login: "roxabi", account_type: "Organization" }],
+        );
+      }
+      return makeFakeStmt(sql, [], []);
+    });
+    const tenantId = await tryLinkInstallPendingSession(db, null, PENDING);
+    expect(tenantId).toBeNull();
+  });
+
+  it("returns null when setSessionTenant affects zero rows", async () => {
+    const db = makeFakeDb((sql, args) => {
+      const rows: FakeResult[] = [];
+      if (sql.includes("user_installations") && sql.includes("SELECT")) {
+        rows.push({
+          tenant_id: 9,
+          account_login: "roxabi",
+          account_type: "Organization",
+        });
+      }
+      const changes = sql.includes("UPDATE sessions SET tenant_id") ? 0 : 0;
+      return makeFakeStmt(sql, args, rows, changes);
+    });
+    const tenantId = await tryLinkInstallPendingSession(db, "a".repeat(64), PENDING);
+    expect(tenantId).toBeNull();
+  });
 });

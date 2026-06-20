@@ -46,5 +46,6 @@ export async function installRefreshRoute(c: Context<AuthEnv>): Promise<Response
     ...s,
     tenantId: activeTenantId,
   });
-  return c.json({ status: "linked", ...payload });
+  const status = activeTenantId == null && installations.length > 1 ? "choose_tenant" : "linked";
+  return c.json({ status, ...payload });
 }

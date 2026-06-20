@@ -44,6 +44,7 @@ describe("purgeUserAccountData", () => {
     expect(sqls.some((s) => s.includes("DELETE FROM zk_payloads"))).toBe(true);
     expect(sqls.some((s) => s.includes("DELETE FROM zk_key_backups"))).toBe(true);
     expect(sqls.some((s) => s.includes("DELETE FROM user_installations"))).toBe(true);
+    expect(sqls.some((s) => s.includes("DELETE FROM user_repo_permission_cache"))).toBe(true);
     expect(sqls.some((s) => s.includes("DELETE FROM sessions"))).toBe(true);
     expect(sqls.some((s) => s.includes("consent_at = NULL"))).toBe(true);
   });

@@ -11,6 +11,8 @@ export interface SeedOptions {
   zk_backup?: boolean;
   consent?: boolean;
   github_login?: string;
+  /** Mint session with tenant_id null (install pending) while user_installations exist. */
+  install_pending?: boolean;
 }
 
 function seedBody(opts: SeedOptions = {}) {
@@ -19,6 +21,7 @@ function seedBody(opts: SeedOptions = {}) {
     github_id: 88001,
     consent: opts.consent ?? true,
     zk_backup: opts.zk_backup ?? false,
+    install_pending: opts.install_pending ?? false,
   };
 }
 

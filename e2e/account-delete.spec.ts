@@ -85,6 +85,21 @@ test.describe("Delete my data & sign out", () => {
     await expect(page.getByRole("heading", { name: /Unlock encryption/i })).toBeHidden();
   });
 
+  test("install-pending session auto-links on install refresh", async ({ request }) => {
+    const seed = await seedSession(request, {
+      install_pending: true,
+      consent: true,
+      zk_backup: false,
+    });
+    const linked = await request.post("/api/install/refresh", {
+      headers: { Cookie: `roxabi_session=${seed.session_token}` },
+    });
+    expect(linked.ok()).toBe(true);
+    const body = (await linked.json()) as { status: string; onboarding_step: string };
+    expect(body.status).toBe("linked");
+    expect(body.onboarding_step).toBe("ready");
+  });
+
   test("zk enrolled delete without reauth_proof is rejected (no silent wipe)", async ({
     request,
   }) => {

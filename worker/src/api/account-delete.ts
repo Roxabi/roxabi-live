@@ -8,7 +8,7 @@ import { AUTH_NO_CACHE, clearSessionCookieHeaders, readSessionToken } from "../a
 import { deleteSession } from "../auth/session";
 import type { AuthEnv } from "../auth/types";
 import { zkAccountKeyEnabled } from "../auth/zk-flags";
-import { consumeReauthProof, issueReauthProof } from "../auth/zk-reauth";
+import { issueReauthProof } from "../auth/zk-reauth";
 import { writeZkAudit } from "../observability/zk-events";
 import { purgeUserZkData } from "./zk-reset";
 
@@ -28,6 +28,7 @@ export async function purgeUserAccountData(
 
   await db.batch([
     db.prepare("DELETE FROM user_installations WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM user_repo_permission_cache WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM zk_reauth_proofs WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId),
     db
@@ -56,26 +57,28 @@ export async function postAccountDeleteRoute(c: Context<AuthEnv>): Promise<Respo
 
   const needsReauth = zkAccountKeyEnabled(c.env) && backupRow != null;
 
-  let body: unknown = {};
   if (needsReauth) {
+    let body: unknown = {};
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: "invalid body" }, 400);
     }
-    const reauth_proof = (body as Record<string, unknown>).reauth_proof;
-    if (typeof reauth_proof !== "string" || !REAUTH_PROOF_RE.test(reauth_proof)) {
+    const proof = (body as Record<string, unknown>).reauth_proof;
+    if (typeof proof !== "string" || !REAUTH_PROOF_RE.test(proof)) {
       return c.json({ error: "reauth_required" }, 403);
     }
-    if (!(await issueReauthProof(c.env, s.userId, reauth_proof))) {
-      return c.json({ error: "reauth_required" }, 403);
-    }
-    if (!(await consumeReauthProof(c.env, s.userId, reauth_proof))) {
+    if (!(await issueReauthProof(c.env, s.userId, proof))) {
       return c.json({ error: "reauth_required" }, 403);
     }
   }
 
-  const stats = await purgeUserAccountData(c.env.DB, s.userId);
+  let stats: AccountDeleteStats;
+  try {
+    stats = await purgeUserAccountData(c.env.DB, s.userId);
+  } catch {
+    return c.json({ error: "delete_failed" }, 500);
+  }
 
   const raw = readSessionToken(c);
   if (raw) {
