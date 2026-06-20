@@ -1,6 +1,6 @@
 // settings.js — account settings panel
 
-import { api, escHtml } from "./auth.js";
+import { api, escHtml, signOut } from "./auth.js";
 import { applyThemePref, getThemePref, setThemePref } from "./theme.js";
 import { rewrapAccountKeyBackup, saveDeviceSession, unwrapAccountKey } from "./zk-crypto.js";
 import { updateKeyBackup } from "./zk-enroll.js";
@@ -202,8 +202,7 @@ async function deleteAccountData(me, login) {
 
   await clearLocalZkState(login);
   localStorage.removeItem(DISPLAY_NAME_PREFIX + login);
-  await api("/logout", { method: "POST" }).catch(() => {});
-  location.reload();
+  await signOut({ after: "reload" });
 }
 
 function wirePassphraseChange(login, closeSettings) {

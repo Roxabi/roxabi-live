@@ -7,6 +7,7 @@ export default {
   "nav.signIn": "Sign in",
   "nav.signUp": "Sign up",
   "nav.myDashboard": "My dashboard",
+  "nav.signOut": "Sign out",
   "nav.myProfile": "My profile",
   "nav.features": "Features",
   "nav.howItWorks": "How it works",

@@ -27,6 +27,17 @@ export async function api(path, opts) {
   return resp;
 }
 
+/**
+ * End session and navigate away.
+ * @param {{ after?: "redirect" | "reload", to?: string }} [opts]
+ */
+export async function signOut(opts = {}) {
+  const { after = "redirect", to = "/" } = opts;
+  await api("/logout", { method: "POST" }).catch(() => {});
+  if (after === "reload") location.reload();
+  else location.href = to;
+}
+
 /** @deprecated localStorage bridge — removed after one release */
 function hasLegacyConsent(login) {
   return Boolean(localStorage.getItem(CONSENT_PREFIX + login));
@@ -156,10 +167,7 @@ function renderInstallCta(me) {
 
   el.querySelector(".install-option[href]")?.focus();
 
-  $("install-logout")?.addEventListener("click", async () => {
-    await api("/logout", { method: "POST" }).catch(() => {});
-    location.href = "/";
-  });
+  $("install-logout")?.addEventListener("click", () => signOut({ to: "/" }));
 
   $("install-continue")?.addEventListener("click", async () => {
     const btn = $("install-continue");
@@ -262,10 +270,7 @@ function renderConsentGate(me) {
       }
     });
 
-    logoutBtn.addEventListener("click", async () => {
-      await api("/logout", { method: "POST" }).catch(() => {});
-      location.reload();
-    });
+    logoutBtn.addEventListener("click", () => signOut({ after: "reload" }));
   });
 }
 

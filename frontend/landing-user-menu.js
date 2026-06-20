@@ -1,5 +1,7 @@
 // landing-user-menu.js — avatar dropdown on public landing (signed-in)
 
+import { signOut } from "./auth.js";
+
 const $ = (id) => document.getElementById(id);
 
 /**
@@ -39,6 +41,11 @@ export function wireLandingUserMenu(me) {
 
   document.addEventListener("click", (e) => {
     if (!wrap.contains(e.target)) close();
+  });
+
+  $("user-menu-signout")?.addEventListener("click", async () => {
+    close();
+    await signOut({ to: "/" });
   });
 
   document.addEventListener("keydown", (e) => {

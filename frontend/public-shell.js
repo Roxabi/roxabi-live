@@ -20,6 +20,7 @@ const USER_MENU = `
     <div id="user-menu-panel" class="user-menu-panel" role="menu" hidden>
       <a id="user-menu-dashboard" class="user-menu-item" href="/dashboard" role="menuitem" data-i18n="nav.myDashboard">Mon dashboard</a>
       <a id="user-menu-profile" class="user-menu-item" href="/dashboard?settings=open" role="menuitem" data-i18n="nav.myProfile">Mon profil</a>
+      <button type="button" class="user-menu-item user-menu-item-danger" id="user-menu-signout" role="menuitem" data-i18n="nav.signOut">Se déconnecter</button>
     </div>
   </div>`;
 

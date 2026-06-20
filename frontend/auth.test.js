@@ -6,6 +6,7 @@ import {
   loginUrl,
   onboardingStepFromMe,
   pollInstallRefresh,
+  signOut,
 } from "./auth.js";
 
 describe("loginUrl", () => {
@@ -44,6 +45,29 @@ describe("onboardingStepFromMe", () => {
   it("throws when onboarding_step is missing or invalid", () => {
     expect(() => onboardingStepFromMe({})).toThrow("invalid onboarding_step");
     expect(() => onboardingStepFromMe({ onboarding_step: "bogus" })).toThrow();
+  });
+});
+
+describe("signOut", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("location", { href: "", reload: vi.fn() });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("redirects home by default", async () => {
+    fetch.mockResolvedValue({ status: 200, ok: true });
+    await signOut();
+    expect(fetch).toHaveBeenCalledWith("/logout", { method: "POST" });
+    expect(location.href).toBe("/");
+  });
+
+  it("reloads when requested", async () => {
+    fetch.mockResolvedValue({ status: 200, ok: true });
+    await signOut({ after: "reload" });
+    expect(location.reload).toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,6 @@
 // zk-enroll.js — passphrase enrollment, unlock, lock UI (#216 PR 4)
 
-import { api, escHtml } from "./auth.js";
+import { api, escHtml, signOut } from "./auth.js";
 import {
   clearDeviceSession,
   generateAccountKey,
@@ -212,10 +212,7 @@ function renderDevice2Block() {
     `,
   );
   $("zk-block-reload")?.addEventListener("click", () => location.reload());
-  $("zk-block-logout")?.addEventListener("click", async () => {
-    await api("/logout", { method: "POST" }).catch(() => {});
-    location.reload();
-  });
+  $("zk-block-logout")?.addEventListener("click", () => signOut({ after: "reload" }));
 }
 
 export function showEnrollGate(githubLogin) {
@@ -254,10 +251,7 @@ export function showEnrollGate(githubLogin) {
 
     passInput?.focus();
 
-    $("zk-enroll-logout")?.addEventListener("click", async () => {
-      await api("/logout", { method: "POST" }).catch(() => {});
-      location.reload();
-    });
+    $("zk-enroll-logout")?.addEventListener("click", () => signOut({ after: "reload" }));
 
     form?.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -335,10 +329,7 @@ export function showUnlockGate(githubLogin = gateGithubLogin) {
 
     passInput?.focus();
 
-    $("zk-unlock-logout")?.addEventListener("click", async () => {
-      await api("/logout", { method: "POST" }).catch(() => {});
-      location.reload();
-    });
+    $("zk-unlock-logout")?.addEventListener("click", () => signOut({ after: "reload" }));
 
     form?.addEventListener("submit", async (e) => {
       e.preventDefault();
