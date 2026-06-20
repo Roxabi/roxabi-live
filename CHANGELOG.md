@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.19.2](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.19.1...roxabi-live/v0.19.2) (2026-06-20)
+
+
+### Code Refactoring
+
+* **sync:** split `sync.ts` orchestrator (1306 SLOC) into cohesive modules under the 300-SLOC cap + transitional re-export facade (#248)
+* **webhook:** split `handlers.ts` + `handlers-app.ts` into cohesive modules (issues/ref/access/app-helpers) (#248)
+* **webhook:** extract app-lifecycle D1 helpers into `mutations-app.ts` (#248)
+
+
+### Build System / Tooling
+
+* **worker:** adopt Biome lint+format, harden `tsconfig` (`noUnusedLocals`/`noUnusedParameters`), prune dead code (#247)
+* **worker:** enforce Biome in CI + pre-commit hooks; document in stack.yml/CLAUDE.md (#247)
+* **qg:** eliminate all 5 production file-length exemptions (5 → 0); drop stale `zk-key-backup.ts` exemption (#248)
+
+
 ## [0.19.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.19.0...roxabi-live/v0.19.1) (2026-06-19)
 
 
