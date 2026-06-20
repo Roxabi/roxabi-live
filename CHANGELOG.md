@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.18.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.17.6...roxabi-live/v0.18.0) (2026-06-20)
+
+
+### Features
+
+* **onboarding:** 3-step French flow — GitHub login → install → sync (v0.18.0) ([4daaaaa](https://github.com/Roxabi/roxabi-live/commit/4daaaaa899162c0b30c970b25eadf7fb5fd0aa69))
+
+
+### Bug Fixes
+
+* **auth:** address review blockers and warnings for v0.19.1 ([c8ffa4d](https://github.com/Roxabi/roxabi-live/commit/c8ffa4d804a22e9bf099e310989fbf7a73b02865))
+* **auth:** break OAuth redirect loop via server-side session exchange (v0.17.7) ([722daf6](https://github.com/Roxabi/roxabi-live/commit/722daf6cbe17d78f47c40326f3be25ed20b67030))
+* **auth:** install=1 as /login flag only — stop OAuth loop for install-pending (v0.17.9) ([1100a00](https://github.com/Roxabi/roxabi-live/commit/1100a00341613d3e945a5d1236d4e5b402be79f8))
+* **auth:** serve dashboard from exchange to stop post-OAuth redirect loop (v0.17.8) ([f18c257](https://github.com/Roxabi/roxabi-live/commit/f18c2575bf86b6af68b4618455be50ce77d30eee))
+* **auth:** stop onboarding redirect loop (v0.18.1) ([30e1218](https://github.com/Roxabi/roxabi-live/commit/30e1218e16609c3e9b24a5250848f58fdf3c770e))
+* **auth:** stop onboarding redirect loop (v0.18.1) ([30e1218](https://github.com/Roxabi/roxabi-live/commit/30e1218e16609c3e9b24a5250848f58fdf3c770e))
+* **auth:** stop onboarding redirect loop (v0.18.1) ([ebd45c9](https://github.com/Roxabi/roxabi-live/commit/ebd45c9ef38e08f3a3a35b16cf11bd0fa74d5225))
+* **auth:** tolerate consumed exchange codes when session is valid ([374421c](https://github.com/Roxabi/roxabi-live/commit/374421c693d5611f3b468f1f3768dd855f729f4b))
+* **auth:** tolerate consumed exchange codes when session is valid ([d929029](https://github.com/Roxabi/roxabi-live/commit/d9290297b064b2288a28c54b1b3bd5623da30a3d))
+
 ## [0.19.2](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.19.1...roxabi-live/v0.19.2) (2026-06-20)
 
 
