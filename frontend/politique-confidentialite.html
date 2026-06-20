@@ -5,15 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Politique de confidentialité · Roxabi Live</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="landing.css">
-<link rel="stylesheet" href="legal.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/legal.css">
 </head>
 <body class="legal-page">
-<header class="legal-header">
-  <a class="legal-back" href="/">← Accueil</a>
-  <a class="legal-brand" href="/">Roxabi Live</a>
-</header>
+<div id="public-topbar-mount"></div>
 
 <main class="legal-main">
   <h1>Politique de confidentialité</h1>
@@ -84,13 +81,10 @@
   </p>
 </main>
 
-<footer class="site-footer">
-  <nav class="site-footer-nav" aria-label="Liens légaux">
-    <a href="/mentions-legales">Mentions légales</a>
-    <a href="/politique-confidentialite" aria-current="page">Politique de confidentialité</a>
-    <a href="/conditions-utilisation">Conditions d'utilisation</a>
-  </nav>
-  <p class="site-footer-copy">© 2026 Roxabi Live · Dep-Graph v6</p>
-</footer>
+<div id="public-footer-mount"></div>
+<script type="module">
+import { initPublicPage } from "/public-shell.js";
+initPublicPage({ variant: "minimal", activeLegal: "privacy" });
+</script>
 </body>
 </html>

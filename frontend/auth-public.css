@@ -1,6 +1,8 @@
 /* auth-public.css — dedicated sign-in / sign-up pages */
 
 .auth-page-body {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 

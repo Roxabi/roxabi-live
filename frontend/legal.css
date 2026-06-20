@@ -1,71 +1,9 @@
-/* legal.css — legal pages + shared site footer */
-
-.site-footer,
-.legal-page .site-footer {
-  border-top: 1px solid var(--border);
-  margin-top: auto;
-  padding: 28px 24px 36px;
-  text-align: center;
-}
-
-.site-footer-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  justify-content: center;
-  margin-bottom: 10px;
-}
-
-.site-footer-nav a {
-  color: var(--text-muted);
-  font-size: 13px;
-  text-decoration: none;
-  transition: color 0.15s;
-}
-
-.site-footer-nav a:hover {
-  color: var(--accent);
-}
-
-.site-footer-copy {
-  color: var(--text-muted);
-  font-size: 12px;
-  margin: 0;
-}
+/* legal.css — legal page content layout (chrome lives in site.css + public-shell.js) */
 
 .legal-page {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-}
-
-.legal-header {
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  margin: 0 auto;
-  max-width: 760px;
-  padding: 18px 24px;
-  width: 100%;
-}
-
-.legal-back {
-  color: var(--text-muted);
-  font-size: 14px;
-  text-decoration: none;
-}
-
-.legal-back:hover {
-  color: var(--accent);
-}
-
-.legal-brand {
-  color: var(--text);
-  font-family: "Outfit", sans-serif;
-  font-size: 0.95rem;
-  font-weight: 600;
-  text-decoration: none;
 }
 
 .legal-main {
@@ -77,7 +15,7 @@
 }
 
 .legal-main h1 {
-  font-family: "Outfit", sans-serif;
+  font-family: var(--font-display);
   font-size: 1.85rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -91,7 +29,7 @@
 }
 
 .legal-main h2 {
-  font-family: "Outfit", sans-serif;
+  font-family: var(--font-display);
   font-size: 1.1rem;
   font-weight: 600;
   margin: 28px 0 10px;
