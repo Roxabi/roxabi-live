@@ -1,15 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../types";
+import { webhookRoute } from "./handlers";
+import { handleDeps, handleIssues, handleSubIssues } from "./handlers-issues";
 import {
-  handleDeps,
-  handleIssues,
   handleMilestone,
   handlePullRequest,
   handleRefCreate,
   handleRefDelete,
-  handleSubIssues,
-  webhookRoute,
-} from "./handlers";
+} from "./handlers-ref";
 
 // ---------------------------------------------------------------------------
 // Module mocks — must be at top level before imports resolve

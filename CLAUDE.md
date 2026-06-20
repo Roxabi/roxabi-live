@@ -46,11 +46,16 @@ Let:
 | `worker/src/sync/graphql.ts` | GitHub GraphQL client (`fetch()`) |
 | `worker/src/sync/queries.ts` | GraphQL query strings |
 | `worker/src/sync/parse.ts` | Issue/edge parsing |
-| `worker/src/webhook/handlers.ts` | Webhook dispatch + tenant routing gate (issues/deps/sub_issues + installation/repository/member) |
-| `worker/src/webhook/handlers-app.ts` | App lifecycle handlers (installation/installation_repositories/repository/member/membership) |
+| `worker/src/webhook/handlers.ts` | Webhook dispatch entry (`webhookRoute`) + tenant routing gate |
+| `worker/src/webhook/handlers-issues.ts` | Data handlers (issues/issue_dependencies/sub_issues) |
+| `worker/src/webhook/handlers-ref.ts` | Ref/PR/milestone handlers (create/delete/pull_request/milestone) |
+| `worker/src/webhook/handlers-app.ts` | App install-lifecycle handlers (installation/installation_repositories) |
+| `worker/src/webhook/handlers-access.ts` | Resource/access handlers (repository/member/membership) |
+| `worker/src/webhook/handlers-app-helpers.ts` | Shared payload-shape helpers for handlers-app/handlers-access |
 | `worker/src/webhook/tenant.ts` | Tenant lookup (`installation_id`/`account_login` → `tenants`) |
 | `worker/src/webhook/hmac.ts` | HMAC verification |
-| `worker/src/webhook/mutations.ts` | D1 write helpers |
+| `worker/src/webhook/mutations.ts` | D1 write helpers (issue/edge/PR/milestone corpus) |
+| `worker/src/webhook/mutations-app.ts` | D1 write helpers (App install-lifecycle: tenant/repo/cache/session) |
 | `worker/migrations/` | D1 schema migrations |
 | `wrangler.toml` | Worker config (bindings, Cron, routes, environments) |
 | `frontend/` | Static HTML/JS/CSS served via ASSETS binding |

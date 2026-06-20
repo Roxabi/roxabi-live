@@ -1,12 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../types";
-import {
-  handleInstallation,
-  handleInstallationRepositories,
-  handleMember,
-  handleMembership,
-  handleRepository,
-} from "./handlers-app";
+import { handleMember, handleMembership, handleRepository } from "./handlers-access";
+import { handleInstallation, handleInstallationRepositories } from "./handlers-app";
 
 // ---------------------------------------------------------------------------
 // Fake-D1 harness
