@@ -19,6 +19,9 @@ const BULK = 200;
 /** Label when graph title was redacted and this user has no ciphertext row (#216 hybrid multi-user). */
 export const SEALED_TITLE_LABEL = "(sealed)";
 
+/** Label when ZK session is locked — distinct from sealed / not-yet-imported. */
+export const LOCKED_TITLE_LABEL = "(locked)";
+
 async function putPayloadBatches(payloads) {
   for (let i = 0; i < payloads.length; i += BULK) {
     await api("/api/zk/payloads", {
@@ -75,6 +78,7 @@ async function sealNodes(nodes, githubLogin, contentByKey) {
   if (payloads.length > 0) {
     await putPayloadBatches(payloads);
   }
+  return payloads.length;
 }
 
 /**
@@ -154,12 +158,50 @@ export function isZkMigrationIncomplete() {
   }
 }
 
+async function loadSealedIssueKeys() {
+  const payloadResp = await api("/api/zk/payloads")
+    .then((r) => r.json())
+    .catch(() => ({ payloads: [] }));
+  return new Set((payloadResp.payloads ?? []).map((p) => p.issue_key));
+}
+
+/**
+ * Seal issues missing from zk_payloads. With structure-only sync, node.title is
+ * always null — fetch title/body from GitHub when a user token is available.
+ * @returns {Promise<{ sealed: number, needsGithubLink: boolean }>}
+ */
+async function sealUnsealedNodes(nodes, githubLogin, sealedKeys) {
+  const toSeal = (nodes ?? []).filter((n) => !sealedKeys.has(n.key));
+  if (toSeal.length === 0) return { sealed: 0, needsGithubLink: false };
+
+  let contentByKey = null;
+  const token = getGithubUserToken();
+  if (token) {
+    try {
+      contentByKey = await fetchIssueContentMap(
+        toSeal.map((n) => n.key),
+        token,
+      );
+    } catch {
+      /* best-effort — user can retry via Link GitHub */
+    }
+  }
+
+  const newlySealed = await sealNodes(toSeal, githubLogin, contentByKey);
+
+  return {
+    sealed: newlySealed,
+    needsGithubLink: !token || newlySealed < toSeal.length,
+  };
+}
+
 /**
  * Seal visible graph titles into zk_payloads.
  * @param {Array<{ key: string, title: string|null }>} nodes
  */
 export async function sealGraphTitles(nodes, githubLogin) {
-  await sealNodes(nodes, githubLogin, null);
+  const sealed = await loadSealedIssueKeys();
+  return sealUnsealedNodes(nodes, githubLogin, sealed);
 }
 
 /**
@@ -173,35 +215,21 @@ export async function ensurePrivateMode(githubLogin) {
     body: JSON.stringify({ enabled: true }),
   });
 
-  const [graphData, payloadResp] = await Promise.all([
-    api("/api/graph").then((r) => r.json()),
-    api("/api/zk/payloads")
-      .then((r) => r.json())
-      .catch(() => ({ payloads: [] })),
-  ]);
-
-  const sealed = new Set((payloadResp.payloads ?? []).map((p) => p.issue_key));
-  const toSeal = (graphData.nodes ?? []).filter((n) => n.title != null && !sealed.has(n.key));
-  if (toSeal.length > 0) {
-    await sealGraphTitles(toSeal, githubLogin);
-  }
+  const graphData = await api("/api/graph").then((r) => r.json());
+  const sealed = await loadSealedIssueKeys();
+  return sealUnsealedNodes(graphData.nodes ?? [], githubLogin, sealed);
 }
 
 /**
  * Seal any unsealed graph titles with accountKey v2 (flag-on path).
  * Requires unlocked session.
  */
+/** @returns {Promise<{ sealed: number, needsGithubLink: boolean }|null>} */
 export async function ensureAccountKeySealing(githubLogin, nodes) {
-  if (!isZkUnlocked()) return;
+  if (!isZkUnlocked()) return null;
 
-  const payloadResp = await api("/api/zk/payloads")
-    .then((r) => r.json())
-    .catch(() => ({ payloads: [] }));
-  const sealed = new Set((payloadResp.payloads ?? []).map((p) => p.issue_key));
-  const toSeal = (nodes ?? []).filter((n) => n.title != null && !sealed.has(n.key));
-  if (toSeal.length > 0) {
-    await sealGraphTitles(toSeal, githubLogin);
-  }
+  const sealed = await loadSealedIssueKeys();
+  return sealUnsealedNodes(nodes, githubLogin, sealed);
 }
 
 /**
@@ -211,9 +239,15 @@ export async function syncZkContentFromGitHub(nodes, githubLogin, githubToken) {
   const token = githubToken ?? getGithubUserToken();
   if (!token) return { synced: 0, skipped: "no_token" };
 
-  const keys = nodes.map((n) => n.key);
-  const contentByKey = await fetchIssueContentMap(keys, token);
-  await sealNodes(nodes, githubLogin, contentByKey);
+  const sealed = await loadSealedIssueKeys();
+  const toSync = (nodes ?? []).filter((n) => !sealed.has(n.key));
+  if (toSync.length === 0) return { synced: 0, skipped: null };
+
+  const contentByKey = await fetchIssueContentMap(
+    toSync.map((n) => n.key),
+    token,
+  );
+  await sealNodes(toSync, githubLogin, contentByKey);
   return { synced: contentByKey.size, skipped: null };
 }
 
@@ -228,7 +262,7 @@ export async function applyZkDecryption(nodes, githubLogin, opts = {}) {
 
   if (accountKeyMode && !isZkUnlocked()) {
     for (const node of nodes) {
-      if (node.title == null) node.title = SEALED_TITLE_LABEL;
+      if (node.title == null) node.title = LOCKED_TITLE_LABEL;
     }
     return;
   }
@@ -247,10 +281,7 @@ export async function applyZkDecryption(nodes, githubLogin, opts = {}) {
 
     for (const node of nodes) {
       const row = byKey.get(node.key);
-      if (!row) {
-        if (node.title == null) node.title = SEALED_TITLE_LABEL;
-        continue;
-      }
+      if (!row) continue;
       const v = parseEnvelopeVersion(row.encrypted_payload);
       if (v === 1 && !keys.privateKey) {
         node.title = "(needs migration)";
@@ -271,10 +302,7 @@ export async function applyZkDecryption(nodes, githubLogin, opts = {}) {
 
   for (const node of nodes) {
     const row = byKey.get(node.key);
-    if (!row) {
-      if (node.title == null) node.title = SEALED_TITLE_LABEL;
-      continue;
-    }
+    if (!row) continue;
     try {
       const content = await openContent(privateKey, row.encrypted_payload);
       node.title = content.title ?? SEALED_TITLE_LABEL;

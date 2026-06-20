@@ -22,9 +22,10 @@ import {
   consumeZkHandoffFromUrl,
   consumeZkReauthFromUrl,
   getGithubUserToken,
+  zkLoginUrl,
 } from "./zk-github.js";
 import {
-  SEALED_TITLE_LABEL,
+  LOCKED_TITLE_LABEL,
   applyZkDecryption,
   clearZkMigrationIncomplete,
   ensureAccountKeySealing,
@@ -49,12 +50,34 @@ const graphControls = $("graph-controls");
 const subtitle = $("subtitle");
 const errorMsg = $("error-msg");
 const zkMigrationNotice = $("zk-migration-notice");
+const zkGithubLinkNotice = $("zk-github-link-notice");
 
 const PIVOT_DIMS = ["milestone", "priority", "repo", "lane", "size", "none"];
 const LIST_DIMS = ["milestone", "priority", "repo", "lane", "size", "status", "parent", "none"];
 const TABLE_GROUP_DIMS = ["lane", "parent", "none"];
 
 // ─── ZK migration incomplete notice ─────────────────────────────────────────
+function showZkGithubLinkNotice() {
+  if (!zkGithubLinkNotice || getGithubUserToken()) return;
+  zkGithubLinkNotice.textContent = "";
+  const msg = document.createElement("span");
+  msg.textContent =
+    "Issue titles are encrypted — link GitHub once to import titles from your repos.";
+  const link = document.createElement("a");
+  link.href = zkLoginUrl("/dashboard");
+  link.textContent = "Link GitHub";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "zk-migration-notice-dismiss";
+  btn.title = "Dismiss";
+  btn.textContent = "×";
+  btn.addEventListener("click", () => {
+    zkGithubLinkNotice.hidden = true;
+  });
+  zkGithubLinkNotice.append(msg, " ", link, " ", btn);
+  zkGithubLinkNotice.hidden = false;
+}
+
 function showZkMigrationNotice() {
   if (!isZkMigrationIncomplete()) return;
   zkMigrationNotice.textContent = "";
@@ -444,7 +467,7 @@ async function loadAndRender(zkOptIn, githubLogin, zkAccountKeyEnabled = false) 
       await applyZkDecryption(nodes, githubLogin, { accountKeyMode: zkAccountKeyEnabled });
     } else {
       for (const node of nodes) {
-        if (node.title == null) node.title = SEALED_TITLE_LABEL;
+        if (node.title == null) node.title = LOCKED_TITLE_LABEL;
       }
     }
   }
@@ -521,11 +544,12 @@ async function init() {
     await loadAndRender(sessionZkOptIn, sessionGithubLogin, zkAccountKeyEnabled);
 
     if (zkAccountKeyEnabled) {
-      await ensureAccountKeySealing(sessionGithubLogin, state.nodes);
+      const sealResult = await ensureAccountKeySealing(sessionGithubLogin, state.nodes);
       await applyZkDecryption(state.nodes, sessionGithubLogin, { accountKeyMode: true });
       state.nodesByKey = new Map(state.nodes.map((n) => [n.key, n]));
       render();
       showZkMigrationNotice();
+      if (sealResult?.needsGithubLink) showZkGithubLinkNotice();
     }
     if (getGithubUserToken()) {
       try {

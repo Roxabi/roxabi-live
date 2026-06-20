@@ -35,7 +35,7 @@ const {
   applyZkDecryption,
   migrateV1PayloadsToAccountKey,
   isZkMigrationIncomplete,
-  SEALED_TITLE_LABEL,
+  LOCKED_TITLE_LABEL,
 } = await import("./zk-sync.js");
 
 describe("applyZkDecryption", () => {
@@ -53,7 +53,7 @@ describe("applyZkDecryption", () => {
 
     expect(apiMock).not.toHaveBeenCalled();
     expect(ensureZkKeyPairMock).not.toHaveBeenCalled();
-    expect(nodes[0].title).toBe(SEALED_TITLE_LABEL);
+    expect(nodes[0].title).toBe(LOCKED_TITLE_LABEL);
   });
 });
 
