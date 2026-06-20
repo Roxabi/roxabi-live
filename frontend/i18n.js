@@ -67,20 +67,17 @@ export function applyTranslations(locale) {
   if (metaDesc && descKey) metaDesc.setAttribute("content", t(loc, descKey));
   const titleKey = document.documentElement.getAttribute("data-i18n-title");
   if (titleKey) document.title = t(loc, titleKey);
+  syncLocaleFlagState(loc);
   document.dispatchEvent(new CustomEvent("roxabi:locale", { detail: { locale: loc } }));
   return loc;
 }
 
-/** @param {string} [selectId] */
-export function wireLocaleSwitcher(selectId = "locale-switcher") {
-  const sel = document.getElementById(selectId);
-  if (!sel) return;
-  const current = detectLocale();
-  sel.value = current;
-  sel.addEventListener("change", () => {
-    applyTranslations(/** @type {Locale} */ (sel.value));
-    syncLocaleInUrl(/** @type {Locale} */ (sel.value));
-  });
+/** @param {Locale} locale */
+function syncLocaleFlagState(locale) {
+  for (const btn of document.querySelectorAll(".locale-flag[data-locale]")) {
+    const active = btn.getAttribute("data-locale") === locale;
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  }
 }
 
 /** @param {Locale} locale */
@@ -90,10 +87,24 @@ function syncLocaleInUrl(locale) {
   history.replaceState(null, "", url);
 }
 
+/** Wire flag buttons (all `.locale-flags` groups on the page). */
+export function wireLocaleFlags() {
+  for (const btn of document.querySelectorAll(".locale-flag[data-locale]")) {
+    if (btn.dataset.wired) continue;
+    btn.dataset.wired = "1";
+    btn.addEventListener("click", () => {
+      const locale = /** @type {Locale} */ (btn.getAttribute("data-locale"));
+      applyTranslations(locale);
+      syncLocaleInUrl(locale);
+    });
+  }
+  syncLocaleFlagState(detectLocale());
+}
+
 /** Initialize i18n on page load. */
 export function initI18n() {
   const locale = detectLocale();
   applyTranslations(locale);
-  wireLocaleSwitcher();
+  wireLocaleFlags();
   return locale;
 }

@@ -281,6 +281,14 @@ export function resumeSettingsFromUrl(me) {
   const tab = params.get("settings");
   if (!tab) return;
 
+  if (tab === "open") {
+    params.delete("settings");
+    const qs = params.toString();
+    history.replaceState({}, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
+    openSettings(me);
+    return;
+  }
+
   const action = sessionStorage.getItem(SETTINGS_ACTION_KEY);
   sessionStorage.removeItem(SETTINGS_ACTION_KEY);
   if (!getZkReauthProof()) return;

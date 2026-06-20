@@ -6,7 +6,7 @@
 <title>Connexion · Roxabi Live</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/auth-public.css">
 </head>
@@ -18,11 +18,10 @@
       <span class="site-brand-name">Roxabi Live</span>
     </a>
     <div class="site-nav-actions">
-      <label class="visually-hidden" for="locale-switcher" data-i18n="lang.switch">Langue</label>
-      <select id="locale-switcher" class="locale-switcher" aria-label="Language">
-        <option value="fr" data-i18n="lang.fr">Français</option>
-        <option value="en" data-i18n="lang.en">English</option>
-      </select>
+      <div class="locale-flags" role="group" aria-label="Language">
+        <button type="button" class="locale-flag" data-locale="fr" aria-label="Français" title="Français">🇫🇷</button>
+        <button type="button" class="locale-flag" data-locale="en" aria-label="English" title="English">🇬🇧</button>
+      </div>
     </div>
   </div>
 </header>

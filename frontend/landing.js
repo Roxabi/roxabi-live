@@ -1,8 +1,10 @@
-// landing.js — public homepage (session-aware CTAs + i18n)
+// landing.js — public homepage (session-aware header + i18n)
 
 import { detectLocale, initI18n, t } from "./i18n.js";
+import { hideLandingUserMenu, wireLandingUserMenu } from "./landing-user-menu.js";
 
 const DASHBOARD_PATH = "/dashboard";
+const PROFILE_PATH = "/dashboard?settings=open";
 
 /** @param {string} id */
 function $(id) {
@@ -26,46 +28,38 @@ function setCta(id, href, labelKey) {
 }
 
 function applySignedOutCtas() {
-  const navSignIn = $("nav-sign-in");
-  if (navSignIn) {
-    navSignIn.classList.add("btn-ghost");
-    navSignIn.classList.remove("btn-primary");
-  }
-
-  setHidden("nav-sign-up", false);
-  setHidden("hero-sign-up", false);
-  setHidden("landing-cta-band", false);
+  hideLandingUserMenu();
+  setHidden("nav-guest-actions", false);
 
   setCta("nav-sign-in", "/sign-in/", "nav.signIn");
   setCta("nav-sign-up", "/sign-up/", "nav.signUp");
   setCta("hero-sign-up", "/sign-up/", "hero.ctaPrimary");
   setCta("cta-sign-up", "/sign-up/", "cta.button");
+
+  setHidden("hero-sign-up", false);
+  setHidden("landing-cta-band", false);
 }
 
-function applySignedInCtas() {
-  const navSignIn = $("nav-sign-in");
-  if (navSignIn) {
-    navSignIn.href = DASHBOARD_PATH;
-    navSignIn.textContent = t(detectLocale(), "nav.openDashboard");
-    navSignIn.classList.remove("btn-ghost");
-    navSignIn.classList.add("btn-primary");
-  }
-
-  setHidden("nav-sign-up", true);
+function applySignedInCtas(me) {
+  setHidden("nav-guest-actions", true);
   setHidden("hero-sign-up", true);
   setHidden("landing-cta-band", true);
+
+  setCta("user-menu-dashboard", DASHBOARD_PATH, "nav.myDashboard");
+  setCta("user-menu-profile", PROFILE_PATH, "nav.myProfile");
+  wireLandingUserMenu(me);
 }
 
 async function wireSessionAwareCtas() {
-  let signedIn = false;
+  let me = null;
   try {
     const resp = await fetch("/api/me");
-    signedIn = resp.ok;
+    if (resp.ok) me = await resp.json();
   } catch {
     // offline — keep public CTAs
   }
 
-  if (signedIn) applySignedInCtas();
+  if (me?.user) applySignedInCtas(me);
   else applySignedOutCtas();
 }
 

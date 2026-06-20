@@ -6,7 +6,8 @@ export default {
 
   "nav.signIn": "Se connecter",
   "nav.signUp": "Créer un compte",
-  "nav.openDashboard": "Ouvrir le dashboard",
+  "nav.myDashboard": "Mon dashboard",
+  "nav.myProfile": "Mon profil",
   "nav.features": "Fonctionnalités",
   "nav.howItWorks": "Comment ça marche",
   "nav.security": "Sécurité",

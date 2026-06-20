@@ -178,6 +178,6 @@
 }
 
 [data-theme="light"] .auth-github-btn {
-  background: oklch(0.2 0.02 275);
-  color: oklch(0.98 0 0);
+  background: #1a1d2b;
+  color: #fafafa;
 }
