@@ -4,7 +4,6 @@
 # The declared count is a local cap — exceeding it fails the gate.
 
 # Production sources above QG_FILE_MAX=300 (split deferred; cap prevents growth)
-worker/src/sync/sync.ts  # 1306 lines — #180 sync orchestrator; #216 structure-only sync path (+biome reflow)
 
 # Test files (colocated *.test.ts — exempt with local caps, not production code)
 worker/src/sync/sync.test.ts  # 1745 lines — #180 integration harness for runSync; #216 structure-only (+biome reflow)
