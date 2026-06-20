@@ -4,7 +4,7 @@
 export interface Env {
   /** D1 binding — replaces ~/.roxabi/corpus.db (aiosqlite). */
   DB: D1Database;
-  /** Static-assets binding — serves the v6 frontend (wired in S7, #99). */
+  /** Static-assets binding — serves `frontend/` (wired in S7, #99). */
   ASSETS: Fetcher;
   /** HMAC secret for webhook verification (S5, #97) — differs per env. */
   GITHUB_WEBHOOK_SECRET: string;

@@ -73,29 +73,6 @@ Let:
 | `biome.json` | Biome lint + format config (repo root; scopes `worker/src` + `frontend`) |
 | `artifacts/` | Frames, specs, plans (dev-core) |
 
-**Legacy Python app (pre-CF, M₁-era — decommissioned 2026-06-08, code kept for reference)**
-
-| File | Role |
-|---|---|
-| `src/roxabi_live/app.py` | ~~FastAPI application factory~~ |
-| `src/roxabi_live/__main__.py` | ~~uvicorn entry point~~ |
-| `src/roxabi_live/corpus/` | ~~Issue sync GraphQL → `~/.roxabi/corpus.db`~~ |
-| `src/roxabi_live/dep_graph/v1/` | ~~Legacy CLI renderer (frozen)~~ |
-| `src/roxabi_live/dep_graph/v5/` | ~~Matrix + graph HTML renderer (frozen)~~ |
-| `src/roxabi_live/dep_graph/v6/` | ~~API-first renderer~~ |
-| `src/roxabi_live/reconciler.py` | ~~Hourly corpus sync heal loop~~ |
-| `src/roxabi_live/api/issues.py` | ~~`GET /api/issues`~~ |
-| `src/roxabi_live/webhook/` | ~~GitHub webhook handlers~~ |
-| `.env.example` | Env var reference (legacy Python env; CF secrets via `wrangler secret put`) |
-
-## Dep-graph versions
-
-| Version | Status | Entry |
-|---|---|---|
-| v1 | frozen (legacy CLI — decommissioned) | `dep-graph` script |
-| v5 | frozen (static HTML build — decommissioned) | `dep-graph-v5` script |
-| v6 | **primary** — served by CF Worker ASSETS | `GET /api/graph` · Worker ASSETS binding |
-
 ## Package layout
 
 **Worker (active)**
@@ -120,19 +97,6 @@ frontend/           # served via ASSETS binding
 .claude-plugin/marketplace.json   # single-plugin marketplace
 plugins/roxabi-issues/            # roxabi-issues:issue-triage (bun; labels + native relations)
 ```
-
-**Legacy Python app (decommissioned 2026-06-08)**
-
-```
-src/roxabi_live/
-  __init__.py
-  __main__.py     # uvicorn entry
-  app.py          # FastAPI() + /health
-tests/
-  test_health.py
-```
-
-Module name: `roxabi_live` (underscore). CLI: `roxabi-live` (hyphen). ¬running in prod.
 
 ## Corpus sync — edge algorithm
 
@@ -200,5 +164,4 @@ cd worker && npm ci && npx wrangler dev
 
 **M₁ / systemd — decommissioned 2026-06-08**
 
-`live.service` stopped+disabled. `uv run roxabi-live` (M₂ dev server) no longer reflects prod.
-Legacy log dir: `~/.local/state/roxabi-live/logs/` (archived on M₁).
+`live.service` stopped+disabled. Legacy Python app removed from repo (2026-06-20); Worker + `frontend/` are the only runtime.

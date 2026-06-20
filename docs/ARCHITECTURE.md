@@ -244,13 +244,9 @@ Applied in order at deploy time (`wrangler d1 migrations apply DB --remote`):
 
 ---
 
-## Dep-graph versions
+## Frontend
 
-| Version | Status | Entry |
-|---------|--------|-------|
-| v1 | frozen (legacy CLI, decommissioned) | `dep-graph` script |
-| v5 | frozen (static HTML build, decommissioned) | `dep-graph-v5` script |
-| v6 | **primary** — served via CF Worker ASSETS binding | `GET /api/graph` |
+Static assets in `frontend/` (landing, auth, legal, dashboard) are served via the Worker ASSETS binding. The dashboard reads `GET /api/graph` and related JSON endpoints.
 
 ---
 

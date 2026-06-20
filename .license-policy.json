@@ -20,8 +20,6 @@
   "overrides": {
     "packaging": "Apache-2.0",
     "uvloop": "MIT",
-    "pytest-timeout": "MIT",
-    "typing_extensions": "PSF-2.0",
-    "roxabi-live": "MIT"
+    "roxabi-live": "AGPL-3.0-or-later"
   }
 }

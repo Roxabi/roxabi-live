@@ -36,17 +36,11 @@ jobs:
       - name: Check folder size
         run: bash tools/check_folder_size.sh
 
-      - name: Check duplicate test basenames
-        run: bash tools/check_duplicate_test_basenames.sh
+      - name: Lint tools
+        run: uv run ruff check tools
 
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Typecheck
-        run: uv run pyright
-
-      - name: Test
-        run: uv run pytest tests/ --cov=roxabi_live --cov-branch --cov-report=term-missing
+      - name: License check
+        run: uv run tools/license_check.py
 
   worker:
     runs-on: ubuntu-latest
