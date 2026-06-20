@@ -372,11 +372,19 @@ function updateLockButton() {
   }
 }
 
+function closeUserMenu() {
+  $("user-menu-panel")?.setAttribute("hidden", "");
+  $("user-menu-btn")?.setAttribute("aria-expanded", "false");
+}
+
 export function wireZkLockButton() {
   const btn = $("zk-lock-btn");
   if (!btn || btn.dataset.wired) return;
   btn.dataset.wired = "1";
-  btn.addEventListener("click", () => lockZkSession());
+  btn.addEventListener("click", () => {
+    closeUserMenu();
+    lockZkSession();
+  });
   updateLockButton();
 }
 
