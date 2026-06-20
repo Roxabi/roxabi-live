@@ -42,15 +42,31 @@ Let:
 | `worker/src/graph/status.ts` | Graph status compute + server-side filter |
 | `worker/src/api/admin.ts` | `POST /admin/sync` (ADMIN_TOKEN-gated) |
 | `worker/src/api/version.ts` | `GET /api/version` |
-| `worker/src/sync/sync.ts` | Daily reconcile orchestrator + R2 audit write |
+| `worker/src/sync/sync.ts` | Daily reconcile orchestrator (`runSync`) + public facade re-exports |
+| `worker/src/sync/constants.ts` | Pagination/windowing constants (MAX_PAGES/WINDOW/NUM_SLOTS) |
+| `worker/src/sync/label-vocab.ts` | Label vocab + key helpers (extractFromLabels/canonicalKey/collectEdges) |
+| `worker/src/sync/upsert.ts` | Issue upsert SQL + prepareIssueUpsert (zk title redaction) |
+| `worker/src/sync/control.ts` | batchChunked + sync_control helpers (lock/halt/auth-failures) |
+| `worker/src/sync/repo-issues.ts` | Per-repo issue sync (standalone ISSUES_QUERY) |
+| `worker/src/sync/repo-branches.ts` | Branch sync (has_active_branch) |
+| `worker/src/sync/repo-prs.ts` | PR-state sync (applyPrState/UPSERT_PR_STATE_SQL) |
+| `worker/src/sync/bundle.ts` | Bundled per-repo fetch (issues+refs+PRs) — primary path |
+| `worker/src/sync/edges.ts` | Edge flush (pass 2) + closed-hop stub backfill |
+| `worker/src/sync/audit.ts` | Per-run audit summary (R2 + Workers Logs) |
+| `worker/src/sync/tenants.ts` | Phase-1 per-tenant repo discovery |
 | `worker/src/sync/graphql.ts` | GitHub GraphQL client (`fetch()`) |
 | `worker/src/sync/queries.ts` | GraphQL query strings |
 | `worker/src/sync/parse.ts` | Issue/edge parsing |
-| `worker/src/webhook/handlers.ts` | Webhook dispatch + tenant routing gate (issues/deps/sub_issues + installation/repository/member) |
-| `worker/src/webhook/handlers-app.ts` | App lifecycle handlers (installation/installation_repositories/repository/member/membership) |
+| `worker/src/webhook/handlers.ts` | Webhook dispatch entry (`webhookRoute`) + tenant routing gate |
+| `worker/src/webhook/handlers-issues.ts` | Data handlers (issues/issue_dependencies/sub_issues) |
+| `worker/src/webhook/handlers-ref.ts` | Ref/PR/milestone handlers (create/delete/pull_request/milestone) |
+| `worker/src/webhook/handlers-app.ts` | App install-lifecycle handlers (installation/installation_repositories) |
+| `worker/src/webhook/handlers-access.ts` | Resource/access handlers (repository/member/membership) |
+| `worker/src/webhook/handlers-app-helpers.ts` | Shared payload-shape helpers for handlers-app/handlers-access |
 | `worker/src/webhook/tenant.ts` | Tenant lookup (`installation_id`/`account_login` → `tenants`) |
 | `worker/src/webhook/hmac.ts` | HMAC verification |
-| `worker/src/webhook/mutations.ts` | D1 write helpers |
+| `worker/src/webhook/mutations.ts` | D1 write helpers (issue/edge/PR/milestone corpus) |
+| `worker/src/webhook/mutations-app.ts` | D1 write helpers (App install-lifecycle: tenant/repo/cache/session) |
 | `worker/migrations/` | D1 schema migrations |
 | `wrangler.toml` | Worker config (bindings, Cron, routes, environments) |
 | `frontend/` | Static HTML/JS/CSS served via ASSETS binding |

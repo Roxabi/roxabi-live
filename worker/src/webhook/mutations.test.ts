@@ -495,7 +495,7 @@ import {
   softDeleteTenant,
   upsertRepoAccess,
   upsertTenant,
-} from "./mutations";
+} from "./mutations-app";
 
 describe("webhook mutations — tenant/repo/cache helpers (S4 #147)", () => {
   const now = "2026-06-14T12:00:00.000Z";
