@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Workers Builds deploy command — D1 migrate + wrangler deploy (production).
+# Trigger: push to main touching scripts/deploy-*.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
