@@ -348,17 +348,23 @@ export async function runSync(env: Env, opts?: RunSyncOptions): Promise<void> {
       console.error(
         `[sync] all ${windowedRepos.length} windowed repo(s) failed — systemic auth failure ${failures}/2`,
       );
-      outcome = failures >= 2 ? "halted" : "auth_error";
-      if (failures >= 2) {
-        await haltSync(db, 0);
-        console.error("[sync] HALTED: systemic token failure across all repos");
-        const notifyUrl = env.NOTIFY_URL;
-        if (notifyUrl) {
-          await fetch(notifyUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ event: "sync_halted", ts: new Date().toISOString() }),
-          }).catch(() => {});
+      if (opts?.prioritizeUnsynced) {
+        // First-import bootstrap must keep retrying — do not trip the cron halt breaker.
+        outcome = "auth_error";
+        console.error("[sync] bootstrap pass failed — will retry on next schedule");
+      } else {
+        outcome = failures >= 2 ? "halted" : "auth_error";
+        if (failures >= 2) {
+          await haltSync(db, 0);
+          console.error("[sync] HALTED: systemic token failure across all repos");
+          const notifyUrl = env.NOTIFY_URL;
+          if (notifyUrl) {
+            await fetch(notifyUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ event: "sync_halted", ts: new Date().toISOString() }),
+            }).catch(() => {});
+          }
         }
       }
     }

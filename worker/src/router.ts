@@ -78,6 +78,13 @@ app.post("/admin/sync", adminSyncRoute);
 app.get("/health", async (c) => {
   let dbReachable = false;
   let issueCount = 0;
+  let sync: {
+    repos_total: number;
+    repos_synced: number;
+    sync_running: boolean;
+    sync_halted: boolean;
+    bootstrap_complete: boolean;
+  } | null = null;
   try {
     const row = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM issues").first<{ n: number }>();
     dbReachable = true;
@@ -85,11 +92,30 @@ app.get("/health", async (c) => {
   } catch {
     // db unreachable → report status without failing the request
   }
+  if (dbReachable) {
+    try {
+      const { getRepoSyncProgress, isBootstrapComplete, isGlobalSyncRunning } = await import(
+        "./sync/bootstrap"
+      );
+      const { isHalted } = await import("./sync/control");
+      const progress = await getRepoSyncProgress(c.env.DB);
+      sync = {
+        repos_total: progress.repos_total,
+        repos_synced: progress.repos_synced,
+        sync_running: await isGlobalSyncRunning(c.env.DB),
+        sync_halted: await isHalted(c.env.DB, 0),
+        bootstrap_complete: await isBootstrapComplete(c.env.DB),
+      };
+    } catch {
+      // sync probe optional — issue_count still reported
+    }
+  }
   return c.json({
     status: "ok",
     db_reachable: dbReachable,
     issue_count: issueCount,
     release: c.env.APP_RELEASE ?? "unknown",
+    sync,
   });
 });
 

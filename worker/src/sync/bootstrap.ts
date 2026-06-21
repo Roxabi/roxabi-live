@@ -7,7 +7,7 @@
  */
 
 import type { Env } from "../types";
-import { releaseSyncLock } from "./control";
+import { releaseSyncLock, resumeSyncControl } from "./control";
 import { ensureGlobalSyncControlSeeded, isHalted, runSync } from "./sync";
 
 const BOOTSTRAP_KEY = "bootstrap_at";
@@ -129,6 +129,14 @@ async function markBootstrapAt(db: D1Database, iso: string): Promise<void> {
  * Schedule a background bootstrap chain while repos remain unsynced.
  * Returns true when runBootstrapSync was queued via waitUntil.
  */
+/** First-import must self-heal — cron halt breaker does not apply while repos remain. */
+async function maybeAutoResumeBootstrapHalt(db: D1Database): Promise<void> {
+  if (await isBootstrapComplete(db)) return;
+  if (!(await isHalted(db))) return;
+  await resumeSyncControl(db, 0);
+  console.log("[sync] bootstrap cleared auth halt — resuming first import");
+}
+
 export async function maybeScheduleBootstrapSync(
   db: D1Database,
   env: Env,
@@ -136,6 +144,7 @@ export async function maybeScheduleBootstrapSync(
   syncCtx?: BootstrapSyncContext,
 ): Promise<boolean> {
   await ensureGlobalSyncControlSeeded(db);
+  await maybeAutoResumeBootstrapHalt(db);
 
   if (!(await isBootstrapAllowed(db, syncCtx))) return false;
   if (await isHalted(db)) return false;
@@ -159,6 +168,7 @@ export async function getSyncStatus(
   hasLinkedTenant: boolean,
   syncCtx?: BootstrapSyncContext,
 ): Promise<SyncStatus> {
+  await maybeAutoResumeBootstrapHalt(db);
   const issue_count = await getIssueCount(db);
   const sync_running = await isGlobalSyncRunning(db);
   const halted = await isHalted(db);

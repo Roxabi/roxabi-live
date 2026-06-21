@@ -75,6 +75,24 @@ describe("maybeScheduleBootstrapSync", () => {
     expect(waitUntil).not.toHaveBeenCalled();
   });
 
+  it("auto-resumes when halted during incomplete bootstrap", async () => {
+    const { db } = captureDb((sql) => {
+      if (sql.includes("key='halted'") && sql.includes("SELECT")) return [{ value: "1" }];
+      if (sql.includes("auth_failures")) return [{ value: "2" }];
+      return progressSqlHandler(sql, 39, 28);
+    });
+    const waitUntil = vi.fn();
+
+    const scheduled = await maybeScheduleBootstrapSync(
+      db,
+      { DB: db } as never,
+      { waitUntil } as unknown as ExecutionContext,
+    );
+
+    expect(scheduled).toBe(true);
+    expect(waitUntil).toHaveBeenCalledOnce();
+  });
+
   it("skips when global sync is already running", async () => {
     const { db } = captureDb((sql) => {
       if (sql.includes("sync_running")) {

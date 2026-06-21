@@ -71,11 +71,13 @@ describe("GET /health", () => {
     const { env } = mockEnv({ n: 42 });
     const res = await app.request("/health", {}, env);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
+    const body = await res.json();
+    expect(body).toEqual({
       status: "ok",
       db_reachable: true,
       issue_count: 42,
       release: "unknown",
+      sync: null,
     });
   });
 });

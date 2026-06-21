@@ -117,3 +117,13 @@ export async function resetAuthFailures(db: D1Database, tenantId = 0): Promise<v
     .bind(new Date().toISOString(), tenantId)
     .run();
 }
+
+/** Clear auth-halt breaker so sync can resume (admin or bootstrap auto-resume). */
+export async function resumeSyncControl(db: D1Database, tenantId = 0): Promise<void> {
+  const now = new Date().toISOString();
+  await db
+    .prepare(`UPDATE sync_control SET value='0', updated_at=? WHERE key='halted' AND tenant_id = ?`)
+    .bind(now, tenantId)
+    .run();
+  await resetAuthFailures(db, tenantId);
+}
