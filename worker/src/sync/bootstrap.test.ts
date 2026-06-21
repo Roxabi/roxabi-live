@@ -7,6 +7,7 @@ import {
   isBootstrapComplete,
   isGlobalSyncRunning,
   maybeScheduleBootstrapSync,
+  runBootstrapSync,
 } from "./bootstrap";
 
 vi.mock("./sync", () => ({
@@ -28,7 +29,7 @@ function progressSqlHandler(sql: string, reposTotal: number, reposSynced: number
   if (sql.includes("sync_state") && sql.includes("COUNT")) return [{ n: reposSynced }];
   if (sql.includes("FROM issues") && sql.includes("COUNT"))
     return [{ n: reposSynced > 0 ? 10 : 0 }];
-  if (sql.includes("sync_running")) return [{ value: "0" }];
+  if (sql.includes("sync_running")) return [{ value: "0", updated_at: new Date().toISOString() }];
   if (sql.includes("halted")) return [{ value: "0" }];
   if (sql.includes("bootstrap_at")) return [];
   return [];
@@ -76,7 +77,9 @@ describe("maybeScheduleBootstrapSync", () => {
 
   it("skips when global sync is already running", async () => {
     const { db } = captureDb((sql) => {
-      if (sql.includes("sync_running")) return [{ value: "1" }];
+      if (sql.includes("sync_running")) {
+        return [{ value: "1", updated_at: new Date().toISOString() }];
+      }
       return progressSqlHandler(sql, 39, 10);
     });
     const waitUntil = vi.fn();
@@ -131,7 +134,9 @@ describe("maybeScheduleBootstrapSync", () => {
 describe("getSyncStatus", () => {
   it("marks sync_in_progress when linked tenant and repos remain", async () => {
     const { db } = captureDb((sql) => {
-      if (sql.includes("sync_running")) return [{ value: "1" }];
+      if (sql.includes("sync_running")) {
+        return [{ value: "1", updated_at: new Date().toISOString() }];
+      }
       if (sql.includes("halted")) return [{ value: "0" }];
       return progressSqlHandler(sql, 39, 12);
     });
@@ -194,7 +199,29 @@ describe("getIssueCount / isGlobalSyncRunning", () => {
   });
 
   it("detects global sync_running flag", async () => {
-    const { db } = captureDb(() => [{ value: "1" }]);
+    const { db } = captureDb(() => [{ value: "1", updated_at: new Date().toISOString() }]);
     await expect(isGlobalSyncRunning(db)).resolves.toBe(true);
+  });
+
+  it("clears stale sync_running lock older than 900s", async () => {
+    const stale = new Date(Date.now() - 901_000).toISOString();
+    const { db, stmts } = captureDb(() => [{ value: "1", updated_at: stale }]);
+    await expect(isGlobalSyncRunning(db)).resolves.toBe(false);
+    expect(stmts().some((s) => s.sql.includes("sync_running") && s.sql.includes("'0'"))).toBe(true);
+  });
+});
+
+describe("runBootstrapSync", () => {
+  it("runs a single runSync pass per schedule", async () => {
+    const { db } = captureDb((sql) => progressSqlHandler(sql, 39, 26));
+    await runBootstrapSync({ DB: db } as never);
+    expect(runSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips when bootstrap is already complete", async () => {
+    vi.mocked(runSync).mockClear();
+    const { db } = captureDb((sql) => progressSqlHandler(sql, 39, 39));
+    await runBootstrapSync({ DB: db } as never);
+    expect(runSync).not.toHaveBeenCalled();
   });
 });

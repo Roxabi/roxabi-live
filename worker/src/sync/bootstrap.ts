@@ -7,12 +7,14 @@
  */
 
 import type { Env } from "../types";
-import { NUM_SLOTS } from "./constants";
+import { releaseSyncLock } from "./control";
 import { ensureGlobalSyncControlSeeded, isHalted, runSync } from "./sync";
 
 const BOOTSTRAP_KEY = "bootstrap_at";
 /** Debounce rapid /api/sync/status polls from scheduling duplicate chains. */
 const BOOTSTRAP_SCHEDULE_DEBOUNCE_MS = 10_000;
+/** Must match acquireSyncLock stale-steal threshold in control.ts (900 s). */
+const SYNC_LOCK_STALE_MS = 900_000;
 
 export interface SyncStatus {
   issue_count: number;
@@ -54,9 +56,17 @@ export async function getIssueCount(db: D1Database): Promise<number> {
 
 export async function isGlobalSyncRunning(db: D1Database): Promise<boolean> {
   const row = await db
-    .prepare(`SELECT value FROM sync_control WHERE key = 'sync_running' AND tenant_id = 0`)
-    .first<{ value: string }>();
-  return row?.value === "1";
+    .prepare(
+      `SELECT value, updated_at FROM sync_control WHERE key = 'sync_running' AND tenant_id = 0`,
+    )
+    .first<{ value: string; updated_at: string }>();
+  if (row?.value !== "1") return false;
+  const updatedAt = Date.parse(row.updated_at);
+  if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > SYNC_LOCK_STALE_MS) {
+    await releaseSyncLock(db);
+    return false;
+  }
+  return true;
 }
 
 /** Repos registered vs repos with a completed bundle sync (sync_state watermark). */
@@ -84,18 +94,15 @@ export async function isBootstrapComplete(db: D1Database): Promise<boolean> {
 }
 
 /**
- * First-import chain: runSync advances one WINDOW slot per call — loop until every
- * repo has sync_state or we hit the safety cap (NUM_SLOTS + margin).
+ * One bootstrap pass per waitUntil — runSync advances one WINDOW slot each call.
+ * GET /api/sync/status polls reschedule the next pass until every repo has sync_state.
+ * (Chaining multiple runSync calls in one waitUntil hit Worker CPU limits ~26/39 repos.)
  */
 export async function runBootstrapSync(env: Env): Promise<void> {
   const db = env.DB;
-  const maxPasses = NUM_SLOTS + 2;
-  for (let pass = 0; pass < maxPasses; pass++) {
-    if (await isHalted(db)) return;
-    if (await isBootstrapComplete(db)) return;
-    await runSync(env);
-    if (await isBootstrapComplete(db)) return;
-  }
+  if (await isHalted(db)) return;
+  if (await isBootstrapComplete(db)) return;
+  await runSync(env);
 }
 
 async function getBootstrapAt(db: D1Database): Promise<string | null> {
