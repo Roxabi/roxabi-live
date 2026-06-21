@@ -103,14 +103,36 @@ function renderNodes(container, nodes, positions, usePercentage) {
 }
 
 // ── Render milestone row headers (v5 layout only) ─────────────────────────────
-function renderMilestoneHeaders(container, milestoneInfo, usePercentage) {
+function msRowMetrics(ms, index, usePercentage, containerHeight) {
+  const topPct = index === 0 ? 0 : ms.y;
+  const heightPct = index === 0 ? ms.y + ms.height : ms.height;
+  if (usePercentage) {
+    return {
+      top: `${topPct.toFixed(2)}%`,
+      height: `${heightPct.toFixed(2)}%`,
+      bottomPct: topPct + heightPct,
+    };
+  }
+  const topPx = Math.round((topPct / 100) * containerHeight);
+  const heightPx = Math.round((heightPct / 100) * containerHeight);
+  return {
+    top: `${topPx}px`,
+    height: `${heightPx}px`,
+    bottomPct: topPct + heightPct,
+  };
+}
+
+function renderMilestoneHeaders(container, milestoneInfo, usePercentage, containerHeight) {
+  const rows = [];
+  let visibleIndex = 0;
   for (const ms of milestoneInfo) {
     if (!ms.code) continue;
 
+    const metrics = msRowMetrics(ms, visibleIndex, usePercentage, containerHeight);
     const row = document.createElement("div");
-    row.className = "gg-msrow";
-    row.style.top = usePercentage ? `${ms.y.toFixed(2)}%` : `${ms.y}px`;
-    row.style.height = usePercentage ? `${(ms.height || 5).toFixed(2)}%` : `${ms.height || 40}px`;
+    row.className = `gg-msrow${visibleIndex === 0 ? " gg-msrow-first" : ""}`;
+    row.style.top = metrics.top;
+    row.style.height = metrics.height;
 
     // Hide code for "no milestone" rows
     const isNoMs = ms.code === "-" || ms.code === "(None)";
@@ -131,6 +153,24 @@ function renderMilestoneHeaders(container, milestoneInfo, usePercentage) {
     }
 
     container.appendChild(row);
+    rows.push({ ...ms, bottomPct: metrics.bottomPct });
+    visibleIndex++;
+  }
+  return rows;
+}
+
+function renderMilestoneSeparators(container, milestoneRows, usePercentage, containerHeight) {
+  for (let i = 1; i < milestoneRows.length; i++) {
+    const prev = milestoneRows[i - 1];
+    const cur = milestoneRows[i];
+    const sepY = (prev.bottomPct + cur.y) / 2;
+
+    const sep = document.createElement("div");
+    sep.className = "gg-msrow-sep";
+    sep.style.top = usePercentage
+      ? `${sepY.toFixed(2)}%`
+      : `${Math.round((sepY / 100) * containerHeight)}px`;
+    container.appendChild(sep);
   }
 }
 
@@ -187,9 +227,10 @@ export function renderGraph(container, nodes, edges, layoutResult) {
   wrap.setAttribute("role", "img");
   wrap.setAttribute("aria-label", "Dependency graph");
 
-  // Render milestone headers OUTSIDE stage (they need left:12px from wrap edge)
+  // Render milestone headers OUTSIDE stage (left gutter, full-height bands)
   if (milestoneInfo && milestoneInfo.length > 0) {
-    renderMilestoneHeaders(wrap, milestoneInfo, usePercentage);
+    const milestoneRows = renderMilestoneHeaders(wrap, milestoneInfo, usePercentage, height);
+    renderMilestoneSeparators(wrap, milestoneRows, usePercentage, height);
   }
 
   // Create stage container (holds both SVG and nodes, same coordinate system)

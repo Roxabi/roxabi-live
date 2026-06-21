@@ -12,6 +12,7 @@ import { renderList } from "./list.js";
 import { MultiSelect } from "./multi_select.js";
 import { renderTable } from "./pivot.js";
 import { resumeSettingsFromUrl } from "./settings.js";
+import { SingleSelect } from "./single_select.js";
 // app.js — bootstrap, controls wiring, render orchestration
 import { annotateNodes, parseMilestone, setState, state } from "./state.js";
 import { applyThemePref, toggleThemeQuick, wireThemeMediaListener } from "./theme.js";
@@ -38,9 +39,6 @@ const $ = (id) => document.getElementById(id);
 const viewTable = $("view-table");
 const viewList = $("view-list");
 const graphPanel = $("graph-panel");
-const btnTable = $("btn-table");
-const btnList = $("btn-list");
-const btnGraph = $("btn-graph");
 const searchInput = $("search-input");
 const searchClear = $("search-clear");
 const pivotControls = $("pivot-controls");
@@ -53,6 +51,13 @@ const zkMigrationNotice = $("zk-migration-notice");
 const PIVOT_DIMS = ["milestone", "priority", "repo", "lane", "size", "none"];
 const LIST_DIMS = ["milestone", "priority", "repo", "lane", "size", "status", "parent", "none"];
 const TABLE_GROUP_DIMS = ["lane", "parent", "none"];
+const VIEW_ITEMS = [
+  { value: "table", label: "⊞ Table" },
+  { value: "list", label: "≡ List" },
+  { value: "graph", label: "⋈ Graph" },
+];
+
+const dimItems = (values) => values.map((v) => ({ value: v, label: v }));
 
 // ─── ZK migration incomplete notice ─────────────────────────────────────────
 function showZkMigrationNotice() {
@@ -74,33 +79,15 @@ function showZkMigrationNotice() {
   zkMigrationNotice.hidden = false;
 }
 
-// ─── Seg group builder (click active to deactivate → 'none') ────────────────
-function buildSegs(container, values, current, onPick, opts = {}) {
-  const { allowDeactivate = true, noneValue = "none" } = opts;
-  container.innerHTML = "";
-  for (const v of values) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = `seg${v === current ? " on" : ""}`;
-    b.dataset.v = v;
-    b.textContent = v;
-    b.addEventListener("click", () => {
-      // Click active → deactivate (set to noneValue)
-      if (allowDeactivate && v === current) {
-        container
-          .querySelectorAll(".seg")
-          .forEach((s) => s.classList.toggle("on", s.dataset.v === noneValue));
-        onPick(noneValue);
-      } else {
-        container
-          .querySelectorAll(".seg")
-          .forEach((s) => s.classList.toggle("on", s.dataset.v === v));
-        onPick(v);
-      }
-    });
-    container.appendChild(b);
-  }
-}
+// ─── Single-select instances ──────────────────────────────────────────────
+const ssView = new SingleSelect($("view-select-btn"), $("view-select-panel"), {
+  placeholder: "View",
+});
+const ssPivotRow = new SingleSelect($("pivot-row-btn"), $("pivot-row-panel"));
+const ssPivotCol = new SingleSelect($("pivot-col-btn"), $("pivot-col-panel"));
+const ssTableGroup = new SingleSelect($("table-group-btn"), $("table-group-panel"));
+const ssListGroup = new SingleSelect($("list-group-btn"), $("list-group-panel"));
+const ssListGroup2 = new SingleSelect($("list-group2-btn"), $("list-group2-panel"));
 
 // ─── Multi-select instances ───────────────────────────────────────────────
 const msRepo = new MultiSelect($("ms-repo-btn"), $("ms-repo-panel"), {
@@ -140,15 +127,7 @@ function render() {
     graphPanel.classList.remove("view-active");
   }
 
-  for (const [btn, match] of [
-    [btnTable, "table"],
-    [btnList, "list"],
-    [btnGraph, "graph"],
-  ]) {
-    if (!btn) continue;
-    btn.classList.toggle("on", state.view === match);
-    btn.setAttribute("aria-pressed", String(state.view === match));
-  }
+  ssView.setValue(state.view);
 
   pivotControls.style.display = isTable ? "" : "none";
   if (listControls) listControls.style.display = isList ? "" : "none";
@@ -167,20 +146,31 @@ function updateSubtitle() {
   subtitle.textContent = `${total} issues · ${open} open · ${total - open} closed`;
 }
 
-// ─── View toggle ──────────────────────────────────────────────────────────
-btnTable.addEventListener("click", () => {
-  setState({ view: "table" });
+// ─── View + dimension dropdowns ───────────────────────────────────────────
+ssView.onChange = (v) => {
+  setState({ view: v });
   render();
-});
-btnList.addEventListener("click", () => {
-  setState({ view: "list" });
+};
+ssPivotRow.onChange = (v) => {
+  setState({ pivotRow: v });
   render();
-});
-if (btnGraph)
-  btnGraph.addEventListener("click", () => {
-    setState({ view: "graph" });
-    render();
-  });
+};
+ssPivotCol.onChange = (v) => {
+  setState({ pivotCol: v });
+  render();
+};
+ssTableGroup.onChange = (v) => {
+  setState({ tableGroup: v });
+  render();
+};
+ssListGroup.onChange = (v) => {
+  setState({ listGroup: v });
+  render();
+};
+ssListGroup2.onChange = (v) => {
+  setState({ listGroup2: v });
+  render();
+};
 
 // ─── Search ───────────────────────────────────────────────────────────────
 searchInput.addEventListener("input", () => {
@@ -206,49 +196,7 @@ searchInput.addEventListener("keydown", (e) => {
   }
 });
 
-// ─── Pivot + List segs ────────────────────────────────────────────────────
-function buildPivotSegs() {
-  buildSegs($("pivot-row-segs"), PIVOT_DIMS, state.pivotRow, (v) => {
-    setState({ pivotRow: v });
-    render();
-  });
-  buildSegs($("pivot-col-segs"), PIVOT_DIMS, state.pivotCol, (v) => {
-    setState({ pivotCol: v });
-    render();
-  });
-  buildSegs(
-    $("table-group-segs"),
-    TABLE_GROUP_DIMS,
-    state.tableGroup,
-    (v) => {
-      setState({ tableGroup: v });
-      render();
-    },
-    { allowDeactivate: true },
-  );
-  buildSegs(
-    $("list-group-segs"),
-    LIST_DIMS,
-    state.listGroup,
-    (v) => {
-      setState({ listGroup: v });
-      render();
-    },
-    { allowDeactivate: true },
-  );
-  buildSegs(
-    $("list-group2-segs"),
-    LIST_DIMS,
-    state.listGroup2,
-    (v) => {
-      setState({ listGroup2: v });
-      render();
-    },
-    { allowDeactivate: true },
-  );
-}
-
-// ─── Graph edge toggle ─────────────────────────────────────────────────────
+// ─── Graph edge toggle (Parents/Closed stay as segs) ───────────────────────
 function buildGraphSegs() {
   const container = $("graph-edge-segs");
   if (!container) return;
@@ -406,7 +354,12 @@ function populateFilters(repoData) {
 function restoreControls() {
   searchInput.value = state.search;
   searchClear.hidden = !state.search;
-  buildPivotSegs();
+  ssView.setItems(VIEW_ITEMS, state.view);
+  ssPivotRow.setItems(dimItems(PIVOT_DIMS), state.pivotRow);
+  ssPivotCol.setItems(dimItems(PIVOT_DIMS), state.pivotCol);
+  ssTableGroup.setItems(dimItems(TABLE_GROUP_DIMS), state.tableGroup);
+  ssListGroup.setItems(dimItems(LIST_DIMS), state.listGroup);
+  ssListGroup2.setItems(dimItems(LIST_DIMS), state.listGroup2);
   buildGraphSegs();
 }
 

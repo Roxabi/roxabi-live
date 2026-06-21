@@ -18,10 +18,9 @@
       <div class="subtitle" id="subtitle">Loading…</div>
     </div>
     <div class="header-actions">
-      <div class="segs view-segs" role="group" aria-label="View">
-        <button id="btn-table" class="seg on" data-v="table" aria-pressed="true"  title="Table"><span class="ico">⊞</span> Table</button>
-        <button id="btn-list"  class="seg"    data-v="list"  aria-pressed="false" title="List"><span class="ico">≡</span> List</button>
-        <button id="btn-graph" class="seg"    data-v="graph" aria-pressed="false" title="Graph"><span class="ico">⋈</span> Graph</button>
+      <div class="ss-wrap">
+        <button id="view-select-btn" class="ss-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="View"></button>
+        <div id="view-select-panel" class="ms-panel" hidden></div>
       </div>
       <select id="org-picker" class="org-picker" aria-label="Active organisation" hidden></select>
       <button id="zk-lock-btn" class="theme-btn" type="button" hidden title="Lock encryption">Lock</button>
@@ -86,18 +85,33 @@
 
     <span class="pivot-controls" id="pivot-controls">
       <span class="toolbar-label">Row</span>
-      <div class="segs" id="pivot-row-segs" role="group" aria-label="Pivot row dimension"></div>
+      <div class="ss-wrap">
+        <button id="pivot-row-btn" class="ss-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Pivot row dimension"></button>
+        <div id="pivot-row-panel" class="ms-panel" hidden></div>
+      </div>
       <span class="toolbar-label">Col</span>
-      <div class="segs" id="pivot-col-segs" role="group" aria-label="Pivot column dimension"></div>
+      <div class="ss-wrap">
+        <button id="pivot-col-btn" class="ss-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Pivot column dimension"></button>
+        <div id="pivot-col-panel" class="ms-panel" hidden></div>
+      </div>
       <span class="toolbar-label">Group</span>
-      <div class="segs" id="table-group-segs" role="group" aria-label="Group cells by"></div>
+      <div class="ss-wrap">
+        <button id="table-group-btn" class="ss-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Group cells by"></button>
+        <div id="table-group-panel" class="ms-panel" hidden></div>
+      </div>
     </span>
 
     <span class="list-controls" id="list-controls" style="display:none">
       <span class="toolbar-label">Group</span>
-      <div class="segs" id="list-group-segs" role="group" aria-label="Primary grouping"></div>
+      <div class="ss-wrap">
+        <button id="list-group-btn" class="ss-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Primary grouping"></button>
+        <div id="list-group-panel" class="ms-panel" hidden></div>
+      </div>
       <span class="toolbar-label">Then</span>
-      <div class="segs" id="list-group2-segs" role="group" aria-label="Secondary grouping"></div>
+      <div class="ss-wrap">
+        <button id="list-group2-btn" class="ss-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Secondary grouping"></button>
+        <div id="list-group2-panel" class="ms-panel" hidden></div>
+      </div>
     </span>
 
     <span class="graph-controls" id="graph-controls">
