@@ -8,8 +8,13 @@
  *    - Workers Builds Configuration → Edit
  *    - Workers Scripts → Read
  *
- * Usage:
+ * Usage (API token — preferred):
  *   export CLOUDFLARE_API_TOKEN=<user token>
+ *   node scripts/setup-workers-builds.mjs
+ *
+ * Usage (global API key — bw):
+ *   export CLOUDFLARE_EMAIL="$(bw get username cloudflare/global-api-key)"
+ *   export CLOUDFLARE_API_KEY="$(bw get password cloudflare/global-api-key)"
  *   node scripts/setup-workers-builds.mjs
  */
 
@@ -22,12 +27,24 @@ const ROOT = join(__dirname, "..");
 const CONFIG = JSON.parse(readFileSync(join(ROOT, "infra/workers-builds.json"), "utf8"));
 const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID ?? CONFIG.accountId;
 const TOKEN = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
+const CF_EMAIL = process.env.CLOUDFLARE_EMAIL ?? process.env.CF_EMAIL;
+const CF_API_KEY = process.env.CLOUDFLARE_API_KEY;
+
+function cfAuthHeaders() {
+  if (TOKEN) {
+    return { Authorization: `Bearer ${TOKEN}` };
+  }
+  if (CF_EMAIL && CF_API_KEY) {
+    return { "X-Auth-Email": CF_EMAIL, "X-Auth-Key": CF_API_KEY };
+  }
+  return {};
+}
 
 async function cf(path, init = {}) {
   const res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${TOKEN}`,
+      ...cfAuthHeaders(),
       "Content-Type": "application/json",
       ...(init.headers ?? {}),
     },
@@ -130,8 +147,10 @@ async function upsertTrigger(workerTag, repoConnectionUuid, buildTokenUuid, spec
 }
 
 async function main() {
-  if (!TOKEN) {
-    console.error("Set CLOUDFLARE_API_TOKEN (user-scoped, Workers Builds Configuration Edit)");
+  if (!TOKEN && !(CF_EMAIL && CF_API_KEY)) {
+    console.error(
+      "Set CLOUDFLARE_API_TOKEN or CLOUDFLARE_EMAIL + CLOUDFLARE_API_KEY (global API key)",
+    );
     process.exit(1);
   }
 
