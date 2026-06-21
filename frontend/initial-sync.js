@@ -41,6 +41,12 @@ export function startSyncProgressMonitor(callbacks = {}) {
     const status = await fetchStatus();
     if (!status) return;
 
+    if (status.sync_halted) {
+      showHaltedBanner(banner, status);
+      stop();
+      return;
+    }
+
     const active = status.sync_in_progress || status.sync_running;
     const syncRunning = Boolean(status.sync_running);
 
@@ -102,6 +108,20 @@ function showBanner(banner, status) {
       </div>
       <div class="sync-progress-track" aria-hidden="true">
         <div class="sync-progress-fill" style="width:${pct}%"></div>
+      </div>
+    </div>
+  `;
+  banner.removeAttribute("hidden");
+}
+
+function showHaltedBanner(banner, status) {
+  const synced = status.repos_synced ?? 0;
+  const total = status.repos_total ?? 0;
+  banner.innerHTML = `
+    <div class="sync-progress-inner" role="alert">
+      <div class="sync-progress-text">
+        <strong>Synchronisation interrompue</strong>
+        <span class="sync-progress-detail">${synced} / ${total} dépôts · erreur d'authentification GitHub</span>
       </div>
     </div>
   `;

@@ -17,6 +17,7 @@ vi.mock("../sync/bootstrap", async (importOriginal) => {
       repos_total: 39,
       repos_synced: 0,
       sync_in_progress: true,
+      sync_halted: false,
     }),
     isGlobalSyncRunning: vi.fn().mockResolvedValue(true),
   };
@@ -70,6 +71,7 @@ describe("GET /api/sync/status", () => {
       repos_total: 39,
       repos_synced: 0,
       sync_in_progress: true,
+      sync_halted: false,
     });
   });
 
@@ -81,6 +83,7 @@ describe("GET /api/sync/status", () => {
       repos_total: 39,
       repos_synced: 20,
       sync_in_progress: true,
+      sync_halted: false,
     });
     const { db } = captureDb();
     const waitUntil = vi.fn();
@@ -104,6 +107,7 @@ describe("GET /api/sync/status", () => {
       repos_total: 0,
       repos_synced: 0,
       sync_in_progress: false,
+      sync_halted: false,
     });
     const { db } = captureDb();
     await makeApp(db).request("/api/sync/status", {}, makeEnv(db), {

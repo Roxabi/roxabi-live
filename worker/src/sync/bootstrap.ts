@@ -12,7 +12,7 @@ import { ensureGlobalSyncControlSeeded, isHalted, runSync } from "./sync";
 
 const BOOTSTRAP_KEY = "bootstrap_at";
 /** Debounce rapid /api/sync/status polls from scheduling duplicate chains. */
-const BOOTSTRAP_SCHEDULE_DEBOUNCE_MS = 10_000;
+const BOOTSTRAP_SCHEDULE_DEBOUNCE_MS = 3_000;
 /** Must match acquireSyncLock stale-steal threshold in control.ts (900 s). */
 const SYNC_LOCK_STALE_MS = 900_000;
 
@@ -24,6 +24,7 @@ export interface SyncStatus {
   repos_total: number;
   repos_synced: number;
   sync_in_progress: boolean;
+  sync_halted: boolean;
 }
 
 /** When ZK_ACCOUNT_KEY is on, bootstrap waits until the session user has a backup row. */
@@ -102,7 +103,7 @@ export async function runBootstrapSync(env: Env): Promise<void> {
   const db = env.DB;
   if (await isHalted(db)) return;
   if (await isBootstrapComplete(db)) return;
-  await runSync(env);
+  await runSync(env, { prioritizeUnsynced: true });
 }
 
 async function getBootstrapAt(db: D1Database): Promise<string | null> {
@@ -173,5 +174,6 @@ export async function getSyncStatus(
     repos_total,
     repos_synced,
     sync_in_progress,
+    sync_halted: halted,
   };
 }

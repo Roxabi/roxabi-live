@@ -62,11 +62,28 @@ export { syncBranches } from "./repo-branches";
 export { syncRepoBundle } from "./bundle";
 export { writeRunAudit } from "./audit";
 
+export interface RunSyncOptions {
+  /** Bootstrap: sync only repos missing sync_state (up to WINDOW), skip slot rotation. */
+  prioritizeUnsynced?: boolean;
+}
+
+async function listUnsyncedRepos(db: D1Database, allRepos: string[]): Promise<string[]> {
+  const rows = await db
+    .prepare(
+      `SELECT s.repo FROM sync_state s
+       INNER JOIN repos r ON r.repo = s.repo
+       WHERE s.last_synced_at IS NOT NULL AND TRIM(s.last_synced_at) != ''`,
+    )
+    .all<{ repo: string }>();
+  const synced = new Set((rows.results ?? []).map((r) => r.repo));
+  return allRepos.filter((r) => !synced.has(r));
+}
+
 /**
  * Org-wide sync: check halt → acquire lock → enumerate repos → two-pass issue
  * sync → branch/PR sync → closed-hop pass → release lock.
  */
-export async function runSync(env: Env): Promise<void> {
+export async function runSync(env: Env, opts?: RunSyncOptions): Promise<void> {
   const db = env.DB;
 
   await ensureGlobalSyncControlSeeded(db);
@@ -217,21 +234,33 @@ export async function runSync(env: Env): Promise<void> {
       console.log(`[sync] pruned data for ${staleReposPruned} stale repo(s)`);
     }
 
-    // Phase 2 — deduped windowed fan-out.
-    // Read current slot (tenant_id=0).
-    const slotRow = await db
-      .prepare(`SELECT value FROM sync_control WHERE key='sync_slot' AND tenant_id = 0`)
-      .first<{ value: string }>();
-    const slot = Number.parseInt(slotRow?.value ?? "0", 10);
-    const windowStart = slot * WINDOW;
-    const windowEnd = windowStart + WINDOW;
-    // Windowing only engages past WINDOW repos; below that, sync everything hourly.
-    const windowedRepos =
-      allRepos.length <= WINDOW ? allRepos : allRepos.slice(windowStart, windowEnd);
-
-    console.log(
-      `[sync] slot=${slot} window=[${windowStart},${windowEnd}) repos=${windowedRepos.length}/${allRepos.length}`,
-    );
+    // Phase 2 — repo fan-out. Bootstrap prioritises unsynced repos so we do not
+    // waste a pass re-fetching repos that already have sync_state (26/39 stall).
+    let windowedRepos: string[];
+    let slot = 0;
+    if (opts?.prioritizeUnsynced) {
+      const unsynced = await listUnsyncedRepos(db, allRepos);
+      windowedRepos = unsynced.slice(0, WINDOW);
+      console.log(
+        `[sync] bootstrap unsynced=${unsynced.length} syncing=${windowedRepos.length}/${allRepos.length}`,
+      );
+      if (windowedRepos.length === 0) {
+        outcome = "success";
+        return;
+      }
+    } else {
+      const slotRow = await db
+        .prepare(`SELECT value FROM sync_control WHERE key='sync_slot' AND tenant_id = 0`)
+        .first<{ value: string }>();
+      slot = Number.parseInt(slotRow?.value ?? "0", 10);
+      const windowStart = slot * WINDOW;
+      const windowEnd = windowStart + WINDOW;
+      // Windowing only engages past WINDOW repos; below that, sync everything hourly.
+      windowedRepos = allRepos.length <= WINDOW ? allRepos : allRepos.slice(windowStart, windowEnd);
+      console.log(
+        `[sync] slot=${slot} window=[${windowStart},${windowEnd}) repos=${windowedRepos.length}/${allRepos.length}`,
+      );
+    }
 
     // Per-repo token resolver: try owning tenant first, fall back down list.
     const makeRepoResolver =
@@ -302,14 +331,16 @@ export async function runSync(env: Env): Promise<void> {
     );
     console.log(`[sync] completed — stubs=${stubsCount}`);
 
-    // Advance slot.
-    const nextSlot = (slot + 1) % NUM_SLOTS;
-    await db
-      .prepare(
-        `UPDATE sync_control SET value=?, updated_at=? WHERE key='sync_slot' AND tenant_id = 0`,
-      )
-      .bind(String(nextSlot), new Date().toISOString())
-      .run();
+    // Advance slot (cron rotation only — bootstrap uses prioritizeUnsynced).
+    if (!opts?.prioritizeUnsynced) {
+      const nextSlot = (slot + 1) % NUM_SLOTS;
+      await db
+        .prepare(
+          `UPDATE sync_control SET value=?, updated_at=? WHERE key='sync_slot' AND tenant_id = 0`,
+        )
+        .bind(String(nextSlot), new Date().toISOString())
+        .run();
+    }
 
     const systemicFailure = windowedRepos.length > 0 && skippedCount === windowedRepos.length;
     if (systemicFailure) {

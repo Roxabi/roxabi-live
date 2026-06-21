@@ -4,7 +4,7 @@
 // ── v5 positioning constants (match Python layout_graph.py) ──────────────────
 const LANE_X_START = 4.0;
 const LANE_X_END = 96.0;
-const Y_TOP = 4.5;
+const Y_TOP = 1.5;
 const Y_BOT = 88.0;
 const MIN_CELL_GAP = 2;
 const MAX_CELL_WIDTH_PCT = 4.0;

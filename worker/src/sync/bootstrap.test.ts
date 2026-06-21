@@ -148,6 +148,7 @@ describe("getSyncStatus", () => {
       repos_total: 39,
       repos_synced: 12,
       sync_in_progress: true,
+      sync_halted: false,
     });
   });
 
@@ -212,10 +213,11 @@ describe("getIssueCount / isGlobalSyncRunning", () => {
 });
 
 describe("runBootstrapSync", () => {
-  it("runs a single runSync pass per schedule", async () => {
+  it("runs a single prioritizeUnsynced pass per schedule", async () => {
     const { db } = captureDb((sql) => progressSqlHandler(sql, 39, 26));
     await runBootstrapSync({ DB: db } as never);
     expect(runSync).toHaveBeenCalledTimes(1);
+    expect(runSync).toHaveBeenCalledWith({ DB: db }, { prioritizeUnsynced: true });
   });
 
   it("skips when bootstrap is already complete", async () => {
