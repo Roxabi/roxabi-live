@@ -1,0 +1,35 @@
+{
+  "accountId": "b5e90be971920ce406f7b679c4f1cd33",
+  "github": {
+    "owner": "Roxabi",
+    "ownerId": 130185740,
+    "repo": "roxabi-live",
+    "repoId": 1175843511
+  },
+  "pathIncludes": ["worker/*", "frontend/*", "wrangler.toml", "scripts/deploy-*.sh"],
+  "pathExcludes": [],
+  "workers": [
+    {
+      "workerName": "roxabi-live",
+      "trigger": {
+        "name": "Deploy production",
+        "rootDirectory": "/",
+        "buildCommand": "cd worker && npm ci",
+        "deployCommand": "bash scripts/deploy-production.sh",
+        "branchIncludes": ["main"],
+        "branchExcludes": []
+      }
+    },
+    {
+      "workerName": "roxabi-live-staging",
+      "trigger": {
+        "name": "Deploy staging",
+        "rootDirectory": "/",
+        "buildCommand": "cd worker && npm ci",
+        "deployCommand": "bash scripts/deploy-staging.sh",
+        "branchIncludes": ["staging"],
+        "branchExcludes": []
+      }
+    }
+  ]
+}

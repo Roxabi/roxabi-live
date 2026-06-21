@@ -14,7 +14,7 @@ compatibility_date = "2025-01-01"
 # the STAGING Worker (premature domain creation + wrong target).
 # Ref: cloudflare/workers-sdk#13925.
 # ⚠️ SECURITY GATE: this route takes effect on the next *production* deploy
-# (push to `main`, or a manual `wrangler deploy`). CF Access App 1 (Email OTP,
+# (push to `main` via Workers Builds, or manual `npm run deploy:production`). CF Access App 1 (Email OTP,
 # all paths) MUST already exist BEFORE that deploy — otherwise the dashboard is
 # publicly reachable at https://live.roxabi.dev with no auth.
 # See docs/s9-cutover.md → Phase 4 (Access apps precede the custom domain).

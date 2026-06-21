@@ -95,8 +95,8 @@ See [docs/DEPLOY.md](DEPLOY.md) for:
 
 - Cloudflare account and Worker setup
 - D1 database and R2 bucket provisioning
-- GitHub App creation, wrangler secret injection, and CI repo secrets
-- `wrangler deploy` flows for staging and production
+- GitHub App creation, wrangler secret injection, and Workers Builds setup
+- Auto-deploy on push to `staging` / `main` (break-glass `npm run deploy:*`)
 - Cloudflare Access configuration for `/admin/*`
 
 ## Legacy Note
