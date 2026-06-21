@@ -71,6 +71,7 @@ workers_dev = true
 
 [env.staging.vars]
 APP_RELEASE = "0.19.3"
+GITHUB_APP_SLUG = "roxabi-live-staging"
 ZK_ACCOUNT_KEY = "1"
 ZK_STRUCTURE_ONLY = "1"
 # `routes` is inheritable — without this explicit empty override a staging

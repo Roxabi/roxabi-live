@@ -81,7 +81,7 @@ export async function buildMePayload(env: Env, session: SessionContext): Promise
     active_tenant_id: session.tenantId,
     install_pending: installPending,
     install_targets: installTargets,
-    install_options: buildInstallOptions(installTargets),
+    install_options: buildInstallOptions(installTargets, env.GITHUB_APP_SLUG),
     installations,
     onboarding_step: onboardingStep,
     consent_at: userRow?.consent_at ?? null,
