@@ -153,7 +153,7 @@ export async function runSync(env: Env, opts?: RunSyncOptions): Promise<void> {
     const knownRepos = new Set(allRepos);
     const CHUNK = 90;
 
-    const [issueRepos, edgeSrcRepos, edgeDstRepos, prStateRepos, syncStateRepos] =
+    const [issueRepos, edgeSrcRepos, edgeDstRepos, prStateRepos, syncStateRepos, registryRepos] =
       await Promise.all([
         db.prepare("SELECT DISTINCT repo FROM issues").all<{ repo: string }>(),
         db
@@ -164,6 +164,7 @@ export async function runSync(env: Env, opts?: RunSyncOptions): Promise<void> {
           .all<{ repo: string }>(),
         db.prepare("SELECT DISTINCT repo FROM pr_state").all<{ repo: string }>(),
         db.prepare("SELECT repo FROM sync_state").all<{ repo: string }>(),
+        db.prepare("SELECT repo FROM repos").all<{ repo: string }>(),
       ]);
 
     const staleIssueRepos = (issueRepos.results ?? [])
@@ -177,6 +178,9 @@ export async function runSync(env: Env, opts?: RunSyncOptions): Promise<void> {
       .map((r) => r.repo)
       .filter((r) => !knownRepos.has(r));
     const staleSyncStateRepos = (syncStateRepos.results ?? [])
+      .map((r) => r.repo)
+      .filter((r) => !knownRepos.has(r));
+    const staleRegistryRepos = (registryRepos.results ?? [])
       .map((r) => r.repo)
       .filter((r) => !knownRepos.has(r));
 
@@ -208,6 +212,9 @@ export async function runSync(env: Env, opts?: RunSyncOptions): Promise<void> {
         pruneStmts.push(db.prepare("DELETE FROM sync_state WHERE repo=?").bind(repo));
       }
     }
+    for (const repo of staleRegistryRepos) {
+      pruneStmts.push(db.prepare("DELETE FROM repos WHERE repo=?").bind(repo));
+    }
 
     if (pruneStmts.length > 0) {
       await batchChunked(db, pruneStmts);
@@ -216,6 +223,7 @@ export async function runSync(env: Env, opts?: RunSyncOptions): Promise<void> {
         ...staleEdgeReposUniq,
         ...stalePrStateRepos,
         ...staleSyncStateRepos,
+        ...staleRegistryRepos,
       ]).size;
       console.log(`[sync] pruned data for ${staleReposPruned} stale repo(s)`);
     }
