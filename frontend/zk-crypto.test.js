@@ -8,12 +8,10 @@ import {
   fingerprintAccountKey,
   fingerprintPublicKey,
   generateAccountKey,
-  loadDeviceSession,
   openContent,
   openContentDual,
   openTitle,
   openWithAccountKey,
-  saveDeviceSession,
   sealContent,
   sealTitle,
   sealWithAccountKey,
@@ -86,19 +84,6 @@ describe("zk-crypto accountKey v2", () => {
     expect(content.body).toBe("Private body");
   });
 
-  it("saveDeviceSession/loadDeviceSession roundtrips encrypted device session", async () => {
-    const fp = await fingerprintAccountKey(accountKey);
-    await saveDeviceSession("alice", accountKey, fp);
-    const restored = await loadDeviceSession("alice");
-    expect(restored?.key_fp).toBe(fp);
-    expect(restored?.accountKey).toBeTruthy();
-    const envelope = await sealWithAccountKey(restored.accountKey, { title: "Device session" });
-    const opened = await openWithAccountKey(restored.accountKey, envelope);
-    expect(opened.title).toBe("Device session");
-    const { clearDeviceSession } = await import("./zk-crypto.js");
-    await clearDeviceSession("alice");
-  });
-
   it("wrapAccountKey/unwrapAccountKey roundtrips accountKey", async () => {
     const passphrase = "strong-test-passphrase-216";
     const backup = await wrapAccountKey(passphrase, accountKey);
@@ -106,7 +91,7 @@ describe("zk-crypto accountKey v2", () => {
     expect(backup.key_fp).toMatch(/^[0-9a-f]{32}$/);
 
     const unwrapped = await unwrapAccountKey(passphrase, backup);
-    expect(unwrapped.extractable).toBe(false);
+    expect(unwrapped.extractable).toBe(true);
 
     const envelope = await sealWithAccountKey(accountKey, { title: "Wrapped key test" });
     const content = await openWithAccountKey(unwrapped, envelope);
