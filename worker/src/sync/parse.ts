@@ -1,7 +1,7 @@
 /**
- * parse.ts — milestone string parser for the v6 graph API.
+ * parse.ts — milestone string parser for the graph API.
  *
- * Ported from src/roxabi_live/dep_graph/v6/parse.py::parse_milestone.
+ * Ported from the legacy Python parse_milestone (pre-CF); canonical implementation lives here.
  * Regex patterns are character-for-character identical to the Python source.
  *
  * NOTE: derive_priority / derive_lane_size are intentionally NOT ported here.

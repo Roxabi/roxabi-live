@@ -9,8 +9,8 @@ export default {
     return app.fetch(req, env, ctx);
   },
 
-  // Daily Cron Trigger (wrangler.toml [triggers].crons = "0 0 * * *") — runs a
-  // FULL reconcile (since=null) so deps-only edge changes are healed daily (#80).
+  // Cron trigger disabled in wrangler.toml — manual via POST /admin/sync for drift
+  // checks. Handler kept so re-enabling crons does not require code changes.
   scheduled: async (
     _controller: ScheduledController,
     env: Env,

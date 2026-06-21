@@ -6,6 +6,8 @@ import {
   loginUrl,
   onboardingStepFromMe,
   pollInstallRefresh,
+  signOut,
+  stripStaleOAuthCallbackUrl,
 } from "./auth.js";
 
 describe("loginUrl", () => {
@@ -44,6 +46,29 @@ describe("onboardingStepFromMe", () => {
   it("throws when onboarding_step is missing or invalid", () => {
     expect(() => onboardingStepFromMe({})).toThrow("invalid onboarding_step");
     expect(() => onboardingStepFromMe({ onboarding_step: "bogus" })).toThrow();
+  });
+});
+
+describe("signOut", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("location", { href: "", reload: vi.fn() });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("redirects home by default", async () => {
+    fetch.mockResolvedValue({ status: 200, ok: true });
+    await signOut();
+    expect(fetch).toHaveBeenCalledWith("/logout", { method: "POST" });
+    expect(location.href).toBe("/");
+  });
+
+  it("reloads when requested", async () => {
+    fetch.mockResolvedValue({ status: 200, ok: true });
+    await signOut({ after: "reload" });
+    expect(location.reload).toHaveBeenCalled();
   });
 });
 
@@ -87,5 +112,28 @@ describe("pollInstallRefresh", () => {
   it("throws AuthError on 401", async () => {
     fetch.mockResolvedValueOnce({ status: 401, ok: false });
     await expect(pollInstallRefresh(1)).rejects.toBeInstanceOf(AuthError);
+  });
+});
+
+describe("stripStaleOAuthCallbackUrl", () => {
+  const replaceState = vi.fn();
+
+  beforeEach(() => {
+    replaceState.mockReset();
+    vi.stubGlobal("history", { ...history, replaceState });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("moves /oauth/callback to /dashboard and drops code/state", () => {
+    vi.stubGlobal("location", {
+      pathname: "/oauth/callback",
+      search: "?code=abc&state=xyz&zk_handoff=h1",
+      hash: "",
+    });
+    stripStaleOAuthCallbackUrl();
+    expect(replaceState).toHaveBeenCalledWith({}, "", "/dashboard?zk_handoff=h1");
   });
 });

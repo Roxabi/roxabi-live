@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-label="Roxabi">
+  <!-- Favicon variant of "C / Open top" — same silhouette, simplified for 16px:
+       solid faces, a flat amber top aperture, crisp amber edges, no blur. -->
+  <polygon points="3,5.5 8,8 8,13 3,10.5"  fill="#11161d"/>   <!-- left  -->
+  <polygon points="13,5.5 13,10.5 8,13 8,8" fill="#171e27"/>   <!-- right -->
+  <polygon points="8,3 13,5.5 8,8 3,5.5"    fill="#1c2431"/>   <!-- top   -->
+  <polygon points="8,4 11,5.5 8,7 5,5.5"    fill="#f0b429"/>   <!-- open top aperture (flat amber) -->
+  <path d="M8,3 13,5.5 13,10.5 8,13 3,10.5 3,5.5Z" fill="none" stroke="#f0b429" stroke-width="0.8" stroke-linejoin="round"/>
+  <path d="M3,5.5 8,8 8,13 M13,5.5 8,8" fill="none" stroke="#f0b429" stroke-width="0.6" stroke-linejoin="round" opacity="0.7"/>
+</svg>

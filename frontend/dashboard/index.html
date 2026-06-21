@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dep-Graph v6 · Roxabi Live</title>
+<title>Roxabi Live — Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap">
+<link rel="icon" href="/assets/logo/foundation-block-16.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/auth.css">
 <link rel="stylesheet" href="/graph.css">
@@ -13,9 +14,14 @@
 <body>
 <div class="sticky-head">
   <header class="page-header">
-    <div>
-      <h1>Dep-Graph <span class="accent">v6</span> · Roxabi Live</h1>
-      <div class="subtitle" id="subtitle">Loading…</div>
+    <div class="page-header-brand">
+      <a class="page-brand" href="/" aria-label="Roxabi Live home">
+        <img class="page-brand-mark" src="/assets/logo/foundation-block-16.svg" alt="" width="24" height="24" />
+      </a>
+      <div>
+        <h1>Roxabi <span class="accent">Live</span></h1>
+        <div class="subtitle" id="subtitle">Loading…</div>
+      </div>
     </div>
     <div class="header-actions">
       <div class="ss-wrap">
@@ -23,13 +29,13 @@
         <div id="view-select-panel" class="ms-panel" hidden></div>
       </div>
       <select id="org-picker" class="org-picker" aria-label="Active organisation" hidden></select>
-      <button id="zk-lock-btn" class="theme-btn" type="button" hidden title="Lock encryption">Lock</button>
       <div id="user-menu-wrap" class="user-menu-wrap" hidden>
         <button id="user-menu-btn" class="user-avatar-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Account menu">
           <img id="user-menu-avatar" class="user-avatar-img" alt="" width="28" height="28" />
         </button>
         <div id="user-menu-panel" class="user-menu-panel" role="menu" hidden>
           <button type="button" class="user-menu-item" id="user-menu-settings" role="menuitem">Settings</button>
+          <button type="button" class="user-menu-item" id="zk-lock-btn" role="menuitem" hidden title="Lock encryption">Lock</button>
           <button type="button" class="user-menu-item user-menu-item-danger" id="user-menu-signout" role="menuitem">Sign out</button>
         </div>
       </div>
@@ -119,6 +125,7 @@
     </span>
   </div>
   <div id="zk-migration-notice" class="zk-migration-notice" hidden></div>
+  <div id="zk-github-link-notice" class="zk-migration-notice" hidden></div>
 </div>
 
 <main>
@@ -135,7 +142,7 @@
     <a href="/politique-confidentialite">Confidentialité</a>
     <a href="/conditions-utilisation">CGU</a>
   </nav>
-  <span>v6</span>
+  <span class="page-footer-copy">© 2026 Roxabi · Live</span>
 </footer>
 
 <div id="consent-gate" class="consent-gate" hidden></div>

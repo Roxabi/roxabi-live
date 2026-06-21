@@ -40,9 +40,8 @@ multi-tenancy*.
 | `CLAUDE.md` | Access-line updated to reflect S7 end-state |
 | `frontend/.assetsignore` | Excludes `*.test.js`, `vitest.config.js`, `package.json`, `package-lock.json`, `node_modules/` from ASSETS bundle — confirm uploaded-asset count dropped / those URLs 404 in staging deploy log |
 
-CI auto-applies `0008` on merge: `wrangler d1 migrations apply DB --env staging --remote`
-(→ staging D1) and `wrangler d1 migrations apply DB --remote` on promote to main (→ prod
-D1). See `.github/workflows/ci.yml` deploy job.
+Workers Builds auto-applies migrations on deploy via `scripts/deploy-staging.sh` (staging
+D1) and `scripts/deploy-production.sh` (prod D1). See `infra/workers-builds.json`.
 
 ---
 

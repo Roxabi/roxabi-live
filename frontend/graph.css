@@ -8,7 +8,7 @@
 /* v4.8 color scheme: lanes map to named palette colors */
 #graph-panel {
   --status-ready: #22c55e;
-  --status-blocked: #f97316;
+  --status-blocked: #d97706;
   --status-done: #475569;
   --teal: #06b6d4;
   --red: #ef4444;
@@ -46,7 +46,7 @@
   --repo-blue: #3b82f6;
   --repo-pink: #ec4899;
   --repo-plum: #a855f7;
-  --repo-orange: #f97316;
+  --repo-orange: #d97706;
   --repo-red: #ef4444;
   --repo-lime: #84cc16;
   --repo-amber: #f59e0b;
@@ -534,7 +534,7 @@
 #graph-panel.hl-active .gg-ilabel.hl-self {
   opacity: 1;
   z-index: 15;
-  box-shadow: 0 0 0 2px var(--accent), 0 0 14px rgba(232, 93, 4, 0.55);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 14px rgba(240, 180, 41, 0.55);
 }
 #graph-panel.hl-active .gg-node.hl-upstream,
 #graph-panel.hl-active .gg-ilabel.hl-upstream {

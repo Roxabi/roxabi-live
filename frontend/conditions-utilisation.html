@@ -1,103 +1,56 @@
 <!DOCTYPE html>
-<html lang="fr" data-theme="dark">
+<html lang="fr" data-theme="dark" data-i18n-title="terms.meta.title">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Conditions d'utilisation · Roxabi Live</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="landing.css">
-<link rel="stylesheet" href="legal.css">
+<link rel="icon" href="/assets/logo/foundation-block-16.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/legal.css">
 </head>
 <body class="legal-page">
-<header class="legal-header">
-  <a class="legal-back" href="/">← Accueil</a>
-  <a class="legal-brand" href="/">Roxabi Live</a>
-</header>
+<div id="public-topbar-mount"></div>
 
 <main class="legal-main">
-  <h1>Conditions d'utilisation</h1>
-  <p class="legal-updated">Dernière mise à jour : 19 juin 2026</p>
+  <h1 data-i18n="terms.h1">Conditions d'utilisation</h1>
+  <p class="legal-updated" data-i18n="terms.updated">Dernière mise à jour : 19 juin 2026</p>
 
-  <p>
-    Les présentes conditions régissent l'accès et l'utilisation de Roxabi Live
-    (<strong>live.roxabi.dev</strong>). En vous connectant au service, vous les acceptez.
-  </p>
+  <p data-i18n-html="terms.intro"></p>
 
-  <h2>1. Objet du service</h2>
-  <p>
-    Roxabi Live est un cockpit opérationnel permettant de visualiser et piloter
-    un graphe de dépendances entre issues GitHub (états, blockers, relations
-    parent/enfant). Le service s'appuie sur une application GitHub installée
-    sur votre compte ou organisation.
-  </p>
+  <h2 data-i18n="terms.s1.title">1. Objet du service</h2>
+  <p data-i18n="terms.s1.body"></p>
 
-  <h2>2. Accès et compte</h2>
-  <ul>
-    <li>L'accès nécessite un compte GitHub valide et l'installation de l'application Roxabi Live.</li>
-    <li>Vous êtes responsable de la confidentialité de votre session et de l'activité réalisée depuis votre compte.</li>
-    <li>L'éditeur peut suspendre l'accès en cas d'usage frauduleux, abusif ou contraire à la loi.</li>
-  </ul>
+  <h2 data-i18n="terms.s2.title">2. Accès et compte</h2>
+  <ul data-i18n-html="terms.s2.list"></ul>
 
-  <h2>3. Données et chiffrement</h2>
-  <p>
-    Les titres et corps d'issues peuvent être chiffrés côté client avant stockage.
-    La structure du graphe (états, dépendances, labels) reste lisible pour le
-    fonctionnement du service. Vous conservez la maîtrise de votre passphrase de
-    chiffrement ; sa perte peut rendre certains contenus irrécupérables.
-  </p>
+  <h2 data-i18n="terms.s3.title">3. Données et chiffrement</h2>
+  <p data-i18n="terms.s3.body"></p>
 
-  <h2>4. Propriété intellectuelle</h2>
-  <p>
-    Le service, son code et son interface sont la propriété de l'éditeur. Les
-    données issues de vos dépôts GitHub restent votre propriété ou celle de
-    votre organisation. Vous accordez à Roxabi Live les droits nécessaires pour
-    synchroniser et afficher ces données dans le cadre du service.
-  </p>
+  <h2 data-i18n="terms.s4.title">4. Propriété intellectuelle</h2>
+  <p data-i18n="terms.s4.body"></p>
 
-  <h2>5. Disponibilité et responsabilité</h2>
-  <p>
-    Le service est fourni « en l'état », sans garantie de disponibilité continue.
-    L'éditeur ne saurait être tenu responsable des décisions prises sur la base
-    des informations affichées, ni des dommages indirects liés à une interruption
-    ou à une perte de données, dans les limites autorisées par la loi.
-  </p>
+  <h2 data-i18n="terms.s5.title">5. Disponibilité et responsabilité</h2>
+  <p data-i18n="terms.s5.body"></p>
 
-  <h2>6. Résiliation</h2>
-  <p>
-    Vous pouvez cesser d'utiliser le service à tout moment en vous déconnectant
-    et en désinstallant l'application GitHub depuis vos paramètres GitHub.
-    L'éditeur peut mettre fin à l'accès avec un préavis raisonnable, sauf en cas
-    de manquement grave.
-  </p>
+  <h2 data-i18n="terms.s6.title">6. Résiliation</h2>
+  <p data-i18n="terms.s6.body"></p>
 
-  <h2>7. Modifications</h2>
-  <p>
-    Les présentes conditions peuvent être mises à jour. La date de dernière
-    révision figure en tête de page. L'utilisation continue du service vaut
-    acceptation des conditions modifiées.
-  </p>
+  <h2 data-i18n="terms.s7.title">7. Modifications</h2>
+  <p data-i18n="terms.s7.body"></p>
 
-  <h2>8. Droit applicable</h2>
-  <p>
-    Les présentes conditions sont soumises au droit français. En cas de litige,
-    et à défaut de résolution amiable, les tribunaux français seront compétents.
-  </p>
+  <h2 data-i18n="terms.s8.title">8. Droit applicable</h2>
+  <p data-i18n="terms.s8.body"></p>
 
-  <h2>9. Contact</h2>
-  <p>
-    Questions relatives aux conditions :
-    <a href="mailto:mickael@bouly.io">mickael@bouly.io</a>
-  </p>
+  <h2 data-i18n="terms.s9.title">9. Contact</h2>
+  <p data-i18n-html="terms.s9.body"></p>
 </main>
 
-<footer class="site-footer">
-  <nav class="site-footer-nav" aria-label="Liens légaux">
-    <a href="/mentions-legales">Mentions légales</a>
-    <a href="/politique-confidentialite">Politique de confidentialité</a>
-    <a href="/conditions-utilisation" aria-current="page">Conditions d'utilisation</a>
-  </nav>
-  <p class="site-footer-copy">© 2026 Roxabi Live · Dep-Graph v6</p>
-</footer>
+<div id="public-footer-mount"></div>
+<script type="module">
+import { initPublicPage } from "/public-shell.js";
+initPublicPage({ variant: "minimal", activeLegal: "terms" });
+</script>
 </body>
 </html>

@@ -402,7 +402,7 @@ export function renderList(container) {
       caret.className = "group-caret";
       caret.textContent = isCollapsed ? "▸" : "▾";
       caret.setAttribute("aria-hidden", "true");
-      const gTitle = groupTitle(dim, gVal, nodeList);
+      const gTitle = groupTitle(dim, gVal, nodes);
       const titleSpan = gTitle
         ? Object.assign(document.createElement("span"), {
             className: "group-title",

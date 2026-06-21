@@ -250,6 +250,17 @@ describe("loginRoute", () => {
       expect(insertStmt?.args[1]).toBe("/dashboard");
     });
 
+    it("?remember=1 stores remember=1 in oauth_state", async () => {
+      const { db, stmts } = captureDb();
+      const { app, env } = makeApp(db);
+
+      await app.request("http://localhost/login?go=1&remember=1", { method: "GET" }, env);
+
+      const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
+      expect(insertStmt).toBeDefined();
+      expect(insertStmt?.args?.at(-1)).toBe(1);
+    });
+
     it("redirects to redirect_after when session is already valid", async () => {
       const validRow = {
         userId: 1,
@@ -744,7 +755,7 @@ describe("callbackRoute", () => {
       expect(uiStmt).toBeDefined();
     });
 
-    it("serves dashboard HTML with Set-Cookie on callback (no exchange hop)", async () => {
+    it("returns navigate HTML with Set-Cookie on callback (poll then /dashboard)", async () => {
       // Arrange
       const stateValue = "e".repeat(32);
       const captured: FakeStmt[] = [];
@@ -765,7 +776,9 @@ describe("callbackRoute", () => {
 
       // Assert
       expect(res.status).toBe(200);
-      expect(await res.text()).toContain("dashboard");
+      const html = await res.text();
+      expect(html).toContain("Connexion en cours");
+      expect(html).toContain("/dashboard");
       expect(res.headers.get("Location")).toBeNull();
       expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
       const exchangeInsert = captured.find((s) => s.sql.toLowerCase().includes("oauth_exchange"));

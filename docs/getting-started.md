@@ -95,10 +95,10 @@ See [docs/DEPLOY.md](DEPLOY.md) for:
 
 - Cloudflare account and Worker setup
 - D1 database and R2 bucket provisioning
-- GitHub App creation, wrangler secret injection, and CI repo secrets
-- `wrangler deploy` flows for staging and production
+- GitHub App creation, wrangler secret injection, and Workers Builds setup
+- Auto-deploy on push to `staging` / `main` (break-glass `npm run deploy:*`)
 - Cloudflare Access configuration for `/admin/*`
 
 ## Legacy Note
 
-The pre-2026-06 Python/FastAPI app (`src/roxabi_live/`) is decommissioned; its `live.service` systemd unit is stopped and disabled. The code remains in git history for reference only — do not use `uv`, `make install`, `make sync`, or `uv run roxabi-live`.
+The pre-2026-06 Python/FastAPI app is decommissioned and removed from the repo (2026-06-20). Runtime is Worker + `frontend/` only. `uv sync --group dev` installs license-check tooling, not an application server.

@@ -1,6 +1,6 @@
 // user-menu.js — avatar trigger + account dropdown
 
-import { api } from "./auth.js";
+import { signOut } from "./auth.js";
 import { getDisplayName, openSettings } from "./settings.js";
 
 const $ = (id) => document.getElementById(id);
@@ -53,8 +53,7 @@ export function wireUserMenu(me) {
 
   $("user-menu-signout")?.addEventListener("click", async () => {
     close();
-    await api("/logout", { method: "POST" }).catch(() => {});
-    location.href = "/";
+    await signOut({ to: "/" });
   });
 
   document.addEventListener("click", (e) => {

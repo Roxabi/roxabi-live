@@ -4,6 +4,7 @@ import {
   d1PayloadTitle,
   isIssueZkSealed,
   loadZkSealedIssueKeys,
+  loadZkSealedIssueKeysForUser,
   redactIssueTitle,
   scrubIssuePayloads,
 } from "./zk";
@@ -21,13 +22,26 @@ describe("zk D1 redaction helpers", () => {
 
   it("loadZkSealedIssueKeys returns distinct issue_key set", async () => {
     const { db } = captureDb((sql) => {
-      if (sql.includes("zk_payloads")) {
+      if (sql.includes("zk_payloads") && !sql.includes("user_id")) {
         return [{ issue_key: "A/r#1" }, { issue_key: "B/r#2" }];
       }
       return [];
     });
     const keys = await loadZkSealedIssueKeys(db);
     expect(keys).toEqual(new Set(["A/r#1", "B/r#2"]));
+  });
+
+  it("loadZkSealedIssueKeysForUser scopes to user_id", async () => {
+    const { db, stmts } = captureDb((sql, args) => {
+      if (sql.includes("user_id")) {
+        expect(args).toEqual([42]);
+        return [{ issue_key: "A/r#1" }];
+      }
+      return [];
+    });
+    const keys = await loadZkSealedIssueKeysForUser(db, 42);
+    expect(keys).toEqual(new Set(["A/r#1"]));
+    expect(stmts().some((s) => s.sql.includes("user_id = ?"))).toBe(true);
   });
 
   it("isIssueZkSealed is true when a row exists", async () => {

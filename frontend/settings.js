@@ -1,6 +1,6 @@
 // settings.js — account settings panel
 
-import { DASHBOARD_PATH, api, escHtml } from "./auth.js";
+import { DASHBOARD_PATH, api, escHtml, signOut } from "./auth.js";
 import { applyThemePref, getThemePref, setThemePref } from "./theme.js";
 import { rewrapAccountKeyBackup, saveDeviceSession, unwrapAccountKey } from "./zk-crypto.js";
 import { updateKeyBackup } from "./zk-enroll.js";
@@ -217,7 +217,7 @@ export async function deleteAccountData(me, login) {
   clearZkReauthProof();
   await clearLocalZkState(login);
   localStorage.removeItem(DISPLAY_NAME_PREFIX + login);
-  location.href = "/";
+  await signOut({ after: "reload" });
   return true;
 }
 
@@ -295,6 +295,14 @@ export async function resumeSettingsFromUrl(me) {
   const params = new URLSearchParams(window.location.search);
   const tab = params.get("settings");
   if (!tab) return false;
+
+  if (tab === "open") {
+    params.delete("settings");
+    const qs = params.toString();
+    history.replaceState({}, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
+    openSettings(me);
+    return;
+  }
 
   const action = sessionStorage.getItem(SETTINGS_ACTION_KEY);
   sessionStorage.removeItem(SETTINGS_ACTION_KEY);

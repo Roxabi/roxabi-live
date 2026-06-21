@@ -70,7 +70,7 @@ Dashboard → My Profile → API Tokens → Create Token → Custom Token:
 | Account / R2 Storage | All accounts | Edit |
 | Zone / Workers Routes | All zones (or specific zone) | Edit |
 
-Save the token — you will add it as `CF_API_TOKEN` in GitHub repo secrets (step 6).
+Save the token — used for manual `wrangler` ops and Workers Builds setup (steps 6–8).
 
 ### 2c. Create D1 databases
 
@@ -347,41 +347,57 @@ npx wrangler secret list --env staging --config ../wrangler.toml
 
 ---
 
-## 6. CI repo secrets
+## 6. Workers Builds (auto-deploy)
 
-Set these in GitHub: repo → Settings → Secrets and variables → Actions → New repository secret.
+Deploy is **not** in GitHub Actions. Cloudflare **Workers Builds** watches the repo and
+runs `scripts/deploy-*.sh` on push (same model as `roxabi-links`).
 
-| Secret name | Value | Purpose |
+| Branch | Worker | URL |
 |---|---|---|
-| `CF_API_TOKEN` | Cloudflare API token from step 2b | `wrangler deploy` + D1 migrations |
-| `CLOUDFLARE_ACCOUNT_ID` | Your 32-char account ID | Required — token may see multiple accounts |
-| `GH_APP_ID` | GitHub App numeric ID | Post-deploy injection as `GITHUB_APP_ID` Worker secret |
-| `GH_APP_PRIVATE_KEY` | base64 PKCS#8 DER private key | Post-deploy injection as `GITHUB_APP_PRIVATE_KEY` |
-| `GH_APP_WEBHOOK_SECRET` | App webhook secret | Post-deploy injection as `GITHUB_APP_WEBHOOK_SECRET` |
-| `GH_INSTALL_TOKEN_KEY` | base64 AES-GCM DEK | Post-deploy injection as `INSTALL_TOKEN_KEY` |
+| `main` | `roxabi-live` | `live.roxabi.dev` |
+| `staging` | `roxabi-live-staging` | `*.workers.dev` |
 
-> **Why `GH_APP_*` instead of `GITHUB_APP_*`?** GitHub Actions forbids repository secret
-> names that start with `GITHUB_` (returns 422 on create). The CI workflow maps
-> `GH_APP_*` → `GITHUB_APP_*` Worker secrets in a post-deploy injection step.
-> Only these four (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_WEBHOOK_SECRET`,
-> `INSTALL_TOKEN_KEY`) are injected by CI. The remaining Worker secrets —
-> `GITHUB_WEBHOOK_SECRET`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_ORG`,
-> and the optional `ADMIN_TOKEN` / `NOTIFY_URL` — are **not** injected by CI; set them
-> manually via `wrangler secret put` (step 5) or add your own injection steps.
+Path watch (only rebuild when these change): `worker/*`, `frontend/*`, `wrangler.toml`,
+`scripts/deploy-*.sh`. Config SSOT: `infra/workers-builds.json`.
 
-Once `CF_API_TOKEN` is set, every push to `staging` or `main` automatically:
-1. Applies D1 migrations
-2. Deploys the Worker
-3. Injects the four App secrets listed above
+### One-time setup
+
+1. Authorize the Cloudflare GitHub App: Workers & Pages → **roxabi-live** → Settings → Builds → Connect GitHub (grant access to `Roxabi/roxabi-live`; re-authorize if the repo becomes private).
+2. Create a **build API token** on the Worker (Settings → Builds → API token) with Workers Scripts Edit, **D1 Edit**, Workers Routes Edit.
+3. Run the setup script (user-scoped CF token with **Workers Builds Configuration Edit**):
+
+```bash
+# API token (preferred)
+export CLOUDFLARE_API_TOKEN=<user token>
+npm run setup:workers-builds
+
+# Or global API key from Bitwarden Secure Note:
+#   {CF_email: "…", CLOUDFLARE_API_KEY:"cfk_…"}
+source scripts/bw-cloudflare-global-env.sh
+npm run setup:workers-builds
+```
+
+GitHub Actions runs **quality gates only** (lint, test, license) — no deploy job.
+
+### Runtime secrets
+
+Set Worker secrets in the Cloudflare dashboard (or `wrangler secret put`) — **not** via GitHub Actions. See step 5. Secrets persist across deploys; rotate manually when credentials change.
+
+### Break-glass manual deploy
+
+```bash
+export CLOUDFLARE_ACCOUNT_ID=<YOUR_ACCOUNT_ID>
+export CLOUDFLARE_API_TOKEN=<YOUR_CF_API_TOKEN>
+npm run deploy:staging      # or deploy:production
+```
 
 ---
 
 ## 7. Apply migrations
 
-### Via CI (recommended)
+### Via Workers Builds (recommended)
 
-Push to `staging` triggers the `deploy` job, which applies migrations automatically before
-deploying. Push to `main` for production.
+Every deploy runs `wrangler d1 migrations apply` before `wrangler deploy` (see `scripts/deploy-*.sh`).
 
 ### Manually
 
@@ -415,28 +431,23 @@ Wrangler tracks applied migrations and skips already-applied ones — safe to re
 
 ## 8. Deploy
 
-### Via CI (recommended)
+### Auto-deploy on merge
 
 ```bash
-git push origin staging   # deploys to staging Worker
-git push origin main      # deploys to production Worker
+git push origin staging   # Workers Builds → roxabi-live-staging
+git push origin main      # Workers Builds → roxabi-live (live.roxabi.dev)
 ```
 
-The `deploy` job is a no-op if `CF_API_TOKEN` is not set — it logs a notice and exits
-green, so CI is safe to enable before credentials are provisioned.
+Monitor builds: Cloudflare dashboard → Workers → **roxabi-live** → Builds.
 
-### Manual deploy
+### Manual deploy (break-glass)
 
 ```bash
-cd worker
 export CLOUDFLARE_ACCOUNT_ID=<YOUR_ACCOUNT_ID>
 export CLOUDFLARE_API_TOKEN=<YOUR_CF_API_TOKEN>
 
-# Staging
-npx wrangler deploy --env staging --config ../wrangler.toml
-
-# Production
-npx wrangler deploy --config ../wrangler.toml
+npm run deploy:staging
+npm run deploy:production
 ```
 
 ---

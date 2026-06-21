@@ -14,7 +14,7 @@ compatibility_date = "2025-01-01"
 # the STAGING Worker (premature domain creation + wrong target).
 # Ref: cloudflare/workers-sdk#13925.
 # ⚠️ SECURITY GATE: this route takes effect on the next *production* deploy
-# (push to `main`, or a manual `wrangler deploy`). CF Access App 1 (Email OTP,
+# (push to `main` via Workers Builds, or manual `npm run deploy:production`). CF Access App 1 (Email OTP,
 # all paths) MUST already exist BEFORE that deploy — otherwise the dashboard is
 # publicly reachable at https://live.roxabi.dev with no auth.
 # See docs/s9-cutover.md → Phase 4 (Access apps precede the custom domain).
@@ -23,7 +23,7 @@ routes = [
 ]
 
 [vars]
-APP_RELEASE = "0.19.1"
+APP_RELEASE = "0.19.3"
 ZK_ACCOUNT_KEY = "1"
 # structure-only MUST be "1" whenever ZK_ACCOUNT_KEY is "1" — otherwise the daily
 # cron re-fetches and stores plaintext issue titles in D1, breaking the ZK promise.
@@ -38,10 +38,10 @@ binding   = "ASSETS"
 run_worker_first = [ "/dashboard", "/dashboard/" ]
 
 [triggers]
-# Daily reconcile (was hourly "0 * * * *", #80). The webhook path handles real-time
-# intra-day changes; this cron is the heal net and runs a FULL reconcile (since=null)
-# so deps-only edge changes — which never bump issue.updatedAt — are healed each day.
-crons = ["0 0 * * *"]
+# Autonomous cron DISABLED — webhooks are the primary sync path. Use POST /admin/sync
+# for manual full reconcile / drift checks against webhook coverage. Re-enable with
+# crons = ["0 0 * * *"] if a daily heal net is needed again (#80).
+crons = []
 
 # Workers Logs (S8, #100) — in-dashboard invocation logs (~3-day retention on the
 # Free plan). NOTE: persistent export via Logpush→R2 needs Workers Paid; on Free the
@@ -70,7 +70,7 @@ name = "roxabi-live-staging"
 workers_dev = true
 
 [env.staging.vars]
-APP_RELEASE = "0.19.1"
+APP_RELEASE = "0.19.3"
 ZK_ACCOUNT_KEY = "1"
 ZK_STRUCTURE_ONLY = "1"
 # `routes` is inheritable — without this explicit empty override a staging

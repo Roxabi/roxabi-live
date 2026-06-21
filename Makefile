@@ -1,29 +1,19 @@
 SHELL := /bin/bash -o pipefail
 
-.PHONY: install lint typecheck test format sync full-sync
+.PHONY: install lint test format license
 
-# ── Dev ──────────────────────────────────────────────────────────────────────
-
-install:             ## install all dependencies
+install:             ## install repo tooling (license check, pre-commit)
 	uv sync --group dev
 
-lint:                ## run ruff linter
-	uv run ruff check .
+lint:                ## run ruff on tools/
+	uv run ruff check tools
 
-typecheck:           ## run pyright type checker
-	uv run pyright
+format:              ## auto-format tools/ with ruff
+	uv run ruff format tools && uv run ruff check --fix tools
 
-test:                ## run pytest
-	uv run pytest
+license:             ## verify Python dev dependency licenses
+	uv run tools/license_check.py
 
-format:              ## auto-format with ruff
-	uv run ruff format . && uv run ruff check --fix .
-
-# ── Corpus sync ───────────────────────────────────────────────────────────────
-
-sync:                ## sync corpus with GitHub
-	uv run roxabi-corpus sync $(ARGS)
-
-full-sync:           ## full sync (clear sync_state, re-fetch all issues)
-	sqlite3 $(HOME)/.roxabi/corpus.db "DELETE FROM sync_state"
-	uv run roxabi-corpus sync
+test:                ## run Worker + frontend test suites
+	cd worker && npm test
+	cd frontend && npm test

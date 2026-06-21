@@ -25,6 +25,7 @@ import { zkOptInRoute } from "./api/zk-opt-in";
 import { listZkPayloadsRoute, putZkPayloadsRoute } from "./api/zk-payloads";
 import { consumeZkReauthRoute } from "./api/zk-reauth";
 import { postZkResetRoute } from "./api/zk-reset";
+import { signInPageRoute, signUpPageRoute } from "./auth/auth-page-route";
 import { requireSameOriginPost } from "./auth/csrf";
 import { dashboardRoute } from "./auth/dashboard-route";
 import { callbackRoute, loginRoute } from "./auth/oauth";
@@ -141,6 +142,12 @@ app.post("/api/account/delete", requireSameOriginPost, requireSession, postAccou
 app.post("/__test__/seed", requireE2eMode, e2eSeedRoute);
 app.get("/__test__/user-state", requireE2eMode, e2eUserStateRoute);
 app.post("/__test__/reauth-proof", requireE2eMode, e2eReauthProofRoute);
+
+// GET /sign-in/, /sign-up/ — guest auth pages; signed-in users go to dashboard.
+app.get("/sign-in", signInPageRoute);
+app.get("/sign-in/", signInPageRoute);
+app.get("/sign-up", signUpPageRoute);
+app.get("/sign-up/", signUpPageRoute);
 
 // GET /dashboard — session-gated app shell (HTML only; JS/CSS served from ASSETS root).
 app.get("/dashboard", dashboardRoute);

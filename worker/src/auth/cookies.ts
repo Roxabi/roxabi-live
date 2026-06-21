@@ -1,5 +1,10 @@
 import type { Context } from "hono";
-import { LEGACY_SESSION_COOKIE, SESSION_COOKIE, SESSION_TTL_SECONDS } from "./types";
+import {
+  LEGACY_SESSION_COOKIE,
+  SESSION_COOKIE,
+  SESSION_TTL_SECONDS,
+  sessionTtlSeconds,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Auth response cache policy — never cache session-gated redirects/HTML.
@@ -82,12 +87,25 @@ function expireCookie(name: string): string {
   return `${name}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 }
 
+type SessionCookieOpts = {
+  ttlSeconds?: number;
+  secure?: boolean;
+};
+
+function normalizeSessionCookieOpts(
+  opts?: number | SessionCookieOpts,
+): Required<Pick<SessionCookieOpts, "ttlSeconds">> & SessionCookieOpts {
+  if (typeof opts === "number") return { ttlSeconds: opts };
+  return { ttlSeconds: opts?.ttlSeconds ?? SESSION_TTL_SECONDS, secure: opts?.secure };
+}
+
 /**
  * Build a Set-Cookie header value for the session token.
  */
-export function sessionCookie(rawToken: string, opts?: { secure?: boolean }): string {
-  const secure = opts?.secure !== false ? "; Secure" : "";
-  return `${SESSION_COOKIE}=${rawToken}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`;
+export function sessionCookie(rawToken: string, opts?: number | SessionCookieOpts): string {
+  const { ttlSeconds, secure } = normalizeSessionCookieOpts(opts);
+  const secureFlag = secure !== false ? "; Secure" : "";
+  return `${SESSION_COOKIE}=${rawToken}; HttpOnly${secureFlag}; SameSite=Lax; Path=/; Max-Age=${ttlSeconds}`;
 }
 
 /** Expire primary + legacy session cookies. */
@@ -101,9 +119,14 @@ export function clearSessionCookie(): string {
 }
 
 /** Set new session and expire legacy __Host-session. */
-export function sessionCookieHeaders(rawToken: string, opts?: { secure?: boolean }): string[] {
+export function sessionCookieHeaders(
+  rawToken: string,
+  opts?: number | SessionCookieOpts,
+): string[] {
   return [sessionCookie(rawToken, opts), expireCookie(LEGACY_SESSION_COOKIE)];
 }
+
+export { sessionTtlSeconds };
 
 // ---------------------------------------------------------------------------
 // Token reader

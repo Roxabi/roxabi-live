@@ -11,7 +11,12 @@ const STORE_NAME = "keypairs";
 const META_DB_NAME = "roxabi-zk-v2";
 const META_STORE_NAME = "account_meta";
 const DEVICE_STORE_NAME = "device_session";
-const META_DB_VERSION = 2;
+const REMEMBER_STORE_NAME = "remember_passphrase";
+const DEVICE_SECRET_KEY = "roxabi:zk_device_secret";
+export const REMEMBER_PASSPHRASE_PREF_KEY = "roxabi:remember_passphrase";
+export const REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const META_DB_VERSION = 3;
+const HKDF_REMEMBER_INFO = new TextEncoder().encode("roxabi-zk-remember-v1");
 const HKDF_INFO = new TextEncoder().encode("roxabi-zk-ecies-v1");
 const HKDF_SALT = new Uint8Array(32);
 
@@ -114,6 +119,9 @@ function openMetaDb() {
       }
       if (!db.objectStoreNames.contains(DEVICE_STORE_NAME)) {
         db.createObjectStore(DEVICE_STORE_NAME);
+      }
+      if (!db.objectStoreNames.contains(REMEMBER_STORE_NAME)) {
+        db.createObjectStore(REMEMBER_STORE_NAME);
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -227,6 +235,110 @@ export async function loadDeviceSession(githubLogin) {
 
 export async function clearDeviceSession(githubLogin) {
   await deviceIdbDelete(githubLogin);
+}
+
+async function rememberIdbGet(login) {
+  const db = await openMetaDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(REMEMBER_STORE_NAME, "readonly");
+    const req = tx.objectStore(REMEMBER_STORE_NAME).get(login);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function rememberIdbPut(login, record) {
+  const db = await openMetaDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(REMEMBER_STORE_NAME, "readwrite");
+    tx.objectStore(REMEMBER_STORE_NAME).put(record, login);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function rememberIdbDelete(login) {
+  const db = await openMetaDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(REMEMBER_STORE_NAME, "readwrite");
+    tx.objectStore(REMEMBER_STORE_NAME).delete(login);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function getDeviceSecret() {
+  let b64 = localStorage.getItem(DEVICE_SECRET_KEY);
+  if (!b64) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    b64 = b64Encode(bytes);
+    localStorage.setItem(DEVICE_SECRET_KEY, b64);
+  }
+  return b64Decode(b64);
+}
+
+async function deriveDeviceRememberKey() {
+  const secret = await getDeviceSecret();
+  const base = await crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: HKDF_SALT, info: HKDF_REMEMBER_INFO },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+/** AES-GCM encrypt passphrase for 30-day local auto-unlock (device-bound key). */
+export async function saveRememberPassphrase(githubLogin, passphrase) {
+  const key = await deriveDeviceRememberKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    new TextEncoder().encode(passphrase),
+  );
+  await rememberIdbPut(githubLogin, {
+    iv: b64Encode(iv),
+    ct: b64Encode(ct),
+    remember_until: new Date(Date.now() + REMEMBER_TTL_MS).toISOString(),
+  });
+}
+
+/** @returns {Promise<string|null>} passphrase or null when absent/expired */
+export async function loadRememberPassphrase(githubLogin) {
+  const rec = await rememberIdbGet(githubLogin);
+  if (!rec?.remember_until || new Date(rec.remember_until) <= new Date()) {
+    if (rec) await rememberIdbDelete(githubLogin);
+    return null;
+  }
+  try {
+    const key = await deriveDeviceRememberKey();
+    const plain = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: b64Decode(rec.iv) },
+      key,
+      b64Decode(rec.ct),
+    );
+    return new TextDecoder().decode(plain);
+  } catch {
+    await rememberIdbDelete(githubLogin);
+    return null;
+  }
+}
+
+export async function clearRememberPassphrase(githubLogin) {
+  await rememberIdbDelete(githubLogin);
+}
+
+/** True when a non-expired remembered passphrase exists for this login. */
+export async function hasRememberPassphrase(githubLogin) {
+  const rec = await rememberIdbGet(githubLogin);
+  if (!rec?.remember_until) return false;
+  if (new Date(rec.remember_until) <= new Date()) {
+    await rememberIdbDelete(githubLogin);
+    return false;
+  }
+  return true;
 }
 
 async function generateKeyPair() {

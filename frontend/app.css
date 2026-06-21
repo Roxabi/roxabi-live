@@ -6,18 +6,18 @@
   --bg-cell: #0f141a;
   --border: #21262d;
   --border-hi: #30363d;
-  --text: #fafafa;
+  --text: #f0ede6;
   --text-muted: #8b93a1;
   --text-dim: #6b7280;
-  --accent: #e85d04;
-  --accent-dim: rgba(232, 93, 4, 0.12);
-  --accent-glow: rgba(232, 93, 4, 0.4);
+  --accent: #f0b429;
+  --accent-dim: rgba(240, 180, 41, 0.12);
+  --accent-glow: rgba(240, 180, 41, 0.4);
   --green: #10b981;
   --teal: #14b8a6;
   --status-open: #22c55e;
   --status-closed: #475569;
   --status-ready: #22c55e;
-  --status-blocked: #f97316;
+  --status-blocked: #d97706;
   --status-done: #475569;
   --panel-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   --row-header-grad: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
@@ -25,33 +25,33 @@
 }
 
 [data-theme="light"] {
-  --bg: #f5f2ec;
-  --bg-panel: #ede9e0;
-  --bg-card: #faf8f4;
-  --bg-cell: #fffdf8;
-  --border: rgba(0, 0, 0, 0.09);
-  --border-hi: rgba(0, 0, 0, 0.18);
-  --text: #1a1d2b;
+  --bg: #f8f7f4;
+  --bg-panel: #f0ede8;
+  --bg-card: #f0ede8;
+  --bg-cell: #f8f7f4;
+  --border: #d6cfc8;
+  --border-hi: #c4bcb3;
+  --text: #1c1917;
   --text-muted: #5a6070;
   --text-dim: #9aa0ae;
-  --accent: #b8760a;
-  --accent-dim: rgba(184, 118, 10, 0.12);
-  --accent-glow: rgba(184, 118, 10, 0.35);
+  --accent: #d97706;
+  --accent-dim: rgba(217, 119, 6, 0.12);
+  --accent-glow: rgba(217, 119, 6, 0.35);
   --green: #047857;
   --teal: #0891b2;
   --status-open: #047857;
   --status-closed: #9ca3af;
   --status-ready: #047857;
-  --status-blocked: #ea580c;
+  --status-blocked: #d97706;
   --status-done: #9ca3af;
   --panel-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   --row-header-grad: linear-gradient(180deg, rgba(0, 0, 0, 0.025), transparent);
   --hl-dim-bg: rgba(0, 0, 0, 0.04);
 
   /* Lane tones */
-  --lane-a1: #e85d04;
-  --lane-a2: #f97316;
-  --lane-a3: #fb923c;
+  --lane-a1: #d97706;
+  --lane-a2: #f0b429;
+  --lane-a3: #fbbf24;
   --lane-b: #14b8a6;
   --lane-c1: #8b5cf6;
   --lane-c2: #a78bfa;
@@ -97,12 +97,18 @@ html {
 body {
   background: var(--bg);
   color: var(--text);
+  display: flex;
+  flex-direction: column;
   font-family: "Inter", system-ui, sans-serif;
   font-size: 12px;
   line-height: 1.4;
-  padding: 24px;
   min-height: 100vh;
+  padding: 24px;
   transition: background 0.2s, color 0.2s;
+}
+
+main {
+  flex: 1;
 }
 
 /* ─── Theme toggle ───────────────────────────────────────────── */
@@ -133,6 +139,7 @@ body {
 
 /* ─── Sticky header ──────────────────────────────────────────── */
 .sticky-head {
+  flex-shrink: 0;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -149,11 +156,27 @@ header.page-header {
   gap: 16px;
   flex-wrap: wrap;
 }
+.page-header-brand {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+.page-brand {
+  align-items: center;
+  display: inline-flex;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.page-brand-mark {
+  display: block;
+  height: 24px;
+  width: 24px;
+}
 h1 {
-  font-family: "Outfit", sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-weight: 900;
+  letter-spacing: -0.04em;
 }
 h1 .accent {
   color: var(--accent);
@@ -526,8 +549,8 @@ main {
   border-color: rgba(239, 68, 68, 0.3);
 }
 .badge-p1 {
-  color: #f97316;
-  border-color: rgba(249, 115, 22, 0.3);
+  color: var(--status-blocked);
+  border-color: color-mix(in srgb, var(--status-blocked) 30%, transparent);
 }
 .badge-p2 {
   color: #eab308;
@@ -952,8 +975,8 @@ main {
   background: var(--status-closed);
 }
 .dot-blocked {
-  background: #f97316;
-  box-shadow: 0 0 4px rgba(249, 115, 22, 0.6);
+  background: var(--status-blocked);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--status-blocked) 60%, transparent);
 }
 
 .col-title {
@@ -1053,12 +1076,13 @@ footer.page-footer {
   border-top: 1px solid var(--border);
   color: var(--text-muted);
   display: flex;
+  flex-shrink: 0;
   flex-wrap: wrap;
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   gap: 10px 16px;
   justify-content: space-between;
-  margin-top: 18px;
+  margin-top: auto;
   padding-top: 12px;
 }
 .page-footer-legal {

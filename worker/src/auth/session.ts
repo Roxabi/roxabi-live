@@ -37,7 +37,9 @@ export async function mintSession(
   db: D1Database,
   userId: number,
   tenantId: number | null,
+  remember = false,
 ): Promise<string> {
+  const expiresOffset = remember ? "+30 days" : "+8 hours";
   const randomBytes = new Uint8Array(32);
   crypto.getRandomValues(randomBytes);
   const rawToken = Array.from(randomBytes)
@@ -49,7 +51,7 @@ export async function mintSession(
   await db
     .prepare(
       `INSERT INTO sessions (user_id, tenant_id, token_hash, expires_at)
-       VALUES (?, ?, ?, datetime('now', '+8 hours'))`,
+       VALUES (?, ?, ?, datetime('now', '${expiresOffset}'))`,
     )
     .bind(userId, tenantId, hash)
     .run();

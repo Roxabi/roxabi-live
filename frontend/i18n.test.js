@@ -20,6 +20,13 @@ describe("i18n", () => {
     expect(t("en", "nav.signIn")).toBe("Sign in");
   });
 
+  it("includes legal page translations", () => {
+    expect(t("fr", "legal.h1")).toBe("Mentions légales");
+    expect(t("en", "legal.h1")).toBe("Legal notice");
+    expect(t("en", "privacy.h1")).toBe("Privacy policy");
+    expect(t("en", "terms.h1")).toBe("Terms of use");
+  });
+
   it("persists locale choice", () => {
     setLocale("en");
     expect(localStorage.getItem("roxabi:locale")).toBe("en");

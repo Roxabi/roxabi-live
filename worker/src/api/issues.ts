@@ -11,7 +11,7 @@
 import type { Context } from "hono";
 import { resolveVisibleRepos } from "../auth/repoAccess";
 import type { AuthEnv } from "../auth/types";
-import { loadZkSealedIssueKeys, redactIssueTitle } from "../auth/zk";
+import { loadZkSealedIssueKeysForUser, redactIssueTitle } from "../auth/zk";
 
 const ISSUE_KEY_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+#[0-9]+$/;
 
@@ -44,8 +44,14 @@ interface EdgeJoinRow {
   repo: string;
 }
 
+async function sealedKeysForSession(c: Context<AuthEnv>): Promise<Set<string>> {
+  const session = c.get("session");
+  if (!session) return new Set();
+  return loadZkSealedIssueKeysForUser(c.env.DB, session.userId);
+}
+
 export const listIssuesRoute = async (c: Context<AuthEnv>) => {
-  const sealedKeys = await loadZkSealedIssueKeys(c.env.DB);
+  const sealedKeys = await sealedKeysForSession(c);
 
   const visible = await resolveVisibleRepos(c);
 
@@ -145,7 +151,7 @@ export const listIssuesRoute = async (c: Context<AuthEnv>) => {
 };
 
 export const getIssueRoute = async (c: Context<AuthEnv>) => {
-  const sealedKeys = await loadZkSealedIssueKeys(c.env.DB);
+  const sealedKeys = await sealedKeysForSession(c);
 
   const visible = await resolveVisibleRepos(c);
 

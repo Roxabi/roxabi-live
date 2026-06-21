@@ -23,7 +23,7 @@ lsp:
   server: typescript-language-server
 
 deploy:
-  platform: cloudflare  # wrangler deploy via CI; push to staging → staging env, push to main → prod
+  platform: cloudflare  # Workers Builds (git-connected); push staging/main → CF auto deploy. SSOT: infra/workers-builds.json
 
 docs:
   framework: none
@@ -64,9 +64,7 @@ quality_gates:
     exemptions_file: tools/folder_exemptions.txt
 
   duplicate_test_basenames:
-    enabled: true
-    script: tools/check_duplicate_test_basenames.sh
-    source: pyproject.toml [tool.pytest.ini_options].testpaths
+    enabled: false
 
   import_layers:
     enabled: false

@@ -61,7 +61,7 @@
 .onboarding-step--active .onboarding-step-marker {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: #0d1117;
 }
 
 .onboarding-step--done {
@@ -96,7 +96,7 @@
 }
 
 .login-prompt-card h1 {
-  font-family: "Outfit", sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 1.5rem;
   font-weight: 600;
   margin: 0;
@@ -145,7 +145,7 @@
 }
 
 .auth-view h2 {
-  font-family: "Outfit", sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 1.6rem;
   font-weight: 600;
   color: var(--text);
@@ -168,7 +168,7 @@
   gap: 8px;
   padding: 10px 22px;
   background: var(--accent);
-  color: #fff;
+  color: #0d1117;
   border: none;
   border-radius: 8px;
   font-family: "Inter", system-ui, sans-serif;
@@ -258,7 +258,7 @@
 
 .install-option-name {
   color: var(--text);
-  font-family: "Outfit", sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 1.05rem;
   font-weight: 600;
 }
@@ -435,7 +435,7 @@ body.settings-open {
 }
 
 .settings-header h2 {
-  font-family: "Outfit", sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 18px;
   font-weight: 600;
 }
@@ -697,7 +697,7 @@ body.gated #error-msg {
 }
 
 .initial-sync-dialog h2 {
-  font-family: "Outfit", sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--text);
@@ -757,7 +757,7 @@ body.gated #error-msg {
 }
 
 .zk-dialog h2 {
-  font-family: "Outfit", sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--text);
@@ -798,6 +798,23 @@ body.gated #error-msg {
 .zk-field input:focus-visible {
   border-color: var(--accent);
   outline: none;
+}
+
+.zk-remember {
+  align-items: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+  user-select: none;
+}
+
+.zk-remember input {
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  height: 16px;
+  width: 16px;
 }
 
 .zk-error {
@@ -879,7 +896,7 @@ body.gated #error-msg {
 }
 
 .consent-dialog h2 {
-  font-family: "Outfit", sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--text);
@@ -927,7 +944,7 @@ body.gated #error-msg {
 .consent-btn-primary {
   padding: 9px 20px;
   background: var(--accent);
-  color: #fff;
+  color: #0d1117;
   border: none;
   border-radius: 6px;
   font-family: "Inter", system-ui, sans-serif;

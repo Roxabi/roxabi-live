@@ -34,17 +34,19 @@ Graph rows (`issues`, `edges`) are **shared** across teammates on one GitHub App
 | What you see | Why |
 |--------------|-----|
 | Structure (state, edges, labels) | Shared canonical graph in D1. |
-| `(sealed)` on a title | Another teammate sealed that issue, or you have not sealed/decrypted it yet. |
+| `(locked)` on a title | You sealed that issue but your ZK session is locked — unlock to decrypt. |
+| Empty / `Issue #N` title | You have not sealed yet (common with `ZK_STRUCTURE_ONLY` — link GitHub and sync). |
 | Your decrypted titles | You enrolled, unlocked, and have a `zk_payloads` row for that issue. |
 
-**Product copy:** Each teammate encrypts their own view of issue titles. You will see `(sealed)` until you link GitHub and sync.
+**Product copy:** Each teammate encrypts their own copy of issue titles. Link GitHub and sync to seal on your account.
 
 **FAQ**
 
-- *Why does my teammate see titles but I see (sealed)?* — They sealed with their key; you have not linked GitHub and sealed yet.
+- *Why does my teammate see titles but I do not?* — They enrolled, linked GitHub, and sealed; you have not completed your setup yet.
+- *Does my teammate’s seal hide titles from me?* — No. API redaction is **per user**: only issues **you** sealed return `title: null` from `/api/graph`. A teammate sealing does not redact titles for you.
 - *Can we share one team passphrase?* — No. Shared org keys are intentionally not supported.
 
-When **any** user seals an issue, API responses redact that issue’s title for **everyone** (`title: null` from `/api/graph`). Each user independently fetches from GitHub and seals with their own `accountKey`.
+Each user independently fetches from GitHub and seals with their own `accountKey`. Ciphertext is stored per `(user_id, issue_key)` — one encrypted copy per teammate, not a shared decryptable blob.
 
 ---
 

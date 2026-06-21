@@ -1,6 +1,8 @@
 /* auth-public.css — dedicated sign-in / sign-up pages */
 
 .auth-page-body {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 
@@ -57,7 +59,7 @@
 .auth-step--active .auth-step-marker {
   background: var(--accent);
   border-color: var(--accent);
-  color: oklch(1 0 0);
+  color: #0d1117;
 }
 
 .auth-step--pending .auth-step-marker {
@@ -77,8 +79,8 @@
 .auth-card h1 {
   font-family: var(--font-display);
   font-size: 1.65rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-weight: 900;
+  letter-spacing: -0.04em;
   margin-bottom: 12px;
 }
 
@@ -87,6 +89,25 @@
   font-size: 15px;
   line-height: 1.6;
   margin-bottom: 28px;
+}
+
+.auth-remember {
+  align-items: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  gap: 10px;
+  margin-bottom: 16px;
+  text-align: left;
+  user-select: none;
+}
+
+.auth-remember input {
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  height: 16px;
+  width: 16px;
 }
 
 .auth-github-btn {
@@ -178,6 +199,6 @@
 }
 
 [data-theme="light"] .auth-github-btn {
-  background: oklch(0.2 0.02 275);
-  color: oklch(0.98 0 0);
+  background: #1c1917;
+  color: #f0ede6;
 }
