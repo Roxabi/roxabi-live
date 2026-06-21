@@ -166,6 +166,7 @@ function renderInstallCta(me) {
   const options = (me.install_options ?? []).map(renderInstallOption).join("");
 
   el.innerHTML = `
+    <div class="onboarding-shell">
     ${renderOnboardingSteps("install")}
     <div class="install-panel">
       <h2>Installer Roxabi Live sur GitHub</h2>
@@ -194,6 +195,7 @@ function renderInstallCta(me) {
         <button type="button" class="auth-login-btn" id="install-continue">J'ai installé — continuer</button>
       </div>
       <p class="install-note" id="install-refresh-hint" hidden></p>
+    </div>
     </div>
   `;
   el.removeAttribute("hidden");
@@ -241,6 +243,7 @@ function renderConsentGate(me) {
     document.body.classList.add("gated");
     const el = $("consent-gate");
     el.innerHTML = `
+      <div class="onboarding-shell">
       ${renderOnboardingSteps("consent")}
       <div class="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="consent-title">
         <h2 id="consent-title">Accès aux données</h2>
@@ -267,6 +270,7 @@ function renderConsentGate(me) {
           <button class="consent-btn-secondary" id="consent-logout">Se déconnecter</button>
           <button class="consent-btn-primary" id="consent-ack">J'ai compris — lancer la synchronisation</button>
         </div>
+      </div>
       </div>
     `;
     el.removeAttribute("hidden");

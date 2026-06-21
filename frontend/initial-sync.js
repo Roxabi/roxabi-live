@@ -67,6 +67,7 @@ async function fetchStatus() {
 
 function showOverlay(gate, running) {
   gate.innerHTML = `
+    <div class="onboarding-shell">
     ${renderOnboardingSteps("sync")}
     <div class="initial-sync-dialog" role="status" aria-live="polite" aria-busy="true">
       <div class="initial-sync-spinner" aria-hidden="true"></div>
@@ -76,6 +77,7 @@ function showOverlay(gate, running) {
           ? "Import des issues, labels et dépendances depuis GitHub…"
           : "Démarrage de l'import depuis GitHub…"
       }</p>
+    </div>
     </div>
   `;
   gate.removeAttribute("hidden");

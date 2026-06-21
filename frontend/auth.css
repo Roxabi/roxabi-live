@@ -17,6 +17,26 @@
 
 /* ─── Onboarding step progress ─────────────────────────────────────────────── */
 
+.onboarding-shell {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 520px;
+  width: 100%;
+}
+
+.onboarding-shell .onboarding-steps {
+  margin: 0;
+}
+
+.onboarding-shell .consent-dialog,
+.onboarding-shell .initial-sync-dialog,
+.onboarding-shell .install-panel {
+  max-width: none;
+  width: 100%;
+}
+
 .onboarding-steps {
   margin: 0 0 28px;
   max-width: 520px;
@@ -672,6 +692,7 @@ body.gated #error-msg {
   z-index: 640;
   background: rgba(0, 0, 0, 0.72);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 24px;
@@ -873,6 +894,7 @@ body.gated #error-msg {
   z-index: 600;
   background: rgba(0, 0, 0, 0.72);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 24px;
