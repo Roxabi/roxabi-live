@@ -126,4 +126,41 @@ describe("startSyncProgressMonitor", () => {
     expect(onReposAdvanced).toHaveBeenCalledTimes(2);
     stop();
   });
+
+  it("calls onPassComplete when sync_running drops and onSyncComplete when done", async () => {
+    const onPassComplete = vi.fn();
+    const onSyncComplete = vi.fn();
+    mockStatus({
+      sync_in_progress: true,
+      sync_running: true,
+      repos_total: 39,
+      repos_synced: 10,
+      issue_count: 50,
+    });
+
+    const stop = startSyncProgressMonitor({ onPassComplete, onSyncComplete });
+    await vi.advanceTimersByTimeAsync(0);
+
+    mockStatus({
+      sync_in_progress: true,
+      sync_running: false,
+      repos_total: 39,
+      repos_synced: 20,
+      issue_count: 120,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(onPassComplete).toHaveBeenCalledTimes(1);
+    expect(onSyncComplete).not.toHaveBeenCalled();
+
+    mockStatus({
+      sync_in_progress: false,
+      sync_running: false,
+      repos_total: 39,
+      repos_synced: 39,
+      issue_count: 395,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(onSyncComplete).toHaveBeenCalledTimes(1);
+    stop();
+  });
 });

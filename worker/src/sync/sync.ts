@@ -33,7 +33,7 @@ import {
   releaseSyncLock,
   resetAuthFailures,
 } from "./control";
-import { closedHopPass, flushEdges } from "./edges";
+import { closedHopPass, edgesForRepo, flushEdges } from "./edges";
 import type { EdgeData } from "./label-vocab";
 import { discoverTenants } from "./tenants";
 
@@ -56,7 +56,7 @@ export {
   isHalted,
   resetAuthFailures,
 } from "./control";
-export { flushEdges } from "./edges";
+export { edgesForRepo, flushEdges } from "./edges";
 export { syncRepoIssues } from "./repo-issues";
 export { syncBranches } from "./repo-branches";
 export { syncRepoBundle } from "./bundle";
@@ -274,6 +274,10 @@ export async function runSync(env: Env): Promise<void> {
           sealedKeys,
           structureOnly,
         );
+        // Flush this repo's edges immediately — sync_state advances per repo but
+        // the window-level flush used to run only after all repos, so the UI saw
+        // new issues without blocked-by links until the pass finished.
+        await flushEdges(db, edgesForRepo(collectedEdges, repo));
       } catch (err) {
         console.error(`[sync] skipping ${repo}:`, err);
         skippedCount++;
@@ -281,9 +285,6 @@ export async function runSync(env: Env): Promise<void> {
     }
     reposSynced = windowedRepos.length - skippedCount;
     reposSkipped = skippedCount;
-
-    // Pass 2: flush all edges (deferred to avoid cross-repo FK hazard).
-    await flushEdges(db, collectedEdges);
 
     // Closed-hop pass with per-(owner,name) resolver.
     stubsCount = await closedHopPass(

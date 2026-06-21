@@ -16,8 +16,12 @@ export async function ensureSyncStarted() {
 
 /**
  * Non-blocking repo import banner. Dashboard renders immediately; poll refreshes
- * the graph when new repos land.
- * @param {{ onReposAdvanced?: (status: object) => void }} [callbacks]
+ * the graph when new repos land or a sync pass completes (edges are flushed per repo).
+ * @param {{
+ *   onReposAdvanced?: (status: object) => void,
+ *   onPassComplete?: (status: object) => void,
+ *   onSyncComplete?: (status: object) => void,
+ * }} [callbacks]
  * @returns {() => void} stop polling
  */
 export function startSyncProgressMonitor(callbacks = {}) {
@@ -26,6 +30,7 @@ export function startSyncProgressMonitor(callbacks = {}) {
 
   let timer = null;
   let lastReposSynced = -1;
+  let lastSyncRunning = false;
 
   const stop = () => {
     if (timer) clearInterval(timer);
@@ -37,17 +42,28 @@ export function startSyncProgressMonitor(callbacks = {}) {
     if (!status) return;
 
     const active = status.sync_in_progress || status.sync_running;
+    const syncRunning = Boolean(status.sync_running);
+
     if (!active) {
+      if (lastReposSynced >= 0 || lastSyncRunning) {
+        callbacks.onSyncComplete?.(status);
+      }
       hideBanner(banner);
       stop();
       return;
     }
 
     showBanner(banner, status);
+
     if (status.repos_synced > lastReposSynced) {
       lastReposSynced = status.repos_synced;
       callbacks.onReposAdvanced?.(status);
     }
+
+    if (lastSyncRunning && !syncRunning) {
+      callbacks.onPassComplete?.(status);
+    }
+    lastSyncRunning = syncRunning;
   };
 
   void update();

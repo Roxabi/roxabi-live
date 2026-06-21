@@ -502,13 +502,16 @@ async function init() {
     }
 
     await ensureSyncStarted();
+    const refreshDuringSync = () => {
+      loadAndRender(sessionZkOptIn, sessionGithubLogin, sessionZkAccountKeyEnabled).catch((e) => {
+        errorMsg.hidden = false;
+        errorMsg.textContent = `Failed to refresh graph: ${e.message}`;
+      });
+    };
     startSyncProgressMonitor({
-      onReposAdvanced: () => {
-        loadAndRender(sessionZkOptIn, sessionGithubLogin, sessionZkAccountKeyEnabled).catch((e) => {
-          errorMsg.hidden = false;
-          errorMsg.textContent = `Failed to refresh graph: ${e.message}`;
-        });
-      },
+      onReposAdvanced: refreshDuringSync,
+      onPassComplete: refreshDuringSync,
+      onSyncComplete: refreshDuringSync,
     });
     await loadAndRender(sessionZkOptIn, sessionGithubLogin, zkAccountKeyEnabled);
 

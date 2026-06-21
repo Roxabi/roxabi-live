@@ -8,6 +8,7 @@ import {
   batchChunked,
   canonicalKey,
   collectEdges,
+  edgesForRepo,
   ensureGlobalSyncControlSeeded,
   extractFromLabels,
   flushEdges,
@@ -241,6 +242,21 @@ describe("batchChunked", () => {
     await batchChunked(db, stmts as unknown as D1PreparedStatement[], 2);
     // 5 stmts / chunk-size 2 = 3 batches (2+2+1)
     expect((db as unknown as { batch: ReturnType<typeof vi.fn> }).batch).toHaveBeenCalledTimes(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// edgesForRepo — per-repo edge flush subset
+// ---------------------------------------------------------------------------
+
+describe("edgesForRepo", () => {
+  it("keeps only keys for the given repo", () => {
+    const all = new Map<string, EdgeData>([
+      ["Roxabi/lyra#1", { parents: [], children: [], blockedBy: ["Roxabi/core#2"], blocking: [] }],
+      ["Roxabi/core#2", { parents: [], children: [], blockedBy: [], blocking: ["Roxabi/lyra#1"] }],
+    ]);
+    const lyra = edgesForRepo(all, "Roxabi/lyra");
+    expect([...lyra.keys()]).toEqual(["Roxabi/lyra#1"]);
   });
 });
 
