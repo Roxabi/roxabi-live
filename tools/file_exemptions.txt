@@ -6,7 +6,7 @@
 # Production sources above QG_FILE_MAX=300 (split deferred; cap prevents growth)
 
 # Test files (colocated *.test.ts — exempt with local caps, not production code)
-worker/src/sync/sync.test.ts  # 1745 lines — #180 integration harness for runSync; #216 structure-only (+biome reflow)
+worker/src/sync/sync.test.ts  # 1758 lines — #180 integration harness for runSync; #216 structure-only (+biome reflow)
 worker/src/api/zk-key-backup.test.ts  # 506 lines — #216 backup API security + CAS/reauth tests; fp enforcement + atomic UPSERT tests
 worker/src/webhook/handlers.test.ts  # 945 lines — #180 webhook handler contract tests
 worker/src/auth/oauth.test.ts  # 1145 lines — #180 OAuth + install-pending; mustReOAuth webhook-link short-circuit
