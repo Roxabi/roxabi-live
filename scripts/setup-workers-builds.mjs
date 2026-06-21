@@ -12,10 +12,11 @@
  *   export CLOUDFLARE_API_TOKEN=<user token>
  *   node scripts/setup-workers-builds.mjs
  *
- * Usage (global API key — bw):
- *   export CLOUDFLARE_EMAIL="$(bw get username cloudflare/global-api-key)"
- *   export CLOUDFLARE_API_KEY="$(bw get password cloudflare/global-api-key)"
+ * Usage (global API key — bw Secure Note):
+ *   source scripts/bw-cloudflare-global-env.sh
  *   node scripts/setup-workers-builds.mjs
+ *
+ * Note body format: {CF_email: "…", CLOUDFLARE_API_KEY:"cfk_…"}
  */
 
 import { readFileSync } from "node:fs";

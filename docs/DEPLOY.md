@@ -367,7 +367,13 @@ Path watch (only rebuild when these change): `worker/*`, `frontend/*`, `wrangler
 3. Run the setup script (user-scoped CF token with **Workers Builds Configuration Edit**):
 
 ```bash
+# API token (preferred)
 export CLOUDFLARE_API_TOKEN=<user token>
+npm run setup:workers-builds
+
+# Or global API key from Bitwarden Secure Note:
+#   {CF_email: "…", CLOUDFLARE_API_KEY:"cfk_…"}
+source scripts/bw-cloudflare-global-env.sh
 npm run setup:workers-builds
 ```
 
