@@ -103,9 +103,9 @@ function renderNodes(container, nodes, positions, usePercentage) {
 }
 
 // ── Render milestone row headers (v5 layout only) ─────────────────────────────
-function msRowMetrics(ms, index, usePercentage, containerHeight) {
+function msRowMetrics(ms, index, usePercentage, containerHeight, isLast) {
   const topPct = index === 0 ? 0 : ms.y;
-  const heightPct = index === 0 ? ms.y + ms.height : ms.height;
+  const heightPct = isLast ? 100 - topPct : index === 0 ? ms.y + ms.height : ms.height;
   if (usePercentage) {
     return {
       top: `${topPct.toFixed(2)}%`,
@@ -124,13 +124,18 @@ function msRowMetrics(ms, index, usePercentage, containerHeight) {
 
 function renderMilestoneHeaders(container, milestoneInfo, usePercentage, containerHeight) {
   const rows = [];
+  const visible = milestoneInfo.filter((ms) => ms.code);
   let visibleIndex = 0;
-  for (const ms of milestoneInfo) {
-    if (!ms.code) continue;
-
-    const metrics = msRowMetrics(ms, visibleIndex, usePercentage, containerHeight);
+  for (const ms of visible) {
+    const metrics = msRowMetrics(
+      ms,
+      visibleIndex,
+      usePercentage,
+      containerHeight,
+      visibleIndex === visible.length - 1,
+    );
     const row = document.createElement("div");
-    row.className = `gg-msrow${visibleIndex === 0 ? " gg-msrow-first" : ""}`;
+    row.className = `gg-msrow${visibleIndex === 0 ? " gg-msrow-first" : ""}${visibleIndex === visible.length - 1 ? " gg-msrow-last" : ""}`;
     row.style.top = metrics.top;
     row.style.height = metrics.height;
 

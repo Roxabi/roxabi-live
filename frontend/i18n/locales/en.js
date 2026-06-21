@@ -86,6 +86,8 @@ export default {
   "signUp.benefit2": "Client-side title encryption",
   "signUp.benefit3": "No credit card",
 
+  "zk.remember": "Remember passphrase on this device for 30 days",
+
   "lang.switch": "Language",
   "lang.fr": "Français",
   "lang.en": "English",

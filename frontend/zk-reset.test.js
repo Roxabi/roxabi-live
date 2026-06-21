@@ -4,6 +4,7 @@ const apiMock = vi.fn();
 const deleteZkKeyPairMock = vi.fn();
 const deleteAccountMetaMock = vi.fn();
 const clearDeviceSessionMock = vi.fn();
+const clearRememberPassphraseMock = vi.fn();
 const clearZkSessionMock = vi.fn();
 const getZkReauthProofMock = vi.fn();
 const clearZkReauthProofMock = vi.fn();
@@ -13,6 +14,7 @@ vi.mock("./zk-crypto.js", () => ({
   deleteZkKeyPair: (...args) => deleteZkKeyPairMock(...args),
   deleteAccountMeta: (...args) => deleteAccountMetaMock(...args),
   clearDeviceSession: (...args) => clearDeviceSessionMock(...args),
+  clearRememberPassphrase: (...args) => clearRememberPassphraseMock(...args),
 }));
 vi.mock("./zk-session.js", () => ({
   clearZkSession: () => clearZkSessionMock(),
@@ -60,6 +62,7 @@ describe("zk-reset", () => {
     expect(deleteZkKeyPairMock).toHaveBeenCalledWith("alice");
     expect(deleteAccountMetaMock).toHaveBeenCalledWith("alice");
     expect(clearDeviceSessionMock).toHaveBeenCalledWith("alice");
+    expect(clearRememberPassphraseMock).toHaveBeenCalledWith("alice");
     expect(clearZkReauthProofMock).toHaveBeenCalled();
   });
 

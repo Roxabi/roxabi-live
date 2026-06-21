@@ -104,6 +104,9 @@
   border-top: 0;
   padding-top: 12px;
 }
+#graph-panel .gg-msrow-last {
+  border-bottom: 1px solid var(--border);
+}
 #graph-panel .gg-msrow-code {
   font-family: "JetBrains Mono", monospace;
   font-size: 13px;

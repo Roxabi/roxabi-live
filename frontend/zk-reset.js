@@ -1,7 +1,12 @@
 // zk-reset.js — lost-passphrase recovery: wipe server + local ZK state (#216)
 
 import { api } from "./auth.js";
-import { clearDeviceSession, deleteAccountMeta, deleteZkKeyPair } from "./zk-crypto.js";
+import {
+  clearDeviceSession,
+  clearRememberPassphrase,
+  deleteAccountMeta,
+  deleteZkKeyPair,
+} from "./zk-crypto.js";
 import { clearZkReauthProof, getZkReauthProof, zkReauthLoginUrl } from "./zk-github.js";
 import { clearZkSession } from "./zk-session.js";
 const RESET_PENDING_KEY = "roxabi:zk-reset-pending";
@@ -48,6 +53,12 @@ export async function clearLocalZkState(githubLogin) {
   } catch (e) {
     cleanupOk = false;
     console.warn("[zk] clearDeviceSession failed — clear site data manually", e);
+  }
+  try {
+    await clearRememberPassphrase(githubLogin);
+  } catch (e) {
+    cleanupOk = false;
+    console.warn("[zk] clearRememberPassphrase failed — clear site data manually", e);
   }
   return cleanupOk;
 }

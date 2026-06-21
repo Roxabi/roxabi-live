@@ -44,7 +44,7 @@ function migrateRepo() {
 }
 
 export const state = {
-  view: SS.get("v6:view", "table"),
+  view: SS.get("v6:view", "graph"),
   // multi-select arrays (empty = all)
   repo: migrateRepo(),
   milestone: SS.getJSON("v6:milestone", []),

@@ -17,6 +17,7 @@ export const REMEMBER_PASSPHRASE_PREF_KEY = "roxabi:remember_passphrase";
 export const REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const META_DB_VERSION = 3;
 const HKDF_REMEMBER_INFO = new TextEncoder().encode("roxabi-zk-remember-v1");
+const HKDF_DEVICE_SESSION_INFO = new TextEncoder().encode("roxabi-zk-device-session-v1");
 const HKDF_INFO = new TextEncoder().encode("roxabi-zk-ecies-v1");
 const HKDF_SALT = new Uint8Array(32);
 
@@ -218,19 +219,71 @@ async function deviceIdbDelete(login) {
   });
 }
 
+async function deriveDeviceSessionKey() {
+  const secret = await getDeviceSecret();
+  const base = await crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: HKDF_SALT, info: HKDF_DEVICE_SESSION_INFO },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
 /**
  * Persist unlocked accountKey on this device (IndexedDB). Passphrase stays out of
  * storage — only needed on new devices or after explicit Lock / reset.
- * @param {CryptoKey} accountKey non-extractable session key
+ * @param {CryptoKey} accountKey extractable or session account key
  * @param {string} keyFp server backup fingerprint
  */
 export async function saveDeviceSession(githubLogin, accountKey, keyFp) {
-  await deviceIdbPut(githubLogin, { accountKey, key_fp: keyFp });
+  const raw = await crypto.subtle.exportKey("raw", accountKey);
+  const key = await deriveDeviceSessionKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, raw);
+  await deviceIdbPut(githubLogin, {
+    v: 2,
+    iv: b64Encode(iv),
+    ct: b64Encode(ct),
+    key_fp: keyFp,
+  });
 }
 
 /** @returns {Promise<{ accountKey: CryptoKey, key_fp: string }|null>} */
 export async function loadDeviceSession(githubLogin) {
-  return deviceIdbGet(githubLogin);
+  const rec = await deviceIdbGet(githubLogin);
+  if (!rec) return null;
+
+  if (rec.v === 2 && rec.ct && rec.key_fp) {
+    try {
+      const key = await deriveDeviceSessionKey();
+      const raw = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: b64Decode(rec.iv) },
+        key,
+        b64Decode(rec.ct),
+      );
+      const extractable = await crypto.subtle.importKey(
+        "raw",
+        raw,
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"],
+      );
+      const accountKey = await sessionAccountKey(extractable);
+      return { accountKey, key_fp: rec.key_fp };
+    } catch {
+      await deviceIdbDelete(githubLogin);
+      return null;
+    }
+  }
+
+  if (rec.accountKey instanceof CryptoKey && rec.key_fp) {
+    return { accountKey: rec.accountKey, key_fp: rec.key_fp };
+  }
+
+  await deviceIdbDelete(githubLogin);
+  return null;
 }
 
 export async function clearDeviceSession(githubLogin) {
@@ -546,7 +599,7 @@ async function decryptWrappedAccountKeyRaw(passphrase, backup) {
 
 export async function unwrapAccountKey(passphrase, backup) {
   const rawAccountKey = await decryptWrappedAccountKeyRaw(passphrase, backup);
-  return crypto.subtle.importKey("raw", rawAccountKey, { name: "AES-GCM", length: 256 }, false, [
+  return crypto.subtle.importKey("raw", rawAccountKey, { name: "AES-GCM", length: 256 }, true, [
     "encrypt",
     "decrypt",
   ]);

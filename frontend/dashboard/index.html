@@ -24,9 +24,10 @@
       </div>
     </div>
     <div class="header-actions">
-      <div class="ss-wrap">
-        <button id="view-select-btn" class="ss-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="View"></button>
-        <div id="view-select-panel" class="ms-panel" hidden></div>
+      <div class="segs view-segs" role="group" aria-label="View">
+        <button id="btn-graph" class="seg on" data-v="graph" aria-pressed="true" title="Graph"><span class="ico">⋈</span> Graph</button>
+        <button id="btn-list" class="seg" data-v="list" aria-pressed="false" title="List"><span class="ico">≡</span> List</button>
+        <button id="btn-table" class="seg" data-v="table" aria-pressed="false" title="Table"><span class="ico">⊞</span> Table</button>
       </div>
       <select id="org-picker" class="org-picker" aria-label="Active organisation" hidden></select>
       <div id="user-menu-wrap" class="user-menu-wrap" hidden>

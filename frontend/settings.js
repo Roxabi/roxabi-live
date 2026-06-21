@@ -2,7 +2,12 @@
 
 import { DASHBOARD_PATH, api, escHtml, signOut } from "./auth.js";
 import { applyThemePref, getThemePref, setThemePref } from "./theme.js";
-import { rewrapAccountKeyBackup, saveDeviceSession, unwrapAccountKey } from "./zk-crypto.js";
+import {
+  rewrapAccountKeyBackup,
+  saveDeviceSession,
+  sessionAccountKey,
+  unwrapAccountKey,
+} from "./zk-crypto.js";
 import { updateKeyBackup } from "./zk-enroll.js";
 import { getZkReauthProof, zkReauthLoginUrl } from "./zk-github.js";
 import { clearLocalZkState } from "./zk-reset.js";
@@ -272,7 +277,8 @@ function wirePassphraseChange(login, closeSettings) {
         wrap_iv: wrapped.wrap_iv,
         wrapped_key: wrapped.wrapped_key,
       });
-      setZkSession(accountKey, wrapped.key_fp);
+      const session = await sessionAccountKey(accountKey);
+      setZkSession(session, wrapped.key_fp);
       await saveDeviceSession(login, accountKey, wrapped.key_fp);
       form?.setAttribute("hidden", "");
       closeSettings();

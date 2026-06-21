@@ -52,11 +52,9 @@ const zkGithubLinkNotice = $("zk-github-link-notice");
 const PIVOT_DIMS = ["milestone", "priority", "repo", "lane", "size", "none"];
 const LIST_DIMS = ["milestone", "priority", "repo", "lane", "size", "status", "parent", "none"];
 const TABLE_GROUP_DIMS = ["lane", "parent", "none"];
-const VIEW_ITEMS = [
-  { value: "table", label: "⊞ Table" },
-  { value: "list", label: "≡ List" },
-  { value: "graph", label: "⋈ Graph" },
-];
+const btnGraph = $("btn-graph");
+const btnList = $("btn-list");
+const btnTable = $("btn-table");
 
 const dimItems = (values) => values.map((v) => ({ value: v, label: v }));
 
@@ -102,9 +100,6 @@ function showZkMigrationNotice() {
 }
 
 // ─── Single-select instances ──────────────────────────────────────────────
-const ssView = new SingleSelect($("view-select-btn"), $("view-select-panel"), {
-  placeholder: "View",
-});
 const ssPivotRow = new SingleSelect($("pivot-row-btn"), $("pivot-row-panel"));
 const ssPivotCol = new SingleSelect($("pivot-col-btn"), $("pivot-col-panel"));
 const ssTableGroup = new SingleSelect($("table-group-btn"), $("table-group-panel"));
@@ -149,7 +144,15 @@ function render() {
     graphPanel.classList.remove("view-active");
   }
 
-  ssView.setValue(state.view);
+  for (const [btn, match] of [
+    [btnGraph, "graph"],
+    [btnList, "list"],
+    [btnTable, "table"],
+  ]) {
+    if (!btn) continue;
+    btn.classList.toggle("on", state.view === match);
+    btn.setAttribute("aria-pressed", String(state.view === match));
+  }
 
   pivotControls.style.display = isTable ? "" : "none";
   if (listControls) listControls.style.display = isList ? "" : "none";
@@ -168,11 +171,17 @@ function updateSubtitle() {
   subtitle.textContent = `${total} issues · ${open} open · ${total - open} closed`;
 }
 
-// ─── View + dimension dropdowns ───────────────────────────────────────────
-ssView.onChange = (v) => {
-  setState({ view: v });
-  render();
-};
+// ─── View toggle (segs) + dimension dropdowns ─────────────────────────────
+for (const [btn, view] of [
+  [btnGraph, "graph"],
+  [btnList, "list"],
+  [btnTable, "table"],
+]) {
+  btn?.addEventListener("click", () => {
+    setState({ view });
+    render();
+  });
+}
 ssPivotRow.onChange = (v) => {
   setState({ pivotRow: v });
   render();
@@ -376,7 +385,6 @@ function populateFilters(repoData) {
 function restoreControls() {
   searchInput.value = state.search;
   searchClear.hidden = !state.search;
-  ssView.setItems(VIEW_ITEMS, state.view);
   ssPivotRow.setItems(dimItems(PIVOT_DIMS), state.pivotRow);
   ssPivotCol.setItems(dimItems(PIVOT_DIMS), state.pivotCol);
   ssTableGroup.setItems(dimItems(TABLE_GROUP_DIMS), state.tableGroup);
@@ -419,12 +427,12 @@ async function loadAndRender(zkOptIn, githubLogin, zkAccountKeyEnabled = false) 
   annotateNodes(nodes, edges);
   setState({ nodes, edges });
   state.nodesByKey = new Map(nodes.map((n) => [n.key, n]));
-  const reposWithIssues = new Set(nodes.map((n) => n.repo));
   let repoData;
   if (data.repos?.length) {
-    repoData = data.repos.filter((r) => reposWithIssues.has(r.repo)); // preserves server order (live→archived, alpha) + archived flag
+    // All tenant repos — not only those with issues in the current status filter.
+    repoData = data.repos;
   } else {
-    const derived = [...reposWithIssues].sort();
+    const derived = [...new Set(nodes.map((n) => n.repo))].sort();
     repoData = derived.map((repo) => ({ repo, archived: false }));
   }
   populateFilters(repoData);

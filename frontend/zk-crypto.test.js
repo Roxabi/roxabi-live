@@ -8,10 +8,12 @@ import {
   fingerprintAccountKey,
   fingerprintPublicKey,
   generateAccountKey,
+  loadDeviceSession,
   openContent,
   openContentDual,
   openTitle,
   openWithAccountKey,
+  saveDeviceSession,
   sealContent,
   sealTitle,
   sealWithAccountKey,
@@ -82,6 +84,19 @@ describe("zk-crypto accountKey v2", () => {
     const content = await openWithAccountKey(session, envelope);
     expect(content.title).toBe("Secret issue");
     expect(content.body).toBe("Private body");
+  });
+
+  it("saveDeviceSession/loadDeviceSession roundtrips encrypted device session", async () => {
+    const fp = await fingerprintAccountKey(accountKey);
+    await saveDeviceSession("alice", accountKey, fp);
+    const restored = await loadDeviceSession("alice");
+    expect(restored?.key_fp).toBe(fp);
+    expect(restored?.accountKey).toBeTruthy();
+    const envelope = await sealWithAccountKey(restored.accountKey, { title: "Device session" });
+    const opened = await openWithAccountKey(restored.accountKey, envelope);
+    expect(opened.title).toBe("Device session");
+    const { clearDeviceSession } = await import("./zk-crypto.js");
+    await clearDeviceSession("alice");
   });
 
   it("wrapAccountKey/unwrapAccountKey roundtrips accountKey", async () => {
