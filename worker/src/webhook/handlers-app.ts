@@ -21,6 +21,7 @@
  *   - sync_control sentinel (tenant_id=0, Deviation D-2): ¬touched here.
  */
 
+import { supersedeStaleTenants } from "../auth/tenant-supersede";
 import type { Env } from "../types";
 import { isPrivateBit, repoFullName, resolveUserId } from "./handlers-app-helpers";
 import { bumpDataVersion } from "./mutations";
@@ -110,6 +111,14 @@ export async function handleInstallation(
       return;
     }
     const tenantId = tenant.id;
+
+    await supersedeStaleTenants(db, {
+      keepTenantId: tenantId,
+      accountLogin,
+      accountType,
+      installationId,
+      nowIso,
+    });
 
     // Build repo-access upserts from payload.repositories (the install-time selection).
     const repositories = (payload.repositories as unknown[] | undefined) ?? [];

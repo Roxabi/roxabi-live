@@ -33,7 +33,11 @@ export async function discoverTenants(db: D1Database, env: Env): Promise<TenantD
 
   const tenantRows = await db
     .prepare(
-      "SELECT id, installation_id FROM tenants WHERE installation_id IS NOT NULL ORDER BY id ASC",
+      `SELECT id, installation_id FROM tenants
+       WHERE installation_id IS NOT NULL
+         AND deleted_at IS NULL
+         AND suspended_at IS NULL
+       ORDER BY id ASC`,
     )
     .all<{ id: number; installation_id: number }>();
 
