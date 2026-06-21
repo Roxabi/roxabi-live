@@ -8,7 +8,7 @@ import {
 } from "./auth.js";
 import { clearSearchHighlight, initGraph } from "./graph.js";
 import { clearPinned } from "./hover.js";
-import { waitForInitialSync } from "./initial-sync.js";
+import { ensureSyncStarted, startSyncProgressMonitor } from "./initial-sync.js";
 import { renderList } from "./list.js";
 import { MultiSelect } from "./multi_select.js";
 import { renderTable } from "./pivot.js";
@@ -501,7 +501,15 @@ async function init() {
       sessionZkOptIn = true;
     }
 
-    await waitForInitialSync();
+    await ensureSyncStarted();
+    startSyncProgressMonitor({
+      onReposAdvanced: () => {
+        loadAndRender(sessionZkOptIn, sessionGithubLogin, sessionZkAccountKeyEnabled).catch((e) => {
+          errorMsg.hidden = false;
+          errorMsg.textContent = `Failed to refresh graph: ${e.message}`;
+        });
+      },
+    });
     await loadAndRender(sessionZkOptIn, sessionGithubLogin, zkAccountKeyEnabled);
 
     if (zkAccountKeyEnabled) {

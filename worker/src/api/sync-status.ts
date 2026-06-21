@@ -24,7 +24,7 @@ export async function syncStatusRoute(c: Context<AuthEnv>): Promise<Response> {
   };
   const status = await getSyncStatus(c.env.DB, hasLinkedTenant, syncCtx);
 
-  if (status.initial_sync && !status.sync_running) {
+  if (status.sync_in_progress && !status.sync_running) {
     await maybeScheduleBootstrapSync(c.env.DB, c.env, c.executionCtx, syncCtx);
     status.sync_running = await isGlobalSyncRunning(c.env.DB);
   }

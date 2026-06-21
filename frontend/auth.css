@@ -619,6 +619,47 @@ body.settings-open {
 
 /* ─── ZK migration incomplete notice ─────────────────────────────────────── */
 
+.sync-progress-banner {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: var(--accent-dim);
+  border: 1px solid var(--border-hi);
+  border-radius: 8px;
+}
+.sync-progress-banner[hidden] {
+  display: none !important;
+}
+.sync-progress-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sync-progress-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+}
+.sync-progress-detail {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.sync-progress-track {
+  height: 4px;
+  background: var(--bg-panel);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sync-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
 .zk-migration-notice {
   align-items: center;
   background: rgba(234, 179, 8, 0.08);

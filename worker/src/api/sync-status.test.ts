@@ -14,6 +14,9 @@ vi.mock("../sync/bootstrap", async (importOriginal) => {
       issue_count: 0,
       sync_running: false,
       initial_sync: true,
+      repos_total: 39,
+      repos_synced: 0,
+      sync_in_progress: true,
     }),
     isGlobalSyncRunning: vi.fn().mockResolvedValue(true),
   };
@@ -64,14 +67,20 @@ describe("GET /api/sync/status", () => {
       issue_count: 0,
       sync_running: true,
       initial_sync: true,
+      repos_total: 39,
+      repos_synced: 0,
+      sync_in_progress: true,
     });
   });
 
-  it("schedules bootstrap when initial sync is pending", async () => {
+  it("schedules bootstrap when sync is in progress", async () => {
     vi.mocked(getSyncStatus).mockResolvedValueOnce({
-      issue_count: 0,
+      issue_count: 80,
       sync_running: false,
-      initial_sync: true,
+      initial_sync: false,
+      repos_total: 39,
+      repos_synced: 20,
+      sync_in_progress: true,
     });
     const { db } = captureDb();
     const waitUntil = vi.fn();
@@ -87,11 +96,14 @@ describe("GET /api/sync/status", () => {
     expect(isGlobalSyncRunning).toHaveBeenCalled();
   });
 
-  it("does not schedule bootstrap when initial_sync is false (ZK not enrolled)", async () => {
+  it("does not schedule bootstrap when sync_in_progress is false (ZK not enrolled)", async () => {
     vi.mocked(getSyncStatus).mockResolvedValueOnce({
       issue_count: 0,
       sync_running: false,
       initial_sync: false,
+      repos_total: 0,
+      repos_synced: 0,
+      sync_in_progress: false,
     });
     const { db } = captureDb();
     await makeApp(db).request("/api/sync/status", {}, makeEnv(db), {

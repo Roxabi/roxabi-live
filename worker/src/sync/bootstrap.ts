@@ -7,15 +7,21 @@
  */
 
 import type { Env } from "../types";
+import { NUM_SLOTS } from "./constants";
 import { ensureGlobalSyncControlSeeded, isHalted, runSync } from "./sync";
 
 const BOOTSTRAP_KEY = "bootstrap_at";
-const BOOTSTRAP_COOLDOWN_MS = 120_000;
+/** Debounce rapid /api/sync/status polls from scheduling duplicate chains. */
+const BOOTSTRAP_SCHEDULE_DEBOUNCE_MS = 10_000;
 
 export interface SyncStatus {
   issue_count: number;
   sync_running: boolean;
+  /** @deprecated Use sync_in_progress — kept for older clients. */
   initial_sync: boolean;
+  repos_total: number;
+  repos_synced: number;
+  sync_in_progress: boolean;
 }
 
 /** When ZK_ACCOUNT_KEY is on, bootstrap waits until the session user has a backup row. */
@@ -53,6 +59,45 @@ export async function isGlobalSyncRunning(db: D1Database): Promise<boolean> {
   return row?.value === "1";
 }
 
+/** Repos registered vs repos with a completed bundle sync (sync_state watermark). */
+export async function getRepoSyncProgress(
+  db: D1Database,
+): Promise<{ repos_total: number; repos_synced: number }> {
+  const totalRow = await db.prepare("SELECT COUNT(*) AS n FROM repos").first<{ n: number }>();
+  const syncedRow = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM sync_state s
+       INNER JOIN repos r ON r.repo = s.repo
+       WHERE s.last_synced_at IS NOT NULL AND TRIM(s.last_synced_at) != ''`,
+    )
+    .first<{ n: number }>();
+  return {
+    repos_total: totalRow?.n ?? 0,
+    repos_synced: syncedRow?.n ?? 0,
+  };
+}
+
+export async function isBootstrapComplete(db: D1Database): Promise<boolean> {
+  const { repos_total, repos_synced } = await getRepoSyncProgress(db);
+  if (repos_total === 0) return false;
+  return repos_synced >= repos_total;
+}
+
+/**
+ * First-import chain: runSync advances one WINDOW slot per call — loop until every
+ * repo has sync_state or we hit the safety cap (NUM_SLOTS + margin).
+ */
+export async function runBootstrapSync(env: Env): Promise<void> {
+  const db = env.DB;
+  const maxPasses = NUM_SLOTS + 2;
+  for (let pass = 0; pass < maxPasses; pass++) {
+    if (await isHalted(db)) return;
+    if (await isBootstrapComplete(db)) return;
+    await runSync(env);
+    if (await isBootstrapComplete(db)) return;
+  }
+}
+
 async function getBootstrapAt(db: D1Database): Promise<string | null> {
   const row = await db
     .prepare("SELECT value FROM sync_control WHERE key = ? AND tenant_id = 0")
@@ -73,8 +118,8 @@ async function markBootstrapAt(db: D1Database, iso: string): Promise<void> {
 }
 
 /**
- * Schedule a background full reconcile when the corpus is empty.
- * Returns true when runSync was queued via waitUntil.
+ * Schedule a background bootstrap chain while repos remain unsynced.
+ * Returns true when runBootstrapSync was queued via waitUntil.
  */
 export async function maybeScheduleBootstrapSync(
   db: D1Database,
@@ -85,23 +130,22 @@ export async function maybeScheduleBootstrapSync(
   await ensureGlobalSyncControlSeeded(db);
 
   if (!(await isBootstrapAllowed(db, syncCtx))) return false;
-
-  if ((await getIssueCount(db)) > 0) return false;
   if (await isHalted(db)) return false;
   if (await isGlobalSyncRunning(db)) return false;
+  if (await isBootstrapComplete(db)) return false;
 
   const last = await getBootstrapAt(db);
-  if (last && Date.now() - Date.parse(last) < BOOTSTRAP_COOLDOWN_MS) {
+  if (last && Date.now() - Date.parse(last) < BOOTSTRAP_SCHEDULE_DEBOUNCE_MS) {
     return false;
   }
 
   const now = new Date().toISOString();
   await markBootstrapAt(db, now);
-  ctx.waitUntil(runSync(env));
+  ctx.waitUntil(runBootstrapSync(env));
   return true;
 }
 
-/** Read model for GET /api/sync/status and the frontend initial-sync overlay. */
+/** Read model for GET /api/sync/status and the frontend sync-progress banner. */
 export async function getSyncStatus(
   db: D1Database,
   hasLinkedTenant: boolean,
@@ -111,6 +155,16 @@ export async function getSyncStatus(
   const sync_running = await isGlobalSyncRunning(db);
   const halted = await isHalted(db);
   const bootstrapAllowed = await isBootstrapAllowed(db, syncCtx);
-  const initial_sync = hasLinkedTenant && issue_count === 0 && !halted && bootstrapAllowed;
-  return { issue_count, sync_running, initial_sync };
+  const bootstrapComplete = await isBootstrapComplete(db);
+  const { repos_total, repos_synced } = await getRepoSyncProgress(db);
+  const sync_in_progress = hasLinkedTenant && bootstrapAllowed && !halted && !bootstrapComplete;
+  const initial_sync = sync_in_progress && repos_synced === 0 && !sync_running;
+  return {
+    issue_count,
+    sync_running,
+    initial_sync,
+    repos_total,
+    repos_synced,
+    sync_in_progress,
+  };
 }
