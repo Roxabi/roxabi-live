@@ -57,16 +57,16 @@ email = None
 api_key = None
 
 for pattern in (
-    r'CF_email\s*:\s*"([^"]+)"',
-    r'cf_email\s*:\s*"([^"]+)"',
-    r'CLOUDFLARE_EMAIL\s*:\s*"([^"]+)"',
+    r'CF_EMAIL\s*[=:]\s*"([^"]+)"',
+    r'CF_email\s*[=:]\s*"([^"]+)"',
+    r'CLOUDFLARE_EMAIL\s*[=:]\s*"([^"]+)"',
 ):
-    m = re.search(pattern, raw)
+    m = re.search(pattern, raw, re.IGNORECASE)
     if m:
         email = m.group(1)
         break
 
-m = re.search(r'CLOUDFLARE_API_KEY\s*:\s*"([^"]+)"', raw)
+m = re.search(r'CLOUDFLARE_API_KEY\s*[=:]\s*"([^"]+)"', raw)
 if m:
     api_key = m.group(1)
 
