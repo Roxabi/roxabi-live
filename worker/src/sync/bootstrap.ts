@@ -9,6 +9,7 @@
 import type { Env } from "../types";
 import { releaseSyncLock, resumeSyncControl } from "./control";
 import { ensureGlobalSyncControlSeeded, isHalted, runSync } from "./sync";
+import { listUnsyncedRepos as unsyncedAmong } from "./window";
 
 const BOOTSTRAP_KEY = "bootstrap_at";
 /** Debounce rapid /api/sync/status polls from scheduling duplicate chains. */
@@ -71,6 +72,13 @@ export async function isGlobalSyncRunning(db: D1Database): Promise<boolean> {
 }
 
 /** Repos registered vs repos with a completed bundle sync (sync_state watermark). */
+/** Repos registered in D1 without a completed sync_state watermark. */
+export async function listUnsyncedRepos(db: D1Database): Promise<string[]> {
+  const rows = await db.prepare("SELECT repo FROM repos ORDER BY repo").all<{ repo: string }>();
+  const allRepos = (rows.results ?? []).map((r) => r.repo);
+  return unsyncedAmong(db, allRepos);
+}
+
 export async function getRepoSyncProgress(
   db: D1Database,
 ): Promise<{ repos_total: number; repos_synced: number }> {

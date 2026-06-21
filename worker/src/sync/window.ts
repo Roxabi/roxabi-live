@@ -2,7 +2,7 @@
  * Repo window selection for runSync — cron slot rotation vs bootstrap unsynced pass.
  */
 
-import { WINDOW } from "./constants";
+import { BOOTSTRAP_WINDOW, WINDOW } from "./constants";
 
 export interface RunSyncOptions {
   /** Bootstrap: sync only repos missing sync_state (up to WINDOW), skip slot rotation. */
@@ -28,7 +28,7 @@ export async function selectWindowedRepos(
 ): Promise<{ windowedRepos: string[]; slot: number; empty: boolean }> {
   if (opts?.prioritizeUnsynced) {
     const unsynced = await listUnsyncedRepos(db, allRepos);
-    const windowedRepos = unsynced.slice(0, WINDOW);
+    const windowedRepos = unsynced.slice(0, BOOTSTRAP_WINDOW);
     console.log(
       `[sync] bootstrap unsynced=${unsynced.length} syncing=${windowedRepos.length}/${allRepos.length}`,
     );

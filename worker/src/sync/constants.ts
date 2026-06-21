@@ -10,6 +10,8 @@ export const MAX_PAGES = 500;
  * issues) alone is ~11 pages — so a single run cannot reconcile all repos.
  */
 export const WINDOW = 20;
+/** Bootstrap: one full-reconcile repo per waitUntil (stays under 50-subreq cap). */
+export const BOOTSTRAP_WINDOW = 1;
 /**
  * Rotation slots. Coverage ceiling = WINDOW * NUM_SLOTS = 40 repos; with the
  * daily cron each repo is full-reconciled every NUM_SLOTS days (= 2). 36 repos

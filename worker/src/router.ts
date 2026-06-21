@@ -81,6 +81,8 @@ app.get("/health", async (c) => {
   let sync: {
     repos_total: number;
     repos_synced: number;
+    repos_unsynced: number;
+    unsynced_repos: string[];
     sync_running: boolean;
     sync_halted: boolean;
     bootstrap_complete: boolean;
@@ -94,14 +96,16 @@ app.get("/health", async (c) => {
   }
   if (dbReachable) {
     try {
-      const { getRepoSyncProgress, isBootstrapComplete, isGlobalSyncRunning } = await import(
-        "./sync/bootstrap"
-      );
+      const { getRepoSyncProgress, isBootstrapComplete, isGlobalSyncRunning, listUnsyncedRepos } =
+        await import("./sync/bootstrap");
       const { isHalted } = await import("./sync/control");
       const progress = await getRepoSyncProgress(c.env.DB);
+      const unsynced = await listUnsyncedRepos(c.env.DB);
       sync = {
         repos_total: progress.repos_total,
         repos_synced: progress.repos_synced,
+        repos_unsynced: unsynced.length,
+        unsynced_repos: unsynced,
         sync_running: await isGlobalSyncRunning(c.env.DB),
         sync_halted: await isHalted(c.env.DB, 0),
         bootstrap_complete: await isBootstrapComplete(c.env.DB),
