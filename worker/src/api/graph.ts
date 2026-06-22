@@ -50,12 +50,23 @@ export interface Node {
   size: string | null;
   status: string | null;
   is_stub: boolean;
+  assignees: string[];
 }
 
 export interface Edge {
   src: string;
   dst: string;
   kind: string;
+}
+
+function parseAssignees(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Fallback: derive lane from `graph:lane/X` label when board field unset. */
@@ -109,6 +120,7 @@ interface IssueRow {
   status: string | null;
   is_stub: number;
   has_active_branch: number;
+  assignees: string | null;
 }
 
 interface EdgeRow {
@@ -178,7 +190,7 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
 
   // (c) issues — scoped to visible repos
   const issueRows = await c.env.DB.prepare(
-    `SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone, lane, priority, size, status, is_stub, has_active_branch FROM issues WHERE repo IN (${ph})`,
+    `SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone, lane, priority, size, status, is_stub, has_active_branch, assignees FROM issues WHERE repo IN (${ph})`,
   )
     .bind(...visible)
     .all<IssueRow>();
@@ -212,6 +224,7 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
       size: row.size,
       status: row.status,
       is_stub: Boolean(row.is_stub),
+      assignees: parseAssignees(row.assignees),
     };
   });
 

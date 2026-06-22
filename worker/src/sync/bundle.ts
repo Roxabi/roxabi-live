@@ -121,6 +121,7 @@ export async function syncRepoBundle(
         const key = canonicalKey(node.number, repo);
         const labels = node.labels.nodes.map((l: { name: string }) => l.name);
         const derived = extractFromLabels(labels);
+        const assignees = (node.assignees?.nodes ?? []).map((a) => a.login);
 
         pageStmts.push(
           prepareIssueUpsert(db, structureOnly, sealedKeys, {
@@ -138,6 +139,7 @@ export async function syncRepoBundle(
             lane: derived.lane,
             priority: derived.priority,
             size: derived.size,
+            assignees,
           }),
         );
         pageStmts.push(db.prepare("DELETE FROM labels WHERE issue_key=?").bind(key));

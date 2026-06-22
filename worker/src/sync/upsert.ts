@@ -13,9 +13,9 @@ export const UPSERT_ISSUE_SQL = `
   INSERT INTO issues
       (key, repo, number, payload, state, url, created_at, updated_at,
        closed_at, milestone, is_stub, lane, priority, size, status,
-       has_active_branch)
+       has_active_branch, assignees)
   VALUES
-      (?, ?, ?, json_object('title', ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (?, ?, ?, json_object('title', ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(key) DO UPDATE SET
       repo              = excluded.repo,
       number            = excluded.number,
@@ -31,7 +31,8 @@ export const UPSERT_ISSUE_SQL = `
       priority          = excluded.priority,
       size              = excluded.size,
       status            = excluded.status,
-      has_active_branch = excluded.has_active_branch
+      has_active_branch = excluded.has_active_branch,
+      assignees         = excluded.assignees
 `;
 
 /** Structure-only upsert — empty payload, one fewer bind arg (#216 PR 6). */
@@ -39,9 +40,9 @@ export const UPSERT_ISSUE_SQL_STRUCTURE = `
   INSERT INTO issues
       (key, repo, number, payload, state, url, created_at, updated_at,
        closed_at, milestone, is_stub, lane, priority, size, status,
-       has_active_branch)
+       has_active_branch, assignees)
   VALUES
-      (?, ?, ?, json_object(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (?, ?, ?, json_object(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(key) DO UPDATE SET
       repo              = excluded.repo,
       number            = excluded.number,
@@ -57,7 +58,8 @@ export const UPSERT_ISSUE_SQL_STRUCTURE = `
       priority          = excluded.priority,
       size              = excluded.size,
       status            = excluded.status,
-      has_active_branch = excluded.has_active_branch
+      has_active_branch = excluded.has_active_branch,
+      assignees         = excluded.assignees
 `;
 
 function logStructureOnlyTitleSkipped(key: string, repo: string): void {
@@ -86,6 +88,7 @@ interface IssueUpsertFields {
   lane: string | null;
   priority: string | null;
   size: string | null;
+  assignees?: string[];
 }
 
 export function prepareIssueUpsert(
@@ -112,6 +115,7 @@ export function prepareIssueUpsert(
       fields.size,
       null, // status — managed by Project v2 board
       0, // has_active_branch — set by branch pass
+      JSON.stringify(fields.assignees ?? []),
     );
   }
 
@@ -132,5 +136,6 @@ export function prepareIssueUpsert(
     fields.size,
     null, // status — managed by Project v2 board
     0, // has_active_branch — set by branch pass
+    JSON.stringify(fields.assignees ?? []),
   );
 }

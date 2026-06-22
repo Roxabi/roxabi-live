@@ -19,6 +19,7 @@ export interface IssueNodeFull {
   updatedAt: string;
   closedAt: string | null;
   milestone: { title: string } | null;
+  assignees: { nodes: Array<{ login: string }> };
   labels: { nodes: Array<{ name: string }> };
   subIssues: { nodes: Array<{ number: number; repository: { nameWithOwner: string } }> };
   parent: { number: number; repository: { nameWithOwner: string } } | null;
@@ -84,6 +85,7 @@ export async function syncRepoIssues(
       const key = canonicalKey(node.number, repo);
       const labels = node.labels.nodes.map((l: { name: string }) => l.name);
       const derived = extractFromLabels(labels);
+      const assignees = (node.assignees?.nodes ?? []).map((a) => a.login);
 
       pageStmts.push(
         prepareIssueUpsert(db, structureOnly, sealedKeys, {
@@ -101,6 +103,7 @@ export async function syncRepoIssues(
           lane: derived.lane,
           priority: derived.priority,
           size: derived.size,
+          assignees,
         }),
       );
 

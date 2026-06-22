@@ -650,6 +650,7 @@ describe("syncRepoIssues", () => {
                 updatedAt: "2024-01-02T00:00:00Z",
                 closedAt: null,
                 milestone: null,
+                assignees: { nodes: [{ login: "alice" }] },
                 labels: { nodes: [{ name: "P1-high" }, { name: "size:S" }] },
                 subIssues: { nodes: [] },
                 parent: null,
@@ -696,6 +697,9 @@ describe("syncRepoIssues", () => {
 
     // Edge collection
     expect(edges.has("Roxabi/lyra#42")).toBe(true);
+
+    const upsertStmt = capturedStmts.find((s) => s.sql.includes("INSERT INTO issues"));
+    expect(upsertStmt?.args).toContain('["alice"]');
   });
 
   it("structureOnly=true uses structure query and empty payload upsert", async () => {

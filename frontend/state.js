@@ -49,17 +49,21 @@ export const state = {
   repo: migrateRepo(),
   milestone: SS.getJSON("v6:milestone", []),
   priority: SS.getJSON("v6:priority", []),
+  assignee: SS.getJSON("v6:assignee", []),
   status: SS.getJSON("v6:status", ["ready", "blocked"]),
   label: SS.getJSON("v6:label", []),
   search: SS.get("v6:search", ""),
   pivotRow: SS.get("v6:pivotRow", "milestone"),
   pivotCol: SS.get("v6:pivotCol", "lane"),
+  graphRow: SS.get("v6:graphRow", "milestone"),
+  graphCol: SS.get("v6:graphCol", "lane"),
   listGroup: SS.get("v7:listGroup", "none"),
   listGroup2: SS.get("v7:listGroup2", "none"),
   tableGroup: SS.get("v7:tableGroup", "none"),
   // graph options
   showParents: SS.get("v6:showParents", "false") === "true",
   showClosedUnderOpenEpic: SS.get("v6:showClosedUnderOpenEpic", "false") === "true",
+  showAssignees: SS.get("v6:showAssignees", "false") === "true",
   nodes: [],
   edges: [],
   // built once after load
@@ -73,16 +77,20 @@ const SS_KEYS = {
   repo: { key: "v6:repo", json: true },
   milestone: { key: "v6:milestone", json: true },
   priority: { key: "v6:priority", json: true },
+  assignee: { key: "v6:assignee", json: true },
   status: { key: "v6:status", json: true },
   label: { key: "v6:label", json: true },
   search: { key: "v6:search", json: false },
   pivotRow: { key: "v6:pivotRow", json: false },
   pivotCol: { key: "v6:pivotCol", json: false },
+  graphRow: { key: "v6:graphRow", json: false },
+  graphCol: { key: "v6:graphCol", json: false },
   listGroup: { key: "v7:listGroup", json: false },
   listGroup2: { key: "v7:listGroup2", json: false },
   tableGroup: { key: "v7:tableGroup", json: false },
   showParents: { key: "v6:showParents", json: false },
   showClosedUnderOpenEpic: { key: "v6:showClosedUnderOpenEpic", json: false },
+  showAssignees: { key: "v6:showAssignees", json: false },
 };
 
 export function setState(patch) {
@@ -239,6 +247,10 @@ export function dimValue(node, dim) {
   if (dim === "size") return node.size ?? "—";
   if (dim === "status") return node._status ?? "—";
   if (dim === "parent") return node._parent ?? "—";
+  if (dim === "assignee") {
+    const assignees = node.assignees ?? [];
+    return assignees.length ? assignees[0] : "(Unassigned)";
+  }
   return "—";
 }
 
@@ -258,6 +270,14 @@ export function applyFilters(nodes, filters) {
     if (filters.status.length && !filters.status.includes(n._status)) return false;
     if (filters.label?.length && !filters.label.some((l) => (n.labels ?? []).includes(l)))
       return false;
+    if (filters.assignee?.length) {
+      const nodeAssignees = n.assignees ?? [];
+      if (nodeAssignees.length === 0) {
+        if (!filters.assignee.includes("(Unassigned)")) return false;
+      } else if (!nodeAssignees.some((a) => filters.assignee.includes(a))) {
+        return false;
+      }
+    }
     if (q) {
       const hay = `${n.key} ${n.title ?? ""} ${(n.labels ?? []).join(" ")}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -272,6 +292,7 @@ export function filteredNodes() {
     repo: state.repo,
     milestone: state.milestone,
     priority: state.priority,
+    assignee: state.assignee,
     status: state.status,
     label: state.label,
     search: state.search,
@@ -288,6 +309,7 @@ export function filteredNodesForGraph() {
     repo: state.repo,
     milestone: state.milestone,
     priority: state.priority,
+    assignee: state.assignee,
     status: [], // bypass status here, re-apply with override below
     label: state.label,
     search: "",

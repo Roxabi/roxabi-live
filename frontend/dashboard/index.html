@@ -70,6 +70,14 @@
     </div>
 
     <div class="ms-wrap">
+      <button id="ms-assignee-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by assignee">
+        <span class="ms-placeholder">All assignees</span>
+      </button>
+      <button id="ms-assignee-clear" class="ms-clear-inline" aria-label="Clear assignee filter" hidden>×</button>
+      <div id="ms-assignee-panel" class="ms-panel" hidden></div>
+    </div>
+
+    <div class="ms-wrap">
       <button id="ms-label-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by label">
         <span class="ms-placeholder">All labels</span>
       </button>
@@ -122,7 +130,17 @@
     </span>
 
     <span class="graph-controls" id="graph-controls">
-      <div class="segs" id="graph-edge-segs" role="group" aria-label="Parent visibility"></div>
+      <span class="toolbar-label">Row</span>
+      <div class="ss-wrap">
+        <button id="graph-row-btn" class="ss-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Graph row grouping"></button>
+        <div id="graph-row-panel" class="ms-panel" hidden></div>
+      </div>
+      <span class="toolbar-label">Col</span>
+      <div class="ss-wrap">
+        <button id="graph-col-btn" class="ss-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Graph column grouping"></button>
+        <div id="graph-col-panel" class="ms-panel" hidden></div>
+      </div>
+      <div class="segs" id="graph-edge-segs" role="group" aria-label="Graph display options"></div>
     </span>
   </div>
   <div id="sync-progress-banner" class="sync-progress-banner" hidden></div>

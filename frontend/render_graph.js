@@ -2,7 +2,7 @@
 // Matches v5 HTML structure: percentage coords, SVG with viewBox="0 0 100 100"
 
 import { edgePath } from "./layout.js";
-import { mapDevStateToClass } from "./state.js";
+import { mapDevStateToClass, state } from "./state.js";
 import { repoTone } from "./tone.js";
 
 function getTone(node) {
@@ -98,6 +98,17 @@ function renderNodes(container, nodes, positions, usePercentage) {
     title.textContent = fullTitle.length > 28 ? `${fullTitle.slice(0, 27)}…` : fullTitle;
     label.appendChild(title);
 
+    if (state.showAssignees) {
+      const assignees = node.assignees ?? [];
+      if (assignees.length > 0) {
+        const assignee = document.createElement("span");
+        assignee.className = "gg-ilabel-assignee";
+        assignee.textContent = assignees.join(", ");
+        assignee.title = `Assignees: ${assignees.join(", ")}`;
+        label.appendChild(assignee);
+      }
+    }
+
     container.appendChild(label);
   }
 }
@@ -139,7 +150,7 @@ function renderMilestoneHeaders(container, milestoneInfo, usePercentage, contain
     row.style.top = metrics.top;
     row.style.height = metrics.height;
 
-    // Hide code for "no milestone" rows
+    if (ms.hideCode) continue;
     const isNoMs = ms.code === "-" || ms.code === "(None)";
     if (!isNoMs) {
       const code = document.createElement("div");

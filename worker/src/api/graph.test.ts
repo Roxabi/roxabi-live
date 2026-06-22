@@ -166,6 +166,28 @@ describe("GET /api/graph", () => {
       expect(Array.isArray(body.repos)).toBe(true);
     });
 
+    it("exposes assignees parsed from the issues row", async () => {
+      const issue = {
+        key: "Roxabi/roxabi-live#3",
+        repo: "Roxabi/roxabi-live",
+        number: 3,
+        title: "Assigned issue",
+        state: "open",
+        url: "https://github.com/Roxabi/roxabi-live/issues/3",
+        milestone: null,
+        lane: null,
+        priority: null,
+        size: null,
+        status: null,
+        is_stub: 0,
+        has_active_branch: 0,
+        assignees: '["alice","bob"]',
+      };
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [issue], []));
+      const body = await res.json<{ nodes: Array<{ assignees: string[] }> }>();
+      expect(body.nodes[0].assignees).toEqual(["alice", "bob"]);
+    });
+
     it("redacts titles when the current user sealed the issue", async () => {
       const issue = {
         key: "Roxabi/roxabi-live#7",

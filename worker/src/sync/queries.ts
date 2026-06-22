@@ -13,6 +13,7 @@ const ISSUES_QUERY_NODES = `
         updatedAt
         closedAt
         milestone { title }
+        assignees(first: 10) { nodes { login } }
         labels(first: 30) { nodes { name } }
         subIssues(first: 50) { nodes { number repository { nameWithOwner } } }
         parent { number repository { nameWithOwner } }
@@ -143,6 +144,7 @@ const REPO_BUNDLE_ISSUES_NODES = `
         updatedAt
         closedAt
         milestone { title }
+        assignees(first: 10) { nodes { login } }
         labels(first: 30) { nodes { name } }
         subIssues(first: 50) { nodes { number repository { nameWithOwner } } }
         parent { number repository { nameWithOwner } }

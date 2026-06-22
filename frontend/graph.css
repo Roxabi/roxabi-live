@@ -311,6 +311,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+#graph-panel .gg-ilabel-assignee {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: 4px;
+  opacity: 0.85;
+}
 #graph-panel .gg-ilabel:hover .gg-ilabel-title {
   white-space: normal;
   overflow: visible;

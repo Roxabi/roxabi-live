@@ -49,8 +49,19 @@ const errorMsg = $("error-msg");
 const zkMigrationNotice = $("zk-migration-notice");
 const zkGithubLinkNotice = $("zk-github-link-notice");
 
-const PIVOT_DIMS = ["milestone", "priority", "repo", "lane", "size", "none"];
-const LIST_DIMS = ["milestone", "priority", "repo", "lane", "size", "status", "parent", "none"];
+const PIVOT_DIMS = ["milestone", "priority", "repo", "lane", "size", "assignee", "none"];
+const GRAPH_DIMS = ["milestone", "priority", "repo", "lane", "size", "assignee", "status", "none"];
+const LIST_DIMS = [
+  "milestone",
+  "priority",
+  "repo",
+  "lane",
+  "size",
+  "status",
+  "parent",
+  "assignee",
+  "none",
+];
 const TABLE_GROUP_DIMS = ["lane", "parent", "none"];
 const btnGraph = $("btn-graph");
 const btnList = $("btn-list");
@@ -102,6 +113,8 @@ function showZkMigrationNotice() {
 // ─── Single-select instances ──────────────────────────────────────────────
 const ssPivotRow = new SingleSelect($("pivot-row-btn"), $("pivot-row-panel"));
 const ssPivotCol = new SingleSelect($("pivot-col-btn"), $("pivot-col-panel"));
+const ssGraphRow = new SingleSelect($("graph-row-btn"), $("graph-row-panel"));
+const ssGraphCol = new SingleSelect($("graph-col-btn"), $("graph-col-panel"));
 const ssTableGroup = new SingleSelect($("table-group-btn"), $("table-group-panel"));
 const ssListGroup = new SingleSelect($("list-group-btn"), $("list-group-panel"));
 const ssListGroup2 = new SingleSelect($("list-group2-btn"), $("list-group2-panel"));
@@ -119,6 +132,10 @@ const msMilestone = new MultiSelect($("ms-milestone-btn"), $("ms-milestone-panel
 const msPriority = new MultiSelect($("ms-priority-btn"), $("ms-priority-panel"), {
   placeholder: "All priorities",
   clearBtn: $("ms-priority-clear"),
+});
+const msAssignee = new MultiSelect($("ms-assignee-btn"), $("ms-assignee-panel"), {
+  placeholder: "All assignees",
+  clearBtn: $("ms-assignee-clear"),
 });
 const msStatus = new MultiSelect($("ms-status-btn"), $("ms-status-panel"), {
   placeholder: "All statuses",
@@ -158,6 +175,7 @@ function render() {
 
   pivotControls.style.display = isTable ? "" : "none";
   if (listControls) listControls.style.display = isList ? "" : "none";
+  if (graphControls) graphControls.style.display = isGraph ? "" : "none";
 
   searchClear.hidden = !state.search;
   updateSubtitle();
@@ -202,6 +220,14 @@ ssListGroup.onChange = (v) => {
 };
 ssListGroup2.onChange = (v) => {
   setState({ listGroup2: v });
+  render();
+};
+ssGraphRow.onChange = (v) => {
+  setState({ graphRow: v });
+  render();
+};
+ssGraphCol.onChange = (v) => {
+  setState({ graphCol: v });
   render();
 };
 
@@ -261,6 +287,18 @@ function buildGraphSegs() {
     });
   });
   container.appendChild(closedSeg);
+
+  const assigneeSeg = document.createElement("button");
+  assigneeSeg.type = "button";
+  assigneeSeg.className = `seg${state.showAssignees ? " on" : ""}`;
+  assigneeSeg.textContent = "Assignees";
+  assigneeSeg.title = "Show assignee logins on issue labels";
+  assigneeSeg.addEventListener("click", () => {
+    setState({ showAssignees: !state.showAssignees });
+    buildGraphSegs();
+    render();
+  });
+  container.appendChild(assigneeSeg);
 }
 
 // ─── Multi-select onChange ────────────────────────────────────────────────
@@ -277,6 +315,11 @@ msMilestone.onChange = (vals) => {
 msPriority.onChange = (vals) => {
   clearPinned();
   setState({ priority: vals });
+  render();
+};
+msAssignee.onChange = (vals) => {
+  clearPinned();
+  setState({ assignee: vals });
   render();
 };
 msStatus.onChange = (vals) => {
@@ -399,6 +442,17 @@ function populateFilters(repoData) {
     state.priority,
   );
 
+  const assigneeSet = new Set();
+  let hasUnassigned = false;
+  for (const n of nodes) {
+    const assignees = n.assignees ?? [];
+    if (assignees.length === 0) hasUnassigned = true;
+    for (const login of assignees) assigneeSet.add(login);
+  }
+  const assigneeItems = [...assigneeSet].sort().map((v) => ({ value: v, label: v }));
+  if (hasUnassigned) assigneeItems.unshift({ value: "(Unassigned)", label: "(Unassigned)" });
+  msAssignee.setItems(assigneeItems, state.assignee);
+
   msStatus.setItems(
     ["ready", "blocked", "done"].map((v) => ({ value: v, label: v })),
     state.status,
@@ -418,6 +472,8 @@ function restoreControls() {
   searchClear.hidden = !state.search;
   ssPivotRow.setItems(dimItems(PIVOT_DIMS), state.pivotRow);
   ssPivotCol.setItems(dimItems(PIVOT_DIMS), state.pivotCol);
+  ssGraphRow.setItems(dimItems(GRAPH_DIMS), state.graphRow);
+  ssGraphCol.setItems(dimItems(GRAPH_DIMS), state.graphCol);
   ssTableGroup.setItems(dimItems(TABLE_GROUP_DIMS), state.tableGroup);
   ssListGroup.setItems(dimItems(LIST_DIMS), state.listGroup);
   ssListGroup2.setItems(dimItems(LIST_DIMS), state.listGroup2);

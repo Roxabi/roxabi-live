@@ -134,7 +134,7 @@ export async function initGraph() {
   panel.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Calculating layout…</div>';
 
   try {
-    const layoutResult = await runLayout(nodes, edges);
+    const layoutResult = await runLayout(nodes, edges, state.graphRow, state.graphCol);
     renderGraph(panel, nodes, edges, layoutResult);
 
     // Get DOM edge elements for highlight
