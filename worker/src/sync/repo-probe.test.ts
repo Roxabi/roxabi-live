@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GraphQLError } from "./graphql";
 import { filterResolvableRepos, isRepoResolvable, parseRepoSlug } from "./repo-probe";
 
@@ -12,15 +12,11 @@ vi.mock("./graphql", () => ({
   },
 }));
 
+vi.mock("./queries", () => ({
+  pickRepoBundleQuery: () => "REPO_BUNDLE_QUERY_STRUCTURE_ONLY",
+}));
+
 import { ghGraphql } from "./graphql";
-
-beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 200, ok: true } as Response));
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("parseRepoSlug", () => {
   it("splits owner/name", () => {
@@ -37,33 +33,18 @@ describe("isRepoResolvable", () => {
       new GraphQLError('GraphQL errors: [{"type":"NOT_FOUND"}]'),
     );
     await expect(isRepoResolvable("token", "Roxabi/gone")).resolves.toBe(false);
+    expect(ghGraphql).toHaveBeenCalledWith(
+      "REPO_BUNDLE_QUERY_STRUCTURE_ONLY",
+      expect.objectContaining({ owner: "Roxabi", name: "gone" }),
+      "token",
+    );
   });
 
-  it("returns true when repository id is present and public API confirms", async () => {
+  it("returns true when bundle query resolves the repository", async () => {
     vi.mocked(ghGraphql).mockResolvedValueOnce({
       data: { repository: { id: "R_kgDO" } },
     });
     await expect(isRepoResolvable("token", "Roxabi/roxabi-live")).resolves.toBe(true);
-  });
-
-  it("returns false for public ghosts GraphQL still lists", async () => {
-    vi.mocked(ghGraphql).mockResolvedValueOnce({
-      data: { repository: { id: "R_ghost" } },
-    });
-    vi.mocked(fetch).mockResolvedValueOnce({ status: 404, ok: false } as Response);
-    await expect(isRepoResolvable("token", "Roxabi/gone", { isPrivate: false })).resolves.toBe(
-      false,
-    );
-  });
-
-  it("skips public API cross-check for private repos", async () => {
-    vi.mocked(ghGraphql).mockResolvedValueOnce({
-      data: { repository: { id: "R_private" } },
-    });
-    await expect(isRepoResolvable("token", "Roxabi/secret", { isPrivate: true })).resolves.toBe(
-      true,
-    );
-    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

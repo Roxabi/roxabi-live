@@ -11,7 +11,7 @@ import { pruneInaccessibleRepo } from "./repo-access-prune";
 import { isRepoResolvable } from "./repo-probe";
 
 const DEAD_REPO_PRUNE_KEY = "dead_repo_prune_at";
-const DEAD_REPO_PRUNE_DEBOUNCE_MS = 60_000;
+const DEAD_REPO_PRUNE_DEBOUNCE_MS = 15_000;
 
 /** Probe unsynced repos via GraphQL; prune those the API cannot resolve. */
 export async function maybePruneDeadAccessibleRepos(env: Env): Promise<number> {

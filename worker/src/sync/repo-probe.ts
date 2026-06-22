@@ -1,17 +1,11 @@
 /**
- * Lightweight GraphQL probe — installation/repositories can list repos GitHub
- * GraphQL no longer resolves (deleted, renamed, transferred away).
+ * GraphQL probe — installation/repositories can list repos the bundle query
+ * no longer resolves (deleted, renamed, transferred away).
  */
 
 import { ghGraphql } from "./graphql";
+import { pickRepoBundleQuery } from "./queries";
 import { isInaccessibleRepoError } from "./repo-access-prune";
-
-const REPO_PROBE_QUERY = `
-query($owner: String!, $name: String!) {
-  repository(owner: $owner, name: $name) {
-    id
-  }
-}`;
 
 export function parseRepoSlug(repo: string): { owner: string; name: string } | null {
   const slash = repo.indexOf("/");
@@ -19,38 +13,33 @@ export function parseRepoSlug(repo: string): { owner: string; name: string } | n
   return { owner: repo.slice(0, slash), name: repo.slice(slash + 1) };
 }
 
-/** Public API 404 — installation tokens can still list transferred/deleted public repos. */
-async function isPubliclyVisible(owner: string, name: string): Promise<boolean> {
-  const res = await fetch(`https://api.github.com/repos/${owner}/${name}`, {
-    method: "HEAD",
-    headers: { "User-Agent": "roxabi-live-worker" },
-    signal: AbortSignal.timeout(5_000),
-  });
-  return res.status !== 404;
-}
-
 export interface RepoResolvableOptions {
-  /** When false, cross-check the unauthenticated REST API for ghost public repos. */
+  /** Reserved for callers; bundle probe uses the installation token either way. */
   isPrivate?: boolean;
 }
 
-/** True when the installation token can resolve the repo via GraphQL. */
+/** True when the installation token can run REPO_BUNDLE_QUERY for the repo. */
 export async function isRepoResolvable(
   token: string,
   repo: string,
-  opts?: RepoResolvableOptions,
+  _opts?: RepoResolvableOptions,
 ): Promise<boolean> {
   const slug = parseRepoSlug(repo);
   if (!slug) return false;
   try {
     const body = await ghGraphql<{ repository: { id: string } | null }>(
-      REPO_PROBE_QUERY,
-      slug,
+      pickRepoBundleQuery(true),
+      {
+        owner: slug.owner,
+        name: slug.name,
+        issuesCursor: null,
+        refsCursor: null,
+        prsCursor: null,
+        since: null,
+      },
       token,
     );
-    if (body.data.repository == null) return false;
-    if (opts?.isPrivate) return true;
-    return isPubliclyVisible(slug.owner, slug.name);
+    return body.data.repository != null;
   } catch (err) {
     if (isInaccessibleRepoError(err)) return false;
     throw err;
