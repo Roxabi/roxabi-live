@@ -50,7 +50,11 @@ export async function maybePruneDeadAccessibleRepos(env: Env): Promise<number> {
   let pruned = 0;
   for (const repo of unsynced) {
     try {
-      if (await isRepoResolvable(token, repo)) continue;
+      const access = await db
+        .prepare("SELECT is_private FROM tenant_repo_access WHERE repo = ? LIMIT 1")
+        .bind(repo)
+        .first<{ is_private: number }>();
+      if (await isRepoResolvable(token, repo, { isPrivate: access?.is_private === 1 })) continue;
       await pruneInaccessibleRepo(db, repo);
       pruned++;
     } catch (err) {

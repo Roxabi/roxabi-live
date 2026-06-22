@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GraphQLError } from "./graphql";
 import { filterResolvableRepos, isRepoResolvable, parseRepoSlug } from "./repo-probe";
 
@@ -13,6 +13,14 @@ vi.mock("./graphql", () => ({
 }));
 
 import { ghGraphql } from "./graphql";
+
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 200, ok: true } as Response));
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("parseRepoSlug", () => {
   it("splits owner/name", () => {
@@ -31,11 +39,31 @@ describe("isRepoResolvable", () => {
     await expect(isRepoResolvable("token", "Roxabi/gone")).resolves.toBe(false);
   });
 
-  it("returns true when repository id is present", async () => {
+  it("returns true when repository id is present and public API confirms", async () => {
     vi.mocked(ghGraphql).mockResolvedValueOnce({
       data: { repository: { id: "R_kgDO" } },
     });
     await expect(isRepoResolvable("token", "Roxabi/roxabi-live")).resolves.toBe(true);
+  });
+
+  it("returns false for public ghosts GraphQL still lists", async () => {
+    vi.mocked(ghGraphql).mockResolvedValueOnce({
+      data: { repository: { id: "R_ghost" } },
+    });
+    vi.mocked(fetch).mockResolvedValueOnce({ status: 404, ok: false } as Response);
+    await expect(isRepoResolvable("token", "Roxabi/gone", { isPrivate: false })).resolves.toBe(
+      false,
+    );
+  });
+
+  it("skips public API cross-check for private repos", async () => {
+    vi.mocked(ghGraphql).mockResolvedValueOnce({
+      data: { repository: { id: "R_private" } },
+    });
+    await expect(isRepoResolvable("token", "Roxabi/secret", { isPrivate: true })).resolves.toBe(
+      true,
+    );
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 
@@ -45,10 +73,10 @@ describe("filterResolvableRepos", () => {
       .mockResolvedValueOnce({ data: { repository: { id: "1" } } })
       .mockRejectedValueOnce(new GraphQLError("Could not resolve to a Repository"));
     const result = await filterResolvableRepos("token", [
-      { repo: "Roxabi/ok" },
-      { repo: "Roxabi/gone" },
+      { repo: "Roxabi/ok", isPrivate: false },
+      { repo: "Roxabi/gone", isPrivate: false },
     ]);
-    expect(result.kept).toEqual([{ repo: "Roxabi/ok" }]);
+    expect(result.kept).toEqual([{ repo: "Roxabi/ok", isPrivate: false }]);
     expect(result.dropped).toEqual(["Roxabi/gone"]);
   });
 });

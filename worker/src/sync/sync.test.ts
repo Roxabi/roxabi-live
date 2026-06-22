@@ -617,6 +617,18 @@ vi.mock("../auth/installToken", () => ({
   listInstallationRepos: vi.fn(),
 }));
 
+vi.mock("./repo-probe", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./repo-probe")>();
+  return {
+    ...actual,
+    filterResolvableRepos: vi.fn(async (_token: string, repos: unknown[]) => ({
+      kept: repos,
+      dropped: [] as string[],
+    })),
+    isRepoResolvable: vi.fn().mockResolvedValue(true),
+  };
+});
+
 describe("syncRepoIssues", () => {
   it("upserts issues, deletes+inserts labels, collects edges, writes sync_state", async () => {
     const { ghGraphql } = await import("./graphql");

@@ -48,7 +48,9 @@ describe("maybePruneDeadAccessibleRepos", () => {
     });
     const pruned = await maybePruneDeadAccessibleRepos({ DB: db } as never);
     expect(pruned).toBe(1);
-    expect(isRepoResolvable).toHaveBeenCalledWith("ghs_test", "Roxabi/gone");
+    expect(isRepoResolvable).toHaveBeenCalledWith("ghs_test", "Roxabi/gone", {
+      isPrivate: false,
+    });
     expect(stmts().some((s) => s.sql.includes("DELETE FROM tenant_repo_access"))).toBe(true);
   });
 });
