@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.20.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.19.2...roxabi-live/v0.20.0) (2026-06-22)
+
+
+### Features
+
+* **graph:** assignees filter, display toggles (parents/closed/assignees), and configurable row/column grouping
+* **sync:** multi-pass bootstrap with non-blocking progress banner and auto-resume after auth halt
+* **frontend:** i18n landing, dedicated sign-in/sign-up pages, and legal pages in French and English
+* **frontend:** repo filter sorted by issue activity
+* **auth:** 30-day remember me for session and ZK passphrase
+* **brand:** align public, dashboard, and auth surfaces with BRAND-BOOK v1.8
+* **dashboard:** mono-select dropdowns and graph milestone layout
+* **zk:** per-user API title redaction for multi-user tenants
+
+
+### Bug Fixes
+
+* **graph:** align Order by None with milestone grouping; separate repo columns across the full lane
+* **graph:** depth-first layout, collision spread per column, Order by repo over parent inheritance
+* **graph:** rename Col to Order by, drop column headers, empty buckets first with visible labels
+* **sync:** prune ghost/deleted/404 repos; round-robin bootstrap; one repo per pass under subrequest cap
+* **sync:** refresh GitHub discovery on health/status; flush blocked-by edges per repo
+* **auth:** account delete and install-link recovery; supersede stale GitHub App installations
+* **auth:** break post-login redirect loop (`/dashboard/`); redirect signed-in users away from sign-in/up
+* **dashboard:** restore view segments, graph defaults, ZK remember persistence; pin footer to viewport
+* **zk:** seal issue titles under structure-only sync; stop key-backup spam after OAuth
+* **ui:** collapse multi-select filter pills; stack onboarding above gate dialogs
+
+
+### Changed
+
+* **deploy:** migrate to Cloudflare Workers Builds (staging + production auto-deploy on push)
+* **chore:** remove legacy Python dep-graph stack and release-please; disable autonomous sync cron
+
+
+### Code Refactoring
+
+* **test:** split oversized sync/graph test harnesses under file-length cap
+* **frontend:** centralize signOut; share public shell across landing and legal pages
+
+
 ## [0.19.2](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.19.1...roxabi-live/v0.19.2) (2026-06-20)
 
 
