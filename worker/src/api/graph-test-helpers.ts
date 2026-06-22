@@ -85,6 +85,8 @@ export function makeGraphTestApp() {
   return a;
 }
 
+type RepoAccessRow = { repo: string; is_private: number };
+
 function graphDbRows(
   sql: string,
   labels: unknown[],
@@ -92,25 +94,33 @@ function graphDbRows(
   issues: unknown[],
   edges: unknown[],
   repos: unknown[],
-  visibleRepos: string[],
+  _visibleRepos: string[],
+  repoAccess: RepoAccessRow[],
   zkOptIn: boolean,
   sealedIssueKeys: string[],
 ): FakeResult[] {
+  const lower = sql.toLowerCase();
   const issueRows = issues as Array<{ repo: string; updated_at?: string | null }>;
-  if (sql.toLowerCase().includes("group by repo")) {
+  if (lower.includes("group by repo")) {
     return aggregateRepoActivity(issueRows);
+  }
+  const privacyByRepo = new Map(repoAccess.map((row) => [row.repo, row.is_private]));
+  const repoRows = (repos as Array<{ repo: string; archived: number }>).map((row) => ({
+    repo: row.repo,
+    archived: row.archived,
+    is_private: privacyByRepo.get(row.repo) ?? 1,
+  }));
+  if (lower.includes("from repos")) {
+    return repoRows;
   }
   return dispatchByTable(sql, {
     zk_opt_in: [{ zk_opt_in: zkOptIn ? 1 : 0 }],
     "from zk_payloads": sealedIssueKeys.map((issue_key) => ({ issue_key })),
-    tenant_repo_access: visibleRepos.map((repo) => ({
-      repo,
-      is_private: 0,
-    })),
+    tenant_repo_access: repoAccess,
     "from labels": labels as FakeResult[],
     "from pr_state": prState as FakeResult[],
     "from edges": edges as FakeResult[],
-    "from repos": repos as FakeResult[],
+    "from repos": repoRows as FakeResult[],
     "from issues": issues as FakeResult[],
   });
 }
@@ -124,10 +134,17 @@ export function makeGraphEnv(
   overrideVisible?: string[],
   zkOptIn = false,
   sealedIssueKeys: string[] = [],
+  repoAccess?: RepoAccessRow[],
 ): Env {
   const visibleRepos = overrideVisible ?? [
     ...new Set((issues as Array<{ repo: string }>).map((i) => i.repo)),
   ];
+  const accessRows =
+    repoAccess ??
+    visibleRepos.map((repo) => ({
+      repo,
+      is_private: 0,
+    }));
   const db = makeFakeDb((sql, args) =>
     makeFakeStmt(
       sql,
@@ -140,6 +157,7 @@ export function makeGraphEnv(
         edges,
         repos,
         visibleRepos,
+        accessRows,
         zkOptIn,
         sealedIssueKeys,
       ),
@@ -158,9 +176,21 @@ export function makeGraphEnvWithCapture(
 ): { env: Env; capturedSqls: string[] } {
   const capturedSqls: string[] = [];
   const visibleRepos = [...new Set((issues as Array<{ repo: string }>).map((i) => i.repo))];
+  const accessRows = visibleRepos.map((repo) => ({ repo, is_private: 0 }));
   const { db } = captureDb((sql, _args) => {
     capturedSqls.push(sql);
-    return graphDbRows(sql, labels, prState, issues, edges, repos, visibleRepos, false, []);
+    return graphDbRows(
+      sql,
+      labels,
+      prState,
+      issues,
+      edges,
+      repos,
+      visibleRepos,
+      accessRows,
+      false,
+      [],
+    );
   });
   return { env: makeEnv(db), capturedSqls };
 }

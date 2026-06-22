@@ -11,7 +11,8 @@
 .auth-view[hidden],
 .consent-gate[hidden],
 .zk-gate[hidden],
-.initial-sync-gate[hidden] {
+.initial-sync-gate[hidden],
+.signout-gate[hidden] {
   display: none;
 }
 
@@ -723,6 +724,62 @@ body.gated #view-list,
 body.gated #graph-panel,
 body.gated #error-msg {
   display: none;
+}
+
+/* ─── Sign-out in progress ────────────────────────────────────────────────── */
+
+.signout-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 700;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+[data-theme="light"] .signout-gate {
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.signout-dialog {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hi);
+  border-radius: 12px;
+  box-shadow: var(--panel-shadow);
+  max-width: 360px;
+  width: 100%;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.signout-message {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.signout-spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  animation: signout-spin 0.9s linear infinite;
+}
+
+@keyframes signout-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ─── Initial corpus sync overlay ─────────────────────────────────────────── */

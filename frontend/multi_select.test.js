@@ -34,6 +34,17 @@ describe("MultiSelect pill collapse", () => {
     expect(trigger.querySelector("[data-ms-expand]")).not.toBeNull();
   });
 
+  it("renders public/private badges in the panel", () => {
+    const ms = new MultiSelect(trigger, panel);
+    ms.setItems([
+      { value: "org/pub", label: "pub", badge: "public" },
+      { value: "org/sec", label: "sec", badge: "private" },
+    ]);
+
+    expect(panel.querySelector(".ms-badge-public")?.textContent).toBe("public");
+    expect(panel.querySelector(".ms-badge-private")?.textContent).toBe("private");
+  });
+
   it("expands all pills when the ellipsis is clicked", () => {
     const ms = new MultiSelect(trigger, panel, { maxVisiblePills: 2 });
     ms.setItems(

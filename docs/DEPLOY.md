@@ -509,6 +509,7 @@ Bypass (if Access is configured) so that GitHub can reach it; the Worker validat
 every webhook request via HMAC-SHA256 (`X-Hub-Signature-256`, `GITHUB_WEBHOOK_SECRET`).
 
 For CF Access setup on `/admin/*` see [docs/s7-access-cutover.md](s7-access-cutover.md).
+For the staging workers.dev gate see [docs/s10-staging-access.md](s10-staging-access.md).
 
 ---
 

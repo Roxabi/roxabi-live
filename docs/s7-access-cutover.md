@@ -124,9 +124,9 @@ the recovery block is here for completeness.
 
 ## Phase 2 — Staging smoke gate
 
-Staging (`roxabi-live-staging.mickael-b5e.workers.dev`) has no CF Access in front —
-requests go directly to the Worker. This isolates the Worker's own `requireSession` gate,
-proving the exact behavior prod must show once the edge Access wall is removed.
+Staging (`roxabi-live-staging.mickael-b5e.workers.dev`) is gated at the edge by CF Access
+(Email OTP — see `docs/s10-staging-access.md`). After OTP, requests hit the Worker; the
+smoke checks below still validate `requireSession` behind the edge gate.
 
 ```bash
 # unauthenticated graph request — Worker requireSession must reject:

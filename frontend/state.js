@@ -54,7 +54,7 @@ export const state = {
   label: SS.getJSON("v6:label", []),
   search: SS.get("v6:search", ""),
   pivotRow: SS.get("v6:pivotRow", "milestone"),
-  pivotCol: SS.get("v6:pivotCol", "lane"),
+  pivotCol: SS.get("v6:pivotCol", "priority"),
   graphRow: SS.get("v6:graphRow", "milestone"),
   graphCol: SS.get("v6:graphCol", "lane"),
   listGroup: SS.get("v7:listGroup", "none"),
