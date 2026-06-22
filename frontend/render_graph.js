@@ -229,9 +229,23 @@ function renderEdges(svgContainer, nodes, edges, positions, usePercentage) {
   }
 }
 
+function renderColHeaders(container, colInfo, usePercentage) {
+  if (!colInfo?.length) return;
+  const strip = document.createElement("div");
+  strip.className = "gg-cscol-strip";
+  for (const col of colInfo) {
+    const el = document.createElement("div");
+    el.className = "gg-cscol";
+    el.textContent = col.code;
+    el.style.left = usePercentage ? `${col.x.toFixed(2)}%` : `${col.x}px`;
+    strip.appendChild(el);
+  }
+  container.appendChild(strip);
+}
+
 // ── Main render function ──────────────────────────────────────────────────────
 export function renderGraph(container, nodes, edges, layoutResult) {
-  const { positions, milestoneInfo, width, height, usePercentage } = layoutResult;
+  const { positions, milestoneInfo, colInfo, width, height, usePercentage } = layoutResult;
 
   container.innerHTML = "";
 
@@ -252,6 +266,7 @@ export function renderGraph(container, nodes, edges, layoutResult) {
   // Create stage container (holds both SVG and nodes, same coordinate system)
   const stage = document.createElement("div");
   stage.className = "graph-stage";
+  renderColHeaders(stage, colInfo, usePercentage);
 
   // Create SVG layer for edges (inside stage so coords match nodes)
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");

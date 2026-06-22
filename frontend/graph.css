@@ -84,6 +84,32 @@
   overflow: visible;
 }
 
+/* ── Column headers (top strip, graph-stage) ───────────────────── */
+#graph-panel .gg-cscol-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 28px;
+  z-index: 6;
+  pointer-events: none;
+}
+#graph-panel .gg-cscol {
+  position: absolute;
+  top: 6px;
+  transform: translateX(-50%);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
+  border: 1px solid var(--border);
+}
+
 /* ── Milestone row-headers (left gutter) ────────────────────────── */
 #graph-panel .gg-msrow {
   position: absolute;

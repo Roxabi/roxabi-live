@@ -45,6 +45,31 @@ function compareRowValues(a, b, rowDim, nodes) {
   return String(a).localeCompare(String(b));
 }
 
+function compareDimValues(a, b, dim, nodes) {
+  return compareRowValues(a, b, dim, nodes);
+}
+
+function computeGridSize(byRowDepth, colDim, colOrder) {
+  if (colDim === "none") return 1;
+  let gridSize = Math.max(colOrder.length, 1);
+  for (const depths of byRowDepth.values()) {
+    for (const bandNodes of depths.values()) {
+      const byCol = new Map();
+      for (const n of bandNodes) {
+        const c = colKey(n, colDim);
+        byCol.set(c, (byCol.get(c) || 0) + 1);
+      }
+      for (const count of byCol.values()) {
+        if (count > 1) {
+          const needed = colOrder.length + (count - 1) * MIN_CELL_GAP;
+          gridSize = Math.max(gridSize, needed);
+        }
+      }
+    }
+  }
+  return gridSize;
+}
+
 function rowSublabel(rowVal, rowDim, nodes) {
   if (rowDim !== "milestone") return null;
   const node = nodes.find((n) => rowKey(n, rowDim) === rowVal);
@@ -119,13 +144,6 @@ function resolveCells(desired, gridSize) {
   return final;
 }
 
-function uniformCells(n, gridSize) {
-  if (n <= 0) return [];
-  if (n === 1) return [Math.floor(gridSize / 2)];
-  const step = (gridSize - 1) / (n - 1);
-  return [...Array(n).keys()].map((i) => Math.round(i * step));
-}
-
 function getParentCells(task, allTasks, rowVal, rowDim, cellOf, xOf, gridSize) {
   const cells = [];
   for (const parent of allTasks) {
@@ -149,7 +167,7 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
   if (colDim !== "none") {
     for (const n of nodes) colSet.add(colKey(n, colDim));
   }
-  const colOrder = [...colSet].sort((a, b) => String(a).localeCompare(String(b)));
+  const colOrder = [...colSet].sort((a, b) => compareDimValues(a, b, colDim, nodes));
 
   const rowSet = new Set(nodes.map((n) => rowKey(n, rowDim)));
   const rowValues = [...rowSet].sort((a, b) => compareRowValues(a, b, rowDim, nodes));
@@ -194,14 +212,7 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     byRowDepth.get(row).get(depth).push(n);
   }
 
-  const gridSizePerRow = new Map();
-  for (const [row, depths] of byRowDepth) {
-    let maxBand = 1;
-    for (const [, bandNodes] of depths) {
-      maxBand = Math.max(maxBand, bandNodes.length);
-    }
-    gridSizePerRow.set(row, Math.max(MIN_CELL_GAP * maxBand - 1, 1));
-  }
+  const gridSize = computeGridSize(byRowDepth, colDim, colOrder);
 
   const cellOf = new Map();
   const xOf = new Map();
@@ -212,10 +223,16 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     return idx >= 0 ? idx : colOrder.length;
   }
 
+  function desiredCell(n, row, gridSz) {
+    const pc = getParentCells(n, nodes, row, rowDim, cellOf, xOf, gridSz);
+    if (pc.length > 0) return Math.round(pc.reduce((a, b) => a + b, 0) / pc.length);
+    if (colDim === "none") return Math.floor(gridSz / 2);
+    return colIdx(colKey(n, colDim));
+  }
+
   for (const row of rowValues) {
     const depths = byRowDepth.get(row);
     if (!depths) continue;
-    const gridSize = gridSizePerRow.get(row);
 
     for (const depth of [...depths.keys()].sort((a, b) => a - b)) {
       const bandNodes = depths.get(depth);
@@ -224,12 +241,7 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
           colIdx(colKey(a, colDim)) - colIdx(colKey(b, colDim)) || a.key.localeCompare(b.key),
       );
 
-      const desired = bandNodes.map((n) => {
-        const pc = getParentCells(n, nodes, row, rowDim, cellOf, xOf, gridSize);
-        if (pc.length > 0) return Math.round(pc.reduce((a, b) => a + b, 0) / pc.length);
-        const uniform = uniformCells(bandNodes.length, gridSize);
-        return uniform[bandNodes.indexOf(n)];
-      });
+      const desired = bandNodes.map((n) => desiredCell(n, row, gridSize));
 
       const final = resolveCells(desired, gridSize);
       for (let i = 0; i < bandNodes.length; i++) {
@@ -287,6 +299,14 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
   }
   rowInfo.sort((a, b) => compareRowValues(a.code, b.code, rowDim, nodes));
 
+  const colInfo =
+    colDim === "none"
+      ? []
+      : colOrder.map((code) => ({
+          code,
+          x: xFromCell(colIdx(code), gridSize),
+        }));
+
   const bandSpanPct = (Y_BOT - Y_TOP) / 100;
   const containerH =
     nBands > 1
@@ -297,6 +317,7 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     positions,
     rowInfo,
     milestoneInfo: rowInfo,
+    colInfo,
     lanes: colOrder,
     width: 100,
     height: containerH,
