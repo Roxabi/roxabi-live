@@ -122,7 +122,10 @@ export async function initGraph() {
 
   // Filter edges: only blocks edges, optionally include parent
   const edges = state.edges.filter(
-    (e) => nodeKeys.has(e.src) && nodeKeys.has(e.dst) && (e.kind === "blocks" || state.showParents),
+    (e) =>
+      nodeKeys.has(e.src) &&
+      nodeKeys.has(e.dst) &&
+      (e.kind === "blocks" || (state.showParents && e.kind === "parent")),
   );
   currentEdges = [];
 

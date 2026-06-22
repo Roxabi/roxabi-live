@@ -133,6 +133,56 @@ describe("layoutV5 column grouping", () => {
     }
   });
 
+  it("groups children under parent when order by is none", () => {
+    const epic = node("Roxabi/live#1", {
+      repo: "Roxabi/live",
+      milestoneCode: null,
+      milestoneRaw: null,
+    });
+    const subA = node("Roxabi/live#2", {
+      repo: "Roxabi/live",
+      milestoneCode: null,
+      milestoneRaw: null,
+    });
+    const subB = node("Roxabi/factory#3", {
+      repo: "Roxabi/factory",
+      milestoneCode: null,
+      milestoneRaw: null,
+    });
+    const edges = [
+      { src: epic.key, dst: subA.key, kind: "parent" },
+      { src: epic.key, dst: subB.key, kind: "parent" },
+    ];
+    const result = layoutV5([epic, subA, subB], edges, "milestone", "none");
+    const xEpic = result.positions.get(epic.key)?.x;
+    const xA = result.positions.get(subA.key)?.x;
+    const xB = result.positions.get(subB.key)?.x;
+    expect(xEpic).toBeDefined();
+    expect(Math.abs(xA - xEpic)).toBeLessThan(50);
+    expect(Math.abs(xB - xEpic)).toBeLessThan(50);
+  });
+
+  it("aligns children with parent epic in a different milestone row", () => {
+    const epic = node("Roxabi/live#1", {
+      repo: "Roxabi/live",
+      milestoneCode: "M1",
+      milestoneSortKey: 1,
+    });
+    const child = node("Roxabi/live#2", {
+      repo: "Roxabi/live",
+      milestoneCode: null,
+      milestoneRaw: null,
+      milestoneSortKey: 9999,
+    });
+    const edges = [{ src: epic.key, dst: child.key, kind: "parent" }];
+    const result = layoutV5([epic, child], edges, "milestone", "none");
+    const xEpic = result.positions.get(epic.key)?.x;
+    const xChild = result.positions.get(child.key)?.x;
+    expect(xEpic).toBeDefined();
+    expect(xChild).toBeDefined();
+    expect(xChild).toBeCloseTo(xEpic, 0);
+  });
+
   it("orders by repo even when parent edges align children under epics", () => {
     const epic = node("Roxabi/live#1", {
       repo: "Roxabi/live",

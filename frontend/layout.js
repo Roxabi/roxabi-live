@@ -165,22 +165,19 @@ function colHeaderLabel(code, colDim) {
   return label.length > 14 ? `${label.slice(0, 13)}…` : label;
 }
 
-function getParentCells(task, allTasks, rowVal, rowDim, cellOf, xOf, gridSize) {
-  const cells = [];
-  for (const parent of allTasks) {
-    if (parent.key === task.key) continue;
-    const edges = task._blockers || [];
-    const isParent = edges.some((e) => e.kind === "parent" && e.src === parent.key);
-    if (!isParent) continue;
+function getParentCells(task, nodesByKey, parentByDst, rowVal, rowDim, cellOf, xOf, gridSize) {
+  const parentKey = parentByDst.get(task.key) ?? task._parent;
+  if (!parentKey) return [];
+  const parent = nodesByKey.get(parentKey);
+  if (!parent) return [];
 
-    const pNum = parent.key;
-    if (rowKey(parent, rowDim) === rowVal && cellOf.has(pNum)) {
-      cells.push(cellOf.get(pNum));
-    } else if (xOf.has(pNum)) {
-      cells.push(cellFromX(xOf.get(pNum), gridSize));
-    }
+  if (rowKey(parent, rowDim) === rowVal && cellOf.has(parentKey)) {
+    return [cellOf.get(parentKey)];
   }
-  return cells;
+  if (xOf.has(parentKey)) {
+    return [cellFromX(xOf.get(parentKey), gridSize)];
+  }
+  return [];
 }
 
 export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
@@ -194,9 +191,11 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
   const rowValues = [...rowSet].sort((a, b) => compareDimValues(a, b, rowDim, nodes));
 
   const blockersByDst = new Map();
+  const parentByDst = new Map();
   for (const e of edges) {
     if (!blockersByDst.has(e.dst)) blockersByDst.set(e.dst, []);
     blockersByDst.get(e.dst).push(e);
+    if (e.kind === "parent") parentByDst.set(e.dst, e.src);
   }
   for (const n of nodes) {
     n._blockers = blockersByDst.get(n.key) || [];
@@ -249,59 +248,72 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     return Math.max(MIN_CELL_GAP * bandNodes.length - 1, 1);
   }
 
-  function desiredCell(n, row, bandNodes, gridSz) {
+  function desiredCellsForBand(row, bandNodes, gridSz) {
     if (colDim !== "none") {
-      return colIdx(colKey(n, colDim));
+      return bandNodes.map((n) => colIdx(colKey(n, colDim)));
     }
-    const pc = getParentCells(n, nodes, row, rowDim, cellOf, xOf, gridSz);
-    if (pc.length > 0) return Math.round(pc.reduce((a, b) => a + b, 0) / pc.length);
-    const uniform = uniformCells(bandNodes.length, gridSz);
-    return uniform[bandNodes.indexOf(n)] ?? 0;
+
+    const orphans = [];
+    const parentCellByKey = new Map();
+    for (const n of bandNodes) {
+      const pc = getParentCells(n, nodesByKey, parentByDst, row, rowDim, cellOf, xOf, gridSz);
+      if (pc.length > 0) {
+        parentCellByKey.set(n.key, pc[0]);
+      } else {
+        orphans.push(n);
+      }
+    }
+    const orphanUniform = uniformCells(orphans.length, gridSz);
+    return bandNodes.map((n) => {
+      if (parentCellByKey.has(n.key)) return parentCellByKey.get(n.key);
+      const idx = orphans.indexOf(n);
+      return orphanUniform[idx] ?? 0;
+    });
   }
 
+  const bandKeys = [];
   for (const row of rowValues) {
     const depths = byRowDepth.get(row);
     if (!depths) continue;
-
-    for (const depth of [...depths.keys()].sort((a, b) => a - b)) {
-      const bandNodes = depths.get(depth);
-      const gridSize = bandGridSize(bandNodes);
-      bandNodes.sort(
-        (a, b) =>
-          colIdx(colKey(a, colDim)) - colIdx(colKey(b, colDim)) || a.key.localeCompare(b.key),
-      );
-
-      const desired = bandNodes.map((n) => desiredCell(n, row, bandNodes, gridSize));
-
-      // Only spread when multiple nodes share the same column cell — never
-      // push distinct columns apart (that blew past the lane and hid nodes left).
-      const hasColCollisions = new Set(desired).size < desired.length;
-      const resolved = hasColCollisions
-        ? resolveBandColCollisions(bandNodes, desired, gridSize)
-        : { final: desired, xByKey: new Map() };
-      const bandX = new Map();
-      for (let i = 0; i < bandNodes.length; i++) {
-        const n = bandNodes[i];
-        cellOf.set(n.key, resolved.final[i]);
-        const x =
-          resolved.xByKey.get(n.key) ??
-          Math.max(xFromCell(resolved.final[i], gridSize), MIN_NODE_X);
-        bandX.set(n.key, x);
-      }
-      finalizeBandXs(bandNodes, bandX, hasColCollisions ? MIN_VIS_NODE_GAP : 1);
-      for (const n of bandNodes) {
-        xOf.set(n.key, bandX.get(n.key));
-      }
-    }
-  }
-
-  const sortedBandKeys = [];
-  for (const [row, depths] of byRowDepth) {
     for (const depth of depths.keys()) {
-      sortedBandKeys.push([row, depth]);
+      bandKeys.push([row, depth]);
     }
   }
-  sortedBandKeys.sort((a, b) => compareDimValues(a[0], b[0], rowDim, nodes) || a[1] - b[1]);
+  // Depth first so parent X is known before children in other milestone rows.
+  bandKeys.sort((a, b) => a[1] - b[1] || compareDimValues(a[0], b[0], rowDim, nodes));
+
+  for (const [row, depth] of bandKeys) {
+    const bandNodes = byRowDepth.get(row).get(depth);
+    const gridSize = bandGridSize(bandNodes);
+    bandNodes.sort(
+      (a, b) => colIdx(colKey(a, colDim)) - colIdx(colKey(b, colDim)) || a.key.localeCompare(b.key),
+    );
+
+    const desired = desiredCellsForBand(row, bandNodes, gridSize);
+
+    // Only spread when multiple nodes share the same column cell — never
+    // push distinct columns apart (that blew past the lane and hid nodes left).
+    const hasColCollisions = new Set(desired).size < desired.length;
+    const resolved = hasColCollisions
+      ? resolveBandColCollisions(bandNodes, desired, gridSize)
+      : { final: desired, xByKey: new Map() };
+    const bandX = new Map();
+    for (let i = 0; i < bandNodes.length; i++) {
+      const n = bandNodes[i];
+      cellOf.set(n.key, resolved.final[i]);
+      const x =
+        resolved.xByKey.get(n.key) ?? Math.max(xFromCell(resolved.final[i], gridSize), MIN_NODE_X);
+      bandX.set(n.key, x);
+    }
+    finalizeBandXs(bandNodes, bandX, hasColCollisions ? MIN_VIS_NODE_GAP : 1);
+    for (const n of bandNodes) {
+      xOf.set(n.key, bandX.get(n.key));
+    }
+  }
+
+  const sortedBandKeys = [...bandKeys].sort(
+    (a, b) => compareDimValues(a[0], b[0], rowDim, nodes) || a[1] - b[1],
+  );
 
   const yTop = Y_TOP;
   const nBands = sortedBandKeys.length;
