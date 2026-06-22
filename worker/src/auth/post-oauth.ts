@@ -35,13 +35,47 @@ function htmlAttrEscape(value: string): string {
 export function authNavigateHtml(dest: string, extraSetCookies: string[] = []): Response {
   const safeDest = sanitizeAuthRedirect(dest);
   const html = `<!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<title>Connexion…</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Connexion · Roxabi Live</title>
+<link rel="icon" href="/assets/logo/foundation-block-16.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&amp;display=swap">
+<style>
+:root{color-scheme:dark;--bg:#0d1117;--bg-elevated:#13191f;--border:#21262d;--border-hi:#30363d;--text:#f0ede6;--text-muted:#8b93a1;--accent:#f0b429;--accent-dim:rgba(240,180,41,.14);--accent-glow:rgba(240,180,41,.35);--panel-shadow:0 8px 24px rgba(0,0,0,.5);--radius-lg:14px;--font-body:"Inter",system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse 80% 50% at 50% -10%,var(--accent-glow),transparent 55%),radial-gradient(ellipse 40% 30% at 100% 0%,rgba(20,184,166,.08),transparent 50%);z-index:0}
+.auth-nav-shell{position:relative;z-index:1;width:100%;max-width:380px}
+.auth-nav-card{background:var(--bg-elevated);border:1px solid var(--border-hi);border-radius:var(--radius-lg);box-shadow:var(--panel-shadow);padding:32px 28px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:18px}
+.auth-nav-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:-.02em}
+.auth-nav-brand img{width:28px;height:28px}
+.auth-nav-brand .accent{color:var(--accent)}
+.auth-nav-spinner{width:40px;height:40px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:auth-nav-spin .9s linear infinite}
+@keyframes auth-nav-spin{to{transform:rotate(360deg)}}
+.auth-nav-msg{font-weight:500;margin:0}
+.auth-nav-hint{color:var(--text-muted);font-size:13px;margin:0;max-width:28ch}
+.auth-nav-link{color:var(--accent);font-weight:600;text-decoration:none}
+.auth-nav-link:hover{text-decoration:underline}
+.auth-nav-foot{color:var(--text-muted);font-size:12px;margin:0}
+</style>
 </head>
 <body>
-<p id="msg">Connexion en cours…</p>
+<main class="auth-nav-shell" role="main">
+  <div class="auth-nav-card" role="status" aria-live="polite" aria-busy="true">
+    <div class="auth-nav-brand">
+      <img src="/assets/logo/foundation-block-16.svg" alt="" width="28" height="28" />
+      <span>Roxabi <span class="accent">Live</span></span>
+    </div>
+    <div class="auth-nav-spinner" aria-hidden="true"></div>
+    <p class="auth-nav-msg" id="msg">Connexion en cours…</p>
+    <p class="auth-nav-hint" id="hint">Préparation de votre session sécurisée</p>
+  </div>
+  <p class="auth-nav-foot">Ne fermez pas cet onglet</p>
+</main>
 <script>
 (function (next) {
   var tries = 0;
@@ -49,12 +83,13 @@ export function authNavigateHtml(dest: string, extraSetCookies: string[] = []): 
   function go() { location.replace(next); }
   function showSlowLink() {
     var msg = document.getElementById("msg");
-    msg.textContent = "";
-    var a = document.createElement("a");
-    a.href = next;
-    a.textContent = "continuer";
-    msg.appendChild(document.createTextNode("Session lente — "));
-    msg.appendChild(a);
+    var hint = document.getElementById("hint");
+    var card = msg && msg.closest(".auth-nav-card");
+    if (card) card.setAttribute("aria-busy", "false");
+    if (msg) msg.textContent = "Session lente";
+    if (hint) {
+      hint.innerHTML = 'La connexion prend plus de temps que prévu. <a class="auth-nav-link" href="' + next.replace(/&/g, "&amp;").replace(/"/g, "&quot;") + '">Continuer vers le dashboard</a>';
+    }
   }
   function poll() {
     fetch("/api/me", { credentials: "same-origin", cache: "no-store" })
@@ -71,7 +106,9 @@ export function authNavigateHtml(dest: string, extraSetCookies: string[] = []): 
   setTimeout(poll, 50);
 })(${JSON.stringify(safeDest)});
 </script>
-<noscript><p><a href="${htmlAttrEscape(safeDest)}">Continuer</a></p></noscript>
+<noscript>
+  <p style="text-align:center;margin-top:16px"><a class="auth-nav-link" href="${htmlAttrEscape(safeDest)}">Continuer vers le dashboard</a></p>
+</noscript>
 </body>
 </html>`;
   const headers = new Headers({

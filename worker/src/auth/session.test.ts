@@ -457,9 +457,9 @@ describe("authNavigateHtml", () => {
   it("renders safe noscript fallback link for ZK destinations", async () => {
     const res = authNavigateHtml("/dashboard?zk_handoff=abc");
     const body = await res.text();
-    expect(body).toMatch(
-      /<noscript><p><a href="\/dashboard\?zk_handoff=abc">Continuer<\/a><\/p><\/noscript>/,
-    );
+    expect(body).toContain('href="/dashboard?zk_handoff=abc"');
+    expect(body).toContain("Continuer vers le dashboard");
+    expect(body).toContain("Connexion en cours");
     expect(body).not.toContain("<script>alert");
   });
 });
