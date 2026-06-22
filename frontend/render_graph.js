@@ -230,7 +230,9 @@ function renderColHeaders(container, colInfo, usePercentage) {
   for (const col of colInfo) {
     const el = document.createElement("div");
     el.className = "gg-cscol";
-    el.textContent = col.label ?? col.code;
+    const text = col.label ?? col.code;
+    el.textContent = text;
+    if (col.code && text !== col.code) el.title = col.code;
     el.style.left = usePercentage ? `${col.x.toFixed(2)}%` : `${col.x}px`;
     strip.appendChild(el);
   }
@@ -259,7 +261,7 @@ export function renderGraph(container, nodes, edges, layoutResult) {
 
   // Create stage container (holds both SVG and nodes, same coordinate system)
   const stage = document.createElement("div");
-  stage.className = "graph-stage";
+  stage.className = colInfo?.length ? "graph-stage graph-stage--cols" : "graph-stage";
   renderColHeaders(stage, colInfo, usePercentage);
 
   // Create SVG layer for edges (inside stage so coords match nodes)

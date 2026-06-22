@@ -7,6 +7,7 @@ import { compareDimValues, dimDisplayLabel, dimValue } from "./state.js";
 const LANE_X_START = 4.0;
 const LANE_X_END = 96.0;
 const Y_TOP = 1.5;
+const Y_TOP_WITH_COLS = 11.0;
 const Y_BOT = 88.0;
 const MIN_CELL_GAP = 2;
 const MAX_CELL_WIDTH_PCT = 4.0;
@@ -62,11 +63,9 @@ function msBounds(gridSize) {
   const pageSpan = LANE_X_END - LANE_X_START;
   const pageCenter = (LANE_X_START + LANE_X_END) / 2;
   if (gridSize <= 1) return { xStart: pageCenter, xEnd: pageCenter, step: 0 };
-  const natural = pageSpan / (gridSize - 1);
-  if (natural <= MAX_CELL_WIDTH_PCT) {
-    return { xStart: LANE_X_START, xEnd: LANE_X_END, step: natural };
-  }
-  const step = MAX_CELL_WIDTH_PCT;
+  // Always fit the full grid inside the lane — shrink step when many columns.
+  const fitStep = pageSpan / (gridSize - 1);
+  const step = Math.min(MAX_CELL_WIDTH_PCT, fitStep);
   const span = step * (gridSize - 1);
   const xStart = pageCenter - span / 2;
   return { xStart, xEnd: xStart + span, step };
@@ -108,6 +107,21 @@ function resolveCells(desired, gridSize) {
   }
 
   return final;
+}
+
+function uniformCells(n, gridSize) {
+  if (n <= 0) return [];
+  if (n === 1) return [Math.floor(gridSize / 2)];
+  const step = (gridSize - 1) / (n - 1);
+  return [...Array(n).keys()].map((i) => Math.round(i * step));
+}
+
+function colHeaderLabel(code, colDim) {
+  const label = dimDisplayLabel(code, colDim);
+  if (colDim === "repo" && code.includes("/")) {
+    return code.split("/")[1] || label;
+  }
+  return label.length > 14 ? `${label.slice(0, 13)}…` : label;
 }
 
 function getParentCells(task, allTasks, rowVal, rowDim, cellOf, xOf, gridSize) {
@@ -178,7 +192,7 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     byRowDepth.get(row).get(depth).push(n);
   }
 
-  const gridSize = computeGridSize(byRowDepth, colDim, colOrder);
+  const groupedGridSize = colDim === "none" ? 1 : computeGridSize(byRowDepth, colDim, colOrder);
 
   const cellOf = new Map();
   const xOf = new Map();
@@ -189,10 +203,18 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     return idx >= 0 ? idx : colOrder.length;
   }
 
-  function desiredCell(n, row, gridSz) {
+  function bandGridSize(bandNodes) {
+    if (colDim !== "none") return groupedGridSize;
+    return Math.max(MIN_CELL_GAP * bandNodes.length - 1, 1);
+  }
+
+  function desiredCell(n, row, bandNodes, gridSz) {
     const pc = getParentCells(n, nodes, row, rowDim, cellOf, xOf, gridSz);
     if (pc.length > 0) return Math.round(pc.reduce((a, b) => a + b, 0) / pc.length);
-    if (colDim === "none") return Math.floor(gridSz / 2);
+    if (colDim === "none") {
+      const uniform = uniformCells(bandNodes.length, gridSz);
+      return uniform[bandNodes.indexOf(n)] ?? 0;
+    }
     return colIdx(colKey(n, colDim));
   }
 
@@ -202,14 +224,18 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
 
     for (const depth of [...depths.keys()].sort((a, b) => a - b)) {
       const bandNodes = depths.get(depth);
+      const gridSize = bandGridSize(bandNodes);
       bandNodes.sort(
         (a, b) =>
           colIdx(colKey(a, colDim)) - colIdx(colKey(b, colDim)) || a.key.localeCompare(b.key),
       );
 
-      const desired = bandNodes.map((n) => desiredCell(n, row, gridSize));
+      const desired = bandNodes.map((n) => desiredCell(n, row, bandNodes, gridSize));
 
-      const final = resolveCells(desired, gridSize);
+      // Only spread when multiple nodes share the same column cell — never
+      // push distinct columns apart (that blew past the lane and hid nodes left).
+      const hasColCollisions = new Set(desired).size < desired.length;
+      const final = hasColCollisions ? resolveCells(desired, gridSize) : desired;
       for (let i = 0; i < bandNodes.length; i++) {
         const n = bandNodes[i];
         cellOf.set(n.key, final[i]);
@@ -226,15 +252,16 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
   }
   sortedBandKeys.sort((a, b) => compareDimValues(a[0], b[0], rowDim, nodes) || a[1] - b[1]);
 
+  const yTop = colDim === "none" ? Y_TOP : Y_TOP_WITH_COLS;
   const nBands = sortedBandKeys.length;
-  const stepY = nBands > 1 ? (Y_BOT - Y_TOP) / (nBands - 1) : 0;
+  const stepY = nBands > 1 ? (Y_BOT - yTop) / (nBands - 1) : 0;
 
   const positions = new Map();
   const bandRecords = [];
 
   for (let i = 0; i < sortedBandKeys.length; i++) {
     const [row, depth] = sortedBandKeys[i];
-    const bandY = Y_TOP + i * stepY;
+    const bandY = yTop + i * stepY;
     const bandNodes = byRowDepth.get(row).get(depth) || [];
     bandNodes.sort((a, b) => (cellOf.get(a.key) || 0) - (cellOf.get(b.key) || 0));
 
@@ -268,13 +295,23 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
   const colInfo =
     colDim === "none"
       ? []
-      : colOrder.map((code) => ({
-          code,
-          label: dimDisplayLabel(code, colDim),
-          x: xFromCell(colIdx(code), gridSize),
-        }));
+      : colOrder.map((code) => {
+          const xs = [];
+          for (const n of nodes) {
+            if (colKey(n, colDim) === code && xOf.has(n.key)) {
+              xs.push(xOf.get(n.key));
+            }
+          }
+          const nominal = xFromCell(colIdx(code), groupedGridSize);
+          const x = xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : nominal;
+          return {
+            code,
+            label: colHeaderLabel(code, colDim),
+            x,
+          };
+        });
 
-  const bandSpanPct = (Y_BOT - Y_TOP) / 100;
+  const bandSpanPct = (Y_BOT - yTop) / 100;
   const containerH =
     nBands > 1
       ? Math.max(MIN_CONTAINER_H, (MAX_BAND_GAP_PX * (nBands - 1)) / bandSpanPct + 80)

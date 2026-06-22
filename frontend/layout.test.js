@@ -5,7 +5,7 @@ import { EMPTY_DIM, compareDimValues } from "./state.js";
 function node(key, opts = {}) {
   return {
     key,
-    repo: "Roxabi/demo",
+    repo: opts.repo ?? "Roxabi/demo",
     number: Number.parseInt(key.split("#")[1], 10),
     milestone: "milestoneRaw" in opts ? opts.milestoneRaw : "M1",
     milestone_code: "milestoneCode" in opts ? opts.milestoneCode : "M1",
@@ -64,6 +64,25 @@ describe("layoutV5 column grouping", () => {
     const result = layoutV5(nodes, [], "milestone", "priority");
     expect(result.rowInfo[0]?.code).toBe(EMPTY_DIM);
     expect(result.rowInfo[0]?.label).toBe("No milestone");
+  });
+
+  it("spreads nodes horizontally when col is none", () => {
+    const nodes = [node("Roxabi/demo#1"), node("Roxabi/demo#2"), node("Roxabi/demo#3")];
+    const result = layoutV5(nodes, [], "milestone", "none");
+    const xs = [...result.positions.values()].map((p) => p.x);
+    expect(new Set(xs).size).toBeGreaterThan(1);
+    expect(result.colInfo).toEqual([]);
+  });
+
+  it("keeps node X positions inside the visible lane span", () => {
+    const nodes = Array.from({ length: 24 }, (_, i) =>
+      node(`Roxabi/repo-${i}#1`, { repo: `Org/repo-${i}` }),
+    );
+    const result = layoutV5(nodes, [], "milestone", "repo");
+    for (const pos of result.positions.values()) {
+      expect(pos.x).toBeGreaterThanOrEqual(3.5);
+      expect(pos.x).toBeLessThanOrEqual(96.5);
+    }
   });
 
   it("keeps same-column nodes aligned on X across depth bands", () => {
