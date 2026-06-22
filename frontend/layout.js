@@ -109,6 +109,51 @@ function resolveCells(desired, gridSize) {
   return final;
 }
 
+/** Spread only nodes that share the same desired column — keep distinct columns apart. */
+function resolveBandColCollisions(desired, gridSize) {
+  const final = [...desired];
+  const groups = new Map();
+  for (let i = 0; i < desired.length; i++) {
+    const d = desired[i];
+    if (!groups.has(d)) groups.set(d, []);
+    groups.get(d).push(i);
+  }
+  for (const indices of groups.values()) {
+    if (indices.length <= 1) continue;
+    const subDesired = indices.map((i) => desired[i]);
+    const resolved = resolveCells(subDesired, gridSize);
+    for (let j = 0; j < indices.length; j++) {
+      final[indices[j]] = resolved[j];
+    }
+  }
+  return final;
+}
+
+function separateBandXs(bandNodes, xByKey, minGap = 1) {
+  if (bandNodes.length <= 1) return;
+  const sorted = [...bandNodes].sort(
+    (a, b) => (xByKey.get(a.key) ?? 0) - (xByKey.get(b.key) ?? 0) || a.key.localeCompare(b.key),
+  );
+  let needsSeparation = false;
+  for (let i = 1; i < sorted.length; i++) {
+    const prevX = xByKey.get(sorted[i - 1].key) ?? 0;
+    const curX = xByKey.get(sorted[i].key) ?? 0;
+    if (curX - prevX < minGap) {
+      needsSeparation = true;
+      break;
+    }
+  }
+  if (!needsSeparation) return;
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prevX = xByKey.get(sorted[i - 1].key) ?? MIN_NODE_X;
+    const curX = xByKey.get(sorted[i].key) ?? MIN_NODE_X;
+    if (curX - prevX < minGap) {
+      xByKey.set(sorted[i].key, Math.min(prevX + minGap, LANE_X_END - 1));
+    }
+  }
+}
+
 function uniformCells(n, gridSize) {
   if (n <= 0) return [];
   if (n === 1) return [Math.floor(gridSize / 2)];
@@ -235,11 +280,17 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
       // Only spread when multiple nodes share the same column cell — never
       // push distinct columns apart (that blew past the lane and hid nodes left).
       const hasColCollisions = new Set(desired).size < desired.length;
-      const final = hasColCollisions ? resolveCells(desired, gridSize) : desired;
+      const final = hasColCollisions ? resolveBandColCollisions(desired, gridSize) : desired;
+      const bandX = new Map();
       for (let i = 0; i < bandNodes.length; i++) {
         const n = bandNodes[i];
         cellOf.set(n.key, final[i]);
-        xOf.set(n.key, xFromCell(final[i], gridSize));
+        const x = Math.max(xFromCell(final[i], gridSize), MIN_NODE_X);
+        bandX.set(n.key, x);
+      }
+      separateBandXs(bandNodes, bandX);
+      for (const n of bandNodes) {
+        xOf.set(n.key, bandX.get(n.key));
       }
     }
   }
@@ -267,8 +318,7 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     bandNodes.sort((a, b) => (cellOf.get(a.key) || 0) - (cellOf.get(b.key) || 0));
 
     for (const n of bandNodes) {
-      const x = Math.max(xOf.get(n.key) || 50, MIN_NODE_X);
-      positions.set(n.key, { x, y: bandY });
+      positions.set(n.key, { x: xOf.get(n.key) || 50, y: bandY });
     }
 
     bandRecords.push({ row, depth, y: bandY, count: bandNodes.length });

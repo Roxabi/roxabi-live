@@ -104,4 +104,25 @@ describe("layoutV5 column grouping", () => {
     expect(x1).toBeDefined();
     expect(Math.abs(x0 - x1)).toBeLessThan(12);
   });
+
+  it("does not stack same-repo nodes on the second milestone row", () => {
+    const nodes = Array.from({ length: 15 }, (_, i) =>
+      node(`Org/repo-${i % 3}#${i + 1}`, {
+        repo: `Org/repo-${i % 3}`,
+        milestoneCode: i < 5 ? "M1" : "M2",
+        milestoneSortKey: i < 5 ? 1 : 2,
+      }),
+    );
+    const result = layoutV5(nodes, [], "milestone", "repo");
+    const byBand = new Map();
+    for (const [key, pos] of result.positions) {
+      const band = pos.y.toFixed(4);
+      if (!byBand.has(band)) byBand.set(band, []);
+      byBand.get(band).push({ key, x: pos.x });
+    }
+    for (const [, band] of byBand) {
+      const xs = band.map((b) => b.x.toFixed(2));
+      expect(new Set(xs).size).toBe(xs.length);
+    }
+  });
 });
