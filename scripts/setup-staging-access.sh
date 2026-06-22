@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Provision Cloudflare Access on the staging workers.dev URL.
-# Requires CLOUDFLARE_API_TOKEN with Access: Apps and Policies Write.
+#
+# Auth (either):
+#   export CLOUDFLARE_API_TOKEN=…   # Access: Apps and Policies Write
+#   source scripts/bw-cloudflare-global-env.sh   # global API key via Bitwarden
 set -euo pipefail
 
-: "${CLOUDFLARE_API_TOKEN:?Set CLOUDFLARE_API_TOKEN (Access: Apps and Policies Write)}"
 : "${CLOUDFLARE_ACCOUNT_ID:=b5e90be971920ce406f7b679c4f1cd33}"
 
 STAGING_HOST="${STAGING_HOST:-roxabi-live-staging.mickael-b5e.workers.dev}"
@@ -11,10 +13,24 @@ STAGING_HOST="${STAGING_HOST:-roxabi-live-staging.mickael-b5e.workers.dev}"
 STAGING_ACCESS_EMAILS="${STAGING_ACCESS_EMAILS:-mickael@bouly.io}"
 
 API="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/access/apps"
-AUTH=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json")
+
+cf_auth_args() {
+  if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+    printf '%s\n' "-H" "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+    return 0
+  fi
+  if [[ -n "${CLOUDFLARE_EMAIL:-}" && -n "${CLOUDFLARE_API_KEY:-}" ]]; then
+    printf '%s\n' "-H" "X-Auth-Email: ${CLOUDFLARE_EMAIL}" "-H" "X-Auth-Key: ${CLOUDFLARE_API_KEY}"
+    return 0
+  fi
+  echo "Set CLOUDFLARE_API_TOKEN or source scripts/bw-cloudflare-global-env.sh" >&2
+  return 1
+}
 
 cf_json() {
-  curl -fsS "${AUTH[@]}" "$@"
+  local -a auth
+  mapfile -t auth < <(cf_auth_args)
+  curl -fsS "${auth[@]}" -H "Content-Type: application/json" "$@"
 }
 
 list_apps() {
@@ -43,30 +59,48 @@ email_includes_json() {
   echo "$arr"
 }
 
+webhook_bypass_payload() {
+  local name="Roxabi Live Staging — webhook bypass"
+  # Path is embedded in domain (same shape as prod live.roxabi.dev/webhook).
+  jq -nc \
+    --arg name "$name" \
+    --arg domain "${STAGING_HOST}/webhook" \
+    '{
+      name: $name,
+      type: "self_hosted",
+      domain: $domain,
+      session_duration: "24h",
+      app_launcher_visible: false,
+      policies: [
+        {
+          name: "GitHub webhook bypass",
+          decision: "bypass",
+          include: [{ everyone: {} }],
+          precedence: 1
+        }
+      ]
+    }'
+}
+
 create_webhook_bypass_app() {
   local name="Roxabi Live Staging — webhook bypass"
-  if app_exists "$name"; then
-    echo "✓ Access app already exists: ${name}"
+  local app_id domain
+  app_id="$(list_apps | jq -r --arg n "$name" '.result[] | select(.name == $n) | .id' | head -1)"
+  domain="${STAGING_HOST}/webhook"
+  if [[ -n "$app_id" ]]; then
+    local current
+    current="$(cf_json "${API}/${app_id}" | jq -r '.result.domain')"
+    if [[ "$current" == "$domain" ]]; then
+      echo "✓ Access app already exists: ${name}"
+      return 0
+    fi
+    echo "→ Updating Access app domain: ${name} (${current} → ${domain})"
+    cf_json --request PUT "${API}/${app_id}" --data "$(webhook_bypass_payload)" >/dev/null
+    echo "✓ ${name} (updated)"
     return 0
   fi
   echo "→ Creating Access app: ${name}"
-  cf_json --request POST "$API" --data @- <<EOF
-{
-  "name": "${name}",
-  "type": "self_hosted",
-  "domain": "${STAGING_HOST}",
-  "path": "/webhook",
-  "session_duration": "24h",
-  "policies": [
-    {
-      "name": "GitHub webhook bypass",
-      "decision": "bypass",
-      "include": [{ "everyone": {} }],
-      "precedence": 1
-    }
-  ]
-}
-EOF
+  cf_json --request POST "$API" --data "$(webhook_bypass_payload)" >/dev/null
   echo "✓ ${name}"
 }
 
@@ -88,6 +122,7 @@ create_staging_gate_app() {
       type: "self_hosted",
       domain: $domain,
       session_duration: "24h",
+      app_launcher_visible: false,
       policies: [
         {
           name: "Allow staging operators",

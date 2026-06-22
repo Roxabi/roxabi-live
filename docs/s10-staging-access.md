@@ -22,7 +22,10 @@ Prod (`live.roxabi.dev`) keeps the S7 model: GitHub OAuth at the Worker for `/da
 ## Automated setup (preferred)
 
 ```bash
-export CLOUDFLARE_API_TOKEN='<token>'
+# Global API key from Bitwarden (same as setup:workers-builds)
+source scripts/bw-cloudflare-global-env.sh
+
+# Or: export CLOUDFLARE_API_TOKEN='<token>'
 # Optional: comma-separated operators
 export STAGING_ACCESS_EMAILS='mickael@bouly.io'
 
@@ -33,7 +36,7 @@ Creates two Access apps (order matters):
 
 | App | Domain | Path | Policy |
 |-----|--------|------|--------|
-| Roxabi Live Staging — webhook bypass | `roxabi-live-staging.mickael-b5e.workers.dev` | `/webhook` | **Bypass** (Everyone) |
+| Roxabi Live Staging — webhook bypass | `roxabi-live-staging.mickael-b5e.workers.dev/webhook` | — | **Bypass** (Everyone) |
 | Roxabi Live Staging | same | `/` (all paths) | **Allow** emails in `STAGING_ACCESS_EMAILS` |
 
 Default allowlist: `mickael@bouly.io`. Add emails:
