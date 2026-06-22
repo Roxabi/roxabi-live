@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.21.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.21.0...roxabi-live/v0.21.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* **zk:** avoid double passphrase prompt on unlock (migration + parallel auto-unlock races)
+* **zk:** dedupe unlock bootstrap across init, BFCache restore, and idle lock; tolerate IndexedDB persistence errors after successful crypto unlock
+
+
 ## [0.21.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.20.0...roxabi-live/v0.21.0) (2026-06-22)
 
 
