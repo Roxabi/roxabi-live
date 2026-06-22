@@ -48,4 +48,8 @@ export interface Env {
   ZK_STRUCTURE_ONLY?: string;
   /** Deployed app release tag (e.g. 0.17.6) — wrangler [vars], not corpus /api/version. */
   APP_RELEASE?: string;
+  /** GitHub App slug for /install deep links (default: roxabi-live). */
+  GITHUB_APP_SLUG?: string;
+  /** "1" enables /__test__/* routes for Playwright — never set in production. */
+  E2E_TEST_MODE?: string;
 }

@@ -108,6 +108,8 @@ describe("getTenantByOrgLogin", () => {
       expect(stmt?.args).toContain("Roxabi");
       // Column-swap guard: WHERE clause must reference account_login, not installation_id
       expect(stmt?.sql).toMatch(/WHERE\s+account_login\s*=\s*\?/);
+      expect(stmt?.sql).toContain("deleted_at IS NULL");
+      expect(stmt?.sql).toContain("ORDER BY created_at DESC");
     });
   });
 

@@ -13,6 +13,19 @@ import { prepareIssueUpsert } from "./upsert";
  * Write all collected edges to D1 in chunked batches.
  * Always emits 2 DELETEs per issue key (parent + blocks) even with zero edges.
  */
+/** Subset of collectedEdges for issues belonging to one repo (owner/name). */
+export function edgesForRepo(
+  collectedEdges: Map<string, EdgeData>,
+  repo: string,
+): Map<string, EdgeData> {
+  const prefix = `${repo}#`;
+  const subset = new Map<string, EdgeData>();
+  for (const [key, data] of collectedEdges) {
+    if (key.startsWith(prefix)) subset.set(key, data);
+  }
+  return subset;
+}
+
 export async function flushEdges(
   db: D1Database,
   collectedEdges: Map<string, EdgeData>,

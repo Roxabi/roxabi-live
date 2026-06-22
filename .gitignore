@@ -25,7 +25,14 @@ reports/
 # wrangler local secrets — never commit
 .dev.vars
 .dev.vars.*
+!.dev.vars.example
 .wrangler/
 
 # frontend test harness (node_modules not committed)
 frontend/node_modules/
+node_modules/
+
+# Playwright e2e artifacts
+test-results/
+playwright-report/
+blob-report/

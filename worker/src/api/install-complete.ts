@@ -8,9 +8,18 @@
  */
 
 import type { Context } from "hono";
-import { authRedirect } from "../auth/cookies";
-import type { Env } from "../types";
+import { authRedirect, readSessionToken } from "../auth/cookies";
+import { tryLinkInstallPendingSession } from "../auth/link-install";
+import { validateSession } from "../auth/session";
+import type { AuthEnv } from "../auth/types";
 
-export async function installCompleteRoute(_c: Context<{ Bindings: Env }>): Promise<Response> {
+export async function installCompleteRoute(c: Context<AuthEnv>): Promise<Response> {
+  const token = readSessionToken(c);
+  if (token) {
+    const session = await validateSession(c.env.DB, token);
+    if (session) {
+      await tryLinkInstallPendingSession(c.env.DB, token, session);
+    }
+  }
   return authRedirect("/dashboard");
 }

@@ -86,6 +86,8 @@ export default {
   "signUp.benefit2": "Chiffrement des titres côté client",
   "signUp.benefit3": "Sans carte bancaire",
 
+  "zk.remember": "Retenir la passphrase sur cet appareil pendant 30 jours",
+
   "lang.switch": "Langue",
   "lang.fr": "Français",
   "lang.en": "English",

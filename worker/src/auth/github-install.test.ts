@@ -1,9 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { GITHUB_APP_SLUG, githubInstallUrl, parseInstallTargets } from "./github-install";
+import {
+  DEFAULT_GITHUB_APP_SLUG,
+  githubInstallUrl,
+  parseInstallTargets,
+  resolveGithubAppSlug,
+} from "./github-install";
+
+describe("resolveGithubAppSlug", () => {
+  it("falls back to the prod default when unset", () => {
+    expect(resolveGithubAppSlug()).toBe(DEFAULT_GITHUB_APP_SLUG);
+    expect(resolveGithubAppSlug("  ")).toBe(DEFAULT_GITHUB_APP_SLUG);
+  });
+
+  it("uses the env override when provided", () => {
+    expect(resolveGithubAppSlug("roxabi-live-staging")).toBe("roxabi-live-staging");
+  });
+});
 
 describe("githubInstallUrl", () => {
   it("returns base install URL without target", () => {
-    expect(githubInstallUrl()).toBe(`https://github.com/apps/${GITHUB_APP_SLUG}/installations/new`);
+    expect(githubInstallUrl()).toBe(
+      `https://github.com/apps/${DEFAULT_GITHUB_APP_SLUG}/installations/new`,
+    );
+  });
+
+  it("uses the staging slug override when provided", () => {
+    expect(githubInstallUrl(undefined, "roxabi-live-staging")).toBe(
+      "https://github.com/apps/roxabi-live-staging/installations/new",
+    );
   });
 
   it("pre-selects user account via target_id and target_type", () => {

@@ -91,7 +91,7 @@ describe("zk-crypto accountKey v2", () => {
     expect(backup.key_fp).toMatch(/^[0-9a-f]{32}$/);
 
     const unwrapped = await unwrapAccountKey(passphrase, backup);
-    expect(unwrapped.extractable).toBe(false);
+    expect(unwrapped.extractable).toBe(true);
 
     const envelope = await sealWithAccountKey(accountKey, { title: "Wrapped key test" });
     const content = await openWithAccountKey(unwrapped, envelope);

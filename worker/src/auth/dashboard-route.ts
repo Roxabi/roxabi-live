@@ -80,6 +80,9 @@ export async function serveDashboardShell(
   // canonical 200 form and never redirects.
   assetUrl.pathname = "/dashboard/";
   const assetRes = await env.ASSETS.fetch(new Request(assetUrl.toString(), raw));
+  if (!assetRes.ok) {
+    return new Response("Dashboard shell unavailable", { status: assetRes.status });
+  }
   const headers = new Headers(assetRes.headers);
   for (const [key, value] of Object.entries(AUTH_NO_CACHE)) {
     headers.set(key, value);

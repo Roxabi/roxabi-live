@@ -75,29 +75,46 @@
   overflow: hidden;
 }
 
-#graph-panel .graph-stage {
+#graph-panel .graph-right {
   position: absolute;
   left: 160px;
   right: 0;
   top: 0;
   bottom: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+#graph-panel .graph-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
   overflow: visible;
 }
 
 /* ── Milestone row-headers (left gutter) ────────────────────────── */
 #graph-panel .gg-msrow {
   position: absolute;
-  left: 12px;
-  width: 136px;
-  padding: 12px 12px 14px;
+  left: 0;
+  width: 160px;
+  box-sizing: border-box;
+  padding: 12px 12px 14px 10px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
-  border-radius: 8px;
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  z-index: 4;
+  z-index: 2;
+  pointer-events: none;
+}
+#graph-panel .gg-msrow-first {
+  border-top: 0;
+  padding-top: 12px;
+}
+#graph-panel .gg-msrow-last {
+  border-bottom: 1px solid var(--border);
 }
 #graph-panel .gg-msrow-code {
   font-family: "JetBrains Mono", monospace;
@@ -114,17 +131,12 @@
 }
 #graph-panel .gg-msrow-sep {
   position: absolute;
-  left: 160px;
+  left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--border-hi) 20%,
-    var(--border-hi) 80%,
-    transparent
-  );
-  z-index: 1;
+  background: var(--border-hi);
+  z-index: 5;
+  pointer-events: none;
 }
 
 /* ── Node dot ────────────────────────────────────────────────────── */
@@ -259,6 +271,7 @@
 #graph-panel .gg-ilabel {
   position: absolute;
   transform: translate(-50%, 14px);
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -307,6 +320,15 @@
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+#graph-panel .gg-ilabel-assignee {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: 4px;
+  opacity: 0.85;
 }
 #graph-panel .gg-ilabel:hover .gg-ilabel-title {
   white-space: normal;

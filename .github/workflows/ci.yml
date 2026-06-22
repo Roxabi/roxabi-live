@@ -53,6 +53,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install worker deps
         run: cd worker && npm ci
+      - name: Assert E2E_TEST_MODE not in wrangler.toml
+        run: |
+          if grep -E '^\s*E2E_TEST_MODE\s*=' wrangler.toml; then
+            echo "E2E_TEST_MODE must not be committed in wrangler.toml (local Playwright only)"
+            exit 1
+          fi
       - name: Lint + format (Biome)
         run: cd worker && npm run ci:lint
       - name: Typecheck (tsc)

@@ -17,6 +17,26 @@
 
 /* ─── Onboarding step progress ─────────────────────────────────────────────── */
 
+.onboarding-shell {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 520px;
+  width: 100%;
+}
+
+.onboarding-shell .onboarding-steps {
+  margin: 0;
+}
+
+.onboarding-shell .consent-dialog,
+.onboarding-shell .initial-sync-dialog,
+.onboarding-shell .install-panel {
+  max-width: none;
+  width: 100%;
+}
+
 .onboarding-steps {
   margin: 0 0 28px;
   max-width: 520px;
@@ -599,6 +619,47 @@ body.settings-open {
 
 /* ─── ZK migration incomplete notice ─────────────────────────────────────── */
 
+.sync-progress-banner {
+  margin: 10px 0 12px;
+  padding: 10px 14px;
+  background: var(--accent-dim);
+  border: 1px solid var(--border-hi);
+  border-radius: 8px;
+}
+.sync-progress-banner[hidden] {
+  display: none !important;
+}
+.sync-progress-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sync-progress-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+}
+.sync-progress-detail {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.sync-progress-track {
+  height: 4px;
+  background: var(--bg-panel);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sync-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
 .zk-migration-notice {
   align-items: center;
   background: rgba(234, 179, 8, 0.08);
@@ -672,6 +733,7 @@ body.gated #error-msg {
   z-index: 640;
   background: rgba(0, 0, 0, 0.72);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 24px;
@@ -873,6 +935,7 @@ body.gated #error-msg {
   z-index: 600;
   background: rgba(0, 0, 0, 0.72);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 24px;

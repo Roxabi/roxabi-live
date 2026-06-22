@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { postAccountDeleteRoute } from "./api/account-delete";
 import { activeTenantRoute } from "./api/active-tenant";
 import { adminSyncRoute } from "./api/admin";
 import { checkAdminAuth } from "./api/auth";
@@ -10,6 +11,12 @@ import { getIssueRoute, listIssuesRoute } from "./api/issues";
 import { logoutRoute, meRoute } from "./api/me";
 import { releaseRoute } from "./api/release";
 import { syncStatusRoute } from "./api/sync-status";
+import {
+  e2eReauthProofRoute,
+  e2eSeedRoute,
+  e2eUserStateRoute,
+  requireE2eMode,
+} from "./api/test-harness";
 import { versionRoute } from "./api/version";
 import { zkGithubGraphqlRoute } from "./api/zk-github-proxy";
 import { consumeZkHandoffRoute } from "./api/zk-handoff";
@@ -71,6 +78,18 @@ app.post("/admin/sync", adminSyncRoute);
 app.get("/health", async (c) => {
   let dbReachable = false;
   let issueCount = 0;
+  let sync: {
+    repos_total: number;
+    repos_synced: number;
+    repos_registry: number;
+    repos_accessible: number;
+    progress_basis: string;
+    repos_unsynced: number;
+    unsynced_repos: string[];
+    sync_running: boolean;
+    sync_halted: boolean;
+    bootstrap_complete: boolean;
+  } | null = null;
   try {
     const row = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM issues").first<{ n: number }>();
     dbReachable = true;
@@ -78,11 +97,47 @@ app.get("/health", async (c) => {
   } catch {
     // db unreachable → report status without failing the request
   }
+  if (dbReachable) {
+    try {
+      const {
+        getRepoSyncDiagnostics,
+        isBootstrapComplete,
+        isGlobalSyncRunning,
+        listUnsyncedRepos,
+      } = await import("./sync/bootstrap");
+      const { isHalted } = await import("./sync/control");
+      const { maybeRefreshTenantDiscovery } = await import("./sync/discovery-refresh");
+      const { maybePruneDeadAccessibleRepos } = await import("./sync/dead-repo-prune");
+      if (!(await isBootstrapComplete(c.env.DB))) {
+        await maybePruneDeadAccessibleRepos(c.env);
+        await maybeRefreshTenantDiscovery(c.env);
+        const { maybeScheduleMaintenanceBootstrap } = await import("./sync/bootstrap");
+        await maybeScheduleMaintenanceBootstrap(c.env.DB, c.env, c.executionCtx);
+      }
+      const progress = await getRepoSyncDiagnostics(c.env.DB);
+      const unsynced = await listUnsyncedRepos(c.env.DB);
+      sync = {
+        repos_total: progress.repos_total,
+        repos_synced: progress.repos_synced,
+        repos_registry: progress.repos_registry,
+        repos_accessible: progress.repos_accessible,
+        progress_basis: progress.progress_basis,
+        repos_unsynced: unsynced.length,
+        unsynced_repos: unsynced,
+        sync_running: await isGlobalSyncRunning(c.env.DB),
+        sync_halted: await isHalted(c.env.DB, 0),
+        bootstrap_complete: await isBootstrapComplete(c.env.DB),
+      };
+    } catch {
+      // sync probe optional — issue_count still reported
+    }
+  }
   return c.json({
     status: "ok",
     db_reachable: dbReachable,
     issue_count: issueCount,
     release: c.env.APP_RELEASE ?? "unknown",
+    sync,
   });
 });
 
@@ -130,6 +185,11 @@ app.post(
 // /logout is ungated by session middleware (idempotent + null-safe). SameSite=Lax on session cookie
 // blocks most cross-site POSTs; requireSameOriginPost adds defense-in-depth.
 app.post("/logout", requireSameOriginPost, logoutRoute);
+app.post("/api/account/delete", requireSameOriginPost, requireSession, postAccountDeleteRoute);
+
+app.post("/__test__/seed", requireE2eMode, e2eSeedRoute);
+app.get("/__test__/user-state", requireE2eMode, e2eUserStateRoute);
+app.post("/__test__/reauth-proof", requireE2eMode, e2eReauthProofRoute);
 
 // GET /sign-in/, /sign-up/ — guest auth pages; signed-in users go to dashboard.
 app.get("/sign-in", signInPageRoute);

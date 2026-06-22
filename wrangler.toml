@@ -23,7 +23,7 @@ routes = [
 ]
 
 [vars]
-APP_RELEASE = "0.19.3"
+APP_RELEASE = "0.19.13"
 ZK_ACCOUNT_KEY = "1"
 # structure-only MUST be "1" whenever ZK_ACCOUNT_KEY is "1" — otherwise the daily
 # cron re-fetches and stores plaintext issue titles in D1, breaking the ZK promise.
@@ -33,8 +33,9 @@ ZK_STRUCTURE_ONLY = "1"
 [assets]
 directory = "./frontend"
 binding   = "ASSETS"
-# /dashboard/* must hit the Worker auth gate before ASSETS serves dashboard/index.html.
-run_worker_first = [ "/dashboard", "/dashboard/*" ]
+# Only the shell paths hit the Worker auth gate — NOT /dashboard/index.html (internal
+# ASSETS fetch + Playwright would loop 307→/dashboard/ if /* is included).
+run_worker_first = [ "/dashboard", "/dashboard/" ]
 
 [triggers]
 # Autonomous cron DISABLED — webhooks are the primary sync path. Use POST /admin/sync
@@ -69,7 +70,8 @@ name = "roxabi-live-staging"
 workers_dev = true
 
 [env.staging.vars]
-APP_RELEASE = "0.19.3"
+APP_RELEASE = "0.19.13"
+GITHUB_APP_SLUG = "roxabi-live-staging"
 ZK_ACCOUNT_KEY = "1"
 ZK_STRUCTURE_ONLY = "1"
 # `routes` is inheritable — without this explicit empty override a staging

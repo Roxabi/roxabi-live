@@ -32,6 +32,7 @@ function seededDb(seed: { tenant?: Row | null; user?: Row | null; repo?: Row | n
   const recorded: FakeStmt[] = [];
   const batched: FakeStmt[][] = [];
   const rowsFor = (sql: string): Row[] => {
+    if (/SELECT id FROM tenants/.test(sql) && /installation_id !=/.test(sql)) return [];
     if (/FROM tenants/.test(sql)) return seed.tenant ? [seed.tenant] : [];
     if (/FROM users/.test(sql)) return seed.user ? [seed.user] : [];
     if (/FROM repos/.test(sql)) return seed.repo ? [seed.repo] : [];

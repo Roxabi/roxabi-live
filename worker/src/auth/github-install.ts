@@ -6,7 +6,7 @@
  * GitHub during install ("Only select repositories").
  */
 
-export const GITHUB_APP_SLUG = "roxabi-live";
+export const DEFAULT_GITHUB_APP_SLUG = "roxabi-live";
 
 export type InstallTargetType = "User" | "Organization";
 
@@ -16,14 +16,17 @@ export interface InstallTarget {
   type: InstallTargetType;
 }
 
-const INSTALL_BASE = `https://github.com/apps/${GITHUB_APP_SLUG}/installations/new`;
+export function resolveGithubAppSlug(slug?: string): string {
+  const trimmed = slug?.trim();
+  return trimmed ? trimmed : DEFAULT_GITHUB_APP_SLUG;
+}
 
 /**
  * Build the GitHub App installation URL.
  * When target is omitted, GitHub shows the account/org picker.
  */
-export function githubInstallUrl(target?: InstallTarget): string {
-  const url = new URL(INSTALL_BASE);
+export function githubInstallUrl(target?: InstallTarget, appSlug?: string): string {
+  const url = new URL(`https://github.com/apps/${resolveGithubAppSlug(appSlug)}/installations/new`);
   if (target) {
     url.searchParams.set("target_id", String(target.id));
     url.searchParams.set("target_type", target.type);

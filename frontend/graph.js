@@ -122,7 +122,10 @@ export async function initGraph() {
 
   // Filter edges: only blocks edges, optionally include parent
   const edges = state.edges.filter(
-    (e) => nodeKeys.has(e.src) && nodeKeys.has(e.dst) && (e.kind === "blocks" || state.showParents),
+    (e) =>
+      nodeKeys.has(e.src) &&
+      nodeKeys.has(e.dst) &&
+      (e.kind === "blocks" || (state.showParents && e.kind === "parent")),
   );
   currentEdges = [];
 
@@ -134,7 +137,7 @@ export async function initGraph() {
   panel.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Calculating layout…</div>';
 
   try {
-    const layoutResult = await runLayout(nodes, edges);
+    const layoutResult = await runLayout(nodes, edges, state.graphRow, state.graphCol);
     renderGraph(panel, nodes, edges, layoutResult);
 
     // Get DOM edge elements for highlight

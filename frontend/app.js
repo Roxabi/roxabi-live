@@ -8,11 +8,12 @@ import {
 } from "./auth.js";
 import { clearSearchHighlight, initGraph } from "./graph.js";
 import { clearPinned } from "./hover.js";
-import { waitForInitialSync } from "./initial-sync.js";
+import { ensureSyncStarted, startSyncProgressMonitor } from "./initial-sync.js";
 import { renderList } from "./list.js";
 import { MultiSelect } from "./multi_select.js";
 import { renderTable } from "./pivot.js";
 import { resumeSettingsFromUrl } from "./settings.js";
+import { SingleSelect } from "./single_select.js";
 // app.js — bootstrap, controls wiring, render orchestration
 import { annotateNodes, parseMilestone, setState, state } from "./state.js";
 import { applyThemePref, toggleThemeQuick, wireThemeMediaListener } from "./theme.js";
@@ -38,9 +39,6 @@ const $ = (id) => document.getElementById(id);
 const viewTable = $("view-table");
 const viewList = $("view-list");
 const graphPanel = $("graph-panel");
-const btnTable = $("btn-table");
-const btnList = $("btn-list");
-const btnGraph = $("btn-graph");
 const searchInput = $("search-input");
 const searchClear = $("search-clear");
 const pivotControls = $("pivot-controls");
@@ -51,9 +49,25 @@ const errorMsg = $("error-msg");
 const zkMigrationNotice = $("zk-migration-notice");
 const zkGithubLinkNotice = $("zk-github-link-notice");
 
-const PIVOT_DIMS = ["milestone", "priority", "repo", "lane", "size", "none"];
-const LIST_DIMS = ["milestone", "priority", "repo", "lane", "size", "status", "parent", "none"];
+const PIVOT_DIMS = ["milestone", "priority", "repo", "lane", "size", "assignee", "none"];
+const GRAPH_DIMS = ["milestone", "priority", "repo", "lane", "size", "assignee", "status", "none"];
+const LIST_DIMS = [
+  "milestone",
+  "priority",
+  "repo",
+  "lane",
+  "size",
+  "status",
+  "parent",
+  "assignee",
+  "none",
+];
 const TABLE_GROUP_DIMS = ["lane", "parent", "none"];
+const btnGraph = $("btn-graph");
+const btnList = $("btn-list");
+const btnTable = $("btn-table");
+
+const dimItems = (values) => values.map((v) => ({ value: v, label: v }));
 
 // ─── ZK migration incomplete notice ─────────────────────────────────────────
 function showZkGithubLinkNotice() {
@@ -96,38 +110,20 @@ function showZkMigrationNotice() {
   zkMigrationNotice.hidden = false;
 }
 
-// ─── Seg group builder (click active to deactivate → 'none') ────────────────
-function buildSegs(container, values, current, onPick, opts = {}) {
-  const { allowDeactivate = true, noneValue = "none" } = opts;
-  container.innerHTML = "";
-  for (const v of values) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = `seg${v === current ? " on" : ""}`;
-    b.dataset.v = v;
-    b.textContent = v;
-    b.addEventListener("click", () => {
-      // Click active → deactivate (set to noneValue)
-      if (allowDeactivate && v === current) {
-        container
-          .querySelectorAll(".seg")
-          .forEach((s) => s.classList.toggle("on", s.dataset.v === noneValue));
-        onPick(noneValue);
-      } else {
-        container
-          .querySelectorAll(".seg")
-          .forEach((s) => s.classList.toggle("on", s.dataset.v === v));
-        onPick(v);
-      }
-    });
-    container.appendChild(b);
-  }
-}
+// ─── Single-select instances ──────────────────────────────────────────────
+const ssPivotRow = new SingleSelect($("pivot-row-btn"), $("pivot-row-panel"));
+const ssPivotCol = new SingleSelect($("pivot-col-btn"), $("pivot-col-panel"));
+const ssGraphRow = new SingleSelect($("graph-row-btn"), $("graph-row-panel"));
+const ssGraphCol = new SingleSelect($("graph-col-btn"), $("graph-col-panel"));
+const ssTableGroup = new SingleSelect($("table-group-btn"), $("table-group-panel"));
+const ssListGroup = new SingleSelect($("list-group-btn"), $("list-group-panel"));
+const ssListGroup2 = new SingleSelect($("list-group2-btn"), $("list-group2-panel"));
 
 // ─── Multi-select instances ───────────────────────────────────────────────
 const msRepo = new MultiSelect($("ms-repo-btn"), $("ms-repo-panel"), {
   placeholder: "All repos",
   clearBtn: $("ms-repo-clear"),
+  maxVisiblePills: 2,
 });
 const msMilestone = new MultiSelect($("ms-milestone-btn"), $("ms-milestone-panel"), {
   placeholder: "All milestones",
@@ -137,6 +133,10 @@ const msPriority = new MultiSelect($("ms-priority-btn"), $("ms-priority-panel"),
   placeholder: "All priorities",
   clearBtn: $("ms-priority-clear"),
 });
+const msAssignee = new MultiSelect($("ms-assignee-btn"), $("ms-assignee-panel"), {
+  placeholder: "All assignees",
+  clearBtn: $("ms-assignee-clear"),
+});
 const msStatus = new MultiSelect($("ms-status-btn"), $("ms-status-panel"), {
   placeholder: "All statuses",
   clearBtn: $("ms-status-clear"),
@@ -144,6 +144,7 @@ const msStatus = new MultiSelect($("ms-status-btn"), $("ms-status-panel"), {
 const msLabel = new MultiSelect($("ms-label-btn"), $("ms-label-panel"), {
   placeholder: "All labels",
   clearBtn: $("ms-label-clear"),
+  maxVisiblePills: 2,
 });
 
 // ─── Render ───────────────────────────────────────────────────────────────
@@ -163,9 +164,9 @@ function render() {
   }
 
   for (const [btn, match] of [
-    [btnTable, "table"],
-    [btnList, "list"],
     [btnGraph, "graph"],
+    [btnList, "list"],
+    [btnTable, "table"],
   ]) {
     if (!btn) continue;
     btn.classList.toggle("on", state.view === match);
@@ -174,6 +175,7 @@ function render() {
 
   pivotControls.style.display = isTable ? "" : "none";
   if (listControls) listControls.style.display = isList ? "" : "none";
+  if (graphControls) graphControls.style.display = isGraph ? "" : "none";
 
   searchClear.hidden = !state.search;
   updateSubtitle();
@@ -189,20 +191,45 @@ function updateSubtitle() {
   subtitle.textContent = `${total} issues · ${open} open · ${total - open} closed`;
 }
 
-// ─── View toggle ──────────────────────────────────────────────────────────
-btnTable.addEventListener("click", () => {
-  setState({ view: "table" });
-  render();
-});
-btnList.addEventListener("click", () => {
-  setState({ view: "list" });
-  render();
-});
-if (btnGraph)
-  btnGraph.addEventListener("click", () => {
-    setState({ view: "graph" });
+// ─── View toggle (segs) + dimension dropdowns ─────────────────────────────
+for (const [btn, view] of [
+  [btnGraph, "graph"],
+  [btnList, "list"],
+  [btnTable, "table"],
+]) {
+  btn?.addEventListener("click", () => {
+    setState({ view });
     render();
   });
+}
+ssPivotRow.onChange = (v) => {
+  setState({ pivotRow: v });
+  render();
+};
+ssPivotCol.onChange = (v) => {
+  setState({ pivotCol: v });
+  render();
+};
+ssTableGroup.onChange = (v) => {
+  setState({ tableGroup: v });
+  render();
+};
+ssListGroup.onChange = (v) => {
+  setState({ listGroup: v });
+  render();
+};
+ssListGroup2.onChange = (v) => {
+  setState({ listGroup2: v });
+  render();
+};
+ssGraphRow.onChange = (v) => {
+  setState({ graphRow: v });
+  render();
+};
+ssGraphCol.onChange = (v) => {
+  setState({ graphCol: v });
+  render();
+};
 
 // ─── Search ───────────────────────────────────────────────────────────────
 searchInput.addEventListener("input", () => {
@@ -228,49 +255,7 @@ searchInput.addEventListener("keydown", (e) => {
   }
 });
 
-// ─── Pivot + List segs ────────────────────────────────────────────────────
-function buildPivotSegs() {
-  buildSegs($("pivot-row-segs"), PIVOT_DIMS, state.pivotRow, (v) => {
-    setState({ pivotRow: v });
-    render();
-  });
-  buildSegs($("pivot-col-segs"), PIVOT_DIMS, state.pivotCol, (v) => {
-    setState({ pivotCol: v });
-    render();
-  });
-  buildSegs(
-    $("table-group-segs"),
-    TABLE_GROUP_DIMS,
-    state.tableGroup,
-    (v) => {
-      setState({ tableGroup: v });
-      render();
-    },
-    { allowDeactivate: true },
-  );
-  buildSegs(
-    $("list-group-segs"),
-    LIST_DIMS,
-    state.listGroup,
-    (v) => {
-      setState({ listGroup: v });
-      render();
-    },
-    { allowDeactivate: true },
-  );
-  buildSegs(
-    $("list-group2-segs"),
-    LIST_DIMS,
-    state.listGroup2,
-    (v) => {
-      setState({ listGroup2: v });
-      render();
-    },
-    { allowDeactivate: true },
-  );
-}
-
-// ─── Graph edge toggle ─────────────────────────────────────────────────────
+// ─── Graph edge toggle (Parents/Closed stay as segs) ───────────────────────
 function buildGraphSegs() {
   const container = $("graph-edge-segs");
   if (!container) return;
@@ -302,6 +287,18 @@ function buildGraphSegs() {
     });
   });
   container.appendChild(closedSeg);
+
+  const assigneeSeg = document.createElement("button");
+  assigneeSeg.type = "button";
+  assigneeSeg.className = `seg${state.showAssignees ? " on" : ""}`;
+  assigneeSeg.textContent = "Assignees";
+  assigneeSeg.title = "Show assignee logins on issue labels";
+  assigneeSeg.addEventListener("click", () => {
+    setState({ showAssignees: !state.showAssignees });
+    buildGraphSegs();
+    render();
+  });
+  container.appendChild(assigneeSeg);
 }
 
 // ─── Multi-select onChange ────────────────────────────────────────────────
@@ -318,6 +315,11 @@ msMilestone.onChange = (vals) => {
 msPriority.onChange = (vals) => {
   clearPinned();
   setState({ priority: vals });
+  render();
+};
+msAssignee.onChange = (vals) => {
+  clearPinned();
+  setState({ assignee: vals });
   render();
 };
 msStatus.onChange = (vals) => {
@@ -365,12 +367,41 @@ function isStructuredLabel(lbl) {
   return false;
 }
 
-// repoData: Array<{ repo: string, archived: boolean }>
+// repoData: Array<{ repo, archived, issue_count?, last_updated_at? }>
+function repoActivityRank(repo, nodes) {
+  if (repo.issue_count != null) {
+    return { count: repo.issue_count, updatedAt: repo.last_updated_at ?? "" };
+  }
+  let count = 0;
+  for (const n of nodes) {
+    if (n.repo === repo.repo) count++;
+  }
+  return { count, updatedAt: "" };
+}
+
+function compareReposByActivity(a, b, nodes) {
+  const actA = repoActivityRank(a, nodes);
+  const actB = repoActivityRank(b, nodes);
+  if (actB.count !== actA.count) return actB.count - actA.count;
+  if (actB.updatedAt !== actA.updatedAt) return actB.updatedAt.localeCompare(actA.updatedAt);
+  return a.repo.localeCompare(b.repo);
+}
+
+function sortReposByActivity(repos, nodes) {
+  return [...repos].sort((a, b) => compareReposByActivity(a, b, nodes));
+}
+
 function populateFilters(repoData) {
   const nodes = state.nodes;
 
-  const live = repoData.filter((r) => !r.archived);
-  const archived = repoData.filter((r) => r.archived);
+  const live = sortReposByActivity(
+    repoData.filter((r) => !r.archived),
+    nodes,
+  );
+  const archived = sortReposByActivity(
+    repoData.filter((r) => r.archived),
+    nodes,
+  );
   const liveItems = live.map((r) => ({
     value: r.repo,
     label: r.repo.split("/")[1] || r.repo,
@@ -394,7 +425,11 @@ function populateFilters(repoData) {
     if (!msMap.has(key)) msMap.set(key, ms.sortKey ?? 9999);
   }
   const msItems = [...msMap.entries()]
-    .sort((a, b) => a[1] - b[1])
+    .sort((a, b) => {
+      if (a[0] === "(None)") return -1;
+      if (b[0] === "(None)") return 1;
+      return a[1] - b[1];
+    })
     .map(([v]) => {
       const node = nodes.find((n) => (n.milestone_code ?? "(None)") === v);
       const name = node?.milestone_name ?? null;
@@ -403,13 +438,24 @@ function populateFilters(repoData) {
   msMilestone.setItems(msItems, state.milestone);
 
   msPriority.setItems(
-    ["P0", "P1", "P2", "P3", "(None)"].map((v) => ({
+    ["(None)", "P0", "P1", "P2", "P3"].map((v) => ({
       value: v,
       label: v,
       sublabel: PRIORITY_NAMES[v],
     })),
     state.priority,
   );
+
+  const assigneeSet = new Set();
+  let hasUnassigned = false;
+  for (const n of nodes) {
+    const assignees = n.assignees ?? [];
+    if (assignees.length === 0) hasUnassigned = true;
+    for (const login of assignees) assigneeSet.add(login);
+  }
+  const assigneeItems = [...assigneeSet].sort().map((v) => ({ value: v, label: v }));
+  if (hasUnassigned) assigneeItems.unshift({ value: "(Unassigned)", label: "(Unassigned)" });
+  msAssignee.setItems(assigneeItems, state.assignee);
 
   msStatus.setItems(
     ["ready", "blocked", "done"].map((v) => ({ value: v, label: v })),
@@ -428,7 +474,13 @@ function populateFilters(repoData) {
 function restoreControls() {
   searchInput.value = state.search;
   searchClear.hidden = !state.search;
-  buildPivotSegs();
+  ssPivotRow.setItems(dimItems(PIVOT_DIMS), state.pivotRow);
+  ssPivotCol.setItems(dimItems(PIVOT_DIMS), state.pivotCol);
+  ssGraphRow.setItems(dimItems(GRAPH_DIMS), state.graphRow);
+  ssGraphCol.setItems(dimItems(GRAPH_DIMS), state.graphCol);
+  ssTableGroup.setItems(dimItems(TABLE_GROUP_DIMS), state.tableGroup);
+  ssListGroup.setItems(dimItems(LIST_DIMS), state.listGroup);
+  ssListGroup2.setItems(dimItems(LIST_DIMS), state.listGroup2);
   buildGraphSegs();
 }
 
@@ -466,12 +518,12 @@ async function loadAndRender(zkOptIn, githubLogin, zkAccountKeyEnabled = false) 
   annotateNodes(nodes, edges);
   setState({ nodes, edges });
   state.nodesByKey = new Map(nodes.map((n) => [n.key, n]));
-  const reposWithIssues = new Set(nodes.map((n) => n.repo));
   let repoData;
   if (data.repos?.length) {
-    repoData = data.repos.filter((r) => reposWithIssues.has(r.repo)); // preserves server order (live→archived, alpha) + archived flag
+    // All tenant repos — not only those with issues in the current status filter.
+    repoData = data.repos;
   } else {
-    const derived = [...reposWithIssues].sort();
+    const derived = [...new Set(nodes.map((n) => n.repo))].sort();
     repoData = derived.map((repo) => ({ repo, archived: false }));
   }
   populateFilters(repoData);
@@ -504,23 +556,30 @@ function startPolling() {
 
 async function init() {
   stripStaleOAuthCallbackUrl();
-  // SC1: requireAuthGate() gates data fetches until onboarding_step === 'ready'.
   try {
+    await consumeZkHandoffFromUrl();
+    await consumeZkReauthFromUrl();
+    try {
+      const meEarly = await getSessionProfile();
+      if (await resumeSettingsFromUrl(meEarly)) return;
+    } catch (e) {
+      if (!(e instanceof AuthError)) throw e;
+    }
+
+    // SC1: requireAuthGate() gates data fetches until onboarding_step === 'ready'.
     const view = await requireAuthGate();
     if (view !== "ready") return;
   } catch (e) {
-    if (e instanceof AuthError) return; // no session — landing view shown by requireAuthGate
+    if (e instanceof AuthError) return;
     throw e;
   }
   restoreControls();
   try {
-    await consumeZkHandoffFromUrl();
-    await consumeZkReauthFromUrl();
     const { reconcileZkResetPendingAfterReauth } = await import("./zk-reset.js");
     reconcileZkResetPendingAfterReauth();
     const me = await getSessionProfile();
     sessionGithubLogin = me.user?.github_login ?? "";
-    resumeSettingsFromUrl(me);
+    if (await resumeSettingsFromUrl(me)) return;
     const zkAccountKeyEnabled = isZkAccountKeyEnabled(me);
     sessionZkAccountKeyEnabled = zkAccountKeyEnabled;
 
@@ -533,7 +592,18 @@ async function init() {
       sessionZkOptIn = true;
     }
 
-    await waitForInitialSync();
+    await ensureSyncStarted();
+    const refreshDuringSync = () => {
+      loadAndRender(sessionZkOptIn, sessionGithubLogin, sessionZkAccountKeyEnabled).catch((e) => {
+        errorMsg.hidden = false;
+        errorMsg.textContent = `Failed to refresh graph: ${e.message}`;
+      });
+    };
+    startSyncProgressMonitor({
+      onReposAdvanced: refreshDuringSync,
+      onPassComplete: refreshDuringSync,
+      onSyncComplete: refreshDuringSync,
+    });
     await loadAndRender(sessionZkOptIn, sessionGithubLogin, zkAccountKeyEnabled);
 
     if (zkAccountKeyEnabled) {

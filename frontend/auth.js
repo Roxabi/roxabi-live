@@ -146,6 +146,19 @@ export function onboardingStepFromMe(me) {
   throw new Error("invalid onboarding_step");
 }
 
+/** After GitHub setup URL, link the new org/personal install without clicking Continue. */
+async function autoDetectInstall() {
+  try {
+    const { linked } = await pollInstallRefresh(12);
+    const step = linked?.onboarding_step;
+    if (step === "consent" || step === "ready") {
+      location.reload();
+    }
+  } catch {
+    /* webhook still in flight — user can click Continue */
+  }
+}
+
 function renderInstallCta(me) {
   document.body.classList.add("gated");
   const el = $("auth-install");
@@ -153,6 +166,7 @@ function renderInstallCta(me) {
   const options = (me.install_options ?? []).map(renderInstallOption).join("");
 
   el.innerHTML = `
+    <div class="onboarding-shell">
     ${renderOnboardingSteps("install")}
     <div class="install-panel">
       <h2>Installer Roxabi Live sur GitHub</h2>
@@ -182,12 +196,15 @@ function renderInstallCta(me) {
       </div>
       <p class="install-note" id="install-refresh-hint" hidden></p>
     </div>
+    </div>
   `;
   el.removeAttribute("hidden");
 
   el.querySelector(".install-option[href]")?.focus();
 
   $("install-logout")?.addEventListener("click", () => signOut({ to: "/" }));
+
+  autoDetectInstall();
 
   $("install-continue")?.addEventListener("click", async () => {
     const btn = $("install-continue");
@@ -196,7 +213,8 @@ function renderInstallCta(me) {
     btn.textContent = "Vérification…";
     try {
       const { linked, oauthFallback } = await pollInstallRefresh();
-      if (linked?.onboarding_step) {
+      const step = linked?.onboarding_step;
+      if (step === "consent" || step === "ready") {
         location.reload();
         return;
       }
@@ -225,6 +243,7 @@ function renderConsentGate(me) {
     document.body.classList.add("gated");
     const el = $("consent-gate");
     el.innerHTML = `
+      <div class="onboarding-shell">
       ${renderOnboardingSteps("consent")}
       <div class="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="consent-title">
         <h2 id="consent-title">Accès aux données</h2>
@@ -251,6 +270,7 @@ function renderConsentGate(me) {
           <button class="consent-btn-secondary" id="consent-logout">Se déconnecter</button>
           <button class="consent-btn-primary" id="consent-ack">J'ai compris — lancer la synchronisation</button>
         </div>
+      </div>
       </div>
     `;
     el.removeAttribute("hidden");

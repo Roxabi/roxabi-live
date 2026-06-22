@@ -1,6 +1,7 @@
 // zk-enroll.js — passphrase enrollment, unlock, lock UI (#216 PR 4)
 
 import { api, escHtml, signOut } from "./auth.js";
+import { applyTranslations, detectLocale } from "./i18n.js";
 import {
   REMEMBER_PASSPHRASE_PREF_KEY,
   clearDeviceSession,
@@ -97,6 +98,13 @@ async function applyZkRememberChoice(githubLogin, passphrase, remember) {
   }
 }
 
+async function syncZkRememberMode(githubLogin) {
+  const remembered =
+    localStorage.getItem(REMEMBER_PASSPHRASE_PREF_KEY) === "1" ||
+    (await hasRememberPassphrase(githubLogin));
+  if (remembered) setZkRememberMode(true);
+}
+
 async function fetchKeyBackup() {
   if (keyBackupCache) return keyBackupCache;
   if (keyBackupInflight) return keyBackupInflight;
@@ -141,9 +149,14 @@ async function tryAutoUnlockZk(githubLogin) {
   const local = await loadDeviceSession(githubLogin);
   if (local?.accountKey && local.key_fp === backup.key_fp) {
     setZkSession(local.accountKey, local.key_fp);
+    await syncZkRememberMode(githubLogin);
     zkLog("zk.device.restore", { key_fp: local.key_fp });
     updateLockButton();
     return true;
+  }
+  if (local?.key_fp && local.key_fp !== backup.key_fp) {
+    await clearDeviceSession(githubLogin);
+    zkLog("zk.device.stale", { local_fp: local.key_fp, server_fp: backup.key_fp });
   }
 
   const pass = await loadRememberPassphrase(githubLogin);
@@ -152,7 +165,8 @@ async function tryAutoUnlockZk(githubLogin) {
   const t0 = performance.now();
   try {
     const accountKey = await unwrapAccountKey(pass, backup);
-    setZkSession(accountKey, backup.key_fp);
+    const session = await sessionAccountKey(accountKey);
+    setZkSession(session, backup.key_fp);
     if (githubLogin) {
       await saveDeviceSession(githubLogin, accountKey, backup.key_fp);
       const payloads = await fetchPayloadRows();
@@ -245,8 +259,8 @@ export async function enrollAccountKey(passphrase, githubLogin) {
 
   const migrated = await migrateV1PayloadsToAccountKey(githubLogin, session, wrapped.key_fp);
 
+  await saveDeviceSession(githubLogin, accountKey, wrapped.key_fp);
   setZkSession(session, wrapped.key_fp);
-  await saveDeviceSession(githubLogin, session, wrapped.key_fp);
   zkLog("zk.enroll.success", {
     key_fp: wrapped.key_fp,
     kdf_duration_ms: Math.round(performance.now() - t0),
@@ -260,7 +274,8 @@ export async function unlockAccountKey(passphrase) {
   const backup = await fetchKeyBackup();
   try {
     const accountKey = await unwrapAccountKey(passphrase, backup);
-    setZkSession(accountKey, backup.key_fp);
+    const session = await sessionAccountKey(accountKey);
+    setZkSession(session, backup.key_fp);
     if (gateGithubLogin) {
       await saveDeviceSession(gateGithubLogin, accountKey, backup.key_fp);
       const payloads = await fetchPayloadRows();
@@ -303,6 +318,7 @@ function renderZkDialog(title, bodyHtml) {
       ${bodyHtml}
     </div>
   `;
+  applyTranslations(detectLocale());
   return el;
 }
 
@@ -351,7 +367,7 @@ export function showEnrollGate(githubLogin) {
           </label>
           <label class="zk-remember">
             <input type="checkbox" id="zk-remember" name="zk-remember" value="1" />
-            <span>Remember passphrase on this device for 30 days</span>
+            <span data-i18n="zk.remember">Retenir la passphrase sur cet appareil pendant 30 jours</span>
           </label>
           <p class="zk-error" id="zk-enroll-error" hidden></p>
           <div class="zk-actions">
@@ -431,7 +447,7 @@ export function showUnlockGate(githubLogin = gateGithubLogin) {
           </label>
           <label class="zk-remember">
             <input type="checkbox" id="zk-remember" name="zk-remember" value="1" />
-            <span>Remember passphrase on this device for 30 days</span>
+            <span data-i18n="zk.remember">Retenir la passphrase sur cet appareil pendant 30 jours</span>
           </label>
           <p class="zk-error" id="zk-unlock-error" hidden></p>
           <div class="zk-actions">
@@ -525,7 +541,7 @@ export async function requireZkEnrollmentGate(me, githubLogin) {
     if (me.user?.zk_enrolled === true && !isZkUnlocked()) {
       (async () => {
         if (await tryAutoUnlockZkDebounced(githubLogin)) {
-          if (await hasRememberPassphrase(githubLogin)) setZkRememberMode(true);
+          await syncZkRememberMode(githubLogin);
           updateLockButton();
           return;
         }
@@ -551,7 +567,7 @@ export async function requireZkEnrollmentGate(me, githubLogin) {
 
   if (!isZkUnlocked()) {
     if (await tryAutoUnlockZk(githubLogin)) {
-      if (await hasRememberPassphrase(githubLogin)) setZkRememberMode(true);
+      await syncZkRememberMode(githubLogin);
       updateLockButton();
     } else {
       await showUnlockGate();

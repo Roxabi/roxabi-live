@@ -33,9 +33,13 @@ import {
   releaseSyncLock,
   resetAuthFailures,
 } from "./control";
-import { closedHopPass, flushEdges } from "./edges";
+import { closedHopPass, edgesForRepo, flushEdges } from "./edges";
 import type { EdgeData } from "./label-vocab";
+import { handleRepoSyncFailure } from "./repo-access-prune";
 import { discoverTenants } from "./tenants";
+import { type RunSyncOptions, selectWindowedRepos } from "./window";
+
+export type { RunSyncOptions } from "./window";
 
 // ---------------------------------------------------------------------------
 // Public facade — re-export the split-out symbols so existing importers
@@ -56,7 +60,7 @@ export {
   isHalted,
   resetAuthFailures,
 } from "./control";
-export { flushEdges } from "./edges";
+export { edgesForRepo, flushEdges } from "./edges";
 export { syncRepoIssues } from "./repo-issues";
 export { syncBranches } from "./repo-branches";
 export { syncRepoBundle } from "./bundle";
@@ -66,7 +70,7 @@ export { writeRunAudit } from "./audit";
  * Org-wide sync: check halt → acquire lock → enumerate repos → two-pass issue
  * sync → branch/PR sync → closed-hop pass → release lock.
  */
-export async function runSync(env: Env): Promise<void> {
+export async function runSync(env: Env, opts?: RunSyncOptions): Promise<void> {
   const db = env.DB;
 
   await ensureGlobalSyncControlSeeded(db);
@@ -150,7 +154,7 @@ export async function runSync(env: Env): Promise<void> {
     const knownRepos = new Set(allRepos);
     const CHUNK = 90;
 
-    const [issueRepos, edgeSrcRepos, edgeDstRepos, prStateRepos, syncStateRepos] =
+    const [issueRepos, edgeSrcRepos, edgeDstRepos, prStateRepos, syncStateRepos, registryRepos] =
       await Promise.all([
         db.prepare("SELECT DISTINCT repo FROM issues").all<{ repo: string }>(),
         db
@@ -161,6 +165,7 @@ export async function runSync(env: Env): Promise<void> {
           .all<{ repo: string }>(),
         db.prepare("SELECT DISTINCT repo FROM pr_state").all<{ repo: string }>(),
         db.prepare("SELECT repo FROM sync_state").all<{ repo: string }>(),
+        db.prepare("SELECT repo FROM repos").all<{ repo: string }>(),
       ]);
 
     const staleIssueRepos = (issueRepos.results ?? [])
@@ -174,6 +179,9 @@ export async function runSync(env: Env): Promise<void> {
       .map((r) => r.repo)
       .filter((r) => !knownRepos.has(r));
     const staleSyncStateRepos = (syncStateRepos.results ?? [])
+      .map((r) => r.repo)
+      .filter((r) => !knownRepos.has(r));
+    const staleRegistryRepos = (registryRepos.results ?? [])
       .map((r) => r.repo)
       .filter((r) => !knownRepos.has(r));
 
@@ -205,6 +213,9 @@ export async function runSync(env: Env): Promise<void> {
         pruneStmts.push(db.prepare("DELETE FROM sync_state WHERE repo=?").bind(repo));
       }
     }
+    for (const repo of staleRegistryRepos) {
+      pruneStmts.push(db.prepare("DELETE FROM repos WHERE repo=?").bind(repo));
+    }
 
     if (pruneStmts.length > 0) {
       await batchChunked(db, pruneStmts);
@@ -213,25 +224,20 @@ export async function runSync(env: Env): Promise<void> {
         ...staleEdgeReposUniq,
         ...stalePrStateRepos,
         ...staleSyncStateRepos,
+        ...staleRegistryRepos,
       ]).size;
       console.log(`[sync] pruned data for ${staleReposPruned} stale repo(s)`);
     }
 
-    // Phase 2 — deduped windowed fan-out.
-    // Read current slot (tenant_id=0).
-    const slotRow = await db
-      .prepare(`SELECT value FROM sync_control WHERE key='sync_slot' AND tenant_id = 0`)
-      .first<{ value: string }>();
-    const slot = Number.parseInt(slotRow?.value ?? "0", 10);
-    const windowStart = slot * WINDOW;
-    const windowEnd = windowStart + WINDOW;
-    // Windowing only engages past WINDOW repos; below that, sync everything hourly.
-    const windowedRepos =
-      allRepos.length <= WINDOW ? allRepos : allRepos.slice(windowStart, windowEnd);
-
-    console.log(
-      `[sync] slot=${slot} window=[${windowStart},${windowEnd}) repos=${windowedRepos.length}/${allRepos.length}`,
-    );
+    const {
+      windowedRepos,
+      slot,
+      empty: noReposToSync,
+    } = await selectWindowedRepos(db, allRepos, opts);
+    if (noReposToSync) {
+      outcome = "success";
+      return;
+    }
 
     // Per-repo token resolver: try owning tenant first, fall back down list.
     const makeRepoResolver =
@@ -274,16 +280,16 @@ export async function runSync(env: Env): Promise<void> {
           sealedKeys,
           structureOnly,
         );
+        // Flush this repo's edges immediately — sync_state advances per repo but
+        // the window-level flush used to run only after all repos, so the UI saw
+        // new issues without blocked-by links until the pass finished.
+        await flushEdges(db, edgesForRepo(collectedEdges, repo));
       } catch (err) {
-        console.error(`[sync] skipping ${repo}:`, err);
-        skippedCount++;
+        if (!(await handleRepoSyncFailure(db, repo, err))) skippedCount++;
       }
     }
     reposSynced = windowedRepos.length - skippedCount;
     reposSkipped = skippedCount;
-
-    // Pass 2: flush all edges (deferred to avoid cross-repo FK hazard).
-    await flushEdges(db, collectedEdges);
 
     // Closed-hop pass with per-(owner,name) resolver.
     stubsCount = await closedHopPass(
@@ -301,14 +307,16 @@ export async function runSync(env: Env): Promise<void> {
     );
     console.log(`[sync] completed — stubs=${stubsCount}`);
 
-    // Advance slot.
-    const nextSlot = (slot + 1) % NUM_SLOTS;
-    await db
-      .prepare(
-        `UPDATE sync_control SET value=?, updated_at=? WHERE key='sync_slot' AND tenant_id = 0`,
-      )
-      .bind(String(nextSlot), new Date().toISOString())
-      .run();
+    // Advance slot (cron rotation only — bootstrap uses prioritizeUnsynced).
+    if (!opts?.prioritizeUnsynced) {
+      const nextSlot = (slot + 1) % NUM_SLOTS;
+      await db
+        .prepare(
+          `UPDATE sync_control SET value=?, updated_at=? WHERE key='sync_slot' AND tenant_id = 0`,
+        )
+        .bind(String(nextSlot), new Date().toISOString())
+        .run();
+    }
 
     const systemicFailure = windowedRepos.length > 0 && skippedCount === windowedRepos.length;
     if (systemicFailure) {
@@ -316,17 +324,23 @@ export async function runSync(env: Env): Promise<void> {
       console.error(
         `[sync] all ${windowedRepos.length} windowed repo(s) failed — systemic auth failure ${failures}/2`,
       );
-      outcome = failures >= 2 ? "halted" : "auth_error";
-      if (failures >= 2) {
-        await haltSync(db, 0);
-        console.error("[sync] HALTED: systemic token failure across all repos");
-        const notifyUrl = env.NOTIFY_URL;
-        if (notifyUrl) {
-          await fetch(notifyUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ event: "sync_halted", ts: new Date().toISOString() }),
-          }).catch(() => {});
+      if (opts?.prioritizeUnsynced) {
+        // First-import bootstrap must keep retrying — do not trip the cron halt breaker.
+        outcome = "auth_error";
+        console.error("[sync] bootstrap pass failed — will retry on next schedule");
+      } else {
+        outcome = failures >= 2 ? "halted" : "auth_error";
+        if (failures >= 2) {
+          await haltSync(db, 0);
+          console.error("[sync] HALTED: systemic token failure across all repos");
+          const notifyUrl = env.NOTIFY_URL;
+          if (notifyUrl) {
+            await fetch(notifyUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ event: "sync_halted", ts: new Date().toISOString() }),
+            }).catch(() => {});
+          }
         }
       }
     }

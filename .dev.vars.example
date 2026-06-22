@@ -1,0 +1,7 @@
+# Copy to .dev.vars for local wrangler dev / Playwright E2E (never commit .dev.vars).
+GITHUB_APP_ID=1
+GITHUB_APP_CLIENT_ID=test-client-id
+GITHUB_APP_CLIENT_SECRET=test-client-secret
+GITHUB_APP_PRIVATE_KEY=dGVzdC1wcml2YXRlLWtleQ==
+GITHUB_APP_WEBHOOK_SECRET=test-app-webhook-secret
+GITHUB_WEBHOOK_SECRET=test-org-webhook-secret

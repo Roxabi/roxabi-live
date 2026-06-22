@@ -10,7 +10,7 @@
  *   (b) open pr_state — build Map<issueKey, {has_reviewed_label:number}[]>
  *   (c) issues — one row per issue
  *   (d) edges — all src_key/dst_key/kind rows
- *   (e) repos — live first (archived=0), then archived (archived=1), both alpha
+ *   (e) repos — registry rows + per-repo issue_count / last_updated_at (sort in UI)
  */
 
 import type { Context } from "hono";
@@ -50,12 +50,23 @@ export interface Node {
   size: string | null;
   status: string | null;
   is_stub: boolean;
+  assignees: string[];
 }
 
 export interface Edge {
   src: string;
   dst: string;
   kind: string;
+}
+
+function parseAssignees(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Fallback: derive lane from `graph:lane/X` label when board field unset. */
@@ -109,6 +120,7 @@ interface IssueRow {
   status: string | null;
   is_stub: number;
   has_active_branch: number;
+  assignees: string | null;
 }
 
 interface EdgeRow {
@@ -178,7 +190,7 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
 
   // (c) issues — scoped to visible repos
   const issueRows = await c.env.DB.prepare(
-    `SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone, lane, priority, size, status, is_stub, has_active_branch FROM issues WHERE repo IN (${ph})`,
+    `SELECT key, repo, number, JSON_EXTRACT(payload,'$.title') AS title, state, url, milestone, lane, priority, size, status, is_stub, has_active_branch, assignees FROM issues WHERE repo IN (${ph})`,
   )
     .bind(...visible)
     .all<IssueRow>();
@@ -212,6 +224,7 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
       size: row.size,
       status: row.status,
       is_stub: Boolean(row.is_stub),
+      assignees: parseAssignees(row.assignees),
     };
   });
 
@@ -235,20 +248,37 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
     edges = edges.filter((e) => keys.has(e.src) && keys.has(e.dst));
   }
 
-  // (e) repos — live first (archived=0), then archived (archived=1), both alpha
+  // (e) repos — registry + activity stats for filter dropdown ordering
   interface RepoRow {
     repo: string;
     archived: number;
   }
-  const repoRows = await c.env.DB.prepare(
-    `SELECT repo, archived FROM repos WHERE repo IN (${ph}) ORDER BY archived ASC, repo ASC`,
-  )
-    .bind(...visible)
-    .all<RepoRow>();
-  const repos = (repoRows.results ?? []).map((r) => ({
-    repo: r.repo,
-    archived: Boolean(r.archived),
-  }));
+  interface RepoActivityRow {
+    repo: string;
+    issue_count: number;
+    last_updated_at: string | null;
+  }
+  const [repoRows, activityRows] = await Promise.all([
+    c.env.DB.prepare(`SELECT repo, archived FROM repos WHERE repo IN (${ph})`)
+      .bind(...visible)
+      .all<RepoRow>(),
+    c.env.DB.prepare(
+      `SELECT repo, COUNT(*) AS issue_count, MAX(updated_at) AS last_updated_at
+       FROM issues WHERE repo IN (${ph}) GROUP BY repo`,
+    )
+      .bind(...visible)
+      .all<RepoActivityRow>(),
+  ]);
+  const activityByRepo = new Map((activityRows.results ?? []).map((row) => [row.repo, row]));
+  const repos = (repoRows.results ?? []).map((r) => {
+    const activity = activityByRepo.get(r.repo);
+    return {
+      repo: r.repo,
+      archived: Boolean(r.archived),
+      issue_count: activity?.issue_count ?? 0,
+      last_updated_at: activity?.last_updated_at ?? null,
+    };
+  });
 
   return c.json({ nodes, edges, repos });
 };

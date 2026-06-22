@@ -61,7 +61,11 @@ export async function getTenantByOrgLogin(
       .prepare(
         `SELECT id, installation_id, account_login, account_type, suspended_at, deleted_at
          FROM tenants
-         WHERE account_login = ?`,
+         WHERE account_login = ?
+           AND deleted_at IS NULL
+           AND suspended_at IS NULL
+         ORDER BY created_at DESC
+         LIMIT 1`,
       )
       .bind(login)
       .first<TenantRow>()) ?? null

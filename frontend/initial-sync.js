@@ -1,59 +1,88 @@
-// initial-sync.js — first corpus sync overlay (#223 follow-up)
+// initial-sync.js — non-blocking first-import progress (#223)
 
 import { api } from "./auth.js";
-import { renderOnboardingSteps } from "./onboarding.js";
 
 const $ = (id) => document.getElementById(id);
 
 const POLL_MS = 2000;
-const MAX_WAIT_MS = 180_000;
 
 /**
- * Poll /api/sync/status until the bootstrap reconcile finishes or times out.
- * Keeps the overlay until sync_running clears — not only while issue_count === 0
- * (the first issues can land while the full reconcile is still running).
+ * Kick bootstrap scheduling via /api/sync/status (side-effect on server).
+ * @returns {Promise<object|null>}
  */
+export async function ensureSyncStarted() {
+  return fetchStatus();
+}
+
+/**
+ * Non-blocking repo import banner. Dashboard renders immediately; poll refreshes
+ * the graph when new repos land or a sync pass completes (edges are flushed per repo).
+ * @param {{
+ *   onReposAdvanced?: (status: object) => void,
+ *   onPassComplete?: (status: object) => void,
+ *   onSyncComplete?: (status: object) => void,
+ * }} [callbacks]
+ * @returns {() => void} stop polling
+ */
+export function startSyncProgressMonitor(callbacks = {}) {
+  const banner = $("sync-progress-banner");
+  if (!banner) return () => {};
+
+  let timer = null;
+  let lastReposSynced = -1;
+  let lastSyncRunning = false;
+
+  const stop = () => {
+    if (timer) clearInterval(timer);
+    timer = null;
+  };
+
+  const update = async () => {
+    const status = await fetchStatus();
+    if (!status) return;
+
+    if (status.sync_halted) {
+      showHaltedBanner(banner, status);
+      stop();
+      return;
+    }
+
+    const active = status.sync_in_progress || status.sync_running;
+    const syncRunning = Boolean(status.sync_running);
+
+    if (!active) {
+      if (lastReposSynced >= 0 || lastSyncRunning) {
+        callbacks.onSyncComplete?.(status);
+      }
+      hideBanner(banner);
+      stop();
+      return;
+    }
+
+    showBanner(banner, status);
+
+    if (status.repos_synced > lastReposSynced) {
+      lastReposSynced = status.repos_synced;
+      callbacks.onReposAdvanced?.(status);
+    }
+
+    if (lastSyncRunning && !syncRunning) {
+      callbacks.onPassComplete?.(status);
+    }
+    lastSyncRunning = syncRunning;
+  };
+
+  void update();
+  timer = setInterval(() => {
+    void update();
+  }, POLL_MS);
+
+  return stop;
+}
+
+/** @deprecated Use ensureSyncStarted + startSyncProgressMonitor — kept for tests. */
 export async function waitForInitialSync() {
-  const gate = $("initial-sync-gate");
-  if (!gate) return;
-
-  const started = Date.now();
-  let status = await fetchStatus();
-  if (!status?.initial_sync && !status?.sync_running) return;
-
-  showOverlay(gate, status.sync_running);
-
-  while (status.sync_running || status.initial_sync) {
-    if (Date.now() - started > MAX_WAIT_MS) {
-      setOverlayMessage(
-        gate,
-        "Synchronisation terminée",
-        status.issue_count > 0
-          ? "Import partiel — actualise la page dans quelques instants si des issues manquent."
-          : "Aucun issue trouvé pour les dépôts accessibles. Vérifie les repos sélectionnés sur GitHub.",
-      );
-      await sleep(2200);
-      break;
-    }
-
-    await sleep(POLL_MS);
-    status = await fetchStatus();
-    if (status.sync_running) {
-      setOverlayMessage(
-        gate,
-        "Première synchronisation en cours",
-        "Import des issues, labels et dépendances depuis GitHub…",
-      );
-    } else if (status.initial_sync) {
-      setOverlayMessage(
-        gate,
-        "Préparation de la synchronisation",
-        "Démarrage de l'import depuis GitHub…",
-      );
-    }
-  }
-
-  hideOverlay(gate);
+  await ensureSyncStarted();
 }
 
 async function fetchStatus() {
@@ -65,32 +94,41 @@ async function fetchStatus() {
   }
 }
 
-function showOverlay(gate, running) {
-  gate.innerHTML = `
-    ${renderOnboardingSteps("sync")}
-    <div class="initial-sync-dialog" role="status" aria-live="polite" aria-busy="true">
-      <div class="initial-sync-spinner" aria-hidden="true"></div>
-      <h2 id="initial-sync-title">${running ? "Première synchronisation en cours" : "Préparation de la synchronisation"}</h2>
-      <p id="initial-sync-detail">${
-        running
-          ? "Import des issues, labels et dépendances depuis GitHub…"
-          : "Démarrage de l'import depuis GitHub…"
-      }</p>
+function showBanner(banner, status) {
+  const total = status.repos_total ?? 0;
+  const synced = status.repos_synced ?? 0;
+  const issues = status.issue_count ?? 0;
+  const pct = total > 0 ? Math.min(100, Math.round((synced / total) * 100)) : 0;
+
+  banner.innerHTML = `
+    <div class="sync-progress-inner" role="status" aria-live="polite">
+      <div class="sync-progress-text">
+        <strong>Synchronisation en cours</strong>
+        <span class="sync-progress-detail">${synced} / ${total} dépôts importés · ${issues} issues</span>
+      </div>
+      <div class="sync-progress-track" aria-hidden="true">
+        <div class="sync-progress-fill" style="width:${pct}%"></div>
+      </div>
     </div>
   `;
-  gate.removeAttribute("hidden");
+  banner.removeAttribute("hidden");
 }
 
-function setOverlayMessage(gate, title, detail) {
-  gate.querySelector("#initial-sync-title")?.replaceChildren(document.createTextNode(title));
-  gate.querySelector("#initial-sync-detail")?.replaceChildren(document.createTextNode(detail));
+function showHaltedBanner(banner, status) {
+  const synced = status.repos_synced ?? 0;
+  const total = status.repos_total ?? 0;
+  banner.innerHTML = `
+    <div class="sync-progress-inner" role="alert">
+      <div class="sync-progress-text">
+        <strong>Synchronisation interrompue</strong>
+        <span class="sync-progress-detail">${synced} / ${total} dépôts · erreur d'authentification GitHub</span>
+      </div>
+    </div>
+  `;
+  banner.removeAttribute("hidden");
 }
 
-function hideOverlay(gate) {
-  gate.setAttribute("hidden", "");
-  gate.innerHTML = "";
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function hideBanner(banner) {
+  banner.setAttribute("hidden", "");
+  banner.innerHTML = "";
 }

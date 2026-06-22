@@ -11,10 +11,11 @@
 import type { Context } from "hono";
 import type { Env } from "../types";
 import { authRedirect, readSessionToken, sanitizeAuthRedirect, stripInstallParam } from "./cookies";
+import { tryLinkInstallPendingSession } from "./link-install";
 import { serveLoginPrompt } from "./login-prompt";
 import { completeOAuthSession } from "./post-oauth";
-import { mintSession, revokeOtherSessions } from "./session";
-import { validateSession } from "./session";
+import { mintSession, revokeOtherSessions, validateSession } from "./session";
+import { pickSessionTenantId, supersedeStaleTenants } from "./tenant-supersede";
 import { createUserTokenHandoff } from "./userTokenHandoff";
 import { createZkReauthCode } from "./zk-reauth";
 
@@ -106,6 +107,9 @@ export async function loginRoute(c: Context<{ Bindings: Env }>): Promise<Respons
     if (token) {
       const session = await validateSession(c.env.DB, token);
       if (session) {
+        if (intent === "install") {
+          await tryLinkInstallPendingSession(c.env.DB, token, session);
+        }
         return authRedirect(cleanRedirect);
       }
     }
@@ -327,7 +331,22 @@ export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Resp
   // Guard above guarantees every entry is defined; narrow the whole array once
   // rather than casting each element (.some() does not narrow in TS).
   const tenantIds = maybeTenantIds as number[];
-  const firstTenantId = tenantIds[0];
+  const nowIso = new Date().toISOString();
+
+  // Re-install creates a new installation_id for the same org — retire older rows.
+  for (let i = 0; i < installations.length; i++) {
+    const inst = installations[i];
+    const keepTenantId = tenantIds[i];
+    await supersedeStaleTenants(c.env.DB, {
+      keepTenantId,
+      accountLogin: inst.account.login,
+      accountType: inst.account.type,
+      installationId: inst.id,
+      nowIso,
+    });
+  }
+
+  const sessionTenantId = await pickSessionTenantId(c.env.DB, tenantIds);
 
   // Link each tenant to the user (idempotent) in one batch.
   await c.env.DB.batch(
@@ -338,8 +357,7 @@ export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Resp
     ),
   );
 
-  // Mint session tied to the first installation's tenant
-  const rawToken = await mintSession(c.env.DB, userId, firstTenantId, rememberSession);
+  const rawToken = await mintSession(c.env.DB, userId, sessionTenantId, rememberSession);
   await revokeOtherSessions(c.env.DB, userId, rawToken);
 
   if (wantsReauth) {

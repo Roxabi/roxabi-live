@@ -13,7 +13,7 @@ export interface InstallOption {
   url: string;
 }
 
-export function buildInstallOptions(targets: InstallTarget[]): InstallOption[] {
+export function buildInstallOptions(targets: InstallTarget[], appSlug?: string): InstallOption[] {
   const personal = targets.find((t) => t.type === "User");
   const orgs = targets.filter((t) => t.type === "Organization");
 
@@ -22,18 +22,18 @@ export function buildInstallOptions(targets: InstallTarget[]): InstallOption[] {
     options.push({
       kind: "personal",
       login: personal.login,
-      url: githubInstallUrl(personal),
+      url: githubInstallUrl(personal, appSlug),
     });
   }
   for (const org of orgs) {
     options.push({
       kind: "org",
       login: org.login,
-      url: githubInstallUrl(org),
+      url: githubInstallUrl(org, appSlug),
     });
   }
   if (orgs.length === 0) {
-    options.push({ kind: "picker", url: githubInstallUrl() });
+    options.push({ kind: "picker", url: githubInstallUrl(undefined, appSlug) });
   }
   return options;
 }

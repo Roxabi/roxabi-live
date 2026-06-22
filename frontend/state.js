@@ -44,22 +44,26 @@ function migrateRepo() {
 }
 
 export const state = {
-  view: SS.get("v6:view", "table"),
+  view: SS.get("v6:view", "graph"),
   // multi-select arrays (empty = all)
   repo: migrateRepo(),
   milestone: SS.getJSON("v6:milestone", []),
   priority: SS.getJSON("v6:priority", []),
+  assignee: SS.getJSON("v6:assignee", []),
   status: SS.getJSON("v6:status", ["ready", "blocked"]),
   label: SS.getJSON("v6:label", []),
   search: SS.get("v6:search", ""),
   pivotRow: SS.get("v6:pivotRow", "milestone"),
   pivotCol: SS.get("v6:pivotCol", "lane"),
+  graphRow: SS.get("v6:graphRow", "milestone"),
+  graphCol: SS.get("v6:graphCol", "lane"),
   listGroup: SS.get("v7:listGroup", "none"),
   listGroup2: SS.get("v7:listGroup2", "none"),
   tableGroup: SS.get("v7:tableGroup", "none"),
   // graph options
   showParents: SS.get("v6:showParents", "false") === "true",
   showClosedUnderOpenEpic: SS.get("v6:showClosedUnderOpenEpic", "false") === "true",
+  showAssignees: SS.get("v6:showAssignees", "false") === "true",
   nodes: [],
   edges: [],
   // built once after load
@@ -73,16 +77,20 @@ const SS_KEYS = {
   repo: { key: "v6:repo", json: true },
   milestone: { key: "v6:milestone", json: true },
   priority: { key: "v6:priority", json: true },
+  assignee: { key: "v6:assignee", json: true },
   status: { key: "v6:status", json: true },
   label: { key: "v6:label", json: true },
   search: { key: "v6:search", json: false },
   pivotRow: { key: "v6:pivotRow", json: false },
   pivotCol: { key: "v6:pivotCol", json: false },
+  graphRow: { key: "v6:graphRow", json: false },
+  graphCol: { key: "v6:graphCol", json: false },
   listGroup: { key: "v7:listGroup", json: false },
   listGroup2: { key: "v7:listGroup2", json: false },
   tableGroup: { key: "v7:tableGroup", json: false },
   showParents: { key: "v6:showParents", json: false },
   showClosedUnderOpenEpic: { key: "v6:showClosedUnderOpenEpic", json: false },
+  showAssignees: { key: "v6:showAssignees", json: false },
 };
 
 export function setState(patch) {
@@ -227,19 +235,79 @@ export function prioritySortKey(p) {
 }
 
 // ─── Dim-value extraction ──────────────────────────────────────────────────
+export const EMPTY_DIM = "(None)";
+export const EMPTY_ASSIGNEE = "(Unassigned)";
+
+const EMPTY_DIM_ALIASES = new Set([EMPTY_DIM, "—", "None", "All", EMPTY_ASSIGNEE]);
+
+/** True when a pivot/graph bucket has no underlying field value. */
+export function isEmptyDimValue(val, dim) {
+  if (dim === "assignee") return val === EMPTY_ASSIGNEE;
+  if (dim === "none") return false;
+  return EMPTY_DIM_ALIASES.has(val);
+}
+
+/** Human label for row/column headers and filter chips. */
+export function dimDisplayLabel(val, dim) {
+  if (!isEmptyDimValue(val, dim)) return val;
+  const labels = {
+    milestone: "No milestone",
+    priority: "No priority",
+    lane: "No lane",
+    size: "No size",
+    repo: "No repo",
+    status: "No status",
+    assignee: "Unassigned",
+    parent: "No parent",
+  };
+  return labels[dim] ?? EMPTY_DIM;
+}
+
 export function dimValue(node, dim) {
   if (dim === "none") return "All";
   if (dim === "milestone") {
     const ms = parseMilestone(node);
-    return ms.code ?? "—";
+    return ms.code ?? EMPTY_DIM;
   }
-  if (dim === "priority") return node.priority ?? "None";
-  if (dim === "repo") return node.repo ?? "—";
-  if (dim === "lane") return node.lane ?? "—";
-  if (dim === "size") return node.size ?? "—";
-  if (dim === "status") return node._status ?? "—";
-  if (dim === "parent") return node._parent ?? "—";
-  return "—";
+  if (dim === "priority") return node.priority ?? EMPTY_DIM;
+  if (dim === "repo") return node.repo ?? EMPTY_DIM;
+  if (dim === "lane") return node.lane ?? EMPTY_DIM;
+  if (dim === "size") return node.size ?? EMPTY_DIM;
+  if (dim === "status") return node._status ?? EMPTY_DIM;
+  if (dim === "parent") return node._parent ?? EMPTY_DIM;
+  if (dim === "assignee") {
+    const assignees = node.assignees ?? [];
+    return assignees.length ? assignees[0] : EMPTY_ASSIGNEE;
+  }
+  return EMPTY_DIM;
+}
+
+/** Sort key for pivot/graph axes — empty buckets always come first. */
+export function dimSortKey(val, dim, nodes = []) {
+  if (dim === "none") return 0;
+  if (isEmptyDimValue(val, dim)) return -1;
+  if (dim === "milestone") {
+    const node = nodes.find((n) => dimValue(n, dim) === val);
+    return node?.milestone_sort_key ?? 9999;
+  }
+  if (dim === "priority") {
+    return prioritySortKey(val === EMPTY_DIM ? null : val);
+  }
+  if (dim === "status") {
+    const order = { ready: 0, blocked: 1, done: 2 };
+    return order[val] ?? 99;
+  }
+  return 0;
+}
+
+export function compareDimValues(a, b, dim, nodes = []) {
+  const aEmpty = isEmptyDimValue(a, dim);
+  const bEmpty = isEmptyDimValue(b, dim);
+  if (aEmpty !== bEmpty) return aEmpty ? -1 : 1;
+  const sa = dimSortKey(a, dim, nodes);
+  const sb = dimSortKey(b, dim, nodes);
+  if (typeof sa === "number" && typeof sb === "number" && sa !== sb) return sa - sb;
+  return String(a).localeCompare(String(b));
 }
 
 // ─── Filter application ───────────────────────────────────────────────────
@@ -258,6 +326,14 @@ export function applyFilters(nodes, filters) {
     if (filters.status.length && !filters.status.includes(n._status)) return false;
     if (filters.label?.length && !filters.label.some((l) => (n.labels ?? []).includes(l)))
       return false;
+    if (filters.assignee?.length) {
+      const nodeAssignees = n.assignees ?? [];
+      if (nodeAssignees.length === 0) {
+        if (!filters.assignee.includes("(Unassigned)")) return false;
+      } else if (!nodeAssignees.some((a) => filters.assignee.includes(a))) {
+        return false;
+      }
+    }
     if (q) {
       const hay = `${n.key} ${n.title ?? ""} ${(n.labels ?? []).join(" ")}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -272,6 +348,7 @@ export function filteredNodes() {
     repo: state.repo,
     milestone: state.milestone,
     priority: state.priority,
+    assignee: state.assignee,
     status: state.status,
     label: state.label,
     search: state.search,
@@ -288,6 +365,7 @@ export function filteredNodesForGraph() {
     repo: state.repo,
     milestone: state.milestone,
     priority: state.priority,
+    assignee: state.assignee,
     status: [], // bypass status here, re-apply with override below
     label: state.label,
     search: "",

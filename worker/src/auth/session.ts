@@ -80,7 +80,11 @@ export async function validateSession(
          AND (
            s.tenant_id IS NULL
            OR (
-             NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = s.tenant_id AND t.suspended_at IS NOT NULL)
+             NOT EXISTS (
+               SELECT 1 FROM tenants t
+               WHERE t.id = s.tenant_id
+                 AND (t.suspended_at IS NOT NULL OR t.deleted_at IS NOT NULL)
+             )
              AND EXISTS (
                SELECT 1 FROM user_installations ui
                WHERE ui.user_id = s.user_id AND ui.tenant_id = s.tenant_id

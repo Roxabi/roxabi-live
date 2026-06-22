@@ -2,7 +2,7 @@
 // Matches v5 HTML structure: percentage coords, SVG with viewBox="0 0 100 100"
 
 import { edgePath } from "./layout.js";
-import { mapDevStateToClass } from "./state.js";
+import { mapDevStateToClass, state } from "./state.js";
 import { repoTone } from "./tone.js";
 
 function getTone(node) {
@@ -98,39 +98,99 @@ function renderNodes(container, nodes, positions, usePercentage) {
     title.textContent = fullTitle.length > 28 ? `${fullTitle.slice(0, 27)}…` : fullTitle;
     label.appendChild(title);
 
+    if (state.showAssignees) {
+      const assignees = node.assignees ?? [];
+      if (assignees.length > 0) {
+        const assignee = document.createElement("span");
+        assignee.className = "gg-ilabel-assignee";
+        assignee.textContent = assignees.join(", ");
+        assignee.title = `Assignees: ${assignees.join(", ")}`;
+        label.appendChild(assignee);
+      }
+    }
+
     container.appendChild(label);
   }
 }
 
 // ── Render milestone row headers (v5 layout only) ─────────────────────────────
-function renderMilestoneHeaders(container, milestoneInfo, usePercentage) {
-  for (const ms of milestoneInfo) {
-    if (!ms.code) continue;
+function msRowMetrics(ms, index, usePercentage, wrapHeight, stageOffset, stageHeight, isLast) {
+  if (usePercentage) {
+    const topPx = stageOffset + (ms.y / 100) * stageHeight;
+    const heightPx = isLast ? wrapHeight - topPx : (ms.height / 100) * stageHeight;
+    const bottomPx = topPx + heightPx;
+    return {
+      top: `${Math.round(topPx)}px`,
+      height: `${Math.max(Math.round(heightPx), 1)}px`,
+      bottomPct: (bottomPx / wrapHeight) * 100,
+    };
+  }
+  const topPx = Math.round((ms.y / 100) * wrapHeight);
+  const heightPx = isLast ? wrapHeight - topPx : Math.round((ms.height / 100) * wrapHeight);
+  return {
+    top: `${topPx}px`,
+    height: `${heightPx}px`,
+    bottomPct: ((topPx + heightPx) / wrapHeight) * 100,
+  };
+}
 
+function renderMilestoneHeaders(
+  container,
+  milestoneInfo,
+  usePercentage,
+  wrapHeight,
+  stageOffset = 0,
+) {
+  const stageHeight = Math.max(wrapHeight - stageOffset, 1);
+  const rows = [];
+  const visible = milestoneInfo.filter((ms) => ms.code);
+  let visibleIndex = 0;
+  for (const ms of visible) {
+    const metrics = msRowMetrics(
+      ms,
+      visibleIndex,
+      usePercentage,
+      wrapHeight,
+      stageOffset,
+      stageHeight,
+      visibleIndex === visible.length - 1,
+    );
     const row = document.createElement("div");
-    row.className = "gg-msrow";
-    row.style.top = usePercentage ? `${ms.y.toFixed(2)}%` : `${ms.y}px`;
-    row.style.height = usePercentage ? `${(ms.height || 5).toFixed(2)}%` : `${ms.height || 40}px`;
+    row.className = `gg-msrow${visibleIndex === 0 ? " gg-msrow-first" : ""}${visibleIndex === visible.length - 1 ? " gg-msrow-last" : ""}`;
+    row.style.top = metrics.top;
+    row.style.height = metrics.height;
 
-    // Hide code for "no milestone" rows
-    const isNoMs = ms.code === "-" || ms.code === "(None)";
-    if (!isNoMs) {
-      const code = document.createElement("div");
-      code.className = "gg-msrow-code";
-      code.textContent = ms.code;
-      row.appendChild(code);
-    }
+    const code = document.createElement("div");
+    code.className = "gg-msrow-code";
+    code.textContent = ms.label ?? ms.code;
+    row.appendChild(code);
 
-    // Show name, or "No milestone" for rows without milestone
-    const displayName = ms.name || (isNoMs ? "No milestone" : null);
-    if (displayName) {
+    if (ms.name && ms.name !== (ms.label ?? ms.code)) {
       const name = document.createElement("div");
       name.className = "gg-msrow-name";
-      name.textContent = displayName;
+      name.textContent = ms.name;
       row.appendChild(name);
     }
 
     container.appendChild(row);
+    rows.push({ ...ms, bottomPct: metrics.bottomPct });
+    visibleIndex++;
+  }
+  return rows;
+}
+
+function renderMilestoneSeparators(container, milestoneRows, usePercentage, wrapHeight) {
+  for (let i = 1; i < milestoneRows.length; i++) {
+    const prev = milestoneRows[i - 1];
+    const cur = milestoneRows[i];
+    const sepY = (prev.bottomPct + cur.y) / 2;
+
+    const sep = document.createElement("div");
+    sep.className = "gg-msrow-sep";
+    sep.style.top = usePercentage
+      ? `${Math.round((sepY / 100) * wrapHeight)}px`
+      : `${Math.round((sepY / 100) * wrapHeight)}px`;
+    container.appendChild(sep);
   }
 }
 
@@ -187,41 +247,45 @@ export function renderGraph(container, nodes, edges, layoutResult) {
   wrap.setAttribute("role", "img");
   wrap.setAttribute("aria-label", "Dependency graph");
 
-  // Render milestone headers OUTSIDE stage (they need left:12px from wrap edge)
+  const stageOffset = 0;
+
+  // Row headers in left gutter — Y aligned with node stage
   if (milestoneInfo && milestoneInfo.length > 0) {
-    renderMilestoneHeaders(wrap, milestoneInfo, usePercentage);
+    const milestoneRows = renderMilestoneHeaders(
+      wrap,
+      milestoneInfo,
+      usePercentage,
+      height,
+      stageOffset,
+    );
+    renderMilestoneSeparators(wrap, milestoneRows, usePercentage, height);
   }
 
-  // Create stage container (holds both SVG and nodes, same coordinate system)
+  // Right pane: node stage (shared % coordinate space)
+  const rightPane = document.createElement("div");
+  rightPane.className = "graph-right";
+
   const stage = document.createElement("div");
   stage.className = "graph-stage";
 
-  // Create SVG layer for edges (inside stage so coords match nodes)
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.classList.add("graph-svg");
 
   if (usePercentage) {
-    // v5 style: percentage-based positioning with viewBox
     svg.setAttribute("viewBox", "0 0 100 100");
     svg.setAttribute("preserveAspectRatio", "none");
   } else {
-    // Pixel-based: full size
     svg.setAttribute("width", "100%");
     svg.setAttribute("height", "100%");
   }
   svg.setAttribute("aria-hidden", "true");
 
-  // Render edges first (behind nodes)
   renderEdges(svg, nodes, edges, positions, usePercentage);
-
-  // Render nodes
   renderNodes(stage, nodes, positions, usePercentage);
 
-  // SVG and nodes share the same stage (same coordinate space)
   stage.appendChild(svg);
-  // Nodes already appended to stage in renderNodes
-
-  wrap.appendChild(stage);
+  rightPane.appendChild(stage);
+  wrap.appendChild(rightPane);
   container.appendChild(wrap);
 
   return wrap;
