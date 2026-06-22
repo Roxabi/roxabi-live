@@ -25,8 +25,10 @@ afterEach(() => {
 });
 
 function progressSqlHandler(sql: string, reposTotal: number, reposSynced: number) {
-  if (sql.includes("FROM repos") && sql.includes("COUNT")) return [{ n: reposTotal }];
-  if (sql.includes("sync_state") && sql.includes("COUNT")) return [{ n: reposSynced }];
+  if (sql.includes("tenant_repo_access") && sql.includes("sync_state") && sql.includes("COUNT"))
+    return [{ n: reposSynced }];
+  if (sql.includes("tenant_repo_access") && sql.includes("COUNT")) return [{ n: reposTotal }];
+  if (sql.includes("DELETE FROM repos")) return [];
   if (sql.includes("FROM issues") && sql.includes("COUNT"))
     return [{ n: reposSynced > 0 ? 10 : 0 }];
   if (sql.includes("sync_running")) return [{ value: "0", updated_at: new Date().toISOString() }];

@@ -9,7 +9,7 @@
 import type { Env } from "../types";
 import { releaseSyncLock, resumeSyncControl } from "./control";
 import { ensureGlobalSyncControlSeeded, isHalted, runSync } from "./sync";
-import { listUnsyncedRepos as unsyncedAmong } from "./window";
+import { listAccessibleRepos, listUnsyncedRepos as unsyncedAmong } from "./window";
 
 const BOOTSTRAP_KEY = "bootstrap_at";
 /** Debounce rapid /api/sync/status polls from scheduling duplicate chains. */
@@ -71,22 +71,35 @@ export async function isGlobalSyncRunning(db: D1Database): Promise<boolean> {
   return true;
 }
 
-/** Repos registered vs repos with a completed bundle sync (sync_state watermark). */
-/** Repos registered in D1 without a completed sync_state watermark. */
+/** Repos accessible to tenants without a completed sync_state watermark. */
 export async function listUnsyncedRepos(db: D1Database): Promise<string[]> {
-  const rows = await db.prepare("SELECT repo FROM repos ORDER BY repo").all<{ repo: string }>();
-  const allRepos = (rows.results ?? []).map((r) => r.repo);
+  const allRepos = await listAccessibleRepos(db);
   return unsyncedAmong(db, allRepos);
+}
+
+/** Drop registry rows for repos no longer granted to any tenant (stale after uninstall). */
+async function pruneStaleRegistryRepos(db: D1Database): Promise<void> {
+  const countRow = await db
+    .prepare("SELECT COUNT(DISTINCT repo) AS n FROM tenant_repo_access")
+    .first<{ n: number }>();
+  if ((countRow?.n ?? 0) === 0) return;
+  await db
+    .prepare("DELETE FROM repos WHERE repo NOT IN (SELECT DISTINCT repo FROM tenant_repo_access)")
+    .run();
 }
 
 export async function getRepoSyncProgress(
   db: D1Database,
 ): Promise<{ repos_total: number; repos_synced: number }> {
-  const totalRow = await db.prepare("SELECT COUNT(*) AS n FROM repos").first<{ n: number }>();
+  await pruneStaleRegistryRepos(db);
+  const totalRow = await db
+    .prepare("SELECT COUNT(DISTINCT repo) AS n FROM tenant_repo_access")
+    .first<{ n: number }>();
   const syncedRow = await db
     .prepare(
-      `SELECT COUNT(*) AS n FROM sync_state s
-       INNER JOIN repos r ON r.repo = s.repo
+      `SELECT COUNT(DISTINCT tra.repo) AS n
+       FROM tenant_repo_access tra
+       INNER JOIN sync_state s ON s.repo = tra.repo
        WHERE s.last_synced_at IS NOT NULL AND TRIM(s.last_synced_at) != ''`,
     )
     .first<{ n: number }>();

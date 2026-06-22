@@ -9,6 +9,14 @@ export interface RunSyncOptions {
   prioritizeUnsynced?: boolean;
 }
 
+/** Union of repos granted across all active tenant installations. */
+export async function listAccessibleRepos(db: D1Database): Promise<string[]> {
+  const rows = await db
+    .prepare("SELECT DISTINCT repo FROM tenant_repo_access ORDER BY repo")
+    .all<{ repo: string }>();
+  return (rows.results ?? []).map((r) => r.repo);
+}
+
 export async function listUnsyncedRepos(db: D1Database, allRepos: string[]): Promise<string[]> {
   const rows = await db
     .prepare(
