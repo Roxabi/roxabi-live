@@ -23,7 +23,7 @@ routes = [
 ]
 
 [vars]
-APP_RELEASE = "0.19.3"
+APP_RELEASE = "0.19.4"
 ZK_ACCOUNT_KEY = "1"
 # structure-only MUST be "1" whenever ZK_ACCOUNT_KEY is "1" — otherwise the daily
 # cron re-fetches and stores plaintext issue titles in D1, breaking the ZK promise.
@@ -70,7 +70,7 @@ name = "roxabi-live-staging"
 workers_dev = true
 
 [env.staging.vars]
-APP_RELEASE = "0.19.3"
+APP_RELEASE = "0.19.4"
 GITHUB_APP_SLUG = "roxabi-live-staging"
 ZK_ACCOUNT_KEY = "1"
 ZK_STRUCTURE_ONLY = "1"

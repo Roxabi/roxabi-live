@@ -11,7 +11,7 @@ worker/src/api/zk-key-backup.test.ts  # 506 lines — #216 backup API security +
 worker/src/webhook/handlers.test.ts  # 945 lines — #180 webhook handler contract tests
 worker/src/auth/oauth.test.ts  # 1145 lines — #180 OAuth + install-pending; mustReOAuth webhook-link short-circuit
 worker/src/api/issues.test.ts  # 710 lines — #180 tenant-scoped issues API tests; #216 zk redaction
-worker/src/api/graph.test.ts  # 745 lines — #180 tenant-scoped graph + #142 S2 zk + closed_under_open_epic
+worker/src/api/graph.test.ts  # 776 lines — tenant-scoped graph + zk + repo activity stats tests
 worker/src/migrations.test.ts  # 323 lines — schema tests incl. users.consent_at (0020)
 worker/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
 worker/src/webhook/handlers-app.test.ts  # 538 lines — #180 app lifecycle + sender→user_installations tests (+biome reflow)

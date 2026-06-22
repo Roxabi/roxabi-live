@@ -88,6 +88,27 @@ async function pruneStaleRegistryRepos(db: D1Database): Promise<void> {
     .run();
 }
 
+export interface RepoSyncDiagnostics {
+  repos_total: number;
+  repos_synced: number;
+  /** Rows in repos registry (may include stale installs). */
+  repos_registry: number;
+  /** Distinct repos in tenant_repo_access — denominator for bootstrap progress. */
+  repos_accessible: number;
+  progress_basis: "tenant_repo_access";
+}
+
+export async function getRepoSyncDiagnostics(db: D1Database): Promise<RepoSyncDiagnostics> {
+  const progress = await getRepoSyncProgress(db);
+  const registryRow = await db.prepare("SELECT COUNT(*) AS n FROM repos").first<{ n: number }>();
+  return {
+    ...progress,
+    repos_registry: registryRow?.n ?? 0,
+    repos_accessible: progress.repos_total,
+    progress_basis: "tenant_repo_access",
+  };
+}
+
 export async function getRepoSyncProgress(
   db: D1Database,
 ): Promise<{ repos_total: number; repos_synced: number }> {

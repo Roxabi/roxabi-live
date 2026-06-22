@@ -12,6 +12,7 @@ import {
 } from "../test-utils";
 import type { Env } from "../types";
 import { graphRoute } from "./graph";
+import { aggregateRepoActivity } from "./graph-test-helpers";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -49,25 +50,6 @@ const testApp = makeTestApp();
  * visibleRepos is derived from the issues fixture (all unique repos treated as public).
  * Override `overrideVisible` to test a custom visibility set.
  */
-function aggregateRepoActivity(
-  issues: Array<{ repo: string; updated_at?: string | null }>,
-): FakeResult[] {
-  const byRepo = new Map<string, { issue_count: number; last_updated_at: string | null }>();
-  for (const issue of issues) {
-    const prev = byRepo.get(issue.repo);
-    const updatedAt = issue.updated_at ?? null;
-    if (!prev) {
-      byRepo.set(issue.repo, { issue_count: 1, last_updated_at: updatedAt });
-      continue;
-    }
-    prev.issue_count += 1;
-    if (updatedAt && (!prev.last_updated_at || updatedAt > prev.last_updated_at)) {
-      prev.last_updated_at = updatedAt;
-    }
-  }
-  return [...byRepo.entries()].map(([repo, stats]) => ({ repo, ...stats }));
-}
-
 function makeGraphEnv(
   labels: unknown[],
   prState: unknown[],

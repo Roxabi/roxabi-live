@@ -9,7 +9,13 @@
 import type { Context } from "hono";
 import type { AuthEnv } from "../auth/types";
 import { zkAccountKeyEnabled } from "../auth/zk-flags";
-import { getSyncStatus, isGlobalSyncRunning, maybeScheduleBootstrapSync } from "../sync/bootstrap";
+import {
+  getSyncStatus,
+  isBootstrapComplete,
+  isGlobalSyncRunning,
+  maybeScheduleBootstrapSync,
+} from "../sync/bootstrap";
+import { maybeRefreshTenantDiscovery } from "../sync/discovery-refresh";
 
 export async function syncStatusRoute(c: Context<AuthEnv>): Promise<Response> {
   const s = c.get("session");
@@ -22,6 +28,9 @@ export async function syncStatusRoute(c: Context<AuthEnv>): Promise<Response> {
     userId: s.userId,
     zkAccountKeyEnabled: zkAccountKeyEnabled(c.env),
   };
+  if (!(await isBootstrapComplete(c.env.DB))) {
+    await maybeRefreshTenantDiscovery(c.env);
+  }
   const status = await getSyncStatus(c.env.DB, hasLinkedTenant, syncCtx);
 
   if (status.sync_in_progress && !status.sync_running) {
