@@ -133,6 +133,36 @@ describe("layoutV5 column grouping", () => {
     }
   });
 
+  it("orders by repo even when parent edges align children under epics", () => {
+    const epic = node("Roxabi/live#1", {
+      repo: "Roxabi/live",
+      milestoneCode: null,
+      milestoneRaw: null,
+    });
+    const childA = node("Roxabi/live#2", {
+      repo: "Roxabi/live",
+      milestoneCode: null,
+      milestoneRaw: null,
+    });
+    const childB = node("Roxabi/factory#3", {
+      repo: "Roxabi/factory",
+      milestoneCode: null,
+      milestoneRaw: null,
+    });
+    const edges = [
+      { src: epic.key, dst: childA.key, kind: "parent" },
+      { src: epic.key, dst: childB.key, kind: "parent" },
+    ];
+    const result = layoutV5([epic, childA, childB], edges, "milestone", "repo");
+    const xLive = result.positions.get(childA.key)?.x;
+    const xFactory = result.positions.get(childB.key)?.x;
+    expect(xLive).toBeDefined();
+    expect(xFactory).toBeDefined();
+    expect(result.colInfo.map((c) => c.code)).toEqual(["Roxabi/factory", "Roxabi/live"]);
+    expect(xFactory).toBeLessThan(xLive);
+    expect(result.positions.get(epic.key)?.x).toBeCloseTo(xLive, 0);
+  });
+
   it("does not stack same-repo nodes on the second milestone row", () => {
     const nodes = Array.from({ length: 15 }, (_, i) =>
       node(`Org/repo-${i % 3}#${i + 1}`, {

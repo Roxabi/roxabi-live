@@ -170,7 +170,7 @@ function getParentCells(task, allTasks, rowVal, rowDim, cellOf, xOf, gridSize) {
   for (const parent of allTasks) {
     if (parent.key === task.key) continue;
     const edges = task._blockers || [];
-    const isParent = edges.some((e) => e.src === parent.key);
+    const isParent = edges.some((e) => e.kind === "parent" && e.src === parent.key);
     if (!isParent) continue;
 
     const pNum = parent.key;
@@ -250,13 +250,13 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
   }
 
   function desiredCell(n, row, bandNodes, gridSz) {
+    if (colDim !== "none") {
+      return colIdx(colKey(n, colDim));
+    }
     const pc = getParentCells(n, nodes, row, rowDim, cellOf, xOf, gridSz);
     if (pc.length > 0) return Math.round(pc.reduce((a, b) => a + b, 0) / pc.length);
-    if (colDim === "none") {
-      const uniform = uniformCells(bandNodes.length, gridSz);
-      return uniform[bandNodes.indexOf(n)] ?? 0;
-    }
-    return colIdx(colKey(n, colDim));
+    const uniform = uniformCells(bandNodes.length, gridSz);
+    return uniform[bandNodes.indexOf(n)] ?? 0;
   }
 
   for (const row of rowValues) {
