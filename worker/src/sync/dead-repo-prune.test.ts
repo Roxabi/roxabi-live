@@ -11,17 +11,20 @@ vi.mock("./bootstrap", () => ({
   listUnsyncedRepos: vi.fn().mockResolvedValue(["Roxabi/gone"]),
 }));
 
+vi.mock("./repo-probe", () => ({
+  isRepoResolvable: vi.fn().mockResolvedValue(false),
+}));
+
 import { getInstallationToken } from "../auth/installToken";
 import { isBootstrapComplete, listUnsyncedRepos } from "./bootstrap";
-
-const fetchMock = vi.fn();
-vi.stubGlobal("fetch", fetchMock);
+import { isRepoResolvable } from "./repo-probe";
 
 afterEach(() => {
   vi.clearAllMocks();
   vi.mocked(isBootstrapComplete).mockResolvedValue(false);
   vi.mocked(listUnsyncedRepos).mockResolvedValue(["Roxabi/gone"]);
   vi.mocked(getInstallationToken).mockResolvedValue("ghs_test");
+  vi.mocked(isRepoResolvable).mockResolvedValue(false);
 });
 
 describe("maybePruneDeadAccessibleRepos", () => {
@@ -30,11 +33,10 @@ describe("maybePruneDeadAccessibleRepos", () => {
     const { db } = captureDb(() => []);
     const pruned = await maybePruneDeadAccessibleRepos({ DB: db } as never);
     expect(pruned).toBe(0);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(isRepoResolvable).not.toHaveBeenCalled();
   });
 
-  it("prunes repos GitHub returns 404 for", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("", { status: 404 }));
+  it("prunes repos GraphQL cannot resolve", async () => {
     const { db, stmts } = captureDb((sql, args) => {
       if (sql.includes("SELECT value FROM sync_control") && args[0] === "dead_repo_prune_at") {
         return [];
@@ -46,6 +48,7 @@ describe("maybePruneDeadAccessibleRepos", () => {
     });
     const pruned = await maybePruneDeadAccessibleRepos({ DB: db } as never);
     expect(pruned).toBe(1);
+    expect(isRepoResolvable).toHaveBeenCalledWith("ghs_test", "Roxabi/gone");
     expect(stmts().some((s) => s.sql.includes("DELETE FROM tenant_repo_access"))).toBe(true);
   });
 });

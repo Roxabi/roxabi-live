@@ -6,6 +6,7 @@
 import { getInstallationToken, listInstallationRepos } from "../auth/installToken";
 import type { Env } from "../types";
 import { acquireSyncLock, batchChunked, incrementAuthFailures, releaseSyncLock } from "./control";
+import { filterResolvableRepos } from "./repo-probe";
 
 /**
  * Discover repos accessible to each installed tenant and build the global
@@ -75,7 +76,9 @@ export async function discoverTenants(db: D1Database, env: Env): Promise<TenantD
       let repos: Array<{ repo: string; isPrivate: boolean; isArchived?: boolean }>;
       try {
         const token = await getInstallationToken(db, env, tenantId, installationId);
-        repos = await listInstallationRepos(token);
+        const listed = await listInstallationRepos(token);
+        const { kept } = await filterResolvableRepos(token, listed);
+        repos = kept;
       } catch (err) {
         console.error(`[sync] tenant ${tenantId} discovery failed:`, err);
         await incrementAuthFailures(db, tenantId);

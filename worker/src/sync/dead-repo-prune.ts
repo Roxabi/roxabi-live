@@ -8,24 +8,12 @@ import type { Env } from "../types";
 import { isBootstrapComplete, listUnsyncedRepos } from "./bootstrap";
 import { ensureGlobalSyncControlSeeded } from "./control";
 import { pruneInaccessibleRepo } from "./repo-access-prune";
+import { isRepoResolvable } from "./repo-probe";
 
 const DEAD_REPO_PRUNE_KEY = "dead_repo_prune_at";
 const DEAD_REPO_PRUNE_DEBOUNCE_MS = 60_000;
 
-async function repoExistsOnGitHub(token: string, repo: string): Promise<boolean> {
-  const res = await fetch(`https://api.github.com/repos/${repo}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "User-Agent": "roxabi-live-worker",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    signal: AbortSignal.timeout(10_000),
-  });
-  return res.status !== 404;
-}
-
-/** Probe unsynced repos with the installation token; prune those GitHub returns 404. */
+/** Probe unsynced repos via GraphQL; prune those the API cannot resolve. */
 export async function maybePruneDeadAccessibleRepos(env: Env): Promise<number> {
   const db = env.DB;
   if (await isBootstrapComplete(db)) return 0;
@@ -72,7 +60,7 @@ export async function maybePruneDeadAccessibleRepos(env: Env): Promise<number> {
   let pruned = 0;
   for (const repo of unsynced) {
     try {
-      if (await repoExistsOnGitHub(token, repo)) continue;
+      if (await isRepoResolvable(token, repo)) continue;
       await pruneInaccessibleRepo(db, repo);
       pruned++;
     } catch (err) {

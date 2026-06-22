@@ -1503,12 +1503,8 @@ describe("runSync — multi-tenant installation sync (#160)", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     await runSync(env);
 
-    // Exactly 1 ghGraphql call for repo o/r (deduplication)
-    const bundleCalls = mockGhGraphql.mock.calls.filter(
-      (c) =>
-        (c[1] as Record<string, unknown>)?.owner === "o" &&
-        (c[1] as Record<string, unknown>)?.name === "r",
-    );
+    // Exactly 1 REPO_BUNDLE_QUERY for o/r (probe calls during discovery are separate)
+    const bundleCalls = mockGhGraphql.mock.calls.filter((c) => c[0] === "REPO_BUNDLE_QUERY");
     expect(bundleCalls).toHaveLength(1);
   });
 
@@ -2061,6 +2057,11 @@ describe("runSync — breaker + discovery (#160)", () => {
       .mockRejectedValue(new Error("systemic-error")); // Phase 2 failures
     vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "o/r", isPrivate: false }]);
 
+    const { ghGraphql } = await import("./graphql");
+    vi.mocked(ghGraphql).mockResolvedValue({
+      data: { repository: { id: "1" } },
+    });
+
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("sync_running") && sql.includes("UPDATE") && args[0] === 0) {
         return makeFakeStmt(sql, args, [], 1);
@@ -2122,6 +2123,11 @@ describe("runSync — breaker + discovery (#160)", () => {
       .mockResolvedValueOnce("tok-discovery") // Phase 1 success
       .mockRejectedValue(new Error("systemic-error")); // Phase 2 failures
     vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "o/r", isPrivate: false }]);
+
+    const { ghGraphql } = await import("./graphql");
+    vi.mocked(ghGraphql).mockResolvedValue({
+      data: { repository: { id: "1" } },
+    });
 
     const db = makeFakeDb((sql, args) => {
       if (sql.includes("sync_running") && sql.includes("UPDATE") && args[0] === 0) {

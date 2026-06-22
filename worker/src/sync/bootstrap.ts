@@ -179,6 +179,32 @@ async function maybeAutoResumeBootstrapHalt(db: D1Database): Promise<void> {
   console.log("[sync] bootstrap cleared auth halt — resuming first import");
 }
 
+/**
+ * System self-heal from /health — no session/ZK gate; advances bootstrap for
+ * repos that discovery/prune already removed from tenant_repo_access.
+ */
+export async function maybeScheduleMaintenanceBootstrap(
+  db: D1Database,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<boolean> {
+  await ensureGlobalSyncControlSeeded(db);
+  await maybeAutoResumeBootstrapHalt(db);
+  if (await isHalted(db)) return false;
+  if (await isGlobalSyncRunning(db)) return false;
+  if (await isBootstrapComplete(db)) return false;
+
+  const last = await getBootstrapAt(db);
+  if (last && Date.now() - Date.parse(last) < BOOTSTRAP_SCHEDULE_DEBOUNCE_MS) {
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  await markBootstrapAt(db, now);
+  ctx.waitUntil(runBootstrapSync(env));
+  return true;
+}
+
 export async function maybeScheduleBootstrapSync(
   db: D1Database,
   env: Env,
