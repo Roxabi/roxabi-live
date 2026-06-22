@@ -69,7 +69,9 @@ export async function maybePruneDeadAccessibleRepos(env: Env): Promise<number> {
     try {
       const slug = parseRepoSlug(repo);
       const isPrivate = privateByRepo.get(repo) ?? true;
-      if (slug && !isPrivate && (await isPublicRepoGone(slug.owner, slug.name))) {
+      // Public API 404 is authoritative for deleted repos — installation metadata
+      // often still lists them (and may mark is_private=1 from stale D1 defaults).
+      if (slug && (await isPublicRepoGone(slug.owner, slug.name))) {
         await pruneInaccessibleRepo(db, repo);
         pruned++;
         continue;

@@ -25,7 +25,7 @@ import { isBootstrapComplete, listUnsyncedRepos } from "./bootstrap";
 import { isRepoResolvable } from "./repo-probe";
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 404, ok: false } as Response));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 200, ok: true } as Response));
 });
 
 afterEach(() => {
@@ -48,6 +48,7 @@ describe("maybePruneDeadAccessibleRepos", () => {
   });
 
   it("prunes public repos when GitHub REST returns 404", async () => {
+    vi.mocked(fetch).mockResolvedValue({ status: 404, ok: false } as Response);
     const { db, stmts } = captureDb((sql, args) => {
       if (sql.includes("SELECT value FROM sync_control") && args[0] === "dead_repo_prune_at") {
         return [];
@@ -63,7 +64,10 @@ describe("maybePruneDeadAccessibleRepos", () => {
     expect(stmts().some((s) => s.sql.includes("DELETE FROM tenant_repo_access"))).toBe(true);
   });
 
-  it("falls back to bundle probe when public REST does not 404", async () => {
+  it("falls back to bundle probe for private repos when public REST does not 404", async () => {
+    vi.mocked(listInstallationRepos).mockResolvedValueOnce([
+      { repo: "Roxabi/gone", isPrivate: true },
+    ]);
     vi.mocked(fetch).mockResolvedValueOnce({ status: 200, ok: true } as Response);
     const { db } = captureDb((sql, args) => {
       if (sql.includes("SELECT value FROM sync_control") && args[0] === "dead_repo_prune_at") {
@@ -77,7 +81,7 @@ describe("maybePruneDeadAccessibleRepos", () => {
     const pruned = await maybePruneDeadAccessibleRepos({ DB: db } as never);
     expect(pruned).toBe(1);
     expect(isRepoResolvable).toHaveBeenCalledWith("ghs_test", "Roxabi/gone", {
-      isPrivate: false,
+      isPrivate: true,
     });
   });
 });

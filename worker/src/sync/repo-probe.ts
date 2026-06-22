@@ -46,6 +46,19 @@ export async function isRepoResolvable(
   }
 }
 
+async function isPublicRepoGone(owner: string, name: string): Promise<boolean> {
+  const res = await fetch(`https://api.github.com/repos/${owner}/${name}`, {
+    method: "GET",
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "roxabi-live-worker",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    signal: AbortSignal.timeout(5_000),
+  });
+  return res.status === 404;
+}
+
 export async function filterResolvableRepos<T extends { repo: string; isPrivate?: boolean }>(
   token: string,
   repos: T[],
@@ -53,6 +66,11 @@ export async function filterResolvableRepos<T extends { repo: string; isPrivate?
   const kept: T[] = [];
   const dropped: string[] = [];
   for (const entry of repos) {
+    const slug = parseRepoSlug(entry.repo);
+    if (slug && (await isPublicRepoGone(slug.owner, slug.name))) {
+      dropped.push(entry.repo);
+      continue;
+    }
     if (await isRepoResolvable(token, entry.repo, { isPrivate: entry.isPrivate })) {
       kept.push(entry);
     } else {

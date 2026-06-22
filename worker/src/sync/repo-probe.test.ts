@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GraphQLError } from "./graphql";
 import { filterResolvableRepos, isRepoResolvable, parseRepoSlug } from "./repo-probe";
 
@@ -17,6 +17,15 @@ vi.mock("./queries", () => ({
 }));
 
 import { ghGraphql } from "./graphql";
+
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 200, ok: true } as Response));
+  vi.mocked(ghGraphql).mockReset();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("parseRepoSlug", () => {
   it("splits owner/name", () => {
@@ -50,14 +59,18 @@ describe("isRepoResolvable", () => {
 
 describe("filterResolvableRepos", () => {
   it("partitions kept vs dropped", async () => {
-    vi.mocked(ghGraphql)
-      .mockResolvedValueOnce({ data: { repository: { id: "1" } } })
-      .mockRejectedValueOnce(new GraphQLError("Could not resolve to a Repository"));
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const target = String(input);
+      if (target.includes("gone")) return { status: 404, ok: false } as Response;
+      return { status: 200, ok: true } as Response;
+    });
+    vi.mocked(ghGraphql).mockResolvedValue({ data: { repository: { id: "1" } } });
     const result = await filterResolvableRepos("token", [
       { repo: "Roxabi/ok", isPrivate: false },
       { repo: "Roxabi/gone", isPrivate: false },
     ]);
     expect(result.kept).toEqual([{ repo: "Roxabi/ok", isPrivate: false }]);
     expect(result.dropped).toEqual(["Roxabi/gone"]);
+    expect(ghGraphql).toHaveBeenCalledTimes(1);
   });
 });
