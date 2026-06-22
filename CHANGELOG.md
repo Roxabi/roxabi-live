@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.21.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.20.0...roxabi-live/v0.21.0) (2026-06-22)
+
+
+### Features
+
+* **auth:** show signing-out overlay during logout
+* **dashboard:** default table columns to priority; public/private badges on repo filter
+* **security:** gate staging workers.dev behind CF Access; anti-indexing (`robots.txt`, `X-Robots-Tag`)
+
+
+### Bug Fixes
+
+* **security:** staging Access setup script supports Bitwarden global API key; webhook path in domain
+
+
 ## [0.20.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.19.2...roxabi-live/v0.20.0) (2026-06-22)
 
 
