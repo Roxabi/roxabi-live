@@ -24,14 +24,33 @@ export class MultiSelect {
     this.clearBtn = opts.clearBtn ?? null; // optional inline × next to trigger
     this.placeholder = opts.placeholder ?? "All";
     this.onChange = opts.onChange ?? (() => {});
+    this.maxVisiblePills = opts.maxVisiblePills ?? 2;
     this.selected = new Set();
     this.items = [];
     this.open = false;
+    this.pillsExpanded = false;
 
-    this.trigger.addEventListener("click", () => {
+    this.trigger.addEventListener("click", (e) => {
+      if (e.target.closest("[data-ms-expand]")) {
+        e.stopPropagation();
+        this.pillsExpanded = !this.pillsExpanded;
+        this._updateTrigger();
+        return;
+      }
       // Close siblings first
       for (const inst of INSTANCES) if (inst !== this) inst.close();
       this.toggle();
+    });
+
+    this.trigger.addEventListener("keydown", (e) => {
+      const more = e.target.closest("[data-ms-expand]");
+      if (!more) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        this.pillsExpanded = !this.pillsExpanded;
+        this._updateTrigger();
+      }
     });
 
     if (this.clearBtn) {
@@ -47,12 +66,14 @@ export class MultiSelect {
   setItems(items, selected = []) {
     this.items = items;
     this.selected = new Set(selected);
+    this.pillsExpanded = false;
     this._buildPanel();
     this._updateTrigger();
   }
 
   setSelected(values) {
     this.selected = new Set(values);
+    this.pillsExpanded = false;
     this._syncCheckboxes();
     this._updateTrigger();
   }
@@ -63,6 +84,7 @@ export class MultiSelect {
 
   clear() {
     this.selected.clear();
+    this.pillsExpanded = false;
     this._syncCheckboxes();
     this._updateTrigger();
     this.onChange([]);
@@ -126,6 +148,7 @@ export class MultiSelect {
         if (cb.checked) this.selected.add(item.value);
         else this.selected.delete(item.value);
         li.setAttribute("aria-selected", cb.checked ? "true" : "false");
+        this.pillsExpanded = false;
         this._updateTrigger();
         this.onChange([...this.selected]);
       });
@@ -172,19 +195,46 @@ export class MultiSelect {
     }
   }
 
+  _pillHtml(value) {
+    const item = this.items.find((i) => i.value === value);
+    const toneAttr = item?.tone ? ` data-tone="${item.tone}"` : "";
+    const label = item ? item.label : value;
+    return `<span class="ms-pill"${toneAttr}>${label}</span>`;
+  }
+
+  _expandPill(label) {
+    return `<span class="ms-pill ms-pill-more" data-ms-expand tabindex="0" role="button" aria-label="${label}">…</span>`;
+  }
+
   _updateTrigger() {
     const sel = [...this.selected];
     if (this.clearBtn) this.clearBtn.hidden = sel.length === 0;
     if (!sel.length) {
+      this.trigger.classList.remove("ms-trigger-expanded");
       this.trigger.innerHTML = `<span class="ms-placeholder">${this.placeholder}</span>`;
+      return;
+    }
+
+    const max = this.maxVisiblePills;
+    const collapsed = sel.length > max && !this.pillsExpanded;
+
+    if (collapsed) {
+      const hidden = sel.length - max;
+      this.trigger.classList.remove("ms-trigger-expanded");
+      this.trigger.innerHTML =
+        sel
+          .slice(0, max)
+          .map((v) => this._pillHtml(v))
+          .join("") + this._expandPill(`Show ${hidden} more`);
+      return;
+    }
+
+    const pills = sel.map((v) => this._pillHtml(v)).join("");
+    if (sel.length > max) {
+      this.trigger.classList.add("ms-trigger-expanded");
+      this.trigger.innerHTML = pills + this._expandPill("Show less");
     } else {
-      const pills = sel
-        .map((v) => {
-          const item = this.items.find((i) => i.value === v);
-          const toneAttr = item?.tone ? ` data-tone="${item.tone}"` : "";
-          return `<span class="ms-pill"${toneAttr}>${item ? item.label : v}</span>`;
-        })
-        .join("");
+      this.trigger.classList.remove("ms-trigger-expanded");
       this.trigger.innerHTML = pills;
     }
   }

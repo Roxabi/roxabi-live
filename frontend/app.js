@@ -110,6 +110,7 @@ const ssListGroup2 = new SingleSelect($("list-group2-btn"), $("list-group2-panel
 const msRepo = new MultiSelect($("ms-repo-btn"), $("ms-repo-panel"), {
   placeholder: "All repos",
   clearBtn: $("ms-repo-clear"),
+  maxVisiblePills: 2,
 });
 const msMilestone = new MultiSelect($("ms-milestone-btn"), $("ms-milestone-panel"), {
   placeholder: "All milestones",
@@ -126,6 +127,7 @@ const msStatus = new MultiSelect($("ms-status-btn"), $("ms-status-panel"), {
 const msLabel = new MultiSelect($("ms-label-btn"), $("ms-label-panel"), {
   placeholder: "All labels",
   clearBtn: $("ms-label-clear"),
+  maxVisiblePills: 2,
 });
 
 // ─── Render ───────────────────────────────────────────────────────────────
