@@ -105,6 +105,34 @@ describe("layoutV5 column grouping", () => {
     expect(Math.abs(x0 - x1)).toBeLessThan(12);
   });
 
+  it("keeps readable spacing when many filtered children share a parent column", () => {
+    const epics = Array.from({ length: 8 }, (_, i) =>
+      node(`Roxabi/demo#${i + 1}`, { milestoneCode: null, milestoneRaw: null, priorityRaw: null }),
+    );
+    const subs = Array.from({ length: 24 }, (_, i) =>
+      node(`Roxabi/demo#${i + 9}`, { milestoneCode: null, milestoneRaw: null, priorityRaw: null }),
+    );
+    const edges = subs.map((s, i) => ({ src: epics[i % 8].key, dst: s.key, kind: "parent" }));
+    const result = layoutV5([...epics, ...subs], edges, "milestone", "priority");
+    const byBand = new Map();
+    for (const [, pos] of result.positions) {
+      const band = pos.y.toFixed(4);
+      if (!byBand.has(band)) byBand.set(band, []);
+      byBand.get(band).push(pos.x);
+    }
+    const bands = [...byBand.entries()].sort(
+      (a, b) => Number.parseFloat(a[0]) - Number.parseFloat(b[0]),
+    );
+    const second = bands[1]?.[1].sort((a, b) => a - b) ?? [];
+    const gaps = second.slice(1).map((x, i) => x - second[i]);
+    const minGap = gaps.length ? Math.min(...gaps) : 99;
+    expect(minGap).toBeGreaterThanOrEqual(3);
+    for (const [, band] of byBand) {
+      const xs = band.map((x) => x.toFixed(2));
+      expect(new Set(xs).size).toBe(xs.length);
+    }
+  });
+
   it("does not stack same-repo nodes on the second milestone row", () => {
     const nodes = Array.from({ length: 15 }, (_, i) =>
       node(`Org/repo-${i % 3}#${i + 1}`, {
