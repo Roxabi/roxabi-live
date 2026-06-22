@@ -65,6 +65,18 @@ describe("signOut", () => {
     expect(location.href).toBe("/");
   });
 
+  it("shows a signing-out overlay while logout runs", async () => {
+    fetch.mockResolvedValue({ status: 200, ok: true });
+    const pending = signOut();
+    const gate = document.getElementById("signout-gate");
+    expect(gate).toBeTruthy();
+    expect(gate?.querySelector(".signout-spinner")).toBeTruthy();
+    expect(gate?.querySelector(".signout-message")?.textContent).toMatch(
+      /Déconnexion|Signing out/i,
+    );
+    await pending;
+  });
+
   it("reloads when requested", async () => {
     fetch.mockResolvedValue({ status: 200, ok: true });
     await signOut({ after: "reload" });

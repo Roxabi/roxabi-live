@@ -1,5 +1,6 @@
 // auth.js — Server-owned onboarding gate (install → consent → ready)
 
+import { detectLocale, t } from "./i18n.js";
 import { renderOnboardingSteps } from "./onboarding.js";
 
 const $ = (id) => document.getElementById(id);
@@ -47,11 +48,40 @@ export async function api(path, opts) {
   return resp;
 }
 
+/** Full-screen feedback while POST /logout completes. */
+function showSignOutOverlay() {
+  if (document.getElementById("signout-gate")) return;
+
+  const gate = document.createElement("div");
+  gate.id = "signout-gate";
+  gate.className = "signout-gate";
+  gate.setAttribute("role", "alertdialog");
+  gate.setAttribute("aria-modal", "true");
+  gate.setAttribute("aria-busy", "true");
+  gate.setAttribute("aria-live", "polite");
+
+  const dialog = document.createElement("div");
+  dialog.className = "signout-dialog";
+
+  const spinner = document.createElement("div");
+  spinner.className = "signout-spinner";
+  spinner.setAttribute("aria-hidden", "true");
+
+  const message = document.createElement("p");
+  message.className = "signout-message";
+  message.textContent = t(detectLocale(), "auth.signingOut");
+
+  dialog.append(spinner, message);
+  gate.appendChild(dialog);
+  document.body.appendChild(gate);
+}
+
 /**
  * End session and navigate away.
  * @param {{ after?: "redirect" | "reload", to?: string }} [opts]
  */
 export async function signOut(opts = {}) {
+  showSignOutOverlay();
   const { after = "redirect", to = "/" } = opts;
   await api("/logout", { method: "POST" }).catch(() => {});
   if (after === "reload") location.reload();
