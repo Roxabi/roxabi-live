@@ -1,234 +1,55 @@
-import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AuthEnv } from "../auth/types";
+import { STUB_SESSION, captureDb, dispatchByTable, makeEnv } from "../test-utils";
 import {
-  type FakeResult,
-  STUB_SESSION,
-  captureDb,
-  dispatchByTable,
-  makeEnv,
-  makeFakeDb,
-  makeFakeStmt,
-} from "../test-utils";
-import type { Env } from "../types";
-import { graphRoute } from "./graph";
-import { aggregateRepoActivity } from "./graph-test-helpers";
+  GRAPH_REPO,
+  graphIssue,
+  makeGraphEnv,
+  makeGraphEnvWithCapture,
+  makeGraphTestApp,
+} from "./graph-test-helpers";
+
+const testApp = makeGraphTestApp();
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// ---------------------------------------------------------------------------
-// Test app with session middleware — mirrors me.test.ts pattern
-// ---------------------------------------------------------------------------
-
-function makeTestApp() {
-  const a = new Hono<AuthEnv>();
-  a.use("*", async (c, next) => {
-    c.set("session", STUB_SESSION);
-    await next();
-  });
-  a.get("/api/graph", graphRoute);
-  return a;
-}
-
-const testApp = makeTestApp();
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * graph.ts fires 5 prepare().bind(...).all() calls — dispatched by SQL content:
- *   "tenant_repo_access"  → visible repos (all public by default, derived from issues)
- *   "from labels"         → labels fixture
- *   "from pr_state"       → pr_state fixture
- *   "from issues"         → issues fixture
- *   "from edges"          → edges fixture
- *   "from repos"          → repos fixture
- *
- * visibleRepos is derived from the issues fixture (all unique repos treated as public).
- * Override `overrideVisible` to test a custom visibility set.
- */
-function makeGraphEnv(
-  labels: unknown[],
-  prState: unknown[],
-  issues: unknown[],
-  edges: unknown[],
-  repos: unknown[] = [],
-  overrideVisible?: string[],
-  zkOptIn = false,
-  sealedIssueKeys: string[] = [],
-): Env {
-  const visibleRepos = overrideVisible ?? [
-    ...new Set((issues as Array<{ repo: string }>).map((i) => i.repo)),
-  ];
-  const issueRows = issues as Array<{ repo: string; updated_at?: string | null }>;
-
-  const db = makeFakeDb((sql, args) => {
-    if (sql.toLowerCase().includes("group by repo")) {
-      return makeFakeStmt(sql, args, aggregateRepoActivity(issueRows));
-    }
-    return makeFakeStmt(
-      sql,
-      args,
-      dispatchByTable(sql, {
-        zk_opt_in: [{ zk_opt_in: zkOptIn ? 1 : 0 }],
-        "from zk_payloads": sealedIssueKeys.map((issue_key) => ({ issue_key })),
-        tenant_repo_access: visibleRepos.map((repo) => ({
-          repo,
-          is_private: 0,
-        })),
-        "from labels": labels as FakeResult[],
-        "from pr_state": prState as FakeResult[],
-        // "from edges" MUST precede "from issues": edges SQL contains "FROM issues"
-        // as a subquery, so first-match-wins would otherwise misroute it.
-        "from edges": edges as FakeResult[],
-        "from repos": repos as FakeResult[],
-        "from issues": issues as FakeResult[],
-      }),
-    );
-  });
-
-  return makeEnv(db);
-}
-
-/**
- * Like makeGraphEnv but also accumulates every SQL string passed to prepare()
- * so tests can assert on the exact queries issued by graphRoute.
- */
-function makeGraphEnvWithCapture(
-  labels: unknown[],
-  prState: unknown[],
-  issues: unknown[],
-  edges: unknown[],
-  repos: unknown[] = [],
-): { env: Env; capturedSqls: string[] } {
-  const capturedSqls: string[] = [];
-
-  const visibleRepos = [...new Set((issues as Array<{ repo: string }>).map((i) => i.repo))];
-
-  const issueRows = issues as Array<{ repo: string; updated_at?: string | null }>;
-  const { db } = captureDb((sql, _args) => {
-    capturedSqls.push(sql);
-    if (sql.toLowerCase().includes("group by repo")) {
-      return aggregateRepoActivity(issueRows);
-    }
-    return dispatchByTable(sql, {
-      tenant_repo_access: visibleRepos.map((repo) => ({
-        repo,
-        is_private: 0,
-      })),
-      "from labels": labels as FakeResult[],
-      "from pr_state": prState as FakeResult[],
-      // "from edges" MUST precede "from issues": edges SQL subquery contains "FROM issues"
-      "from edges": edges as FakeResult[],
-      "from repos": repos as FakeResult[],
-      "from issues": issues as FakeResult[],
-    });
-  });
-
-  return { env: makeEnv(db), capturedSqls };
-}
-
 describe("GET /api/graph", () => {
   describe("response shape", () => {
     it("returns {nodes, edges} with correct types", async () => {
-      const issue = {
-        key: "Roxabi/roxabi-live#1",
-        repo: "Roxabi/roxabi-live",
-        number: 1,
+      const issue = graphIssue(1, {
         title: "Fix the thing",
-        state: "open",
         url: "https://github.com/Roxabi/roxabi-live/issues/1",
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      };
-      const edge = {
-        src_key: "Roxabi/roxabi-live#2",
-        dst_key: "Roxabi/roxabi-live#1",
-        kind: "blocks",
-      };
+      });
+      const edge = { src_key: "Roxabi/roxabi-live#2", dst_key: issue.key, kind: "blocks" };
       const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [issue], [edge]));
       expect(res.status).toBe(200);
-      const body = await res.json<{
-        nodes: unknown[];
-        edges: unknown[];
-        repos: unknown[];
-      }>();
+      const body = await res.json<{ nodes: unknown[]; edges: unknown[]; repos: unknown[] }>();
       expect(Array.isArray(body.nodes)).toBe(true);
       expect(Array.isArray(body.edges)).toBe(true);
       expect(Array.isArray(body.repos)).toBe(true);
     });
 
     it("exposes assignees parsed from the issues row", async () => {
-      const issue = {
-        key: "Roxabi/roxabi-live#3",
-        repo: "Roxabi/roxabi-live",
-        number: 3,
-        title: "Assigned issue",
-        state: "open",
-        url: "https://github.com/Roxabi/roxabi-live/issues/3",
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-        assignees: '["alice","bob"]',
-      };
+      const issue = graphIssue(3, { title: "Assigned issue", assignees: '["alice","bob"]' });
       const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [issue], []));
       const body = await res.json<{ nodes: Array<{ assignees: string[] }> }>();
       expect(body.nodes[0].assignees).toEqual(["alice", "bob"]);
     });
 
     it("redacts titles when the current user sealed the issue", async () => {
-      const issue = {
-        key: "Roxabi/roxabi-live#7",
-        repo: "Roxabi/roxabi-live",
-        number: 7,
-        title: "Secret title",
-        state: "open",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      };
+      const issue = graphIssue(7, { title: "Secret title" });
       const res = await testApp.request(
         "/api/graph",
         {},
-        makeGraphEnv([], [], [issue], [], [], undefined, false, ["Roxabi/roxabi-live#7"]),
+        makeGraphEnv([], [], [issue], [], [], undefined, false, [issue.key]),
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].title).toBeNull();
     });
 
     it("keeps titles visible when only another user sealed the issue", async () => {
-      const issue = {
-        key: "Roxabi/roxabi-live#8",
-        repo: "Roxabi/roxabi-live",
-        number: 8,
-        title: "Still visible",
-        state: "open",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      };
+      const issue = graphIssue(8, { title: "Still visible" });
       const { db } = captureDb((sql, args) =>
         dispatchByTable(sql, {
           "from zk_payloads": args?.[0] === STUB_SESSION.userId ? [] : [{ issue_key: issue.key }],
@@ -246,26 +67,19 @@ describe("GET /api/graph", () => {
     });
 
     it("maps IssueRow fields to Node shape", async () => {
-      const issue = {
-        key: "Roxabi/roxabi-live#42",
-        repo: "Roxabi/roxabi-live",
-        number: 42,
+      const issue = graphIssue(42, {
         title: "Hello",
-        state: "open",
         url: "https://github.com/Roxabi/roxabi-live/issues/42",
-        milestone: null,
         lane: "backlog",
         priority: "P1",
         size: "M",
         status: "in_progress",
-        is_stub: 0,
-        has_active_branch: 0,
-      };
+      });
       const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [issue], []));
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       const node = body.nodes[0];
       expect(node.key).toBe("Roxabi/roxabi-live#42");
-      expect(node.repo).toBe("Roxabi/roxabi-live");
+      expect(node.repo).toBe(GRAPH_REPO);
       expect(node.number).toBe(42);
       expect(node.title).toBe("Hello");
       expect(node.state).toBe("open");
@@ -278,58 +92,24 @@ describe("GET /api/graph", () => {
     });
 
     it("maps EdgeRow fields to Edge shape", async () => {
-      const issue = {
-        key: "Roxabi/roxabi-live#1",
-        repo: "Roxabi/roxabi-live",
-        number: 1,
-        title: null,
-        state: "open",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      };
-      const edge = {
-        src_key: "Roxabi/roxabi-live#2",
-        dst_key: "Roxabi/roxabi-live#1",
-        kind: "blocks",
-      };
+      const issue = graphIssue(1);
+      const edge = { src_key: "Roxabi/roxabi-live#2", dst_key: issue.key, kind: "blocks" };
       const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [issue], [edge]));
       const body = await res.json<{ edges: Record<string, unknown>[] }>();
       expect(body.edges[0]).toEqual({
         src: "Roxabi/roxabi-live#2",
-        dst: "Roxabi/roxabi-live#1",
+        dst: issue.key,
         kind: "blocks",
       });
     });
   });
 
   describe("dev_state priority matrix", () => {
-    const baseIssue = {
-      key: "Roxabi/roxabi-live#1",
-      repo: "Roxabi/roxabi-live",
-      number: 1,
-      title: null,
-      state: "open",
-      url: null,
-      milestone: null,
-      lane: null,
-      priority: null,
-      size: null,
-      status: null,
-      is_stub: 0,
-      has_active_branch: 0,
-    };
-
     it("idle when no branch and no open PR", async () => {
       const res = await testApp.request(
         "/api/graph",
         {},
-        makeGraphEnv([], [], [{ ...baseIssue, has_active_branch: 0 }], []),
+        makeGraphEnv([], [], [graphIssue(1)], []),
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].dev_state).toBe("idle");
@@ -339,40 +119,24 @@ describe("GET /api/graph", () => {
       const res = await testApp.request(
         "/api/graph",
         {},
-        makeGraphEnv([], [], [{ ...baseIssue, has_active_branch: 1 }], []),
+        makeGraphEnv([], [], [graphIssue(1, { has_active_branch: 1 })], []),
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].dev_state).toBe("dev");
     });
 
     it("pr_open when an open PR is linked but not reviewed", async () => {
-      const prState = [
-        {
-          closing_issue_keys: '["Roxabi/roxabi-live#1"]',
-          has_reviewed_label: 0,
-        },
-      ];
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv([], prState, [{ ...baseIssue, has_active_branch: 1 }], []),
-      );
+      const issue = graphIssue(1, { has_active_branch: 1 });
+      const prState = [{ closing_issue_keys: `["${issue.key}"]`, has_reviewed_label: 0 }];
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], prState, [issue], []));
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].dev_state).toBe("pr_open");
     });
 
     it("pr_reviewed when an open PR has has_reviewed_label=1", async () => {
-      const prState = [
-        {
-          closing_issue_keys: '["Roxabi/roxabi-live#1"]',
-          has_reviewed_label: 1,
-        },
-      ];
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv([], prState, [{ ...baseIssue, has_active_branch: 1 }], []),
-      );
+      const issue = graphIssue(1, { has_active_branch: 1 });
+      const prState = [{ closing_issue_keys: `["${issue.key}"]`, has_reviewed_label: 1 }];
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], prState, [issue], []));
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].dev_state).toBe("pr_reviewed");
     });
@@ -381,7 +145,7 @@ describe("GET /api/graph", () => {
       const res = await testApp.request(
         "/api/graph",
         {},
-        makeGraphEnv([], [], [{ ...baseIssue, state: "closed", has_active_branch: 1 }], []),
+        makeGraphEnv([], [], [graphIssue(1, { state: "closed", has_active_branch: 1 })], []),
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].dev_state).toBe("idle");
@@ -389,71 +153,41 @@ describe("GET /api/graph", () => {
   });
 
   describe("lane fallback from labels", () => {
-    const baseIssue = {
-      key: "Roxabi/roxabi-live#1",
-      repo: "Roxabi/roxabi-live",
-      number: 1,
-      title: null,
-      state: "open",
-      url: null,
-      milestone: null,
-      lane: null,
-      priority: null,
-      size: null,
-      status: null,
-      is_stub: 0,
-      has_active_branch: 0,
-    };
-
     it("uses lane field when set", async () => {
       const res = await testApp.request(
         "/api/graph",
         {},
-        makeGraphEnv([], [], [{ ...baseIssue, lane: "backlog" }], []),
+        makeGraphEnv([], [], [graphIssue(1, { lane: "backlog" })], []),
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].lane).toBe("backlog");
     });
 
     it("falls back to graph:lane/ label when lane field is null", async () => {
-      const labels = [{ issue_key: baseIssue.key, name: "graph:lane/active" }];
-      const res = await testApp.request(
-        "/api/graph",
-        {},
-        makeGraphEnv(labels, [], [baseIssue], []),
-      );
+      const issue = graphIssue(1);
+      const labels = [{ issue_key: issue.key, name: "graph:lane/active" }];
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv(labels, [], [issue], []));
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].lane).toBe("active");
     });
 
     it("returns null lane when no lane field and no graph:lane/ label", async () => {
-      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [baseIssue], []));
+      const res = await testApp.request(
+        "/api/graph",
+        {},
+        makeGraphEnv([], [], [graphIssue(1)], []),
+      );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].lane).toBeNull();
     });
   });
 
   describe("is_stub boolean coercion", () => {
-    const base = {
-      key: "Roxabi/roxabi-live#1",
-      repo: "Roxabi/roxabi-live",
-      number: 1,
-      title: null,
-      state: "open",
-      url: null,
-      milestone: null,
-      lane: null,
-      priority: null,
-      size: null,
-      status: null,
-      has_active_branch: 0,
-    };
-
     it("coerces is_stub=1 to true", async () => {
       const res = await testApp.request(
         "/api/graph",
         {},
-        makeGraphEnv([], [], [{ ...base, is_stub: 1 }], []),
+        makeGraphEnv([], [], [graphIssue(1, { is_stub: 1 })], []),
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].is_stub).toBe(true);
@@ -463,7 +197,7 @@ describe("GET /api/graph", () => {
       const res = await testApp.request(
         "/api/graph",
         {},
-        makeGraphEnv([], [], [{ ...base, is_stub: 0 }], []),
+        makeGraphEnv([], [], [graphIssue(1)], []),
       );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].is_stub).toBe(false);
@@ -472,47 +206,24 @@ describe("GET /api/graph", () => {
 
   describe("invalid JSON in pr_state.closing_issue_keys", () => {
     it("falls back to idle dev_state on invalid closing_issue_keys JSON", async () => {
-      const issue = {
-        key: "Roxabi/roxabi-live#1",
-        repo: "Roxabi/roxabi-live",
-        number: 1,
-        title: null,
-        state: "open",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      };
-      // One row with invalid JSON — should not throw, issue gets idle dev_state
       const prState = [{ closing_issue_keys: "not-valid-json", has_reviewed_label: 1 }];
-      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], prState, [issue], []));
+      const res = await testApp.request(
+        "/api/graph",
+        {},
+        makeGraphEnv([], prState, [graphIssue(1)], []),
+      );
       expect(res.status).toBe(200);
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].dev_state).toBe("idle");
     });
 
     it("silently skips rows where closing_issue_keys is null", async () => {
-      const issue = {
-        key: "Roxabi/roxabi-live#1",
-        repo: "Roxabi/roxabi-live",
-        number: 1,
-        title: null,
-        state: "open",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      };
       const prState = [{ closing_issue_keys: null, has_reviewed_label: 1 }];
-      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], prState, [issue], []));
+      const res = await testApp.request(
+        "/api/graph",
+        {},
+        makeGraphEnv([], prState, [graphIssue(1)], []),
+      );
       expect(res.status).toBe(200);
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].dev_state).toBe("idle");
@@ -521,21 +232,7 @@ describe("GET /api/graph", () => {
 
   describe("labels attached per issue", () => {
     it("attaches correct labels to each node", async () => {
-      const issue = {
-        key: "Roxabi/roxabi-live#1",
-        repo: "Roxabi/roxabi-live",
-        number: 1,
-        title: null,
-        state: "open",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      };
+      const issue = graphIssue(1);
       const labels = [
         { issue_key: issue.key, name: "bug" },
         { issue_key: issue.key, name: "P1" },
@@ -547,22 +244,11 @@ describe("GET /api/graph", () => {
     });
 
     it("returns empty labels array when no labels for issue", async () => {
-      const issue = {
-        key: "Roxabi/roxabi-live#1",
-        repo: "Roxabi/roxabi-live",
-        number: 1,
-        title: null,
-        state: "open",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      };
-      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [issue], []));
+      const res = await testApp.request(
+        "/api/graph",
+        {},
+        makeGraphEnv([], [], [graphIssue(1)], []),
+      );
       const body = await res.json<{ nodes: Record<string, unknown>[] }>();
       expect(body.nodes[0].labels).toEqual([]);
     });
@@ -570,7 +256,6 @@ describe("GET /api/graph", () => {
 
   describe("empty database", () => {
     it("returns {nodes:[], edges:[], repos:[]} when all tables empty", async () => {
-      // Empty issues → no visible repos → resolveVisibleRepos short-circuits → {nodes:[],edges:[],repos:[]}
       const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], [], []));
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -582,46 +267,19 @@ describe("GET /api/graph", () => {
     it("returns repo registry rows with per-repo activity stats", async () => {
       const repoRows = [
         { repo: "Roxabi/roxabi-factory", archived: 0 },
-        { repo: "Roxabi/roxabi-live", archived: 0 },
+        { repo: GRAPH_REPO, archived: 0 },
         { repo: "Roxabi/roxabi-vault", archived: 1 },
       ];
       const issues = [
-        {
-          key: "Roxabi/roxabi-live#1",
-          repo: "Roxabi/roxabi-live",
-          number: 1,
-          title: "Active",
-          state: "open",
-          url: null,
-          milestone: null,
-          lane: null,
-          priority: null,
-          size: null,
-          status: null,
-          is_stub: 0,
-          has_active_branch: 0,
-          updated_at: "2026-06-20T12:00:00Z",
-        },
-        {
-          key: "Roxabi/roxabi-live#2",
-          repo: "Roxabi/roxabi-live",
-          number: 2,
-          title: "Also active",
-          state: "open",
-          url: null,
-          milestone: null,
-          lane: null,
-          priority: null,
-          size: null,
-          status: null,
-          is_stub: 0,
-          has_active_branch: 0,
-          updated_at: "2026-06-21T08:00:00Z",
-        },
+        graphIssue(1, { title: "Active", updated_at: "2026-06-20T12:00:00Z" }),
+        graphIssue(2, { title: "Also active", updated_at: "2026-06-21T08:00:00Z" }),
       ];
       const visibleList = repoRows.map((r) => r.repo);
-      const env = makeGraphEnv([], [], issues, [], repoRows, visibleList);
-      const res = await testApp.request("/api/graph", {}, env);
+      const res = await testApp.request(
+        "/api/graph",
+        {},
+        makeGraphEnv([], [], issues, [], repoRows, visibleList),
+      );
       expect(res.status).toBe(200);
       const body = await res.json<{
         repos: {
@@ -634,7 +292,7 @@ describe("GET /api/graph", () => {
       expect(body.repos).toEqual(
         expect.arrayContaining([
           {
-            repo: "Roxabi/roxabi-live",
+            repo: GRAPH_REPO,
             archived: false,
             issue_count: 2,
             last_updated_at: "2026-06-21T08:00:00Z",
@@ -658,189 +316,94 @@ describe("GET /api/graph", () => {
 
   describe("SQL shape assertions", () => {
     it("issues SELECT uses JSON_EXTRACT(payload,'$.title') AS title", async () => {
-      // Arrange
-      const { env, capturedSqls } = makeGraphEnvWithCapture([], [], [], []);
-      // Act — empty issues → resolveVisibleRepos returns [] → short-circuit.
-      // Use a non-empty issue to ensure issues query fires.
-      const issue = {
-        key: "Roxabi/roxabi-live#1",
-        repo: "Roxabi/roxabi-live",
-        number: 1,
-        title: null,
-        state: "open",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      };
-      const { env: env2, capturedSqls: sqls2 } = makeGraphEnvWithCapture([], [], [issue], []);
+      const { env: env2, capturedSqls: sqls2 } = makeGraphEnvWithCapture(
+        [],
+        [],
+        [graphIssue(1)],
+        [],
+      );
       await testApp.request("/api/graph", {}, env2);
-      // Assert — the issues query must project title via JSON_EXTRACT.
-      // Use "json_extract" as the finder key so labels/edges subqueries (which also
-      // contain "from issues") don't accidentally win the find().
       const issuesSql = sqls2.find((s) => s.toLowerCase().includes("json_extract"));
       expect(issuesSql).toContain("JSON_EXTRACT(payload,'$.title') AS title");
-      void env; // suppress unused warning
-      void capturedSqls;
     });
   });
 
   describe("status query filter", () => {
-    const repo = "Roxabi/roxabi-live";
     const issues = [
-      {
-        key: `${repo}#1`,
-        repo,
-        number: 1,
-        title: "Blocker",
-        state: "open",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      },
-      {
-        key: `${repo}#2`,
-        repo,
-        number: 2,
-        title: "Blocked",
-        state: "open",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      },
-      {
-        key: `${repo}#3`,
-        repo,
-        number: 3,
-        title: "Done",
-        state: "closed",
-        url: null,
-        milestone: null,
-        lane: null,
-        priority: null,
-        size: null,
-        status: null,
-        is_stub: 0,
-        has_active_branch: 0,
-      },
+      graphIssue(1, { title: "Blocker" }),
+      graphIssue(2, { title: "Blocked" }),
+      graphIssue(3, { title: "Done", state: "closed" }),
     ];
     const edges = [
-      { src_key: `${repo}#1`, dst_key: `${repo}#2`, kind: "blocks" },
-      { src_key: `${repo}#1`, dst_key: `${repo}#3`, kind: "parent" },
+      { src_key: `${GRAPH_REPO}#1`, dst_key: `${GRAPH_REPO}#2`, kind: "blocks" },
+      { src_key: `${GRAPH_REPO}#1`, dst_key: `${GRAPH_REPO}#3`, kind: "parent" },
     ];
 
     it("returns only ready and blocked nodes when status=ready,blocked", async () => {
-      const env = makeGraphEnv([], [], issues, edges);
-      const res = await testApp.request("/api/graph?status=ready,blocked", {}, env);
-      expect(res.status).toBe(200);
-      const body = await res.json<{ nodes: { key: string }[] }>();
-      expect(body.nodes.map((n) => n.key).sort()).toEqual([`${repo}#1`, `${repo}#2`]);
-    });
-
-    it("includes done child under open epic when closed_under_open_epic=1", async () => {
-      const env = makeGraphEnv([], [], issues, edges);
       const res = await testApp.request(
-        "/api/graph?status=ready,blocked&closed_under_open_epic=1",
+        "/api/graph?status=ready,blocked",
         {},
-        env,
+        makeGraphEnv([], [], issues, edges),
       );
       expect(res.status).toBe(200);
       const body = await res.json<{ nodes: { key: string }[] }>();
-      expect(body.nodes.map((n) => n.key).sort()).toEqual([`${repo}#1`, `${repo}#2`, `${repo}#3`]);
+      expect(body.nodes.map((n) => n.key).sort()).toEqual([`${GRAPH_REPO}#1`, `${GRAPH_REPO}#2`]);
+    });
+
+    it("includes done child under open epic when closed_under_open_epic=1", async () => {
+      const res = await testApp.request(
+        "/api/graph?status=ready,blocked&closed_under_open_epic=1",
+        {},
+        makeGraphEnv([], [], issues, edges),
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json<{ nodes: { key: string }[] }>();
+      expect(body.nodes.map((n) => n.key).sort()).toEqual([
+        `${GRAPH_REPO}#1`,
+        `${GRAPH_REPO}#2`,
+        `${GRAPH_REPO}#3`,
+      ]);
     });
 
     it("omits status param returns all nodes", async () => {
-      const env = makeGraphEnv([], [], issues, edges);
-      const res = await testApp.request("/api/graph", {}, env);
+      const res = await testApp.request("/api/graph", {}, makeGraphEnv([], [], issues, edges));
       const body = await res.json<{ nodes: { key: string }[] }>();
       expect(body.nodes).toHaveLength(3);
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // Tenant-scoped visibility tests (#148)
-  // ---------------------------------------------------------------------------
-
   describe("tenant scoping", () => {
-    const visibleRepo = "Roxabi/roxabi-live";
     const hiddenRepo = "Roxabi/private-repo";
 
-    const makeIssue = (repo: string, n: number) => ({
-      key: `${repo}#${n}`,
-      repo,
-      number: n,
-      title: null,
-      state: "open",
-      url: null,
-      milestone: null,
-      lane: null,
-      priority: null,
-      size: null,
-      status: null,
-      is_stub: 0,
-      has_active_branch: 0,
-    });
-
     it("nodes scoped — issue in non-visible repo is absent from nodes", async () => {
-      // The hidden repo issue is in the issues fixture but NOT in tenant_repo_access.
-      // resolveVisibleRepos returns only [visibleRepo].
-      // graphRoute WHERE repo IN (?) scopes the issues query — DB stub simulates
-      // the filter by only returning the visible issue.
-      const visibleIssue = makeIssue(visibleRepo, 1);
-      // overrideVisible = only visibleRepo; issues stub returns only visibleIssue
-      const env = makeGraphEnv([], [], [visibleIssue], [], [], [visibleRepo]);
-      const res = await testApp.request("/api/graph", {}, env);
+      const visibleIssue = graphIssue(1);
+      const res = await testApp.request(
+        "/api/graph",
+        {},
+        makeGraphEnv([], [], [visibleIssue], [], [], [GRAPH_REPO]),
+      );
       expect(res.status).toBe(200);
       const body = await res.json<{ nodes: { key: string }[] }>();
       const keys = body.nodes.map((n) => n.key);
-      expect(keys).toContain(`${visibleRepo}#1`);
+      expect(keys).toContain(`${GRAPH_REPO}#1`);
       expect(keys).not.toContain(`${hiddenRepo}#99`);
     });
 
     it("edges scoped — edge with endpoint in non-visible repo is dropped", async () => {
-      // Both endpoints of the edge must be in visible repos.
-      // Our stub simulates the SQL filter: only edges where both endpoints are visible.
-      const visibleIssue = makeIssue(visibleRepo, 1);
-      const visibleEdge = {
-        src_key: `${visibleRepo}#2`,
-        dst_key: `${visibleRepo}#1`,
-        kind: "blocks",
-      };
-      // dangling edge has dst in hidden repo — DB stub does NOT return it
-      const env = makeGraphEnv(
-        [],
-        [],
-        [visibleIssue],
-        [visibleEdge], // only the fully-visible edge is returned by issues-scoped query
-        [],
-        [visibleRepo],
+      const visibleIssue = graphIssue(1);
+      const visibleEdge = { src_key: `${GRAPH_REPO}#2`, dst_key: visibleIssue.key, kind: "blocks" };
+      const res = await testApp.request(
+        "/api/graph",
+        {},
+        makeGraphEnv([], [], [visibleIssue], [visibleEdge], [], [GRAPH_REPO]),
       );
-      const res = await testApp.request("/api/graph", {}, env);
       expect(res.status).toBe(200);
-      const body = await res.json<{
-        edges: { src: string; dst: string; kind: string }[];
-      }>();
-      // Visible edge is present
+      const body = await res.json<{ edges: { src: string; dst: string; kind: string }[] }>();
       expect(body.edges).toContainEqual({
-        src: `${visibleRepo}#2`,
-        dst: `${visibleRepo}#1`,
+        src: `${GRAPH_REPO}#2`,
+        dst: visibleIssue.key,
         kind: "blocks",
       });
-      // No edge touching hidden repo
       const touchesHidden = body.edges.some(
         (e) => e.src.startsWith(hiddenRepo) || e.dst.startsWith(hiddenRepo),
       );
@@ -848,29 +411,26 @@ describe("GET /api/graph", () => {
     });
 
     it("repos scoped — repos[] lists only visible repos", async () => {
-      const repoRows = [{ repo: visibleRepo, archived: 0 }];
-      // overrideVisible only includes visibleRepo; repos stub returns only that row
-      const env = makeGraphEnv([], [], [], [], repoRows, [visibleRepo]);
-      const res = await testApp.request("/api/graph", {}, env);
+      const repoRows = [{ repo: GRAPH_REPO, archived: 0 }];
+      const res = await testApp.request(
+        "/api/graph",
+        {},
+        makeGraphEnv([], [], [], [], repoRows, [GRAPH_REPO]),
+      );
       expect(res.status).toBe(200);
-      const body = await res.json<{
-        repos: { repo: string; archived: boolean }[];
-      }>();
-      expect(body.repos.map((r) => r.repo)).toEqual([visibleRepo]);
+      const body = await res.json<{ repos: { repo: string; archived: boolean }[] }>();
+      expect(body.repos.map((r) => r.repo)).toEqual([GRAPH_REPO]);
       expect(body.repos.map((r) => r.repo)).not.toContain(hiddenRepo);
     });
 
     it("scopes the issues/edges/repos reads to the visible set via `repo IN` (#148)", async () => {
-      // Non-empty issues fixture → visible set non-empty → the data reads fire.
-      // This is the discriminating guard: strip the `repo IN` clauses from graphRoute
-      // and these assertions fail — i.e. the test actually exercises the scoping.
-      const issue = makeIssue(visibleRepo, 1);
+      const issue = graphIssue(1);
       const { env, capturedSqls } = makeGraphEnvWithCapture(
         [],
         [],
         [issue],
         [],
-        [{ repo: visibleRepo, archived: 0 }],
+        [{ repo: GRAPH_REPO, archived: 0 }],
       );
       await testApp.request("/api/graph", {}, env);
 
@@ -880,20 +440,16 @@ describe("GET /api/graph", () => {
       expect(issuesSql).toBeDefined();
       expect(edgesSql).toBeDefined();
       expect(reposSql).toBeDefined();
-      // Without these filters the graph would expose issues/edges/repos from tenants
-      // the caller can't see.
       expect(issuesSql).toContain("repo IN");
       expect(edgesSql).toContain("repo IN");
       expect(reposSql).toContain("repo IN");
     });
 
     it("empty visible set short-circuits to {nodes:[], edges:[], repos:[]} and issues NO data reads (#148)", async () => {
-      // issues fixture empty → tenant_repo_access empty → resolveVisibleRepos returns []
       const { env, capturedSqls } = makeGraphEnvWithCapture([], [], [], [], []);
       const res = await testApp.request("/api/graph", {}, env);
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ nodes: [], edges: [], repos: [] });
-      // The short-circuit must run BEFORE any data read — drop it and these fire.
       expect(capturedSqls.some((s) => s.includes("has_active_branch"))).toBe(false);
       expect(capturedSqls.some((s) => s.includes("FROM edges"))).toBe(false);
       expect(capturedSqls.some((s) => s.includes("FROM repos"))).toBe(false);
