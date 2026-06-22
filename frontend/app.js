@@ -391,6 +391,10 @@ function sortReposByActivity(repos, nodes) {
   return [...repos].sort((a, b) => compareReposByActivity(a, b, nodes));
 }
 
+function repoVisibilityBadge(isPrivate) {
+  return isPrivate ? "private" : "public";
+}
+
 function populateFilters(repoData) {
   const nodes = state.nodes;
 
@@ -406,11 +410,13 @@ function populateFilters(repoData) {
     value: r.repo,
     label: r.repo.split("/")[1] || r.repo,
     tone: repoTone(r.repo),
+    badge: repoVisibilityBadge(Boolean(r.is_private)),
   }));
   const archItems = archived.map((r) => ({
     value: r.repo,
     label: r.repo.split("/")[1] || r.repo,
     tone: repoTone(r.repo),
+    badge: repoVisibilityBadge(Boolean(r.is_private)),
     archived: true,
   }));
   const repoItems = archItems.length
@@ -524,7 +530,7 @@ async function loadAndRender(zkOptIn, githubLogin, zkAccountKeyEnabled = false) 
     repoData = data.repos;
   } else {
     const derived = [...new Set(nodes.map((n) => n.repo))].sort();
-    repoData = derived.map((repo) => ({ repo, archived: false }));
+    repoData = derived.map((repo) => ({ repo, archived: false, is_private: true }));
   }
   populateFilters(repoData);
   render();

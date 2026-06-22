@@ -10,7 +10,7 @@
  *   (b) open pr_state — build Map<issueKey, {has_reviewed_label:number}[]>
  *   (c) issues — one row per issue
  *   (d) edges — all src_key/dst_key/kind rows
- *   (e) repos — registry rows + per-repo issue_count / last_updated_at (sort in UI)
+ *   (e) repos — registry rows + is_private + per-repo issue_count / last_updated_at
  */
 
 import type { Context } from "hono";
@@ -248,19 +248,27 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
     edges = edges.filter((e) => keys.has(e.src) && keys.has(e.dst));
   }
 
-  // (e) repos — registry + activity stats for filter dropdown ordering
+  // (e) repos — registry + visibility + activity stats for filter dropdown ordering
   interface RepoRow {
     repo: string;
     archived: number;
+    is_private: number;
   }
   interface RepoActivityRow {
     repo: string;
     issue_count: number;
     last_updated_at: string | null;
   }
+  const tenantId = session?.tenantId ?? null;
   const [repoRows, activityRows] = await Promise.all([
-    c.env.DB.prepare(`SELECT repo, archived FROM repos WHERE repo IN (${ph})`)
-      .bind(...visible)
+    c.env.DB.prepare(
+      `SELECT r.repo, r.archived, COALESCE(tra.is_private, 1) AS is_private
+       FROM repos r
+       LEFT JOIN tenant_repo_access tra
+         ON tra.tenant_id = ? AND tra.repo = r.repo
+       WHERE r.repo IN (${ph})`,
+    )
+      .bind(tenantId, ...visible)
       .all<RepoRow>(),
     c.env.DB.prepare(
       `SELECT repo, COUNT(*) AS issue_count, MAX(updated_at) AS last_updated_at
@@ -275,6 +283,7 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
     return {
       repo: r.repo,
       archived: Boolean(r.archived),
+      is_private: Number(r.is_private) !== 0,
       issue_count: activity?.issue_count ?? 0,
       last_updated_at: activity?.last_updated_at ?? null,
     };

@@ -285,6 +285,7 @@ describe("GET /api/graph", () => {
         repos: {
           repo: string;
           archived: boolean;
+          is_private: boolean;
           issue_count: number;
           last_updated_at: string | null;
         }[];
@@ -294,18 +295,67 @@ describe("GET /api/graph", () => {
           {
             repo: GRAPH_REPO,
             archived: false,
+            is_private: false,
             issue_count: 2,
             last_updated_at: "2026-06-21T08:00:00Z",
           },
           {
             repo: "Roxabi/roxabi-factory",
             archived: false,
+            is_private: false,
             issue_count: 0,
             last_updated_at: null,
           },
           {
             repo: "Roxabi/roxabi-vault",
             archived: true,
+            is_private: false,
+            issue_count: 0,
+            last_updated_at: null,
+          },
+        ]),
+      );
+    });
+
+    it("returns is_private from tenant_repo_access", async () => {
+      const repoRows = [
+        { repo: GRAPH_REPO, archived: 0 },
+        { repo: "Roxabi/secret", archived: 0 },
+      ];
+      const issues = [graphIssue(1)];
+      const visibleList = repoRows.map((r) => r.repo);
+      const res = await testApp.request(
+        "/api/graph",
+        {},
+        makeGraphEnv(
+          [],
+          [],
+          issues,
+          [],
+          repoRows,
+          visibleList,
+          false,
+          [],
+          [
+            { repo: GRAPH_REPO, is_private: 0 },
+            { repo: "Roxabi/secret", is_private: 1 },
+          ],
+        ),
+      );
+      const body = await res.json<{ repos: { repo: string; is_private: boolean }[] }>();
+      expect(body.repos).toEqual(
+        expect.arrayContaining([
+          {
+            repo: GRAPH_REPO,
+            archived: false,
+            is_private: false,
+            issue_count: 1,
+            last_updated_at: null,
+          },
+          {
+            repo: "Roxabi/secret",
+            archived: false,
+            is_private: true,
             issue_count: 0,
             last_updated_at: null,
           },

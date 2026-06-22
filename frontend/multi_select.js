@@ -156,21 +156,35 @@ export class MultiSelect {
       const span = document.createElement("span");
       span.textContent = item.label;
 
-      if (item.sublabel) {
+      lbl.append(cb, span);
+
+      const meta = document.createElement("span");
+      meta.className = "ms-meta";
+      let hasMeta = false;
+
+      if (item.badge) {
+        const badge = document.createElement("span");
+        badge.className = `ms-badge ms-badge-${item.badge}`;
+        badge.textContent = item.badge;
+        meta.appendChild(badge);
+        hasMeta = true;
+      } else if (item.sublabel) {
         const sub = document.createElement("span");
         sub.className = "ms-sub";
         sub.textContent = item.sublabel;
-        lbl.append(cb, span, sub);
-      } else {
-        lbl.append(cb, span);
+        meta.appendChild(sub);
+        hasMeta = true;
       }
 
       if (item.archived) {
         const sub = document.createElement("span");
         sub.className = "ms-sub";
         sub.textContent = "archived";
-        lbl.appendChild(sub);
+        meta.appendChild(sub);
+        hasMeta = true;
       }
+
+      if (hasMeta) lbl.appendChild(meta);
 
       li.appendChild(lbl);
       ul.appendChild(li);
