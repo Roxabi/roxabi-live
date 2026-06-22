@@ -1,7 +1,7 @@
 // layout.js — Graph layout for v6 dep-graph
 // v5 engine: percentage coords, depth-based bands, configurable row/col grouping
 
-import { dimValue, prioritySortKey } from "./state.js";
+import { compareDimValues, dimDisplayLabel, dimValue } from "./state.js";
 
 // ── v5 positioning constants (match Python layout_graph.py) ──────────────────
 const LANE_X_START = 4.0;
@@ -13,40 +13,12 @@ const MAX_CELL_WIDTH_PCT = 4.0;
 const MAX_BAND_GAP_PX = 80;
 const MIN_CONTAINER_H = 320;
 
-const STATUS_ORDER = { ready: 0, blocked: 1, done: 2 };
-
 function rowKey(node, rowDim) {
   return dimValue(node, rowDim);
 }
 
 function colKey(node, colDim) {
   return dimValue(node, colDim);
-}
-
-function rowSortValue(rowVal, rowDim, nodes) {
-  if (rowDim === "none") return 0;
-  if (rowDim === "milestone") {
-    const node = nodes.find((n) => rowKey(n, rowDim) === rowVal);
-    return node?.milestone_sort_key ?? 9999;
-  }
-  if (rowDim === "priority") {
-    return prioritySortKey(rowVal === "None" ? null : rowVal);
-  }
-  if (rowDim === "status") {
-    return STATUS_ORDER[rowVal] ?? 99;
-  }
-  return rowVal;
-}
-
-function compareRowValues(a, b, rowDim, nodes) {
-  const sa = rowSortValue(a, rowDim, nodes);
-  const sb = rowSortValue(b, rowDim, nodes);
-  if (typeof sa === "number" && typeof sb === "number" && sa !== sb) return sa - sb;
-  return String(a).localeCompare(String(b));
-}
-
-function compareDimValues(a, b, dim, nodes) {
-  return compareRowValues(a, b, dim, nodes);
 }
 
 function computeGridSize(byRowDepth, colDim, colOrder) {
@@ -76,12 +48,6 @@ function rowSublabel(rowVal, rowDim, nodes) {
   const name = node?.milestone_name ?? null;
   if (!name || name === rowVal) return null;
   return name;
-}
-
-function shouldHideRowCode(rowVal, rowDim) {
-  if (rowDim === "none") return true;
-  if (rowDim === "milestone") return rowVal === "—" || rowVal === "(None)";
-  return false;
 }
 
 export function edgePath(x1, y1, x2, y2) {
@@ -170,7 +136,7 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
   const colOrder = [...colSet].sort((a, b) => compareDimValues(a, b, colDim, nodes));
 
   const rowSet = new Set(nodes.map((n) => rowKey(n, rowDim)));
-  const rowValues = [...rowSet].sort((a, b) => compareRowValues(a, b, rowDim, nodes));
+  const rowValues = [...rowSet].sort((a, b) => compareDimValues(a, b, rowDim, nodes));
 
   const blockersByDst = new Map();
   for (const e of edges) {
@@ -258,7 +224,7 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
       sortedBandKeys.push([row, depth]);
     }
   }
-  sortedBandKeys.sort((a, b) => compareRowValues(a[0], b[0], rowDim, nodes) || a[1] - b[1]);
+  sortedBandKeys.sort((a, b) => compareDimValues(a[0], b[0], rowDim, nodes) || a[1] - b[1]);
 
   const nBands = sortedBandKeys.length;
   const stepY = nBands > 1 ? (Y_BOT - Y_TOP) / (nBands - 1) : 0;
@@ -291,19 +257,20 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     const bot = Math.max(...ys) + stepY / 2;
     rowInfo.push({
       code: row,
+      label: dimDisplayLabel(row, rowDim),
       name: rowSublabel(row, rowDim, nodes),
       y: Math.max(top, 1.0),
       height: Math.min(bot, 99.0) - Math.max(top, 1.0),
-      hideCode: shouldHideRowCode(row, rowDim),
     });
   }
-  rowInfo.sort((a, b) => compareRowValues(a.code, b.code, rowDim, nodes));
+  rowInfo.sort((a, b) => compareDimValues(a.code, b.code, rowDim, nodes));
 
   const colInfo =
     colDim === "none"
       ? []
       : colOrder.map((code) => ({
           code,
+          label: dimDisplayLabel(code, colDim),
           x: xFromCell(colIdx(code), gridSize),
         }));
 

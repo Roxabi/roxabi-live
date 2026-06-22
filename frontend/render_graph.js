@@ -150,21 +150,15 @@ function renderMilestoneHeaders(container, milestoneInfo, usePercentage, contain
     row.style.top = metrics.top;
     row.style.height = metrics.height;
 
-    if (ms.hideCode) continue;
-    const isNoMs = ms.code === "-" || ms.code === "(None)";
-    if (!isNoMs) {
-      const code = document.createElement("div");
-      code.className = "gg-msrow-code";
-      code.textContent = ms.code;
-      row.appendChild(code);
-    }
+    const code = document.createElement("div");
+    code.className = "gg-msrow-code";
+    code.textContent = ms.label ?? ms.code;
+    row.appendChild(code);
 
-    // Show name, or "No milestone" for rows without milestone
-    const displayName = ms.name || (isNoMs ? "No milestone" : null);
-    if (displayName) {
+    if (ms.name && ms.name !== (ms.label ?? ms.code)) {
       const name = document.createElement("div");
       name.className = "gg-msrow-name";
-      name.textContent = displayName;
+      name.textContent = ms.name;
       row.appendChild(name);
     }
 
@@ -236,7 +230,7 @@ function renderColHeaders(container, colInfo, usePercentage) {
   for (const col of colInfo) {
     const el = document.createElement("div");
     el.className = "gg-cscol";
-    el.textContent = col.code;
+    el.textContent = col.label ?? col.code;
     el.style.left = usePercentage ? `${col.x.toFixed(2)}%` : `${col.x}px`;
     strip.appendChild(el);
   }

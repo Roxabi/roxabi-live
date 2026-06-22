@@ -235,23 +235,79 @@ export function prioritySortKey(p) {
 }
 
 // ─── Dim-value extraction ──────────────────────────────────────────────────
+export const EMPTY_DIM = "(None)";
+export const EMPTY_ASSIGNEE = "(Unassigned)";
+
+const EMPTY_DIM_ALIASES = new Set([EMPTY_DIM, "—", "None", "All", EMPTY_ASSIGNEE]);
+
+/** True when a pivot/graph bucket has no underlying field value. */
+export function isEmptyDimValue(val, dim) {
+  if (dim === "assignee") return val === EMPTY_ASSIGNEE;
+  if (dim === "none") return false;
+  return EMPTY_DIM_ALIASES.has(val);
+}
+
+/** Human label for row/column headers and filter chips. */
+export function dimDisplayLabel(val, dim) {
+  if (!isEmptyDimValue(val, dim)) return val;
+  const labels = {
+    milestone: "No milestone",
+    priority: "No priority",
+    lane: "No lane",
+    size: "No size",
+    repo: "No repo",
+    status: "No status",
+    assignee: "Unassigned",
+    parent: "No parent",
+  };
+  return labels[dim] ?? EMPTY_DIM;
+}
+
 export function dimValue(node, dim) {
   if (dim === "none") return "All";
   if (dim === "milestone") {
     const ms = parseMilestone(node);
-    return ms.code ?? "—";
+    return ms.code ?? EMPTY_DIM;
   }
-  if (dim === "priority") return node.priority ?? "None";
-  if (dim === "repo") return node.repo ?? "—";
-  if (dim === "lane") return node.lane ?? "—";
-  if (dim === "size") return node.size ?? "—";
-  if (dim === "status") return node._status ?? "—";
-  if (dim === "parent") return node._parent ?? "—";
+  if (dim === "priority") return node.priority ?? EMPTY_DIM;
+  if (dim === "repo") return node.repo ?? EMPTY_DIM;
+  if (dim === "lane") return node.lane ?? EMPTY_DIM;
+  if (dim === "size") return node.size ?? EMPTY_DIM;
+  if (dim === "status") return node._status ?? EMPTY_DIM;
+  if (dim === "parent") return node._parent ?? EMPTY_DIM;
   if (dim === "assignee") {
     const assignees = node.assignees ?? [];
-    return assignees.length ? assignees[0] : "(Unassigned)";
+    return assignees.length ? assignees[0] : EMPTY_ASSIGNEE;
   }
-  return "—";
+  return EMPTY_DIM;
+}
+
+/** Sort key for pivot/graph axes — empty buckets always come first. */
+export function dimSortKey(val, dim, nodes = []) {
+  if (dim === "none") return 0;
+  if (isEmptyDimValue(val, dim)) return -1;
+  if (dim === "milestone") {
+    const node = nodes.find((n) => dimValue(n, dim) === val);
+    return node?.milestone_sort_key ?? 9999;
+  }
+  if (dim === "priority") {
+    return prioritySortKey(val === EMPTY_DIM ? null : val);
+  }
+  if (dim === "status") {
+    const order = { ready: 0, blocked: 1, done: 2 };
+    return order[val] ?? 99;
+  }
+  return 0;
+}
+
+export function compareDimValues(a, b, dim, nodes = []) {
+  const aEmpty = isEmptyDimValue(a, dim);
+  const bEmpty = isEmptyDimValue(b, dim);
+  if (aEmpty !== bEmpty) return aEmpty ? -1 : 1;
+  const sa = dimSortKey(a, dim, nodes);
+  const sb = dimSortKey(b, dim, nodes);
+  if (typeof sa === "number" && typeof sb === "number" && sa !== sb) return sa - sb;
+  return String(a).localeCompare(String(b));
 }
 
 // ─── Filter application ───────────────────────────────────────────────────

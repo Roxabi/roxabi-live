@@ -1,6 +1,14 @@
 import { initHover } from "./hover.js";
 // pivot.js — pivot-matrix (Table view) renderer with hover-chain + epic grouping
-import { buildEdgeLookup, dimValue, filteredNodes, parseMilestone, state } from "./state.js";
+import {
+  buildEdgeLookup,
+  compareDimValues,
+  dimDisplayLabel,
+  dimValue,
+  filteredNodes,
+  parseMilestone,
+  state,
+} from "./state.js";
 import { repoTone } from "./tone.js";
 
 // ─── Lane tone mapping (kept for lane column/group headers) ──────────────────
@@ -233,38 +241,19 @@ function buildCell(cellNodes, edgeLookup, opts) {
 
 // ─── Pivot sort helpers ───────────────────────────────────────────────────────
 function sortRowValues(values, dim) {
-  if (dim === "milestone") {
-    return values.sort((a, b) => {
-      const ka = state.nodes.find((n) => dimValue(n, "milestone") === a);
-      const kb = state.nodes.find((n) => dimValue(n, "milestone") === b);
-      const sa = ka ? parseMilestone(ka).sortKey : 9999;
-      const sb = kb ? parseMilestone(kb).sortKey : 9999;
-      if (a === "—") return 1;
-      if (b === "—") return -1;
-      return sa - sb;
-    });
-  }
-  if (dim === "priority") {
-    const order = { P0: 0, P1: 1, P2: 2, P3: 3, None: 4 };
-    return values.sort((a, b) => (order[a] ?? 99) - (order[b] ?? 99));
-  }
-  return values.sort((a, b) => {
-    if (a === "—" || a === "All") return 1;
-    if (b === "—" || b === "All") return -1;
-    return a.localeCompare(b);
-  });
+  return values.sort((a, b) => compareDimValues(a, b, dim, state.nodes));
 }
 
-function msHeaderHTML(code) {
-  const node = state.nodes.find((n) => dimValue(n, "milestone") === code);
-  const ms = node ? parseMilestone(node) : { code, name: null };
+function msHeaderHTML(code, dim = "milestone") {
+  const node = state.nodes.find((n) => dimValue(n, dim) === code);
+  const ms = dim === "milestone" && node ? parseMilestone(node) : { code, name: null };
   const div = document.createElement("div");
   div.className = "ms-row-header";
   const codeEl = document.createElement("div");
   codeEl.className = "ms-row-code";
-  codeEl.textContent = ms.code || "—";
+  codeEl.textContent = dimDisplayLabel(code, dim);
   div.appendChild(codeEl);
-  if (ms.name) {
+  if (ms.name && ms.name !== dimDisplayLabel(code, dim)) {
     const nameEl = document.createElement("div");
     nameEl.className = "ms-row-name";
     nameEl.textContent = ms.name;
@@ -349,7 +338,7 @@ export function renderTable(container) {
     const label = document.createElement("div");
     label.className = "col-label";
     if (tone) label.dataset.tone = tone;
-    label.textContent = cv;
+    label.textContent = dimDisplayLabel(cv, pivotCol);
     colHeader.appendChild(label);
     gridHead.appendChild(colHeader);
   }
@@ -363,11 +352,11 @@ export function renderTable(container) {
     const rowHeader = document.createElement("div");
     rowHeader.className = "row-header";
     if (pivotRow === "milestone") {
-      rowHeader.appendChild(msHeaderHTML(rv));
+      rowHeader.appendChild(msHeaderHTML(rv, pivotRow));
     } else {
       const codeEl = document.createElement("div");
       codeEl.className = "ms-code";
-      codeEl.textContent = rv;
+      codeEl.textContent = dimDisplayLabel(rv, pivotRow);
       rowHeader.appendChild(codeEl);
     }
     gridRow.appendChild(rowHeader);

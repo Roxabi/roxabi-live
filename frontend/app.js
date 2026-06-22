@@ -425,7 +425,11 @@ function populateFilters(repoData) {
     if (!msMap.has(key)) msMap.set(key, ms.sortKey ?? 9999);
   }
   const msItems = [...msMap.entries()]
-    .sort((a, b) => a[1] - b[1])
+    .sort((a, b) => {
+      if (a[0] === "(None)") return -1;
+      if (b[0] === "(None)") return 1;
+      return a[1] - b[1];
+    })
     .map(([v]) => {
       const node = nodes.find((n) => (n.milestone_code ?? "(None)") === v);
       const name = node?.milestone_name ?? null;
@@ -434,7 +438,7 @@ function populateFilters(repoData) {
   msMilestone.setItems(msItems, state.milestone);
 
   msPriority.setItems(
-    ["P0", "P1", "P2", "P3", "(None)"].map((v) => ({
+    ["(None)", "P0", "P1", "P2", "P3"].map((v) => ({
       value: v,
       label: v,
       sublabel: PRIORITY_NAMES[v],
