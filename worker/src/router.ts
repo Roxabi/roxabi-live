@@ -107,8 +107,10 @@ app.get("/health", async (c) => {
       } = await import("./sync/bootstrap");
       const { isHalted } = await import("./sync/control");
       const { maybeRefreshTenantDiscovery } = await import("./sync/discovery-refresh");
+      const { maybePruneDeadAccessibleRepos } = await import("./sync/dead-repo-prune");
       if (!(await isBootstrapComplete(c.env.DB))) {
         await maybeRefreshTenantDiscovery(c.env);
+        await maybePruneDeadAccessibleRepos(c.env);
       }
       const progress = await getRepoSyncDiagnostics(c.env.DB);
       const unsynced = await listUnsyncedRepos(c.env.DB);
