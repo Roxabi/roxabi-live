@@ -35,6 +35,7 @@ import {
 } from "./control";
 import { closedHopPass, edgesForRepo, flushEdges } from "./edges";
 import type { EdgeData } from "./label-vocab";
+import { handleRepoSyncFailure } from "./repo-access-prune";
 import { discoverTenants } from "./tenants";
 import { type RunSyncOptions, selectWindowedRepos } from "./window";
 
@@ -284,8 +285,7 @@ export async function runSync(env: Env, opts?: RunSyncOptions): Promise<void> {
         // new issues without blocked-by links until the pass finished.
         await flushEdges(db, edgesForRepo(collectedEdges, repo));
       } catch (err) {
-        console.error(`[sync] skipping ${repo}:`, err);
-        skippedCount++;
+        if (!(await handleRepoSyncFailure(db, repo, err))) skippedCount++;
       }
     }
     reposSynced = windowedRepos.length - skippedCount;

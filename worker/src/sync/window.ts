@@ -3,6 +3,9 @@
  */
 
 import { BOOTSTRAP_WINDOW, WINDOW } from "./constants";
+import { ensureGlobalSyncControlSeeded } from "./control";
+
+const BOOTSTRAP_CURSOR_KEY = "bootstrap_cursor";
 
 export interface RunSyncOptions {
   /** Bootstrap: sync only repos missing sync_state (up to WINDOW), skip slot rotation. */
@@ -36,11 +39,32 @@ export async function selectWindowedRepos(
 ): Promise<{ windowedRepos: string[]; slot: number; empty: boolean }> {
   if (opts?.prioritizeUnsynced) {
     const unsynced = await listUnsyncedRepos(db, allRepos);
-    const windowedRepos = unsynced.slice(0, BOOTSTRAP_WINDOW);
+    if (unsynced.length === 0) {
+      return { windowedRepos: [], slot: 0, empty: true };
+    }
+    // Round-robin: BOOTSTRAP_WINDOW=1 used to always retry unsynced[0] (e.g. a deleted
+    // repo that GraphQL rejects), so the other unsynced repos were never attempted.
+    await ensureGlobalSyncControlSeeded(db);
+    const cursorRow = await db
+      .prepare("SELECT value FROM sync_control WHERE key = ? AND tenant_id = 0")
+      .bind(BOOTSTRAP_CURSOR_KEY)
+      .first<{ value: string }>();
+    const cursor = Number.parseInt(cursorRow?.value ?? "0", 10) % unsynced.length;
+    const windowedRepos = unsynced.slice(cursor, cursor + BOOTSTRAP_WINDOW);
+    const nextCursor = (cursor + BOOTSTRAP_WINDOW) % unsynced.length;
+    const now = new Date().toISOString();
+    await db
+      .prepare(
+        `INSERT INTO sync_control (tenant_id, key, value, updated_at)
+         VALUES (0, ?, ?, ?)
+         ON CONFLICT(tenant_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .bind(BOOTSTRAP_CURSOR_KEY, String(nextCursor), now)
+      .run();
     console.log(
-      `[sync] bootstrap unsynced=${unsynced.length} syncing=${windowedRepos.length}/${allRepos.length}`,
+      `[sync] bootstrap unsynced=${unsynced.length} cursor=${cursor} syncing=${windowedRepos.join(",")}`,
     );
-    return { windowedRepos, slot: 0, empty: windowedRepos.length === 0 };
+    return { windowedRepos, slot: 0, empty: false };
   }
 
   const slotRow = await db
