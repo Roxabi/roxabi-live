@@ -4,6 +4,7 @@ import { maybePruneDeadAccessibleRepos } from "./dead-repo-prune";
 
 vi.mock("../auth/installToken", () => ({
   getInstallationToken: vi.fn().mockResolvedValue("ghs_test"),
+  listInstallationRepos: vi.fn().mockResolvedValue([{ repo: "Roxabi/gone", isPrivate: false }]),
 }));
 
 vi.mock("./bootstrap", () => ({
@@ -15,7 +16,7 @@ vi.mock("./repo-probe", () => ({
   isRepoResolvable: vi.fn().mockResolvedValue(false),
 }));
 
-import { getInstallationToken } from "../auth/installToken";
+import { getInstallationToken, listInstallationRepos } from "../auth/installToken";
 import { isBootstrapComplete, listUnsyncedRepos } from "./bootstrap";
 import { isRepoResolvable } from "./repo-probe";
 
@@ -24,6 +25,7 @@ afterEach(() => {
   vi.mocked(isBootstrapComplete).mockResolvedValue(false);
   vi.mocked(listUnsyncedRepos).mockResolvedValue(["Roxabi/gone"]);
   vi.mocked(getInstallationToken).mockResolvedValue("ghs_test");
+  vi.mocked(listInstallationRepos).mockResolvedValue([{ repo: "Roxabi/gone", isPrivate: false }]);
   vi.mocked(isRepoResolvable).mockResolvedValue(false);
 });
 

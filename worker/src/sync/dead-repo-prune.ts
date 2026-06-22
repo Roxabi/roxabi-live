@@ -3,7 +3,7 @@
  * Runs on /health so a single probe can unblock bootstrap without a full sync pass.
  */
 
-import { getInstallationToken } from "../auth/installToken";
+import { getInstallationToken, listInstallationRepos } from "../auth/installToken";
 import type { Env } from "../types";
 import { isBootstrapComplete, listUnsyncedRepos } from "./bootstrap";
 import { ensureGlobalSyncControlSeeded } from "./control";
@@ -47,14 +47,15 @@ export async function maybePruneDeadAccessibleRepos(env: Env): Promise<number> {
     return 0;
   }
 
+  const listed = await listInstallationRepos(token);
+  const privateByRepo = new Map(listed.map((r) => [r.repo, r.isPrivate]));
+
   let pruned = 0;
   for (const repo of unsynced) {
     try {
-      const access = await db
-        .prepare("SELECT is_private FROM tenant_repo_access WHERE repo = ? LIMIT 1")
-        .bind(repo)
-        .first<{ is_private: number }>();
-      if (await isRepoResolvable(token, repo, { isPrivate: access?.is_private === 1 })) continue;
+      // Installation API is authoritative — D1 may still carry fail-closed is_private=1.
+      const isPrivate = privateByRepo.get(repo) ?? true;
+      if (await isRepoResolvable(token, repo, { isPrivate })) continue;
       await pruneInaccessibleRepo(db, repo);
       pruned++;
     } catch (err) {
