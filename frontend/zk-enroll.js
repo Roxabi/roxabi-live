@@ -608,6 +608,7 @@ export async function requireZkEnrollmentGate(me, githubLogin) {
 
   if (!isZkUnlocked()) {
     await ensureZkUnlocked(githubLogin);
+    if (!isZkUnlocked()) return false;
     return true;
   }
 

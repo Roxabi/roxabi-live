@@ -25,6 +25,7 @@ import {
   getGithubUserToken,
   zkLoginUrl,
 } from "./zk-github.js";
+import { setZkSessionReadyHandler } from "./zk-session.js";
 import {
   applyZkDecryption,
   clearZkMigrationIncomplete,
@@ -513,6 +514,20 @@ async function loadGraphData() {
 let sessionZkOptIn = false;
 let sessionZkAccountKeyEnabled = false;
 let sessionGithubLogin = "";
+
+/** Re-decrypt titles when ZK unlock completes after a locked render (BFCache, poll race). */
+async function refreshZkTitles() {
+  if (!sessionZkOptIn || !sessionGithubLogin || !state.nodes?.length) return;
+  await applyZkDecryption(state.nodes, sessionGithubLogin, {
+    accountKeyMode: sessionZkAccountKeyEnabled,
+  });
+  state.nodesByKey = new Map(state.nodes.map((n) => [n.key, n]));
+  render();
+}
+
+setZkSessionReadyHandler(() => {
+  void refreshZkTitles();
+});
 
 async function loadAndRender(zkOptIn, githubLogin, zkAccountKeyEnabled = false) {
   const data = await loadGraphData();

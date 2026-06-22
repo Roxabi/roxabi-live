@@ -6,6 +6,7 @@ const {
   isZkUnlocked,
   setZkPageRestoreHandler,
   setZkAutoLockHandler,
+  setZkSessionReadyHandler,
   wirePageHideLock,
   wireIdleLock,
 } = await import("./zk-session.js");
@@ -41,6 +42,29 @@ describe("wirePageHideLock BFCache restore", () => {
     window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
 
     expect(restoreHandler).not.toHaveBeenCalled();
+  });
+});
+
+describe("setZkSessionReadyHandler", () => {
+  afterEach(() => {
+    clearZkSession();
+    setZkSessionReadyHandler(null);
+  });
+
+  it("invokes handler when session is established", () => {
+    const onReady = vi.fn();
+    setZkSessionReadyHandler(onReady);
+    setZkSession({}, "fp12345678");
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not invoke handler on clearZkSession", () => {
+    const onReady = vi.fn();
+    setZkSessionReadyHandler(onReady);
+    setZkSession({}, "fp12345678");
+    onReady.mockClear();
+    clearZkSession();
+    expect(onReady).not.toHaveBeenCalled();
   });
 });
 
