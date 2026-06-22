@@ -113,8 +113,6 @@ function renderNodes(container, nodes, positions, usePercentage) {
   }
 }
 
-const COL_HEADER_H = 26;
-
 // ── Render milestone row headers (v5 layout only) ─────────────────────────────
 function msRowMetrics(ms, index, usePercentage, wrapHeight, stageOffset, stageHeight, isLast) {
   if (usePercentage) {
@@ -235,26 +233,9 @@ function renderEdges(svgContainer, nodes, edges, positions, usePercentage) {
   }
 }
 
-function renderColHeaders(container, colInfo, usePercentage) {
-  if (!colInfo?.length) return null;
-  const strip = document.createElement("div");
-  strip.className = "gg-cscol-strip";
-  for (const col of colInfo) {
-    const el = document.createElement("div");
-    el.className = "gg-cscol";
-    const text = col.label ?? col.code;
-    el.textContent = text;
-    if (col.code && text !== col.code) el.title = col.code;
-    el.style.left = usePercentage ? `${col.x.toFixed(2)}%` : `${col.x}px`;
-    strip.appendChild(el);
-  }
-  container.appendChild(strip);
-  return strip;
-}
-
 // ── Main render function ──────────────────────────────────────────────────────
 export function renderGraph(container, nodes, edges, layoutResult) {
-  const { positions, milestoneInfo, colInfo, width, height, usePercentage } = layoutResult;
+  const { positions, milestoneInfo, width, height, usePercentage } = layoutResult;
 
   container.innerHTML = "";
 
@@ -266,9 +247,9 @@ export function renderGraph(container, nodes, edges, layoutResult) {
   wrap.setAttribute("role", "img");
   wrap.setAttribute("aria-label", "Dependency graph");
 
-  const stageOffset = colInfo?.length ? COL_HEADER_H : 0;
+  const stageOffset = 0;
 
-  // Row headers in left gutter — Y aligned with node stage below column strip
+  // Row headers in left gutter — Y aligned with node stage
   if (milestoneInfo && milestoneInfo.length > 0) {
     const milestoneRows = renderMilestoneHeaders(
       wrap,
@@ -280,11 +261,9 @@ export function renderGraph(container, nodes, edges, layoutResult) {
     renderMilestoneSeparators(wrap, milestoneRows, usePercentage, height);
   }
 
-  // Right pane: optional column headers + node stage (shared % coordinate space)
+  // Right pane: node stage (shared % coordinate space)
   const rightPane = document.createElement("div");
   rightPane.className = "graph-right";
-
-  renderColHeaders(rightPane, colInfo, usePercentage);
 
   const stage = document.createElement("div");
   stage.className = "graph-stage";
