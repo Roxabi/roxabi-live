@@ -10,7 +10,7 @@
  *   (b) open pr_state — build Map<issueKey, {has_reviewed_label:number}[]>
  *   (c) issues — one row per issue
  *   (d) edges — all src_key/dst_key/kind rows
- *   (e) repos — live first (archived=0), then archived (archived=1), both alpha
+ *   (e) repos — registry rows + per-repo issue_count / last_updated_at (sort in UI)
  */
 
 import type { Context } from "hono";
@@ -235,20 +235,37 @@ export const graphRoute = async (c: Context<AuthEnv>) => {
     edges = edges.filter((e) => keys.has(e.src) && keys.has(e.dst));
   }
 
-  // (e) repos — live first (archived=0), then archived (archived=1), both alpha
+  // (e) repos — registry + activity stats for filter dropdown ordering
   interface RepoRow {
     repo: string;
     archived: number;
   }
-  const repoRows = await c.env.DB.prepare(
-    `SELECT repo, archived FROM repos WHERE repo IN (${ph}) ORDER BY archived ASC, repo ASC`,
-  )
-    .bind(...visible)
-    .all<RepoRow>();
-  const repos = (repoRows.results ?? []).map((r) => ({
-    repo: r.repo,
-    archived: Boolean(r.archived),
-  }));
+  interface RepoActivityRow {
+    repo: string;
+    issue_count: number;
+    last_updated_at: string | null;
+  }
+  const [repoRows, activityRows] = await Promise.all([
+    c.env.DB.prepare(`SELECT repo, archived FROM repos WHERE repo IN (${ph})`)
+      .bind(...visible)
+      .all<RepoRow>(),
+    c.env.DB.prepare(
+      `SELECT repo, COUNT(*) AS issue_count, MAX(updated_at) AS last_updated_at
+       FROM issues WHERE repo IN (${ph}) GROUP BY repo`,
+    )
+      .bind(...visible)
+      .all<RepoActivityRow>(),
+  ]);
+  const activityByRepo = new Map((activityRows.results ?? []).map((row) => [row.repo, row]));
+  const repos = (repoRows.results ?? []).map((r) => {
+    const activity = activityByRepo.get(r.repo);
+    return {
+      repo: r.repo,
+      archived: Boolean(r.archived),
+      issue_count: activity?.issue_count ?? 0,
+      last_updated_at: activity?.last_updated_at ?? null,
+    };
+  });
 
   return c.json({ nodes, edges, repos });
 };

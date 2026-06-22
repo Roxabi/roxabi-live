@@ -49,6 +49,25 @@ const testApp = makeTestApp();
  * visibleRepos is derived from the issues fixture (all unique repos treated as public).
  * Override `overrideVisible` to test a custom visibility set.
  */
+function aggregateRepoActivity(
+  issues: Array<{ repo: string; updated_at?: string | null }>,
+): FakeResult[] {
+  const byRepo = new Map<string, { issue_count: number; last_updated_at: string | null }>();
+  for (const issue of issues) {
+    const prev = byRepo.get(issue.repo);
+    const updatedAt = issue.updated_at ?? null;
+    if (!prev) {
+      byRepo.set(issue.repo, { issue_count: 1, last_updated_at: updatedAt });
+      continue;
+    }
+    prev.issue_count += 1;
+    if (updatedAt && (!prev.last_updated_at || updatedAt > prev.last_updated_at)) {
+      prev.last_updated_at = updatedAt;
+    }
+  }
+  return [...byRepo.entries()].map(([repo, stats]) => ({ repo, ...stats }));
+}
+
 function makeGraphEnv(
   labels: unknown[],
   prState: unknown[],
@@ -62,9 +81,13 @@ function makeGraphEnv(
   const visibleRepos = overrideVisible ?? [
     ...new Set((issues as Array<{ repo: string }>).map((i) => i.repo)),
   ];
+  const issueRows = issues as Array<{ repo: string; updated_at?: string | null }>;
 
-  const db = makeFakeDb((sql, args) =>
-    makeFakeStmt(
+  const db = makeFakeDb((sql, args) => {
+    if (sql.toLowerCase().includes("group by repo")) {
+      return makeFakeStmt(sql, args, aggregateRepoActivity(issueRows));
+    }
+    return makeFakeStmt(
       sql,
       args,
       dispatchByTable(sql, {
@@ -82,8 +105,8 @@ function makeGraphEnv(
         "from repos": repos as FakeResult[],
         "from issues": issues as FakeResult[],
       }),
-    ),
-  );
+    );
+  });
 
   return makeEnv(db);
 }
@@ -103,8 +126,12 @@ function makeGraphEnvWithCapture(
 
   const visibleRepos = [...new Set((issues as Array<{ repo: string }>).map((i) => i.repo))];
 
+  const issueRows = issues as Array<{ repo: string; updated_at?: string | null }>;
   const { db } = captureDb((sql, _args) => {
     capturedSqls.push(sql);
+    if (sql.toLowerCase().includes("group by repo")) {
+      return aggregateRepoActivity(issueRows);
+    }
     return dispatchByTable(sql, {
       tenant_repo_access: visibleRepos.map((repo) => ({
         repo,
@@ -548,26 +575,80 @@ describe("GET /api/graph", () => {
   });
 
   describe("repos field", () => {
-    it("returns live repos before archived repos, both alpha within group", async () => {
+    it("returns repo registry rows with per-repo activity stats", async () => {
       const repoRows = [
         { repo: "Roxabi/roxabi-factory", archived: 0 },
         { repo: "Roxabi/roxabi-live", archived: 0 },
         { repo: "Roxabi/roxabi-vault", archived: 1 },
       ];
-      // SQL ORDER BY archived ASC, repo ASC — fixture already sorted correctly
-      // Use overrideVisible to inject visible repos (no issues needed)
+      const issues = [
+        {
+          key: "Roxabi/roxabi-live#1",
+          repo: "Roxabi/roxabi-live",
+          number: 1,
+          title: "Active",
+          state: "open",
+          url: null,
+          milestone: null,
+          lane: null,
+          priority: null,
+          size: null,
+          status: null,
+          is_stub: 0,
+          has_active_branch: 0,
+          updated_at: "2026-06-20T12:00:00Z",
+        },
+        {
+          key: "Roxabi/roxabi-live#2",
+          repo: "Roxabi/roxabi-live",
+          number: 2,
+          title: "Also active",
+          state: "open",
+          url: null,
+          milestone: null,
+          lane: null,
+          priority: null,
+          size: null,
+          status: null,
+          is_stub: 0,
+          has_active_branch: 0,
+          updated_at: "2026-06-21T08:00:00Z",
+        },
+      ];
       const visibleList = repoRows.map((r) => r.repo);
-      const env = makeGraphEnv([], [], [], [], repoRows, visibleList);
+      const env = makeGraphEnv([], [], issues, [], repoRows, visibleList);
       const res = await testApp.request("/api/graph", {}, env);
       expect(res.status).toBe(200);
       const body = await res.json<{
-        repos: { repo: string; archived: boolean }[];
+        repos: {
+          repo: string;
+          archived: boolean;
+          issue_count: number;
+          last_updated_at: string | null;
+        }[];
       }>();
-      expect(body.repos).toEqual([
-        { repo: "Roxabi/roxabi-factory", archived: false },
-        { repo: "Roxabi/roxabi-live", archived: false },
-        { repo: "Roxabi/roxabi-vault", archived: true },
-      ]);
+      expect(body.repos).toEqual(
+        expect.arrayContaining([
+          {
+            repo: "Roxabi/roxabi-live",
+            archived: false,
+            issue_count: 2,
+            last_updated_at: "2026-06-21T08:00:00Z",
+          },
+          {
+            repo: "Roxabi/roxabi-factory",
+            archived: false,
+            issue_count: 0,
+            last_updated_at: null,
+          },
+          {
+            repo: "Roxabi/roxabi-vault",
+            archived: true,
+            issue_count: 0,
+            last_updated_at: null,
+          },
+        ]),
+      );
     });
   });
 

@@ -322,12 +322,41 @@ function isStructuredLabel(lbl) {
   return false;
 }
 
-// repoData: Array<{ repo: string, archived: boolean }>
+// repoData: Array<{ repo, archived, issue_count?, last_updated_at? }>
+function repoActivityRank(repo, nodes) {
+  if (repo.issue_count != null) {
+    return { count: repo.issue_count, updatedAt: repo.last_updated_at ?? "" };
+  }
+  let count = 0;
+  for (const n of nodes) {
+    if (n.repo === repo.repo) count++;
+  }
+  return { count, updatedAt: "" };
+}
+
+function compareReposByActivity(a, b, nodes) {
+  const actA = repoActivityRank(a, nodes);
+  const actB = repoActivityRank(b, nodes);
+  if (actB.count !== actA.count) return actB.count - actA.count;
+  if (actB.updatedAt !== actA.updatedAt) return actB.updatedAt.localeCompare(actA.updatedAt);
+  return a.repo.localeCompare(b.repo);
+}
+
+function sortReposByActivity(repos, nodes) {
+  return [...repos].sort((a, b) => compareReposByActivity(a, b, nodes));
+}
+
 function populateFilters(repoData) {
   const nodes = state.nodes;
 
-  const live = repoData.filter((r) => !r.archived);
-  const archived = repoData.filter((r) => r.archived);
+  const live = sortReposByActivity(
+    repoData.filter((r) => !r.archived),
+    nodes,
+  );
+  const archived = sortReposByActivity(
+    repoData.filter((r) => r.archived),
+    nodes,
+  );
   const liveItems = live.map((r) => ({
     value: r.repo,
     label: r.repo.split("/")[1] || r.repo,
