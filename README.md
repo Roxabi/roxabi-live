@@ -8,7 +8,7 @@
 
 Roxabi Live pulls GitHub issues from the entire org into a [Cloudflare D1](https://developers.cloudflare.com/d1/) database and serves a multi-view dashboard at **[live.roxabi.dev](https://live.roxabi.dev)**. It tracks parent/child relationships and blockers, applies real-time updates via a GitHub org webhook, and re-syncs daily via a Cron Trigger — all on a single Cloudflare Worker.
 
-**Multi-user:** any GitHub user with access to the installed GitHub App can sign in via OAuth (`GET /login`). The app is session-gated — `/api/*` requires an active session cookie. `/admin/*` additionally sits behind Cloudflare Access (Email-OTP) as a defense-in-depth layer.
+**Multi-user:** any GitHub user with access to the installed GitHub App can sign in via OAuth (`GET /login`). The app is session-gated — `/api/*` requires an active session cookie. `/admin/*` additionally sits behind Cloudflare Access (Email-OTP) as a defense-in-depth layer. The **staging** workers.dev URL is fully gated by CF Access (see `docs/s10-staging-access.md`).
 
 ## Why
 

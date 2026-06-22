@@ -34,9 +34,27 @@ import { authResetRoute } from "./auth/reset";
 import { requireLinkedTenant, requireSession } from "./auth/session";
 import { authStatusRoute } from "./auth/status";
 import type { AuthEnv } from "./auth/types";
+import {
+  applyStagingPrivacyHeaders,
+  isStagingEnv,
+  stagingRobotsResponse,
+} from "./observability/staging-privacy";
 import { webhookRoute } from "./webhook/handlers";
 
 const app = new Hono<AuthEnv>();
+
+// Staging: block crawlers even if the workers.dev URL leaks (CF Access is the primary gate).
+app.use("*", async (c, next) => {
+  if (!isStagingEnv(c.env)) {
+    await next();
+    return;
+  }
+  if (c.req.path === "/robots.txt") {
+    return stagingRobotsResponse();
+  }
+  await next();
+  c.res = applyStagingPrivacyHeaders(c.res);
+});
 
 // ── API routes — evaluated BEFORE the ASSETS fallback ───────────────────────
 // S1 scaffold wires /health + /api/version. S5 (#97) adds POST /webhook/github.

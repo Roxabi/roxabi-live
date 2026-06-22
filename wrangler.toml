@@ -68,6 +68,8 @@ bucket_name = "roxabi-live-logs"
 [env.staging]
 name = "roxabi-live-staging"
 workers_dev = true
+# Edge gate: CF Access Email OTP on the workers.dev URL (scripts/setup-staging-access.sh).
+# Worker also serves robots.txt + X-Robots-Tag when GITHUB_APP_SLUG is staging.
 
 [env.staging.vars]
 APP_RELEASE = "0.19.13"
