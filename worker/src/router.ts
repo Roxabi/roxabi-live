@@ -109,8 +109,8 @@ app.get("/health", async (c) => {
       const { maybeRefreshTenantDiscovery } = await import("./sync/discovery-refresh");
       const { maybePruneDeadAccessibleRepos } = await import("./sync/dead-repo-prune");
       if (!(await isBootstrapComplete(c.env.DB))) {
-        await maybeRefreshTenantDiscovery(c.env);
         await maybePruneDeadAccessibleRepos(c.env);
+        await maybeRefreshTenantDiscovery(c.env);
         const { maybeScheduleMaintenanceBootstrap } = await import("./sync/bootstrap");
         await maybeScheduleMaintenanceBootstrap(c.env.DB, c.env, c.executionCtx);
       }

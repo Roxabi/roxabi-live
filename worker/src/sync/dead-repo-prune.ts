@@ -47,16 +47,6 @@ export async function maybePruneDeadAccessibleRepos(env: Env): Promise<number> {
     return 0;
   }
 
-  const now = new Date().toISOString();
-  await db
-    .prepare(
-      `INSERT INTO sync_control (tenant_id, key, value, updated_at)
-       VALUES (0, ?, ?, ?)
-       ON CONFLICT(tenant_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-    )
-    .bind(DEAD_REPO_PRUNE_KEY, now, now)
-    .run();
-
   let pruned = 0;
   for (const repo of unsynced) {
     try {
@@ -67,6 +57,17 @@ export async function maybePruneDeadAccessibleRepos(env: Env): Promise<number> {
       console.error(`[sync] dead-repo probe failed for ${repo}:`, err);
     }
   }
+
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT INTO sync_control (tenant_id, key, value, updated_at)
+       VALUES (0, ?, ?, ?)
+       ON CONFLICT(tenant_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    .bind(DEAD_REPO_PRUNE_KEY, now, now)
+    .run();
+
   if (pruned > 0) {
     console.log(`[sync] dead-repo prune removed ${pruned} repo(s)`);
   }

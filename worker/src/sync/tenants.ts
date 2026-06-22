@@ -8,6 +8,33 @@ import type { Env } from "../types";
 import { acquireSyncLock, batchChunked, incrementAuthFailures, releaseSyncLock } from "./control";
 import { filterResolvableRepos } from "./repo-probe";
 
+type ListedRepo = { repo: string; isPrivate: boolean; isArchived?: boolean };
+
+/** Repos with a completed sync_state watermark skip the GraphQL probe (subreq budget). */
+async function listSyncedRepos(db: D1Database): Promise<Set<string>> {
+  const rows = await db
+    .prepare(
+      `SELECT repo FROM sync_state
+       WHERE last_synced_at IS NOT NULL AND TRIM(last_synced_at) != ''`,
+    )
+    .all<{ repo: string }>();
+  return new Set((rows.results ?? []).map((r) => r.repo));
+}
+
+/** Probe only unsynced installation entries — synced repos are already validated. */
+async function filterListedRepos(
+  db: D1Database,
+  token: string,
+  listed: ListedRepo[],
+): Promise<ListedRepo[]> {
+  const synced = await listSyncedRepos(db);
+  const trusted = listed.filter((r) => synced.has(r.repo));
+  const needsProbe = listed.filter((r) => !synced.has(r.repo));
+  if (needsProbe.length === 0) return trusted;
+  const { kept } = await filterResolvableRepos(token, needsProbe);
+  return [...trusted, ...kept];
+}
+
 /**
  * Discover repos accessible to each installed tenant and build the global
  * dedup map used by Phase 2 fan-out.
@@ -77,8 +104,7 @@ export async function discoverTenants(db: D1Database, env: Env): Promise<TenantD
       try {
         const token = await getInstallationToken(db, env, tenantId, installationId);
         const listed = await listInstallationRepos(token);
-        const { kept } = await filterResolvableRepos(token, listed);
-        repos = kept;
+        repos = await filterListedRepos(db, token, listed);
       } catch (err) {
         console.error(`[sync] tenant ${tenantId} discovery failed:`, err);
         await incrementAuthFailures(db, tenantId);
