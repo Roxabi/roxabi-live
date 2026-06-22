@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureDb } from "../test-utils";
 import { maybePruneDeadAccessibleRepos } from "./dead-repo-prune";
 
@@ -12,15 +12,24 @@ vi.mock("./bootstrap", () => ({
   listUnsyncedRepos: vi.fn().mockResolvedValue(["Roxabi/gone"]),
 }));
 
-vi.mock("./repo-probe", () => ({
-  isRepoResolvable: vi.fn().mockResolvedValue(false),
-}));
+vi.mock("./repo-probe", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./repo-probe")>();
+  return {
+    ...actual,
+    isRepoResolvable: vi.fn().mockResolvedValue(false),
+  };
+});
 
 import { getInstallationToken, listInstallationRepos } from "../auth/installToken";
 import { isBootstrapComplete, listUnsyncedRepos } from "./bootstrap";
 import { isRepoResolvable } from "./repo-probe";
 
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 404, ok: false } as Response));
+});
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
   vi.mocked(isBootstrapComplete).mockResolvedValue(false);
   vi.mocked(listUnsyncedRepos).mockResolvedValue(["Roxabi/gone"]);
@@ -38,8 +47,25 @@ describe("maybePruneDeadAccessibleRepos", () => {
     expect(isRepoResolvable).not.toHaveBeenCalled();
   });
 
-  it("prunes repos GraphQL cannot resolve", async () => {
+  it("prunes public repos when GitHub REST returns 404", async () => {
     const { db, stmts } = captureDb((sql, args) => {
+      if (sql.includes("SELECT value FROM sync_control") && args[0] === "dead_repo_prune_at") {
+        return [];
+      }
+      if (sql.includes("FROM tenants")) {
+        return [{ id: 1, installation_id: 99 }];
+      }
+      return [];
+    });
+    const pruned = await maybePruneDeadAccessibleRepos({ DB: db } as never);
+    expect(pruned).toBe(1);
+    expect(isRepoResolvable).not.toHaveBeenCalled();
+    expect(stmts().some((s) => s.sql.includes("DELETE FROM tenant_repo_access"))).toBe(true);
+  });
+
+  it("falls back to bundle probe when public REST does not 404", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ status: 200, ok: true } as Response);
+    const { db } = captureDb((sql, args) => {
       if (sql.includes("SELECT value FROM sync_control") && args[0] === "dead_repo_prune_at") {
         return [];
       }
@@ -53,6 +79,5 @@ describe("maybePruneDeadAccessibleRepos", () => {
     expect(isRepoResolvable).toHaveBeenCalledWith("ghs_test", "Roxabi/gone", {
       isPrivate: false,
     });
-    expect(stmts().some((s) => s.sql.includes("DELETE FROM tenant_repo_access"))).toBe(true);
   });
 });

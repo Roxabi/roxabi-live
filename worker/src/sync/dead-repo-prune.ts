@@ -8,10 +8,24 @@ import type { Env } from "../types";
 import { isBootstrapComplete, listUnsyncedRepos } from "./bootstrap";
 import { ensureGlobalSyncControlSeeded } from "./control";
 import { pruneInaccessibleRepo } from "./repo-access-prune";
-import { isRepoResolvable } from "./repo-probe";
+import { isRepoResolvable, parseRepoSlug } from "./repo-probe";
 
 const DEAD_REPO_PRUNE_KEY = "dead_repo_prune_at";
 const DEAD_REPO_PRUNE_DEBOUNCE_MS = 15_000;
+
+/** Deleted public repos return 404 here while installation/repositories still lists them. */
+async function isPublicRepoGone(owner: string, name: string): Promise<boolean> {
+  const res = await fetch(`https://api.github.com/repos/${owner}/${name}`, {
+    method: "GET",
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "roxabi-live-worker",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    signal: AbortSignal.timeout(5_000),
+  });
+  return res.status === 404;
+}
 
 /** Probe unsynced repos via GraphQL; prune those the API cannot resolve. */
 export async function maybePruneDeadAccessibleRepos(env: Env): Promise<number> {
@@ -53,8 +67,13 @@ export async function maybePruneDeadAccessibleRepos(env: Env): Promise<number> {
   let pruned = 0;
   for (const repo of unsynced) {
     try {
-      // Installation API is authoritative — D1 may still carry fail-closed is_private=1.
+      const slug = parseRepoSlug(repo);
       const isPrivate = privateByRepo.get(repo) ?? true;
+      if (slug && !isPrivate && (await isPublicRepoGone(slug.owner, slug.name))) {
+        await pruneInaccessibleRepo(db, repo);
+        pruned++;
+        continue;
+      }
       if (await isRepoResolvable(token, repo, { isPrivate })) continue;
       await pruneInaccessibleRepo(db, repo);
       pruned++;
