@@ -45,6 +45,7 @@
   </header>
 
   <div class="toolbar">
+    <div class="toolbar-row toolbar-filters">
     <div class="ms-wrap">
       <button id="ms-repo-btn" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by repo">
         <span class="ms-placeholder">All repos</span>
@@ -92,7 +93,9 @@
       <button id="ms-status-clear" class="ms-clear-inline" aria-label="Clear status filter" hidden>×</button>
       <div id="ms-status-panel" class="ms-panel" hidden></div>
     </div>
+    </div>
 
+    <div class="toolbar-row toolbar-layout">
     <div class="search-wrap">
       <input type="search" id="search-input" placeholder="Search issues…" autocomplete="off" aria-label="Search issues">
       <button id="search-clear" class="clear-btn" aria-label="Clear search" hidden>×</button>
@@ -142,6 +145,7 @@
       </div>
       <div class="segs" id="graph-edge-segs" role="group" aria-label="Graph display options"></div>
     </span>
+    </div>
   </div>
   <div id="sync-progress-banner" class="sync-progress-banner" hidden></div>
   <div id="zk-migration-notice" class="zk-migration-notice" hidden></div>
