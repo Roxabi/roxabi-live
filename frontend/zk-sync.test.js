@@ -33,13 +33,40 @@ vi.mock("./zk-crypto.js", () => ({
 
 const {
   applyZkDecryption,
+  fetchZkPayloadRows,
+  invalidateZkPayloadCache,
   migrateV1PayloadsToAccountKey,
   isZkMigrationIncomplete,
   LOCKED_TITLE_LABEL,
 } = await import("./zk-sync.js");
 
+describe("fetchZkPayloadRows", () => {
+  beforeEach(() => {
+    apiMock.mockReset();
+    invalidateZkPayloadCache();
+  });
+
+  it("dedupes concurrent GETs and serves cache on subsequent calls", async () => {
+    apiMock.mockResolvedValue({
+      json: async () => ({ payloads: [{ issue_key: "Roxabi/live#1" }] }),
+    });
+
+    const [a, b] = await Promise.all([fetchZkPayloadRows(), fetchZkPayloadRows()]);
+    expect(a).toEqual(b);
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    await fetchZkPayloadRows();
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    invalidateZkPayloadCache();
+    await fetchZkPayloadRows();
+    expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("applyZkDecryption", () => {
   beforeEach(() => {
+    invalidateZkPayloadCache();
     apiMock.mockReset();
     isZkUnlockedMock.mockReset();
     ensureZkKeyPairMock.mockReset();
@@ -67,6 +94,7 @@ describe("applyZkDecryption", () => {
 
 describe("migrateV1PayloadsToAccountKey", () => {
   beforeEach(() => {
+    invalidateZkPayloadCache();
     sessionStorage.clear();
     apiMock.mockReset();
     hasZkKeyPairMock.mockReset();

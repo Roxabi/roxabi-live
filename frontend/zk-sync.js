@@ -16,6 +16,36 @@ import { getSessionAccountKey, getSessionKeyFp, isZkUnlocked } from "./zk-sessio
 
 const BULK = 200;
 
+/** @type {Array<object>|null} */
+let payloadRowsCache = null;
+/** @type {Promise<Array<object>>|null} */
+let payloadRowsInflight = null;
+
+/** Drop cached ciphertext rows after local PUT (seal / migration). */
+export function invalidateZkPayloadCache() {
+  payloadRowsCache = null;
+  payloadRowsInflight = null;
+}
+
+/** GET /api/zk/payloads — single-flight + session cache (sync poll was spamming this). */
+export async function fetchZkPayloadRows({ force = false } = {}) {
+  if (!force && payloadRowsCache) return payloadRowsCache;
+  if (!force && payloadRowsInflight) return payloadRowsInflight;
+  payloadRowsInflight = api("/api/zk/payloads")
+    .then((r) => r.json())
+    .then((data) => {
+      const rows = data.payloads ?? [];
+      payloadRowsCache = rows;
+      payloadRowsInflight = null;
+      return rows;
+    })
+    .catch((err) => {
+      payloadRowsInflight = null;
+      throw err;
+    });
+  return payloadRowsInflight;
+}
+
 /** Label when graph title was redacted and this user has no ciphertext row (#216 hybrid multi-user). */
 export const SEALED_TITLE_LABEL = "(sealed)";
 
@@ -30,6 +60,7 @@ async function putPayloadBatches(payloads) {
       body: JSON.stringify({ payloads: payloads.slice(i, i + BULK) }),
     });
   }
+  invalidateZkPayloadCache();
 }
 
 async function sealNodes(nodes, githubLogin, contentByKey) {
@@ -89,11 +120,8 @@ async function sealNodes(nodes, githubLogin, contentByKey) {
 export async function migrateV1PayloadsToAccountKey(githubLogin, accountKey, key_fp) {
   if (!(await hasZkKeyPair(githubLogin))) return 0;
 
-  const resp = await api("/api/zk/payloads");
-  const { payloads } = await resp.json();
-  const v1Rows = (payloads ?? []).filter(
-    (row) => parseEnvelopeVersion(row.encrypted_payload) === 1,
-  );
+  const payloads = await fetchZkPayloadRows();
+  const v1Rows = payloads.filter((row) => parseEnvelopeVersion(row.encrypted_payload) === 1);
   if (v1Rows.length === 0) {
     clearZkMigrationIncomplete();
     await deleteZkKeyPair(githubLogin);
@@ -159,10 +187,8 @@ export function isZkMigrationIncomplete() {
 }
 
 async function loadSealedIssueKeys() {
-  const payloadResp = await api("/api/zk/payloads")
-    .then((r) => r.json())
-    .catch(() => ({ payloads: [] }));
-  return new Set((payloadResp.payloads ?? []).map((p) => p.issue_key));
+  const payloads = await fetchZkPayloadRows().catch(() => []);
+  return new Set(payloads.map((p) => p.issue_key));
 }
 
 /**
@@ -260,10 +286,8 @@ export async function syncZkContentFromGitHub(nodes, githubLogin, githubToken) {
 export async function applyZkDecryption(nodes, githubLogin, opts = {}) {
   const { accountKeyMode = false } = opts;
 
-  const { payloads } = await api("/api/zk/payloads")
-    .then((r) => r.json())
-    .catch(() => ({ payloads: [] }));
-  const byKey = new Map((payloads ?? []).map((p) => [p.issue_key, p]));
+  const payloads = await fetchZkPayloadRows().catch(() => []);
+  const byKey = new Map(payloads.map((p) => [p.issue_key, p]));
 
   if (accountKeyMode && !isZkUnlocked()) {
     for (const node of nodes) {

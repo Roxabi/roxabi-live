@@ -25,6 +25,7 @@ import {
   getGithubUserToken,
   zkLoginUrl,
 } from "./zk-github.js";
+import { setZkSessionReadyHandler } from "./zk-session.js";
 import {
   applyZkDecryption,
   clearZkMigrationIncomplete,
@@ -514,6 +515,20 @@ let sessionZkOptIn = false;
 let sessionZkAccountKeyEnabled = false;
 let sessionGithubLogin = "";
 
+/** Re-decrypt titles when ZK unlock completes after a locked render (BFCache, poll race). */
+async function refreshZkTitles() {
+  if (!sessionZkOptIn || !sessionGithubLogin || !state.nodes?.length) return;
+  await applyZkDecryption(state.nodes, sessionGithubLogin, {
+    accountKeyMode: sessionZkAccountKeyEnabled,
+  });
+  state.nodesByKey = new Map(state.nodes.map((n) => [n.key, n]));
+  render();
+}
+
+setZkSessionReadyHandler(() => {
+  void refreshZkTitles();
+});
+
 async function loadAndRender(zkOptIn, githubLogin, zkAccountKeyEnabled = false) {
   const data = await loadGraphData();
   const nodes = data.nodes || [];
@@ -614,9 +629,12 @@ async function init() {
 
     if (zkAccountKeyEnabled) {
       const sealResult = await ensureAccountKeySealing(sessionGithubLogin, state.nodes);
-      await applyZkDecryption(state.nodes, sessionGithubLogin, { accountKeyMode: true });
-      state.nodesByKey = new Map(state.nodes.map((n) => [n.key, n]));
-      render();
+      // loadAndRender already decrypted; re-run only if sealing added new ciphertext rows.
+      if (sealResult?.sealed > 0) {
+        await applyZkDecryption(state.nodes, sessionGithubLogin, { accountKeyMode: true });
+        state.nodesByKey = new Map(state.nodes.map((n) => [n.key, n]));
+        render();
+      }
       showZkMigrationNotice();
       if (sealResult?.needsGithubLink) showZkGithubLinkNotice();
     }

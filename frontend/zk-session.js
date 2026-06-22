@@ -17,6 +17,8 @@ let rememberMode = false;
 let onAutoLock = null;
 /** @type {(() => void)|null} */
 let onPageRestore = null;
+/** @type {(() => void)|null} */
+let onSessionReady = null;
 
 export function isZkUnlocked() {
   return sessionKey !== null;
@@ -45,10 +47,16 @@ function currentIdleMs() {
   return rememberMode ? REMEMBER_IDLE_MS : IDLE_MS;
 }
 
+/** Fires after accountKey is loaded into memory (unlock, device restore, enroll). */
+export function setZkSessionReadyHandler(fn) {
+  onSessionReady = fn;
+}
+
 export function setZkSession(accountKey, keyFp) {
   sessionKey = accountKey;
   sessionKeyFp = keyFp;
   resetIdleTimer();
+  onSessionReady?.();
 }
 
 export function clearZkSession() {
