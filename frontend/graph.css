@@ -75,26 +75,28 @@
   overflow: hidden;
 }
 
-#graph-panel .graph-stage {
+#graph-panel .graph-right {
   position: absolute;
   left: 160px;
   right: 0;
   top: 0;
   bottom: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+#graph-panel .graph-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
   overflow: visible;
 }
-#graph-panel .graph-stage--cols {
-  padding-top: 30px;
-  box-sizing: border-box;
-}
 
-/* ── Column headers (top strip, graph-stage) ───────────────────── */
+/* ── Column headers (fixed strip above node stage) ─────────────── */
 #graph-panel .gg-cscol-strip {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 28px;
+  position: relative;
+  flex-shrink: 0;
+  height: 26px;
   z-index: 6;
   pointer-events: none;
 }
@@ -131,7 +133,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  z-index: 4;
+  z-index: 2;
+  pointer-events: none;
 }
 #graph-panel .gg-msrow-first {
   border-top: 0;
@@ -295,6 +298,7 @@
 #graph-panel .gg-ilabel {
   position: absolute;
   transform: translate(-50%, 14px);
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   gap: 6px;

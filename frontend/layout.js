@@ -7,8 +7,8 @@ import { compareDimValues, dimDisplayLabel, dimValue } from "./state.js";
 const LANE_X_START = 4.0;
 const LANE_X_END = 96.0;
 const Y_TOP = 1.5;
-const Y_TOP_WITH_COLS = 11.0;
 const Y_BOT = 88.0;
+const MIN_NODE_X = 8.0;
 const MIN_CELL_GAP = 2;
 const MAX_CELL_WIDTH_PCT = 4.0;
 const MAX_BAND_GAP_PX = 80;
@@ -252,9 +252,10 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
   }
   sortedBandKeys.sort((a, b) => compareDimValues(a[0], b[0], rowDim, nodes) || a[1] - b[1]);
 
-  const yTop = colDim === "none" ? Y_TOP : Y_TOP_WITH_COLS;
+  const yTop = Y_TOP;
   const nBands = sortedBandKeys.length;
   const stepY = nBands > 1 ? (Y_BOT - yTop) / (nBands - 1) : 0;
+  const halfBand = stepY > 0 ? stepY / 2 : 4;
 
   const positions = new Map();
   const bandRecords = [];
@@ -266,7 +267,8 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     bandNodes.sort((a, b) => (cellOf.get(a.key) || 0) - (cellOf.get(b.key) || 0));
 
     for (const n of bandNodes) {
-      positions.set(n.key, { x: xOf.get(n.key) || 50, y: bandY });
+      const x = Math.max(xOf.get(n.key) || 50, MIN_NODE_X);
+      positions.set(n.key, { x, y: bandY });
     }
 
     bandRecords.push({ row, depth, y: bandY, count: bandNodes.length });
@@ -280,14 +282,14 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
 
   const rowInfo = [];
   for (const [row, ys] of ysByRow) {
-    const top = Math.min(...ys) - stepY / 2;
-    const bot = Math.max(...ys) + stepY / 2;
+    const top = Math.min(...ys) - halfBand;
+    const bot = Math.max(...ys) + halfBand;
     rowInfo.push({
       code: row,
       label: dimDisplayLabel(row, rowDim),
       name: rowSublabel(row, rowDim, nodes),
-      y: Math.max(top, 1.0),
-      height: Math.min(bot, 99.0) - Math.max(top, 1.0),
+      y: Math.max(top, 0.5),
+      height: Math.max(Math.min(bot, 99.0) - Math.max(top, 0.5), halfBand * 2),
     });
   }
   rowInfo.sort((a, b) => compareDimValues(a.code, b.code, rowDim, nodes));

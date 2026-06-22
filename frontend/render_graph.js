@@ -113,27 +113,37 @@ function renderNodes(container, nodes, positions, usePercentage) {
   }
 }
 
+const COL_HEADER_H = 26;
+
 // ── Render milestone row headers (v5 layout only) ─────────────────────────────
-function msRowMetrics(ms, index, usePercentage, containerHeight, isLast) {
-  const topPct = index === 0 ? 0 : ms.y;
-  const heightPct = isLast ? 100 - topPct : index === 0 ? ms.y + ms.height : ms.height;
+function msRowMetrics(ms, index, usePercentage, wrapHeight, stageOffset, stageHeight, isLast) {
   if (usePercentage) {
+    const topPx = stageOffset + (ms.y / 100) * stageHeight;
+    const heightPx = isLast ? wrapHeight - topPx : (ms.height / 100) * stageHeight;
+    const bottomPx = topPx + heightPx;
     return {
-      top: `${topPct.toFixed(2)}%`,
-      height: `${heightPct.toFixed(2)}%`,
-      bottomPct: topPct + heightPct,
+      top: `${Math.round(topPx)}px`,
+      height: `${Math.max(Math.round(heightPx), 1)}px`,
+      bottomPct: (bottomPx / wrapHeight) * 100,
     };
   }
-  const topPx = Math.round((topPct / 100) * containerHeight);
-  const heightPx = Math.round((heightPct / 100) * containerHeight);
+  const topPx = Math.round((ms.y / 100) * wrapHeight);
+  const heightPx = isLast ? wrapHeight - topPx : Math.round((ms.height / 100) * wrapHeight);
   return {
     top: `${topPx}px`,
     height: `${heightPx}px`,
-    bottomPct: topPct + heightPct,
+    bottomPct: ((topPx + heightPx) / wrapHeight) * 100,
   };
 }
 
-function renderMilestoneHeaders(container, milestoneInfo, usePercentage, containerHeight) {
+function renderMilestoneHeaders(
+  container,
+  milestoneInfo,
+  usePercentage,
+  wrapHeight,
+  stageOffset = 0,
+) {
+  const stageHeight = Math.max(wrapHeight - stageOffset, 1);
   const rows = [];
   const visible = milestoneInfo.filter((ms) => ms.code);
   let visibleIndex = 0;
@@ -142,7 +152,9 @@ function renderMilestoneHeaders(container, milestoneInfo, usePercentage, contain
       ms,
       visibleIndex,
       usePercentage,
-      containerHeight,
+      wrapHeight,
+      stageOffset,
+      stageHeight,
       visibleIndex === visible.length - 1,
     );
     const row = document.createElement("div");
@@ -169,7 +181,7 @@ function renderMilestoneHeaders(container, milestoneInfo, usePercentage, contain
   return rows;
 }
 
-function renderMilestoneSeparators(container, milestoneRows, usePercentage, containerHeight) {
+function renderMilestoneSeparators(container, milestoneRows, usePercentage, wrapHeight) {
   for (let i = 1; i < milestoneRows.length; i++) {
     const prev = milestoneRows[i - 1];
     const cur = milestoneRows[i];
@@ -178,8 +190,8 @@ function renderMilestoneSeparators(container, milestoneRows, usePercentage, cont
     const sep = document.createElement("div");
     sep.className = "gg-msrow-sep";
     sep.style.top = usePercentage
-      ? `${sepY.toFixed(2)}%`
-      : `${Math.round((sepY / 100) * containerHeight)}px`;
+      ? `${Math.round((sepY / 100) * wrapHeight)}px`
+      : `${Math.round((sepY / 100) * wrapHeight)}px`;
     container.appendChild(sep);
   }
 }
@@ -224,7 +236,7 @@ function renderEdges(svgContainer, nodes, edges, positions, usePercentage) {
 }
 
 function renderColHeaders(container, colInfo, usePercentage) {
-  if (!colInfo?.length) return;
+  if (!colInfo?.length) return null;
   const strip = document.createElement("div");
   strip.className = "gg-cscol-strip";
   for (const col of colInfo) {
@@ -237,6 +249,7 @@ function renderColHeaders(container, colInfo, usePercentage) {
     strip.appendChild(el);
   }
   container.appendChild(strip);
+  return strip;
 }
 
 // ── Main render function ──────────────────────────────────────────────────────
@@ -253,43 +266,47 @@ export function renderGraph(container, nodes, edges, layoutResult) {
   wrap.setAttribute("role", "img");
   wrap.setAttribute("aria-label", "Dependency graph");
 
-  // Render milestone headers OUTSIDE stage (left gutter, full-height bands)
+  const stageOffset = colInfo?.length ? COL_HEADER_H : 0;
+
+  // Row headers in left gutter — Y aligned with node stage below column strip
   if (milestoneInfo && milestoneInfo.length > 0) {
-    const milestoneRows = renderMilestoneHeaders(wrap, milestoneInfo, usePercentage, height);
+    const milestoneRows = renderMilestoneHeaders(
+      wrap,
+      milestoneInfo,
+      usePercentage,
+      height,
+      stageOffset,
+    );
     renderMilestoneSeparators(wrap, milestoneRows, usePercentage, height);
   }
 
-  // Create stage container (holds both SVG and nodes, same coordinate system)
-  const stage = document.createElement("div");
-  stage.className = colInfo?.length ? "graph-stage graph-stage--cols" : "graph-stage";
-  renderColHeaders(stage, colInfo, usePercentage);
+  // Right pane: optional column headers + node stage (shared % coordinate space)
+  const rightPane = document.createElement("div");
+  rightPane.className = "graph-right";
 
-  // Create SVG layer for edges (inside stage so coords match nodes)
+  renderColHeaders(rightPane, colInfo, usePercentage);
+
+  const stage = document.createElement("div");
+  stage.className = "graph-stage";
+
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.classList.add("graph-svg");
 
   if (usePercentage) {
-    // v5 style: percentage-based positioning with viewBox
     svg.setAttribute("viewBox", "0 0 100 100");
     svg.setAttribute("preserveAspectRatio", "none");
   } else {
-    // Pixel-based: full size
     svg.setAttribute("width", "100%");
     svg.setAttribute("height", "100%");
   }
   svg.setAttribute("aria-hidden", "true");
 
-  // Render edges first (behind nodes)
   renderEdges(svg, nodes, edges, positions, usePercentage);
-
-  // Render nodes
   renderNodes(stage, nodes, positions, usePercentage);
 
-  // SVG and nodes share the same stage (same coordinate space)
   stage.appendChild(svg);
-  // Nodes already appended to stage in renderNodes
-
-  wrap.appendChild(stage);
+  rightPane.appendChild(stage);
+  wrap.appendChild(rightPane);
   container.appendChild(wrap);
 
   return wrap;

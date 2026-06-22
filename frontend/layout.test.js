@@ -74,6 +74,12 @@ describe("layoutV5 column grouping", () => {
     expect(result.colInfo).toEqual([]);
   });
 
+  it("clamps node X so labels do not bleed into the row gutter", () => {
+    const nodes = [node("Roxabi/demo#1", { priorityRaw: "P0" })];
+    const result = layoutV5(nodes, [], "milestone", "priority");
+    expect(result.positions.get("Roxabi/demo#1")?.x).toBeGreaterThanOrEqual(8);
+  });
+
   it("keeps node X positions inside the visible lane span", () => {
     const nodes = Array.from({ length: 24 }, (_, i) =>
       node(`Roxabi/repo-${i}#1`, { repo: `Org/repo-${i}` }),
