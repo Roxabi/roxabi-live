@@ -43,13 +43,12 @@ let gateGithubLogin = "";
 let keyBackupInflight = null;
 /** @type {object|null} */
 let keyBackupCache = null;
-let zkRestoreInFlight = false;
-let zkRestoreLastAt = 0;
-const ZK_RESTORE_DEBOUNCE_MS = 2000;
 /** @type {Promise<boolean>|null} */
 let zkUnlockInFlight = null;
 /** @type {Promise<void>|null} */
 let unlockGatePromise = null;
+/** @type {Promise<boolean>|null} */
+let zkBootstrapPromise = null;
 
 function invalidateKeyBackupCache() {
   keyBackupCache = null;
@@ -72,7 +71,7 @@ export function lockZkSession() {
   }
   zkLog("zk.lock.explicit");
   updateLockButton();
-  showUnlockGate().catch(() => {});
+  ensureZkUnlocked(gateGithubLogin).catch(() => {});
 }
 
 function zkRememberChecked() {
@@ -214,20 +213,24 @@ async function tryAutoUnlockZk(githubLogin) {
   return zkUnlockInFlight;
 }
 
-async function tryAutoUnlockZkDebounced(githubLogin) {
+/** Single-flight bootstrap: auto-unlock then at most one unlock gate (init + BFCache + idle lock). */
+async function ensureZkUnlocked(githubLogin) {
   if (isZkUnlocked()) return true;
-  const now = Date.now();
-  if (zkRestoreInFlight || now - zkRestoreLastAt < ZK_RESTORE_DEBOUNCE_MS) {
-    return false;
-  }
-  zkRestoreInFlight = true;
-  try {
-    const ok = await tryAutoUnlockZk(githubLogin);
-    zkRestoreLastAt = Date.now();
-    return ok;
-  } finally {
-    zkRestoreInFlight = false;
-  }
+  if (zkBootstrapPromise) return zkBootstrapPromise;
+  zkBootstrapPromise = (async () => {
+    try {
+      if (await tryAutoUnlockZk(githubLogin)) {
+        await syncZkRememberMode(githubLogin);
+        updateLockButton();
+        return true;
+      }
+      await showUnlockGate(githubLogin);
+      return isZkUnlocked();
+    } finally {
+      zkBootstrapPromise = null;
+    }
+  })();
+  return zkBootstrapPromise;
 }
 
 /** @deprecated Use tryAutoUnlockZk — kept for external importers. */
@@ -307,7 +310,11 @@ export async function unlockAccountKey(passphrase) {
   const session = await sessionAccountKey(accountKey);
   setZkSession(session, backup.key_fp);
   if (gateGithubLogin) {
-    await saveDeviceSession(gateGithubLogin, accountKey, backup.key_fp);
+    try {
+      await saveDeviceSession(gateGithubLogin, accountKey, backup.key_fp);
+    } catch (err) {
+      zkLog("zk.device.save.deferred", { error: String(err?.message ?? err) });
+    }
     await runBestEffortV1Migration(gateGithubLogin, accountKey, backup.key_fp);
   }
   zkLog("zk.unlock.success", {
@@ -513,10 +520,19 @@ export function showUnlockGate(githubLogin = gateGithubLogin) {
       try {
         const pass = passInput.value;
         await unlockAccountKey(pass);
-        await applyZkRememberChoice(githubLogin, pass, zkRememberChecked());
+        try {
+          await applyZkRememberChoice(githubLogin, pass, zkRememberChecked());
+        } catch (err) {
+          zkLog("zk.remember.save.deferred", { error: String(err?.message ?? err) });
+        }
         hideZkGate();
         finish();
       } catch {
+        if (isZkUnlocked()) {
+          hideZkGate();
+          finish();
+          return;
+        }
         errorEl.textContent = "Incorrect passphrase. Try again.";
         errorEl.hidden = false;
         submitBtn.disabled = false;
@@ -565,22 +581,14 @@ export async function requireZkEnrollmentGate(me, githubLogin) {
   wireIdleLock();
   wirePageHideLock();
   wireZkLockButton();
-  setZkAutoLockHandler(async () => {
+  setZkAutoLockHandler(() => {
     updateLockButton();
-    if (gateGithubLogin && (await tryAutoUnlockZkDebounced(gateGithubLogin))) return;
-    await showUnlockGate().catch(() => {});
+    ensureZkUnlocked(gateGithubLogin).catch(() => {});
   });
   setZkPageRestoreHandler(() => {
     if (me.user?.zk_enrolled === true && !isZkUnlocked()) {
-      (async () => {
-        if (await tryAutoUnlockZkDebounced(githubLogin)) {
-          await syncZkRememberMode(githubLogin);
-          updateLockButton();
-          return;
-        }
-        updateLockButton();
-        await showUnlockGate().catch(() => {});
-      })();
+      updateLockButton();
+      ensureZkUnlocked(githubLogin).catch(() => {});
     }
   });
 
@@ -599,12 +607,7 @@ export async function requireZkEnrollmentGate(me, githubLogin) {
   }
 
   if (!isZkUnlocked()) {
-    if (await tryAutoUnlockZk(githubLogin)) {
-      await syncZkRememberMode(githubLogin);
-      updateLockButton();
-    } else {
-      await showUnlockGate();
-    }
+    await ensureZkUnlocked(githubLogin);
     return true;
   }
 
