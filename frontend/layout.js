@@ -10,8 +10,6 @@ const Y_TOP = 1.5;
 const Y_BOT = 88.0;
 const MIN_NODE_X = 8.0;
 const MIN_VIS_NODE_GAP = 4.0;
-const MIN_CELL_GAP = 2;
-const MAX_CELL_WIDTH_PCT = 4.0;
 const MAX_BAND_GAP_PX = 80;
 const MIN_CONTAINER_H = 320;
 
@@ -21,27 +19,6 @@ function rowKey(node, rowDim) {
 
 function colKey(node, colDim) {
   return dimValue(node, colDim);
-}
-
-function computeGridSize(byRowDepth, colDim, colOrder) {
-  if (colDim === "none") return 1;
-  let gridSize = Math.max(colOrder.length, 1);
-  for (const depths of byRowDepth.values()) {
-    for (const bandNodes of depths.values()) {
-      const byCol = new Map();
-      for (const n of bandNodes) {
-        const c = colKey(n, colDim);
-        byCol.set(c, (byCol.get(c) || 0) + 1);
-      }
-      for (const count of byCol.values()) {
-        if (count > 1) {
-          const needed = colOrder.length + (count - 1) * MIN_CELL_GAP;
-          gridSize = Math.max(gridSize, needed);
-        }
-      }
-    }
-  }
-  return gridSize;
 }
 
 function rowSublabel(rowVal, rowDim, nodes) {
@@ -60,36 +37,27 @@ export function edgePath(x1, y1, x2, y2) {
   return `M ${x1.toFixed(2)},${y1.toFixed(2)} C ${x1.toFixed(2)},${ymid.toFixed(2)} ${x2.toFixed(2)},${ymid.toFixed(2)} ${x2.toFixed(2)},${y2.toFixed(2)}`;
 }
 
-function msBounds(gridSize) {
+/** Full-lane column anchors (repo, lane, …). */
+function xFromColIdx(idx, colCount) {
   const pageSpan = LANE_X_END - LANE_X_START;
   const pageCenter = (LANE_X_START + LANE_X_END) / 2;
-  if (gridSize <= 1) return { xStart: pageCenter, xEnd: pageCenter, step: 0 };
-  // Always fit the full grid inside the lane — shrink step when many columns.
-  const fitStep = pageSpan / (gridSize - 1);
-  const step = Math.min(MAX_CELL_WIDTH_PCT, fitStep);
-  const span = step * (gridSize - 1);
+  if (colCount <= 1) return pageCenter;
+  const step = pageSpan / (colCount - 1);
+  const span = step * (colCount - 1);
   const xStart = pageCenter - span / 2;
-  return { xStart, xEnd: xStart + span, step };
+  return xStart + idx * step;
 }
 
-function xFromCell(cell, gridSize) {
-  const { xStart, step } = msBounds(gridSize);
-  return xStart + cell * step;
-}
-
-function cellFromX(x, gridSize) {
-  const { xStart, step } = msBounds(gridSize);
-  if (step === 0) return 0;
-  const raw = Math.round((x - xStart) / step);
-  return Math.max(0, Math.min(gridSize - 1, raw));
-}
-
-/** Evenly spread a same-column group across the lane (percent coords). */
+/** Spread a same-column group around its anchor; use the full lane only when necessary. */
 function spreadGroupX(count, anchorX) {
   if (count <= 1) return [Math.max(anchorX, MIN_NODE_X)];
   const laneSpan = LANE_X_END - MIN_NODE_X;
-  const gap = Math.max(MIN_VIS_NODE_GAP, laneSpan / (count - 1));
-  const span = (count - 1) * gap;
+  let gap = MIN_VIS_NODE_GAP;
+  let span = (count - 1) * gap;
+  if (span > laneSpan) {
+    gap = laneSpan / (count - 1);
+    span = laneSpan;
+  }
   let start = anchorX - span / 2;
   if (start < MIN_NODE_X) start = MIN_NODE_X;
   if (start + span > LANE_X_END) start = Math.max(MIN_NODE_X, LANE_X_END - span);
@@ -97,7 +65,7 @@ function spreadGroupX(count, anchorX) {
 }
 
 /** Spread only nodes that share the same desired column — keep distinct columns apart. */
-function resolveBandColCollisions(bandNodes, desired, gridSize) {
+function resolveBandColCollisions(bandNodes, desired, colCount) {
   const final = [...desired];
   const xByKey = new Map();
   const groups = new Map();
@@ -108,11 +76,10 @@ function resolveBandColCollisions(bandNodes, desired, gridSize) {
   }
   for (const [d, indices] of groups) {
     if (indices.length <= 1) continue;
-    const anchor = Math.max(xFromCell(d, gridSize), MIN_NODE_X);
+    const anchor = Math.max(xFromColIdx(d, colCount), MIN_NODE_X);
     const xs = spreadGroupX(indices.length, anchor);
     for (let j = 0; j < indices.length; j++) {
       const i = indices[j];
-      final[i] = cellFromX(xs[j], gridSize);
       xByKey.set(bandNodes[i].key, xs[j]);
     }
   }
@@ -150,11 +117,17 @@ function finalizeBandXs(bandNodes, xByKey, minGap = MIN_VIS_NODE_GAP) {
   }
 }
 
-function uniformCells(n, gridSize) {
-  if (n <= 0) return [];
-  if (n === 1) return [Math.floor(gridSize / 2)];
-  const step = (gridSize - 1) / (n - 1);
-  return [...Array(n).keys()].map((i) => Math.round(i * step));
+/** Gap-fix only within the same order-by column — never push nodes across columns. */
+function finalizeBandXsByColumn(bandNodes, desired, xByKey, minGap = MIN_VIS_NODE_GAP) {
+  const groups = new Map();
+  for (let i = 0; i < bandNodes.length; i++) {
+    const d = desired[i];
+    if (!groups.has(d)) groups.set(d, []);
+    groups.get(d).push(bandNodes[i]);
+  }
+  for (const group of groups.values()) {
+    finalizeBandXs(group, xByKey, minGap);
+  }
 }
 
 function colHeaderLabel(code, colDim) {
@@ -163,21 +136,6 @@ function colHeaderLabel(code, colDim) {
     return code.split("/")[1] || label;
   }
   return label.length > 14 ? `${label.slice(0, 13)}…` : label;
-}
-
-function getParentCells(task, nodesByKey, parentByDst, rowVal, rowDim, cellOf, xOf, gridSize) {
-  const parentKey = parentByDst.get(task.key) ?? task._parent;
-  if (!parentKey) return [];
-  const parent = nodesByKey.get(parentKey);
-  if (!parent) return [];
-
-  if (rowKey(parent, rowDim) === rowVal && cellOf.has(parentKey)) {
-    return [cellOf.get(parentKey)];
-  }
-  if (xOf.has(parentKey)) {
-    return [cellFromX(xOf.get(parentKey), gridSize)];
-  }
-  return [];
 }
 
 export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
@@ -191,11 +149,9 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
   const rowValues = [...rowSet].sort((a, b) => compareDimValues(a, b, rowDim, nodes));
 
   const blockersByDst = new Map();
-  const parentByDst = new Map();
   for (const e of edges) {
     if (!blockersByDst.has(e.dst)) blockersByDst.set(e.dst, []);
     blockersByDst.get(e.dst).push(e);
-    if (e.kind === "parent") parentByDst.set(e.dst, e.src);
   }
   for (const n of nodes) {
     n._blockers = blockersByDst.get(n.key) || [];
@@ -232,7 +188,7 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     byRowDepth.get(row).get(depth).push(n);
   }
 
-  const groupedGridSize = colDim === "none" ? 1 : computeGridSize(byRowDepth, colDim, colOrder);
+  const columnCount = colDim === "none" ? 1 : Math.max(colOrder.length, 1);
 
   const cellOf = new Map();
   const xOf = new Map();
@@ -243,32 +199,12 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
     return idx >= 0 ? idx : colOrder.length;
   }
 
-  function bandGridSize(bandNodes) {
-    if (colDim !== "none") return groupedGridSize;
-    return Math.max(MIN_CELL_GAP * bandNodes.length - 1, 1);
-  }
-
-  function desiredCellsForBand(row, bandNodes, gridSz) {
+  function desiredCellsForBand(_row, bandNodes, _gridSz) {
     if (colDim !== "none") {
       return bandNodes.map((n) => colIdx(colKey(n, colDim)));
     }
-
-    const orphans = [];
-    const parentCellByKey = new Map();
-    for (const n of bandNodes) {
-      const pc = getParentCells(n, nodesByKey, parentByDst, row, rowDim, cellOf, xOf, gridSz);
-      if (pc.length > 0) {
-        parentCellByKey.set(n.key, pc[0]);
-      } else {
-        orphans.push(n);
-      }
-    }
-    const orphanUniform = uniformCells(orphans.length, gridSz);
-    return bandNodes.map((n) => {
-      if (parentCellByKey.has(n.key)) return parentCellByKey.get(n.key);
-      const idx = orphans.indexOf(n);
-      return orphanUniform[idx] ?? 0;
-    });
+    // None: same as ordering by the row dimension — one column per band, spread on collision.
+    return bandNodes.map(() => 0);
   }
 
   const bandKeys = [];
@@ -284,28 +220,28 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
 
   for (const [row, depth] of bandKeys) {
     const bandNodes = byRowDepth.get(row).get(depth);
-    const gridSize = bandGridSize(bandNodes);
     bandNodes.sort(
       (a, b) => colIdx(colKey(a, colDim)) - colIdx(colKey(b, colDim)) || a.key.localeCompare(b.key),
     );
 
-    const desired = desiredCellsForBand(row, bandNodes, gridSize);
+    const desired = desiredCellsForBand(row, bandNodes, columnCount);
 
     // Only spread when multiple nodes share the same column cell — never
     // push distinct columns apart (that blew past the lane and hid nodes left).
     const hasColCollisions = new Set(desired).size < desired.length;
     const resolved = hasColCollisions
-      ? resolveBandColCollisions(bandNodes, desired, gridSize)
+      ? resolveBandColCollisions(bandNodes, desired, columnCount)
       : { final: desired, xByKey: new Map() };
     const bandX = new Map();
     for (let i = 0; i < bandNodes.length; i++) {
       const n = bandNodes[i];
       cellOf.set(n.key, resolved.final[i]);
       const x =
-        resolved.xByKey.get(n.key) ?? Math.max(xFromCell(resolved.final[i], gridSize), MIN_NODE_X);
+        resolved.xByKey.get(n.key) ??
+        Math.max(xFromColIdx(resolved.final[i], columnCount), MIN_NODE_X);
       bandX.set(n.key, x);
     }
-    finalizeBandXs(bandNodes, bandX, hasColCollisions ? MIN_VIS_NODE_GAP : 1);
+    finalizeBandXsByColumn(bandNodes, resolved.final, bandX, MIN_VIS_NODE_GAP);
     for (const n of bandNodes) {
       xOf.set(n.key, bandX.get(n.key));
     }
@@ -366,7 +302,7 @@ export function layoutV5(nodes, edges, rowDim = "milestone", colDim = "lane") {
               xs.push(xOf.get(n.key));
             }
           }
-          const nominal = xFromCell(colIdx(code), groupedGridSize);
+          const nominal = xFromColIdx(colIdx(code), columnCount);
           const x = xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : nominal;
           return {
             code,
