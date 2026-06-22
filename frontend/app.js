@@ -629,9 +629,12 @@ async function init() {
 
     if (zkAccountKeyEnabled) {
       const sealResult = await ensureAccountKeySealing(sessionGithubLogin, state.nodes);
-      await applyZkDecryption(state.nodes, sessionGithubLogin, { accountKeyMode: true });
-      state.nodesByKey = new Map(state.nodes.map((n) => [n.key, n]));
-      render();
+      // loadAndRender already decrypted; re-run only if sealing added new ciphertext rows.
+      if (sealResult?.sealed > 0) {
+        await applyZkDecryption(state.nodes, sessionGithubLogin, { accountKeyMode: true });
+        state.nodesByKey = new Map(state.nodes.map((n) => [n.key, n]));
+        render();
+      }
       showZkMigrationNotice();
       if (sealResult?.needsGithubLink) showZkGithubLinkNotice();
     }

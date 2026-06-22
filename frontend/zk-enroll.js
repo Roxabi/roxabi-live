@@ -32,7 +32,7 @@ import {
   wireIdleLock,
   wirePageHideLock,
 } from "./zk-session.js";
-import { migrateV1PayloadsToAccountKey } from "./zk-sync.js";
+import { fetchZkPayloadRows, migrateV1PayloadsToAccountKey } from "./zk-sync.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -261,9 +261,7 @@ function payloadsHaveV1(payloads) {
 
 async function fetchPayloadRows() {
   try {
-    const resp = await api("/api/zk/payloads");
-    const data = await resp.json();
-    return data.payloads ?? [];
+    return await fetchZkPayloadRows();
   } catch {
     return [];
   }
