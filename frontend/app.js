@@ -6,7 +6,7 @@ import {
   requireAuthGate,
   stripStaleOAuthCallbackUrl,
 } from "./auth.js";
-import { initGraph } from "./graph.js";
+import { clearSearchHighlight, initGraph } from "./graph.js";
 import { clearPinned } from "./hover.js";
 import { ensureSyncStarted, startSyncProgressMonitor } from "./initial-sync.js";
 import { renderList } from "./list.js";
@@ -67,6 +67,12 @@ const TABLE_GROUP_DIMS = ["lane", "parent", "none"];
 const btnGraph = $("btn-graph");
 const btnList = $("btn-list");
 const btnTable = $("btn-table");
+
+/** Clear table/list search pin + graph hover highlight. */
+function clearHighlights() {
+  clearPinned();
+  clearSearchHighlight();
+}
 
 const dimItems = (values) => values.map((v) => ({ value: v, label: v }));
 
@@ -241,7 +247,7 @@ searchClear.addEventListener("click", () => {
   searchInput.value = "";
   setState({ search: "" });
   searchInput.focus();
-  clearPinned();
+  clearHighlights();
   render();
 });
 
@@ -251,7 +257,7 @@ searchInput.addEventListener("keydown", (e) => {
     e.preventDefault();
     searchInput.value = "";
     setState({ search: "" });
-    clearPinned();
+    clearHighlights();
     render();
   }
 });
@@ -304,27 +310,27 @@ function buildGraphSegs() {
 
 // ─── Multi-select onChange ────────────────────────────────────────────────
 msRepo.onChange = (vals) => {
-  clearPinned();
+  clearHighlights();
   setState({ repo: vals });
   render();
 };
 msMilestone.onChange = (vals) => {
-  clearPinned();
+  clearHighlights();
   setState({ milestone: vals });
   render();
 };
 msPriority.onChange = (vals) => {
-  clearPinned();
+  clearHighlights();
   setState({ priority: vals });
   render();
 };
 msAssignee.onChange = (vals) => {
-  clearPinned();
+  clearHighlights();
   setState({ assignee: vals });
   render();
 };
 msStatus.onChange = (vals) => {
-  clearPinned();
+  clearHighlights();
   setState({ status: vals });
   loadAndRender(sessionZkOptIn, sessionGithubLogin).catch((e) => {
     errorMsg.hidden = false;
@@ -332,7 +338,7 @@ msStatus.onChange = (vals) => {
   });
 };
 msLabel.onChange = (vals) => {
-  clearPinned();
+  clearHighlights();
   setState({ label: vals });
   render();
 };

@@ -209,55 +209,6 @@ export function initHover(panel) {
   if (searchInput) wireSearchPin(searchInput);
 }
 
-/**
- * Graph view — uses filtered chain edges (blocks + optional parent) and SVG edge elements.
- * @param {HTMLElement} panel
- * @param {{ chainEdges: ChainEdge[], edgeElements: Element[], nodes: Array<{ key: string, title?: string|null, labels?: string[] }> }} opts
- */
-export function initGraphHover(panel, { chainEdges, edgeElements, nodes }) {
-  const session = {
-    panel,
-    chainEdges,
-    edgeElements,
-    targetSelector: ".gg-node[data-iss], .gg-ilabel[data-iss]",
-  };
-  activeSession = session;
-  wireHoverChain(session);
-  applyGraphSearchHighlight(panel, nodes, session);
-}
-
-/**
- * Graph search: highlight first text match + dependency chain (does not filter nodes).
- * @param {HTMLElement} panel
- * @param {Array<{ key: string, title?: string|null, labels?: string[] }>} nodes
- * @param {HoverSession} session
- */
-export function applyGraphSearchHighlight(panel, nodes, session = activeSession) {
-  if (!session) return;
-  const search = (state.search ?? "").trim().toLowerCase();
-  if (!search) {
-    pinnedKey = null;
-    return;
-  }
-
-  const match = nodes.find((n) => {
-    const hay = `${n.key} ${n.title ?? ""} ${(n.labels ?? []).join(" ")}`.toLowerCase();
-    return hay.includes(search);
-  });
-  if (!match) {
-    pinnedKey = null;
-    return;
-  }
-
-  pinnedKey = match.key;
-  clearHighlight(panel, session.edgeElements);
-  applyHighlight(panel, pinnedKey, {
-    byKey: bucketTargets(panel, session.targetSelector),
-    chainEdges: session.chainEdges,
-    edgeElements: session.edgeElements,
-  });
-}
-
 /** Clear pinned search highlight (ESC, filter changes, search clear). */
 export function clearPinned() {
   pinnedKey = null;
