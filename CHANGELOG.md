@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.21.2](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.21.1...roxabi-live/v0.21.2) (2026-06-23)
+
+
+### Bug Fixes
+
+* **graph:** centralize hover-chain highlight across table, list, and graph views (single `hover.js` module)
+* **graph:** default Order by to `none` with `localStorage` persistence (migrates legacy `sessionStorage`)
+* **graph:** cap column spacing so sparse bands no longer stretch across half the page
+
+
 ## [0.21.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.21.0...roxabi-live/v0.21.1) (2026-06-22)
 
 

@@ -437,5 +437,5 @@ export function renderList(container) {
   container.appendChild(table);
 
   // Wire hover-chain highlighting
-  initHover(container, "list");
+  initHover(container);
 }

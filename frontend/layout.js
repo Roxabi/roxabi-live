@@ -10,6 +10,8 @@ const Y_TOP = 1.5;
 const Y_BOT = 88.0;
 const MIN_NODE_X = 8.0;
 const MIN_VIS_NODE_GAP = 4.0;
+/** Max center-to-center step between order-by columns (avoids half-page gaps). */
+const MAX_COL_CENTER_STEP = 24.0;
 const MAX_BAND_GAP_PX = 80;
 const MIN_CONTAINER_H = 320;
 
@@ -37,12 +39,13 @@ export function edgePath(x1, y1, x2, y2) {
   return `M ${x1.toFixed(2)},${y1.toFixed(2)} C ${x1.toFixed(2)},${ymid.toFixed(2)} ${x2.toFixed(2)},${ymid.toFixed(2)} ${x2.toFixed(2)},${y2.toFixed(2)}`;
 }
 
-/** Full-lane column anchors (repo, lane, …). */
+/** Column anchors (repo, lane, …). Uses full lane when crowded; caps step when few columns. */
 function xFromColIdx(idx, colCount) {
   const pageSpan = LANE_X_END - LANE_X_START;
   const pageCenter = (LANE_X_START + LANE_X_END) / 2;
   if (colCount <= 1) return pageCenter;
-  const step = pageSpan / (colCount - 1);
+  const naturalStep = pageSpan / (colCount - 1);
+  const step = Math.min(naturalStep, MAX_COL_CENTER_STEP);
   const span = step * (colCount - 1);
   const xStart = pageCenter - span / 2;
   return xStart + idx * step;

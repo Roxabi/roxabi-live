@@ -437,5 +437,5 @@ export function renderTable(container) {
   container.appendChild(grid);
 
   // Wire hover-chain highlighting
-  initHover(container, "table");
+  initHover(container);
 }

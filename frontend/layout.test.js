@@ -134,6 +134,16 @@ describe("layoutV5 column grouping", () => {
     }
   });
 
+  it("does not stretch two sparse column groups across half the page", () => {
+    const nodes = [
+      node("Org/repo-a#1", { repo: "Org/repo-a" }),
+      node("Org/repo-b#2", { repo: "Org/repo-b" }),
+    ];
+    const result = layoutV5(nodes, [], "milestone", "repo");
+    const xs = [...result.positions.values()].map((p) => p.x);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(40);
+  });
+
   it("keeps repo columns apart on the same band when order by is repo", () => {
     const nodes = [
       node("Org/repo-a#1", { repo: "Org/repo-a" }),

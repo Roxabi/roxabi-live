@@ -23,7 +23,7 @@ routes = [
 ]
 
 [vars]
-APP_RELEASE = "0.21.1"
+APP_RELEASE = "0.21.2"
 ZK_ACCOUNT_KEY = "1"
 # structure-only MUST be "1" whenever ZK_ACCOUNT_KEY is "1" — otherwise the daily
 # cron re-fetches and stores plaintext issue titles in D1, breaking the ZK promise.
@@ -72,7 +72,7 @@ workers_dev = true
 # Worker also serves robots.txt + X-Robots-Tag when GITHUB_APP_SLUG is staging.
 
 [env.staging.vars]
-APP_RELEASE = "0.21.1"
+APP_RELEASE = "0.21.2"
 GITHUB_APP_SLUG = "roxabi-live-staging"
 ZK_ACCOUNT_KEY = "1"
 ZK_STRUCTURE_ONLY = "1"

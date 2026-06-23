@@ -1,4 +1,22 @@
 // state.js — shared app state + sessionStorage persistence (per-tab)
+const GRAPH_COL_KEY = "v6:graphCol";
+
+export const LS = {
+  get(key, def) {
+    try {
+      const v = localStorage.getItem(key);
+      return v === null ? def : v;
+    } catch {
+      return def;
+    }
+  },
+  set(key, val) {
+    try {
+      localStorage.setItem(key, val);
+    } catch {}
+  },
+};
+
 export const SS = {
   get(key, def) {
     try {
@@ -43,6 +61,18 @@ function migrateRepo() {
   }
 }
 
+/** Graph "Order by" — localStorage (cross-tab), default none; migrates legacy sessionStorage. */
+function migrateGraphCol() {
+  const stored = LS.get(GRAPH_COL_KEY, null);
+  if (stored !== null) return stored;
+  const legacy = SS.get(GRAPH_COL_KEY, null);
+  if (legacy !== null) {
+    LS.set(GRAPH_COL_KEY, legacy);
+    return legacy;
+  }
+  return "none";
+}
+
 export const state = {
   view: SS.get("v6:view", "graph"),
   // multi-select arrays (empty = all)
@@ -56,7 +86,7 @@ export const state = {
   pivotRow: SS.get("v6:pivotRow", "milestone"),
   pivotCol: SS.get("v6:pivotCol", "priority"),
   graphRow: SS.get("v6:graphRow", "milestone"),
-  graphCol: SS.get("v6:graphCol", "lane"),
+  graphCol: migrateGraphCol(),
   listGroup: SS.get("v7:listGroup", "none"),
   listGroup2: SS.get("v7:listGroup2", "none"),
   tableGroup: SS.get("v7:tableGroup", "none"),
@@ -84,7 +114,6 @@ const SS_KEYS = {
   pivotRow: { key: "v6:pivotRow", json: false },
   pivotCol: { key: "v6:pivotCol", json: false },
   graphRow: { key: "v6:graphRow", json: false },
-  graphCol: { key: "v6:graphCol", json: false },
   listGroup: { key: "v7:listGroup", json: false },
   listGroup2: { key: "v7:listGroup2", json: false },
   tableGroup: { key: "v7:tableGroup", json: false },
@@ -95,6 +124,9 @@ const SS_KEYS = {
 
 export function setState(patch) {
   Object.assign(state, patch);
+  if ("graphCol" in patch) {
+    LS.set(GRAPH_COL_KEY, patch.graphCol);
+  }
   for (const [k, v] of Object.entries(patch)) {
     const meta = SS_KEYS[k];
     if (!meta) continue;
