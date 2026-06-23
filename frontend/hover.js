@@ -1,25 +1,40 @@
-// hover.js — hover-chain highlight for table and list views
-// Lifted from v5 hover.js, adapted for v6 module system
+// hover.js — centralized hover-chain highlight (table, list, graph)
 
 import { state } from "./state.js";
 
-// ── Build adjacency maps from edges ───────────────────────────────────────────
-function buildAdjacency() {
-  const blockers = new Map(); // key → keys that block it
-  const unblocks = new Map(); // key → keys it unblocks
+/** @typedef {{ src: string, dst: string, kind?: string }} ChainEdge */
 
-  for (const e of state.edges) {
-    if (e.kind === "blocks" || !e.kind) {
-      if (!blockers.has(e.dst)) blockers.set(e.dst, []);
-      blockers.get(e.dst).push(e.src);
-      if (!unblocks.has(e.src)) unblocks.set(e.src, []);
-      unblocks.get(e.src).push(e.dst);
-    }
+/** @typedef {{
+ *   panel: HTMLElement,
+ *   chainEdges: ChainEdge[],
+ *   edgeElements: Element[],
+ *   targetSelector: string,
+ * }} HoverSession */
+
+let activeSession = null;
+let pinnedKey = null;
+let searchPinWired = false;
+
+// ── Graph traversal ───────────────────────────────────────────────────────────
+
+/**
+ * Build upstream/downstream adjacency from the supplied edge list.
+ * Callers choose which kinds to include (table/list: blocks only; graph: blocks + parent).
+ * @param {ChainEdge[]} edges
+ */
+export function buildAdjacency(edges) {
+  const blockers = new Map();
+  const unblocks = new Map();
+  for (const e of edges) {
+    if (!blockers.has(e.dst)) blockers.set(e.dst, []);
+    blockers.get(e.dst).push(e.src);
+    if (!unblocks.has(e.src)) unblocks.set(e.src, []);
+    unblocks.get(e.src).push(e.dst);
   }
   return { blockers, unblocks };
 }
 
-// ── Traverse graph to find upstream/downstream ────────────────────────────────
+/** @param {string} start @param {Map<string, string[]>} adj */
 function traverse(start, adj) {
   const seen = new Set();
   const stack = [start];
@@ -35,142 +50,216 @@ function traverse(start, adj) {
   return seen;
 }
 
-// ── Highlight logic ────────────────────────────────────────────────────────────
-let panelEl = null;
-const targetsFn = null;
-let edgesFn = null;
-let pinnedKey = null;
+/** @param {string} key @param {ChainEdge[]} edges */
+export function getHighlightChain(key, edges) {
+  const { blockers, unblocks } = buildAdjacency(edges);
+  const upstream = traverse(key, blockers);
+  const downstream = traverse(key, unblocks);
+  const all = new Set([key, ...upstream, ...downstream]);
+  return { upstream, downstream, all };
+}
 
-function highlightKey(k, byKey, edges) {
-  const { blockers, unblocks } = buildAdjacency();
-  const up = traverse(k, blockers);
-  const down = traverse(k, unblocks);
+// ── DOM helpers ─────────────────────────────────────────────────────────────
 
-  panelEl.classList.add("hl-active");
-  (byKey.get(k) || []).forEach((n) => n.classList.add("hl-self"));
-  up.forEach((key) => (byKey.get(key) || []).forEach((n) => n.classList.add("hl-upstream")));
-  down.forEach((key) => (byKey.get(key) || []).forEach((n) => n.classList.add("hl-downstream")));
+/** @param {ParentNode} panel @param {string} [selector] */
+export function bucketTargets(panel, selector = "[data-iss]") {
+  const byKey = new Map();
+  for (const el of panel.querySelectorAll(selector)) {
+    const k = el.dataset.iss;
+    if (!k) continue;
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(el);
+  }
+  return byKey;
+}
 
-  const chain = new Set([k, ...up, ...down]);
-  edges.forEach((e) => {
-    if (chain.has(e.dataset.src) && chain.has(e.dataset.tgt)) {
+// ── Apply / clear ─────────────────────────────────────────────────────────────
+
+/**
+ * @param {HTMLElement} panel
+ * @param {string} key
+ * @param {{ byKey: Map<string, Element[]>, chainEdges: ChainEdge[], edgeElements?: Element[] }} opts
+ */
+export function applyHighlight(panel, key, { byKey, chainEdges, edgeElements = [] }) {
+  const { upstream, downstream, all } = getHighlightChain(key, chainEdges);
+
+  panel.classList.add("hl-active");
+  (byKey.get(key) || []).forEach((n) => n.classList.add("hl-self"));
+  for (const k of upstream) {
+    (byKey.get(k) || []).forEach((n) => n.classList.add("hl-upstream"));
+  }
+  for (const k of downstream) {
+    (byKey.get(k) || []).forEach((n) => n.classList.add("hl-downstream"));
+  }
+
+  for (const e of edgeElements) {
+    const src = e.dataset.src;
+    const dst = e.dataset.dst;
+    if (src && dst && all.has(src) && all.has(dst)) {
       e.classList.add("hl-edge");
     }
-  });
+  }
 }
 
-function clearHighlight() {
-  if (!panelEl) return;
-  panelEl.classList.remove("hl-active");
-  panelEl
+/** @param {HTMLElement} panel @param {Element[]} [edgeElements] */
+export function clearHighlight(panel, edgeElements = []) {
+  panel.classList.remove("hl-active");
+  panel
     .querySelectorAll(".hl-self, .hl-upstream, .hl-downstream")
     .forEach((el) => el.classList.remove("hl-self", "hl-upstream", "hl-downstream"));
-  (edgesFn ? edgesFn() : []).forEach((e) => e.classList.remove("hl-edge"));
+  edgeElements.forEach((e) => e.classList.remove("hl-edge"));
 }
 
-function restorePinned(byKey, edges) {
-  clearHighlight();
-  if (pinnedKey) highlightKey(pinnedKey, byKey, edges);
-}
-
-// ── Wire hover events on all targets ───────────────────────────────────────────
-function wireTargets(targets, byKey, edges) {
-  targets.forEach((el) => {
-    el.addEventListener("mouseenter", () => {
-      clearHighlight();
-      highlightKey(el.dataset.iss, byKey, edges);
-    });
-    el.addEventListener("mouseleave", () => restorePinned(byKey, edges));
+function restorePinned(session) {
+  clearHighlight(session.panel, session.edgeElements);
+  if (!pinnedKey) return;
+  applyHighlight(session.panel, pinnedKey, {
+    byKey: bucketTargets(session.panel, session.targetSelector),
+    chainEdges: session.chainEdges,
+    edgeElements: session.edgeElements,
   });
 }
 
-// ── Wire search input for pinned highlight ─────────────────────────────────────
-let searchWired = false;
+// ── Wiring ────────────────────────────────────────────────────────────────────
 
-function wireSearch(input) {
-  if (!input || searchWired) return;
-  searchWired = true;
+/** @param {HoverSession} session */
+function wireHoverChain(session) {
+  const { panel, targetSelector, edgeElements } = session;
+  const targets = panel.querySelectorAll(targetSelector);
+  for (const el of targets) {
+    el.addEventListener("mouseenter", () => {
+      clearHighlight(panel, edgeElements);
+      applyHighlight(panel, el.dataset.iss, {
+        byKey: bucketTargets(panel, targetSelector),
+        chainEdges: session.chainEdges,
+        edgeElements,
+      });
+    });
+    el.addEventListener("mouseleave", () => restorePinned(session));
+  }
+}
 
-  function applySearch() {
+/** Issue-number pin for table/list search (highlights chain without re-render). */
+function wireSearchPin(input) {
+  if (!input || searchPinWired) return;
+  searchPinWired = true;
+
+  input.addEventListener("input", () => {
+    if (state.view === "graph") return;
     const raw = input.value.trim().replace(/^#/, "");
     if (!raw) {
       pinnedKey = null;
-      clearHighlight();
+      if (activeSession) clearHighlight(activeSession.panel, activeSession.edgeElements);
       return;
     }
-    // Rebuild byNum from current view panel DOM on each search (handles filtered nodes)
-    const byNum = new Map();
-    const currentByKey = new Map();
-    const panel = panelEl || document.querySelector(".view-active");
+    const panel = activeSession?.panel || document.querySelector(".view-active");
     if (!panel) return;
-    panel.querySelectorAll("[data-iss]").forEach((el) => {
+
+    const byNum = new Map();
+    const byKey = new Map();
+    for (const el of panel.querySelectorAll("[data-iss]")) {
       const k = el.dataset.iss;
-      if (!k) return;
-      if (!currentByKey.has(k)) currentByKey.set(k, []);
-      currentByKey.get(k).push(el);
+      if (!k) continue;
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k).push(el);
       const m = /#(\d+)$/.exec(k);
-      if (!m) return;
+      if (!m) continue;
       const num = m[1];
       if (!byNum.has(num)) byNum.set(num, []);
       byNum.get(num).push(k);
-    });
+    }
+
     const keys = byNum.get(raw);
-    if (!keys || keys.length === 0) {
+    if (!keys?.length) {
       pinnedKey = null;
-      clearHighlight();
+      clearHighlight(panel, activeSession?.edgeElements ?? []);
       return;
     }
+
     pinnedKey = keys[0];
-    clearHighlight();
-    // Get current edge elements from graph if visible
-    const edges = Array.from(panel.querySelectorAll(".gg-edge[data-src]"));
-    highlightKey(pinnedKey, currentByKey, edges);
-  }
-
-  input.addEventListener("input", applySearch);
-
-  // Esc clears search
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    if (!input.value && !pinnedKey) return;
-    input.value = "";
-    applySearch();
-    if (document.activeElement === input) input.blur();
+    const session = activeSession ?? {
+      panel,
+      chainEdges: state.edges.filter((e) => e.kind === "blocks" || !e.kind),
+      edgeElements: [],
+      targetSelector: "[data-iss]",
+    };
+    clearHighlight(panel, session.edgeElements);
+    applyHighlight(panel, pinnedKey, {
+      byKey,
+      chainEdges: session.chainEdges,
+      edgeElements: session.edgeElements,
+    });
   });
 }
 
-// ── Public: initialize hover for a view container ──────────────────────────────
-export function initHover(panel, viewName) {
-  panelEl = panel;
+// ── Public API ────────────────────────────────────────────────────────────────
 
-  // Get all elements with data-iss (issue cards, list rows, etc.)
-  const targets = Array.from(panel.querySelectorAll("[data-iss]"));
-  if (targets.length === 0) return;
+/** Table and list views — blocks edges only, no SVG edges. */
+export function initHover(panel) {
+  const session = {
+    panel,
+    chainEdges: state.edges.filter((e) => e.kind === "blocks" || !e.kind),
+    edgeElements: [],
+    targetSelector: "[data-iss]",
+  };
+  activeSession = session;
+  wireHoverChain(session);
 
-  // Bucket elements by issue key
-  const byKey = new Map();
-  targets.forEach((el) => {
-    const k = el.dataset.iss;
-    if (!byKey.has(k)) byKey.set(k, []);
-    byKey.get(k).push(el);
-  });
-
-  // Get edge elements if any (for graph view)
-  const edges =
-    viewName === "graph" ? Array.from(panel.querySelectorAll(".gg-edge[data-src]")) : [];
-
-  edgesFn = () => edges;
-
-  wireTargets(targets, byKey, edges);
-
-  // Wire search once (guarded by searchWired flag)
   const searchInput = document.getElementById("search-input");
-  if (searchInput) {
-    wireSearch(searchInput);
-  }
+  if (searchInput) wireSearchPin(searchInput);
 }
 
-// ── Clear pinned key when filters change ───────────────────────────────────────
+/**
+ * Graph view — uses filtered chain edges (blocks + optional parent) and SVG edge elements.
+ * @param {HTMLElement} panel
+ * @param {{ chainEdges: ChainEdge[], edgeElements: Element[], nodes: Array<{ key: string, title?: string|null, labels?: string[] }> }} opts
+ */
+export function initGraphHover(panel, { chainEdges, edgeElements, nodes }) {
+  const session = {
+    panel,
+    chainEdges,
+    edgeElements,
+    targetSelector: ".gg-node[data-iss], .gg-ilabel[data-iss]",
+  };
+  activeSession = session;
+  wireHoverChain(session);
+  applyGraphSearchHighlight(panel, nodes, session);
+}
+
+/**
+ * Graph search: highlight first text match + dependency chain (does not filter nodes).
+ * @param {HTMLElement} panel
+ * @param {Array<{ key: string, title?: string|null, labels?: string[] }>} nodes
+ * @param {HoverSession} session
+ */
+export function applyGraphSearchHighlight(panel, nodes, session = activeSession) {
+  if (!session) return;
+  const search = (state.search ?? "").trim().toLowerCase();
+  if (!search) {
+    pinnedKey = null;
+    return;
+  }
+
+  const match = nodes.find((n) => {
+    const hay = `${n.key} ${n.title ?? ""} ${(n.labels ?? []).join(" ")}`.toLowerCase();
+    return hay.includes(search);
+  });
+  if (!match) {
+    pinnedKey = null;
+    return;
+  }
+
+  pinnedKey = match.key;
+  clearHighlight(panel, session.edgeElements);
+  applyHighlight(panel, pinnedKey, {
+    byKey: bucketTargets(panel, session.targetSelector),
+    chainEdges: session.chainEdges,
+    edgeElements: session.edgeElements,
+  });
+}
+
+/** Clear pinned search highlight (ESC, filter changes, search clear). */
 export function clearPinned() {
   pinnedKey = null;
+  if (activeSession) clearHighlight(activeSession.panel, activeSession.edgeElements);
 }

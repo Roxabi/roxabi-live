@@ -6,7 +6,7 @@ import {
   requireAuthGate,
   stripStaleOAuthCallbackUrl,
 } from "./auth.js";
-import { clearSearchHighlight, initGraph } from "./graph.js";
+import { initGraph } from "./graph.js";
 import { clearPinned } from "./hover.js";
 import { ensureSyncStarted, startSyncProgressMonitor } from "./initial-sync.js";
 import { renderList } from "./list.js";
@@ -241,17 +241,17 @@ searchClear.addEventListener("click", () => {
   searchInput.value = "";
   setState({ search: "" });
   searchInput.focus();
-  clearSearchHighlight();
+  clearPinned();
   render();
 });
 
-// ESC key clears search + graph highlight
+// ESC key clears search + highlight chain
 searchInput.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     e.preventDefault();
     searchInput.value = "";
     setState({ search: "" });
-    clearSearchHighlight();
+    clearPinned();
     render();
   }
 });
