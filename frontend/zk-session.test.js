@@ -7,6 +7,7 @@ const {
   setZkPageRestoreHandler,
   setZkAutoLockHandler,
   setZkSessionReadyHandler,
+  setZkRememberMode,
   wirePageHideLock,
   wireIdleLock,
 } = await import("./zk-session.js");
@@ -78,6 +79,7 @@ describe("wireIdleLock", () => {
     vi.useRealTimers();
     clearZkSession();
     setZkAutoLockHandler(null);
+    setZkRememberMode(false);
   });
 
   it("fires auto-lock handler after 15 minutes idle", () => {
@@ -88,6 +90,26 @@ describe("wireIdleLock", () => {
 
     vi.advanceTimersByTime(15 * 60 * 1000);
 
+    expect(isZkUnlocked()).toBe(false);
+    expect(onLock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not auto-lock immediately in 30-day remember mode (setTimeout overflow guard)", () => {
+    const onLock = vi.fn();
+    setZkAutoLockHandler(onLock);
+    setZkRememberMode(true);
+    wireIdleLock();
+    setZkSession({}, "fp12345678");
+
+    // Regression: REMEMBER_IDLE_MS (30d) used to overflow setTimeout's 32-bit
+    // cap and fire on the next tick, looping idle→restore. Advancing well past
+    // any short interval must NOT lock.
+    vi.advanceTimersByTime(60 * 60 * 1000); // 1 h
+    expect(isZkUnlocked()).toBe(true);
+    expect(onLock).not.toHaveBeenCalled();
+
+    // It still locks once the full remember window elapses.
+    vi.advanceTimersByTime(30 * 24 * 60 * 60 * 1000); // +30 d
     expect(isZkUnlocked()).toBe(false);
     expect(onLock).toHaveBeenCalledTimes(1);
   });
