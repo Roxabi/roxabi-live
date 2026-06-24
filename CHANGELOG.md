@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.21.3](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.21.2...roxabi-live/v0.21.3) (2026-06-24)
+
+
+### Bug Fixes
+
+* **graph:** restore DOM-based hover chain for graph view (the centralized `hover.js` graph path regressed hover highlighting in production)
+* **zk:** stop idle-lock loop in 30-day remember mode — `REMEMBER_IDLE_MS` exceeded `setTimeout`'s 32-bit cap (~24.8 days), overflowed to fire immediately, and looped `zk.lock.idle` → silent device restore; now re-armed in bounded chunks against an absolute deadline ([#267](https://github.com/Roxabi/roxabi-live/pull/267))
+* **wrangler:** move staging `routes=[]` out of `[env.staging.vars]` so a `--env staging` deploy can no longer hijack the `live.roxabi.dev` custom domain ([#266](https://github.com/Roxabi/roxabi-live/pull/266))
+
+
 ## [0.21.2](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.21.1...roxabi-live/v0.21.2) (2026-06-23)
 
 
