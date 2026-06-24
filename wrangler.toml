@@ -70,16 +70,18 @@ name = "roxabi-live-staging"
 workers_dev = true
 # Edge gate: CF Access Email OTP on the workers.dev URL (scripts/setup-staging-access.sh).
 # Worker also serves robots.txt + X-Robots-Tag when GITHUB_APP_SLUG is staging.
+# `routes` is inheritable — without this explicit empty override a staging
+# deploy would inherit the top-level live.roxabi.dev custom domain (#101) and
+# bind it to the staging Worker. MUST live under [env.staging] (a config key),
+# NOT [env.staging.vars] — under .vars it silently becomes a no-op var named
+# "routes" and the custom domain leaks to staging on the next deploy.
+routes = []
 
 [env.staging.vars]
 APP_RELEASE = "0.21.2"
 GITHUB_APP_SLUG = "roxabi-live-staging"
 ZK_ACCOUNT_KEY = "1"
 ZK_STRUCTURE_ONLY = "1"
-# `routes` is inheritable — without this explicit empty override a staging
-# deploy would inherit the top-level live.roxabi.dev custom domain (#101) and
-# bind it to the staging Worker. Keep this even though staging has no routes.
-routes = []
 
 [[env.staging.d1_databases]]
 binding        = "DB"
