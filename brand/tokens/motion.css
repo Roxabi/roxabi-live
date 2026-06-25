@@ -1,0 +1,14 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   MOTION — Roxabi Live
+   Restrained, mechanical. A confident ease-out for entrances and hovers; a
+   symmetric ease-in-out for ambient "alive" loops (ready glow, running pulse,
+   live dot). Three durations: micro for press feedback, short for hovers,
+   long for entrances. Nothing bounces.
+────────────────────────────────────────────────────────────────────────── */
+:root {
+  --ease-out:    cubic-bezier(.16, 1, .3, 1);
+  --ease-in-out: cubic-bezier(.45, 0, .55, 1);
+  --dur-micro:   120ms;
+  --dur-short:   220ms;
+  --dur-long:    420ms;
+}

@@ -1,0 +1,29 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const {
+  title = "Roxabi Live — Le poste de pilotage de votre flotte d'agents",
+  description = "Lancez dix agents à la fois, sans qu'ils se marchent dessus. Roxabi Live lit vos issues GitHub et leurs liens blocked-by pour révéler ce que vous pouvez lancer en parallèle.",
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+  </head>
+  <body class="bloom-canvas">
+    <slot />
+  </body>
+</html>

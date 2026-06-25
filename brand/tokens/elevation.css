@@ -1,0 +1,13 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   ELEVATION — Roxabi Live
+   Shadows are deep and soft (the canvas is near-black, so elevation reads as
+   a dark halo, not a grey drop). Panels add a faint amber under-glow.
+────────────────────────────────────────────────────────────────────────── */
+:root {
+  --shadow-card:  0 1px 2px rgba(0,0,0,.4);
+  --shadow-panel: 0 18px 50px -12px rgba(0,0,0,.7);
+  /* amber under-glow layered onto a panel shadow on hero boards */
+  --glow-amber:   0 0 60px -20px rgba(240,180,41,.06);
+  --glow-ready:   0 0 8px 1px rgba(52,211,153,.15);
+  --glow-running: 0 0 0 3px rgba(56,189,248,.20);
+}

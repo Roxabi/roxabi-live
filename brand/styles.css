@@ -1,0 +1,12 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   ROXABI LIVE — DESIGN SYSTEM
+   Global entry point. Consumers link THIS file only.
+   Keep this file a list of @import lines — no rules inline.
+────────────────────────────────────────────────────────────────────────── */
+@import "tokens/fonts.css";
+@import "tokens/colors.css";
+@import "tokens/typography.css";
+@import "tokens/spacing.css";
+@import "tokens/elevation.css";
+@import "tokens/motion.css";
+@import "base.css";

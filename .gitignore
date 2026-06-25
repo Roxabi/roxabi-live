@@ -32,6 +32,9 @@ reports/
 frontend/node_modules/
 node_modules/
 
+# Astro generated types/cache (apps/marketing)
+.astro/
+
 # Playwright e2e artifacts
 test-results/
 playwright-report/

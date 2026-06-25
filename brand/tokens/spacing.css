@@ -1,0 +1,30 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   SPACING, RADIUS & LAYOUT — Roxabi Live
+   Dense, instrument-panel spacing. Radii are modest — this is a control
+   surface, not a consumer toy: 6px on controls, up to 20px on big panels.
+────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* ── Spacing scale (4px base) ───────────────────────────────────────── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* ── Radius ─────────────────────────────────────────────────────────── */
+  --r-sm: 6px;    /* buttons, pills, inputs   */
+  --r-md: 10px;   /* cards, columns           */
+  --r-lg: 14px;   /* method cards             */
+  --r-xl: 20px;   /* boards, hero panels, CTA */
+  --r-full: 999px;
+
+  /* ── Layout ─────────────────────────────────────────────────────────── */
+  --maxw: 1120px;
+  --header-h: 60px;
+}

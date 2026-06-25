@@ -1,0 +1,27 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+// PHASE-1 PLACEHOLDER — smoke test that the shared `brand/` design system is
+// wired through Astro. The real landing (ported from the Claude Design landing,
+// concept-b) is built in step 2 as proper .astro components (SiteHeader, Hero +
+// LaunchBoard, Problem, Method, CTA). Do not treat this as final copy/design.
+---
+
+<Layout>
+  <main class="container" style="min-height:100vh;display:flex;flex-direction:column;justify-content:center;gap:var(--space-6);padding-block:var(--space-20);">
+    <p class="eyebrow">Pilotage de flotte · GitHub natif</p>
+    <h1 style="max-width:18ch;">
+      Lancez dix agents à la fois.
+      <span class="accent">Sans qu'ils se marchent dessus.</span>
+    </h1>
+    <p class="lead" style="max-width:60ch;">
+      Le goulot d'étranglement d'une flotte d'agents, ce n'est plus l'écriture du
+      code&nbsp;— c'est la concurrence. Roxabi Live lit vos issues GitHub et leurs
+      liens <span class="mono">blocked-by</span> pour révéler, d'un coup d'œil, ce
+      que vous pouvez lancer en parallèle.
+    </p>
+    <p class="mono" style="color:var(--text-dim);font-size:var(--fs-micro);letter-spacing:var(--tracking-mono);text-transform:uppercase;">
+      Phase 1 · placeholder — design réel = étape 2
+    </p>
+  </main>
+</Layout>
