@@ -6,6 +6,7 @@
 
 import { useAuth } from "@/auth/AuthContext";
 import { SettingsDialog } from "@/auth/SettingsDialog";
+import { useSettingsUi } from "@/auth/SettingsUi";
 import { getDisplayName } from "@/auth/displayName";
 import { useLogout } from "@/auth/useAuthMutations";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -15,8 +16,8 @@ import { useState } from "react";
 export function UserMenu() {
   const me = useAuth();
   const logout = useLogout();
+  const settings = useSettingsUi();
   const [open, setOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const login = me.user.github_login;
   const [name, setName] = useState(() => getDisplayName(login));
 
@@ -45,7 +46,7 @@ export function UserMenu() {
             data-testid="user-menu-settings"
             onClick={() => {
               setOpen(false);
-              setSettingsOpen(true);
+              settings.openSettings();
             }}
             className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm text-foreground hover:bg-card"
           >
@@ -68,9 +69,12 @@ export function UserMenu() {
       </Popover>
       <SettingsDialog
         me={me}
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
+        open={settings.open}
+        onOpenChange={settings.setOpen}
         onNameChange={setName}
+        initialPassphraseForm={settings.initialPassphraseForm}
+        autoDelete={settings.autoDelete}
+        onResumeHandled={settings.clearResumeFlags}
       />
     </>
   );

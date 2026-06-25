@@ -46,8 +46,10 @@ export interface WrappedAccountKey {
 }
 
 export interface IssueContent {
-  title: string;
-  body?: string;
+  // Titles can be sealed null (structure-only sync with no GitHub title); the
+  // decrypt side maps null → SEALED_TITLE_LABEL. Mirrors the legacy JS shape.
+  title: string | null;
+  body?: string | null;
 }
 
 // Return types are pinned to Uint8Array<ArrayBuffer> (not the default

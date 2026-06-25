@@ -1,8 +1,9 @@
 /**
- * SettingsDialog — account settings (profile, repositories, permissions, delete).
- * Ported from frontend/settings.js. The zk passphrase-change section and the
- * reauth-gated delete path are wired in the ZK slices (9-10); for now delete
- * uses the no-reauth path and surfaces a clear message if step-up is required.
+ * SettingsDialog — account settings (profile, repositories, encryption, delete).
+ * Ported from frontend/settings.js. The encryption passphrase-change section and
+ * the reauth-gated delete (deferred from slice 7) are wired here in slice 10:
+ * both privileged actions bounce through OAuth step-up via requestSettingsReauth
+ * and resume on return (?settings=passphrase / ?settings=delete).
  */
 
 import { clearDisplayName, getDisplayName, setDisplayName } from "@/auth/displayName";
@@ -10,9 +11,14 @@ import { useLogout } from "@/auth/useAuthMutations";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { type ApiError, apiFetch } from "@/lib/api";
+import { PassphraseChangeSection } from "@/zk/PassphraseChangeSection";
+import { hasEnrolledThisSession } from "@/zk/enroll";
+import { clearZkReauthProof, getZkReauthProof } from "@/zk/github";
+import { clearLocalZkState } from "@/zk/reset";
+import { requestSettingsReauth } from "@/zk/settingsReauth";
 import type { MePayload } from "@roxabi-live/shared";
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function configureUrl(me: MePayload): string | null {
   const opts = me.install_options ?? [];
@@ -29,11 +35,19 @@ export function SettingsDialog({
   open,
   onOpenChange,
   onNameChange,
+  initialPassphraseForm = false,
+  autoDelete = false,
+  onResumeHandled,
 }: {
   me: MePayload;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNameChange?: (name: string) => void;
+  /** Resume: jump straight to the passphrase form (returned from reauth). */
+  initialPassphraseForm?: boolean;
+  /** Resume: re-run the delete after reauth (returned from reauth). */
+  autoDelete?: boolean;
+  onResumeHandled?: () => void;
 }) {
   const login = me.user.github_login;
   const logout = useLogout();
@@ -42,20 +56,34 @@ export function SettingsDialog({
   const installUrl = configureUrl(me);
   const installations = me.installations ?? [];
 
-  const deleteAccount = useMutation<void, ApiError, void>({
+  const deleteAccount = useMutation<{ redirected: boolean }, ApiError, void>({
     mutationFn: async () => {
-      await apiFetch<{ ok: true }>("/api/account/delete", { method: "POST", body: {} });
+      const payload: { reauth_proof?: string } = {};
+      // Live enrollment state: cached /api/me can lag a same-session enroll.
+      if (me.user.zk_enrolled || hasEnrolledThisSession()) {
+        const proof = getZkReauthProof();
+        if (!proof) {
+          requestSettingsReauth("delete", window.location.pathname);
+          return { redirected: true };
+        }
+        payload.reauth_proof = proof;
+      }
+      await apiFetch<{ ok: true }>("/api/account/delete", { method: "POST", body: payload });
+      return { redirected: false };
     },
-    onSuccess: () => {
+    onSuccess: async (res) => {
+      if (res.redirected) return;
+      clearZkReauthProof();
+      await clearLocalZkState(login);
       clearDisplayName(login);
       logout.mutate({ to: "/" });
     },
     onError: (err) => {
-      setDeleteError(
-        err.status === 403
-          ? "La suppression exige une ré-authentification chiffrée (à venir)."
-          : "Suppression impossible — réessayez.",
-      );
+      if (err.status === 403) {
+        requestSettingsReauth("delete", window.location.pathname);
+        return;
+      }
+      setDeleteError("Suppression impossible — réessayez.");
     },
   });
 
@@ -67,21 +95,36 @@ export function SettingsDialog({
 
   function onDelete() {
     setDeleteError(null);
-    if (!window.confirm("Delete all your Roxabi Live data and sign out? This cannot be undone.")) {
+    if (
+      !window.confirm(
+        "Supprimer toutes vos données Roxabi Live et vous déconnecter ? Action irréversible.",
+      )
+    ) {
       return;
     }
     deleteAccount.mutate();
   }
 
+  // Resume: returned from reauth with ?settings=delete → re-run the delete once.
+  const autoDeleteRan = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one-shot resume; onDelete must not re-trigger it.
+  useEffect(() => {
+    if (autoDelete && open && !autoDeleteRan.current) {
+      autoDeleteRan.current = true;
+      onResumeHandled?.();
+      onDelete();
+    }
+  }, [autoDelete, open]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg" data-testid="settings-dialog">
-        <DialogTitle className="text-xl font-semibold text-foreground">Settings</DialogTitle>
+        <DialogTitle className="text-xl font-semibold text-foreground">Paramètres</DialogTitle>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">Profile</h3>
+          <h3 className="text-sm font-semibold text-foreground">Profil</h3>
           <label className="block space-y-1">
-            <span className="text-xs text-muted-foreground">Display name</span>
+            <span className="text-xs text-muted-foreground">Nom affiché</span>
             <input
               type="text"
               value={name}
@@ -93,14 +136,15 @@ export function SettingsDialog({
             />
           </label>
           <p className="text-xs text-muted-foreground">
-            Shown in the header. GitHub login: <strong className="text-foreground">{login}</strong>.
+            Affiché dans l'en-tête. Login GitHub :{" "}
+            <strong className="text-foreground">{login}</strong>.
           </p>
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">Repositories</h3>
+          <h3 className="text-sm font-semibold text-foreground">Dépôts</h3>
           <p className="text-xs text-muted-foreground">
-            Add or remove repositories the GitHub App can access.
+            Ajoutez ou retirez les dépôts auxquels l'App GitHub accède.
           </p>
           {installations.length ? (
             <ul className="space-y-1 text-sm">
@@ -112,7 +156,9 @@ export function SettingsDialog({
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">No installation linked yet.</p>
+            <p className="text-sm text-muted-foreground">
+              Aucune installation liée pour l'instant.
+            </p>
           )}
           {installUrl && (
             <a
@@ -121,35 +167,35 @@ export function SettingsDialog({
               rel="noopener noreferrer"
               className="inline-block text-sm text-primary underline-offset-4 hover:underline"
             >
-              Configure repositories on GitHub
+              Configurer les dépôts sur GitHub
             </a>
           )}
         </section>
 
-        <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">GitHub App permissions</h3>
-          <a
-            href="https://github.com/settings/installations"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-sm text-primary underline-offset-4 hover:underline"
-          >
-            Manage permissions on GitHub
-          </a>
-        </section>
+        {me.user.zk_account_key_enabled && (
+          <PassphraseChangeSection
+            login={login}
+            initialOpen={initialPassphraseForm}
+            onChanged={() => {
+              onResumeHandled?.();
+              onOpenChange(false);
+            }}
+          />
+        )}
 
         <section className="space-y-2 rounded-md border border-blocked/30 bg-blocked/5 p-3">
-          <h3 className="text-sm font-semibold text-blocked">Delete account</h3>
+          <h3 className="text-sm font-semibold text-blocked">Supprimer le compte</h3>
           <p className="text-xs text-muted-foreground">
-            Wipes your Roxabi data and signs you out. Revoke the app on GitHub separately.
+            Efface vos données Roxabi et vous déconnecte. Révoquez l'app sur GitHub séparément.
           </p>
           <Button
             variant="destructive"
             size="sm"
             onClick={onDelete}
             loading={deleteAccount.isPending}
+            data-testid="settings-delete"
           >
-            Delete my data &amp; sign out
+            Supprimer mes données &amp; se déconnecter
           </Button>
           {deleteError && (
             <p className="text-xs text-blocked" role="alert">

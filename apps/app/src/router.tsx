@@ -3,9 +3,12 @@ import { SignInScreen } from "@/auth/SignInScreen";
 import { AppShell } from "@/components/AppShell";
 import { BoardView } from "@/components/BoardView";
 import { SyncProgressBanner } from "@/components/SyncProgressBanner";
-import { useGraphData } from "@/hooks/useGraphData";
 import { useSyncProgressMonitor } from "@/hooks/useSyncProgressMonitor";
 import { useVersionPoll } from "@/hooks/useVersionPoll";
+import { ZkGate } from "@/zk/ZkGate";
+import { ZkNotices } from "@/zk/ZkNotices";
+import { ZkSessionProvider } from "@/zk/ZkSessionProvider";
+import { useDecryptedGraph } from "@/zk/useDecryptedGraph";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   Outlet,
@@ -37,15 +40,17 @@ const indexRoute = createRoute({
   component: CockpitPage,
 });
 
-/** The authenticated dashboard body — mounts only inside AuthGate's ready branch. */
+/** The authenticated dashboard body — mounts only inside ZkGate's unlocked branch. */
 function Dashboard() {
   useVersionPoll();
   const syncStatus = useSyncProgressMonitor();
-  const { nodes, edges, isLoading, isError, error } = useGraphData();
+  const { nodes, edges, isLoading, isError, error, needsGithubLink, zkMigrationIncomplete } =
+    useDecryptedGraph();
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-foreground">Launch Board</h1>
+      <ZkNotices needsGithubLink={needsGithubLink} migrationIncomplete={zkMigrationIncomplete} />
       <SyncProgressBanner status={syncStatus} />
       {isError ? (
         <div className="rounded-lg border border-blocked/30 bg-blocked/10 p-4 text-sm text-blocked">
@@ -65,9 +70,13 @@ function Dashboard() {
 function CockpitPage() {
   return (
     <AuthGate>
-      <AppShell>
-        <Dashboard />
-      </AppShell>
+      <ZkSessionProvider>
+        <AppShell>
+          <ZkGate>
+            <Dashboard />
+          </ZkGate>
+        </AppShell>
+      </ZkSessionProvider>
     </AuthGate>
   );
 }
