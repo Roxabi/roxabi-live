@@ -1,12 +1,15 @@
+import { IssueTable } from "@/components/IssueTable";
+import { Button } from "@/components/ui/button";
+import { useGraphData } from "@/hooks/useGraphData";
+import { useVersionPoll } from "@/hooks/useVersionPoll";
 import type { QueryClient } from "@tanstack/react-query";
 import {
+  Outlet,
   createRootRouteWithContext,
   createRoute,
   createRouter,
-  Outlet,
 } from "@tanstack/react-router";
-import { StatusBadge } from "@/components/StatusBadge";
-import { Button } from "@/components/ui/button";
+import { Suspense, lazy } from "react";
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -16,9 +19,7 @@ function RootLayout() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border px-6 py-4">
-        <span className="text-lg font-semibold tracking-tight text-foreground">
-          Roxabi Live
-        </span>
+        <span className="text-lg font-semibold tracking-tight text-foreground">Roxabi Live</span>
       </header>
       <main className="p-6">
         <Outlet />
@@ -38,16 +39,28 @@ const indexRoute = createRoute({
 });
 
 function CockpitPage() {
+  useVersionPoll();
+  const { nodes, isLoading, isError, error } = useGraphData();
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-foreground">Cockpit</h1>
-      <div className="flex flex-wrap gap-3">
-        <StatusBadge status="ready" />
-        <StatusBadge status="blocked" />
-        <StatusBadge status="running" />
-        <StatusBadge status="done" />
+      <div className="flex items-baseline justify-between">
+        <h1 className="text-2xl font-bold text-foreground">Launch Board</h1>
+        <span className="text-sm text-muted-foreground">
+          {isLoading ? "loading…" : `${nodes.length} issues`}
+        </span>
       </div>
-      <Button>Open dashboard</Button>
+      {isError ? (
+        <div className="rounded-lg border border-blocked/30 bg-blocked/10 p-4 text-sm text-blocked">
+          Failed to load the corpus: {(error as Error).message}
+        </div>
+      ) : isLoading ? (
+        <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+          Loading the corpus…
+        </div>
+      ) : (
+        <IssueTable nodes={nodes} />
+      )}
     </div>
   );
 }
@@ -72,7 +85,23 @@ function SignInPage() {
   );
 }
 
-const routeTree = rootRoute.addChildren([indexRoute, signInRoute]);
+// DEV-only fixture route — lazy so it never enters the production bundle.
+const DevTablePage = lazy(() => import("./dev/DevTablePage"));
+const devTableRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/dev/table",
+  component: () => (
+    <Suspense fallback={null}>
+      <DevTablePage />
+    </Suspense>
+  ),
+});
+
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  signInRoute,
+  ...(import.meta.env.DEV ? [devTableRoute] : []),
+]);
 
 export const router = createRouter({
   routeTree,

@@ -12,3 +12,6 @@ export { status, statusColor, type StatusKey } from "./brand.ts";
 
 // The Worker HTTP API contract — shared by apps/app and (later) apps/api.
 export * from "./types.ts";
+
+// Pure graph status + annotation logic (ported from frontend/state.js).
+export * from "./graph.ts";
