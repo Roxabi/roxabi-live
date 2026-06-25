@@ -3,7 +3,7 @@
 // .json()) is replaced by `apiFetch<T>` (parsed JSON, throws ApiError on non-2xx);
 // behaviour is preserved: both throw on 401/5xx, GraphQL errors come back 200.
 
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 
 const TOKEN_KEY = "roxabi:gh-user-token";
 const REAUTH_KEY = "roxabi:zk-reauth-proof";
@@ -67,14 +67,24 @@ export async function consumeZkHandoffFromUrl(): Promise<boolean> {
   const code = params.get("zk_handoff");
   if (!code) return false;
 
-  stripQueryParam("zk_handoff");
-
-  const { github_token } = await apiFetch<{ github_token?: string }>("/api/zk/consume-handoff", {
-    method: "POST",
-    body: { code },
-  });
-  setGithubUserToken(github_token);
-  return true;
+  try {
+    const { github_token } = await apiFetch<{ github_token?: string }>("/api/zk/consume-handoff", {
+      method: "POST",
+      body: { code },
+    });
+    // The code is single-use server-side; strip it now that the server has
+    // acknowledged it (consumed or expired).
+    stripQueryParam("zk_handoff");
+    setGithubUserToken(github_token);
+    return Boolean(github_token);
+  } catch (err) {
+    // Definitive failure (4xx: bad/expired code) → strip so we don't loop.
+    // Transient failure (5xx / network) → leave the code in the URL so the next
+    // mount retries; silently dropping the token was the prior failure mode.
+    const status = err instanceof ApiError ? err.status : 0;
+    if (status >= 400 && status < 500) stripQueryParam("zk_handoff");
+    return false;
+  }
 }
 
 // Default "/" — see zkReauthLoginUrl. The legacy "/dashboard" path no longer exists.
