@@ -119,3 +119,64 @@ export function displayStatus(node: {
   if (node.computedStatus === "ready" && node.dev_state !== "idle") return "running";
   return node.computedStatus;
 }
+
+/** Sentinel bucket labels for nodes with no value on a given dimension. */
+export const EMPTY_DIM = "(None)";
+export const EMPTY_ASSIGNEE = "(Unassigned)";
+
+/** Active filter state for the list/table views (ported from state.js applyFilters). */
+export interface NodeFilters {
+  repo: string[];
+  /** milestone_code values, or EMPTY_DIM for "no milestone". */
+  milestone: string[];
+  /** priority values, or EMPTY_DIM. */
+  priority: string[];
+  /** assignee logins, or EMPTY_ASSIGNEE. */
+  assignee: string[];
+  /** computedStatus values (ready/blocked/done). */
+  status: NodeStatus[];
+  label: string[];
+  search: string;
+  /** When false, parent (epic) nodes are hidden — they group children, not rows. */
+  showParents: boolean;
+}
+
+/**
+ * Apply the list/table filters to an annotated node set. Every facet is an
+ * AND; empty facet arrays mean "no constraint". Search matches key + title +
+ * labels (substring, case-insensitive). Ported verbatim from
+ * frontend/state.js::applyFilters.
+ */
+export function filterNodes(
+  nodes: AnnotatedNode[],
+  edges: GraphEdge[],
+  f: NodeFilters,
+): AnnotatedNode[] {
+  const q = f.search.trim().toLowerCase();
+  const parentKeys = f.showParents
+    ? null
+    : new Set(edges.filter((e) => e.kind === "parent").map((e) => e.src));
+
+  return nodes.filter((n) => {
+    if (parentKeys?.has(n.key)) return false;
+    if (f.repo.length && !f.repo.includes(n.repo)) return false;
+    const msCode = n.milestone_code ?? EMPTY_DIM;
+    if (f.milestone.length && !f.milestone.includes(msCode)) return false;
+    const pri = n.priority ?? EMPTY_DIM;
+    if (f.priority.length && !f.priority.includes(pri)) return false;
+    if (f.status.length && !f.status.includes(n.computedStatus)) return false;
+    if (f.label.length && !f.label.some((l) => n.labels.includes(l))) return false;
+    if (f.assignee.length) {
+      if (n.assignees.length === 0) {
+        if (!f.assignee.includes(EMPTY_ASSIGNEE)) return false;
+      } else if (!n.assignees.some((a) => f.assignee.includes(a))) {
+        return false;
+      }
+    }
+    if (q) {
+      const hay = `${n.key} ${n.title ?? ""} ${n.labels.join(" ")}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}

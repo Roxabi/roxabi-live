@@ -1,5 +1,7 @@
+import { FilterBar } from "@/components/FilterBar";
 import { IssueTable } from "@/components/IssueTable";
 import { Button } from "@/components/ui/button";
+import { useFilteredNodes } from "@/hooks/useFilteredNodes";
 import { useGraphData } from "@/hooks/useGraphData";
 import { useVersionPoll } from "@/hooks/useVersionPoll";
 import type { QueryClient } from "@tanstack/react-query";
@@ -40,14 +42,15 @@ const indexRoute = createRoute({
 
 function CockpitPage() {
   useVersionPoll();
-  const { nodes, isLoading, isError, error } = useGraphData();
+  const { nodes, edges, isLoading, isError, error } = useGraphData();
+  const filtered = useFilteredNodes(nodes, edges);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-baseline justify-between">
         <h1 className="text-2xl font-bold text-foreground">Launch Board</h1>
         <span className="text-sm text-muted-foreground">
-          {isLoading ? "loading…" : `${nodes.length} issues`}
+          {isLoading ? "loading…" : `${filtered.length} of ${nodes.length} issues`}
         </span>
       </div>
       {isError ? (
@@ -59,7 +62,10 @@ function CockpitPage() {
           Loading the corpus…
         </div>
       ) : (
-        <IssueTable nodes={nodes} />
+        <>
+          <FilterBar nodes={nodes} />
+          <IssueTable nodes={filtered} />
+        </>
       )}
     </div>
   );
