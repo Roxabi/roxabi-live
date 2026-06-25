@@ -12,6 +12,7 @@ import { OrgPicker } from "@/auth/OrgPicker";
 import { SettingsUiProvider } from "@/auth/SettingsUi";
 import { UserMenu } from "@/auth/UserMenu";
 import { BrandMark } from "@/components/BrandMark";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useGraphData } from "@/hooks/useGraphData";
 import { ZkLockButton } from "@/zk/ZkLockButton";
@@ -52,6 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <ViewToggle />
               <ZkLockButton />
               <OrgPicker me={me} />
+              <ThemeToggle />
               <UserMenu />
             </div>
           </div>
