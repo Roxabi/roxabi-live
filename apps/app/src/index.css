@@ -29,7 +29,14 @@
    @theme map above resolves var(--bg)/var(--text)/… at use-site, so every
    Tailwind utility (bg-background, text-foreground, …) re-themes for free.
    Unlayered → wins over the layered brand :root. Default stays dark. */
+/* Tell the UA to render native controls (the <select> popup, scrollbars, date
+   pickers, autofill) in the matching scheme — kills the white/blue OS-default
+   dropdown on the dark cockpit. */
+:root {
+  color-scheme: dark;
+}
 [data-theme="light"] {
+  color-scheme: light;
   --bg: #f7f5f1;
   --bg-elevated: #efece6;
   --bg-card: #ffffff;
