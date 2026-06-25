@@ -1,5 +1,6 @@
 import { DimSelect } from "@/components/DimSelect";
 import { FilterBar } from "@/components/FilterBar";
+import { GraphPanel } from "@/components/GraphPanel";
 import { IssueTable } from "@/components/IssueTable";
 import { PivotMatrix } from "@/components/PivotMatrix";
 import { ViewToggle } from "@/components/ViewToggle";
@@ -32,10 +33,20 @@ function PivotControls() {
   );
 }
 
-function GraphPlaceholder() {
+function GraphControls() {
+  const graphRow = useDashboardStore((s) => s.graphRow);
+  const graphCol = useDashboardStore((s) => s.graphCol);
+  const patch = useDashboardStore((s) => s.patch);
+
   return (
-    <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-      The dependency graph view ships in the next slice.
+    <div className="flex flex-wrap items-center gap-3">
+      <DimSelect
+        label="Rows"
+        value={graphRow}
+        onChange={(v) => patch({ graphRow: v })}
+        allowNone={false}
+      />
+      <DimSelect label="Order by" value={graphCol} onChange={(v) => patch({ graphCol: v })} />
     </div>
   );
 }
@@ -53,6 +64,7 @@ export function BoardView({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gra
       <div className="flex flex-wrap items-center gap-3">
         <ViewToggle />
         {view === "pivot" && <PivotControls />}
+        {view === "graph" && <GraphControls />}
         <span className="ml-auto text-sm text-muted-foreground">
           {filtered.length} of {nodes.length}
         </span>
@@ -60,7 +72,7 @@ export function BoardView({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gra
       <FilterBar nodes={nodes} />
       {view === "list" && <IssueTable nodes={filtered} />}
       {view === "pivot" && <PivotMatrix nodes={filtered} edges={edges} />}
-      {view === "graph" && <GraphPlaceholder />}
+      {view === "graph" && <GraphPanel nodes={filtered} edges={edges} />}
     </div>
   );
 }

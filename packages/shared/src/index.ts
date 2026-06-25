@@ -18,3 +18,8 @@ export * from "./graph.ts";
 
 // Pivot/group dimension helpers (ported from frontend/state.js).
 export * from "./dims.ts";
+
+// Dependency-graph layout engine + repo tones + hover-chain traversal.
+export * from "./layout.ts";
+export * from "./tone.ts";
+export * from "./hover.ts";
