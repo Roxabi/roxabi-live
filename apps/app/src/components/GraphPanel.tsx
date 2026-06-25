@@ -84,7 +84,7 @@ function GraphNode({
             border: blocked ? `2px dashed ${tone}` : `1.5px solid ${tone}`,
             // Separator ring vs the canvas + a soft tone bloom (legacy
             // `.gg-node` 0 0 8px currentColor) — the premium glow. Done = no glow.
-            boxShadow: done ? "0 0 0 2px var(--bg)" : `0 0 0 2px var(--bg), 0 0 8px ${tone}`,
+            boxShadow: done ? "0 0 0 2px var(--bg)" : `0 0 0 2px var(--bg), 0 0 10px ${tone}`,
             opacity: done ? 0.55 : undefined,
           }}
           aria-hidden

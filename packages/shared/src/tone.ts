@@ -15,7 +15,9 @@ const REPO_TONE_MAP: Record<string, string> = {
   "Roxabi/roxabi-plugins": "lime",
   "Roxabi/roxabi-vault": "amber",
   "Roxabi/roxabi-production": "green",
-  "Roxabi/roxabi-boilerplate": "gray",
+  // Indigo (the brand graph-node hue) rather than flat slate — a grey node's
+  // glow is invisible on the dark canvas, which read as "no premium change".
+  "Roxabi/roxabi-boilerplate": "indigo",
   "Roxabi/projects-meta": "cyan",
 };
 
