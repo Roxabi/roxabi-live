@@ -73,7 +73,7 @@ function GraphNode({
         <span
           className={cn(
             "block",
-            isParent ? "size-3 rounded-[3px]" : "size-2.5 rounded-full",
+            isParent ? "size-3.5 rounded-[4px]" : "size-3 rounded-full",
             devStateClasses(node.dev_state, done),
           )}
           style={{
@@ -82,7 +82,13 @@ function GraphNode({
             // `.gg-node.blocked`) — never red. Done = hollow solid; open = filled.
             backgroundColor: done || blocked ? "transparent" : tone,
             border: blocked ? `2px dashed ${tone}` : `1.5px solid ${tone}`,
-            boxShadow: "0 0 0 2px var(--bg)",
+            // Separator ring vs the panel + a soft tone bloom (legacy
+            // `.gg-node` 0 0 8px currentColor) — the premium glow. Done = no glow.
+            // Ring uses --bg-elevated so it matches the panel surface it sits on.
+            boxShadow: done
+              ? "0 0 0 2px var(--bg-elevated)"
+              : `0 0 0 2px var(--bg-elevated), 0 0 10px ${tone}`,
+            opacity: done ? 0.55 : undefined,
           }}
           aria-hidden
         >
@@ -143,21 +149,29 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
   }
 
   return (
-    <div className="flex overflow-hidden rounded-lg border border-border bg-background/40">
-      {/* Row-band gutter */}
+    // pt/pb give a fixed-pixel headroom so the first band never crowds the top
+    // edge on short/filtered graphs (the % Y_TOP alone is too small there). The
+    // gutter + stage both sit inside this padding, so they shift together. The
+    // panel surface is --bg-elevated (legacy `--bg-panel`), not the page bg.
+    <div className="flex overflow-hidden rounded-lg border border-border bg-[var(--bg-elevated)] pt-6 pb-3">
+      {/* Row-band gutter — each milestone band gets an amber left accent +
+          hairline separator (legacy `.gg-msrow` border-left + `.gg-msrow-sep`). */}
       <div
         className="relative w-28 shrink-0 border-r border-border"
         style={{ height: layout.height }}
       >
         {layout.rowInfo
           .filter((r) => r.code)
-          .map((r) => (
+          .map((r, i) => (
             <div
               key={r.code}
-              className="absolute inset-x-0 flex flex-col justify-start px-2 pt-1"
+              className={cn(
+                "absolute inset-x-0 flex flex-col justify-start border-l-[3px] border-l-primary/80 px-2 pt-1.5",
+                i > 0 && "border-t border-t-border",
+              )}
               style={{ top: `${r.y}%`, height: `${r.height}%` }}
             >
-              <div className="text-xs font-medium text-foreground">{r.label}</div>
+              <div className="font-mono text-xs font-bold tracking-wide text-primary">{r.label}</div>
               {r.name && <div className="truncate text-[10px] text-muted-foreground">{r.name}</div>}
             </div>
           ))}
@@ -169,6 +183,18 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
         style={{ height: layout.height }}
         data-testid="graph-stage"
       >
+        {/* Milestone band separators (legacy `.gg-msrow-sep`) — a faint hairline
+            at each band boundary so rows read as distinct lanes. */}
+        {layout.rowInfo.map((r, i) =>
+          i === 0 ? null : (
+            <div
+              key={`sep-${r.code}`}
+              className="pointer-events-none absolute inset-x-0 h-px bg-border"
+              style={{ top: `${r.y}%` }}
+              aria-hidden
+            />
+          ),
+        )}
         {/* Column headers */}
         {layout.colInfo.map((c) => (
           <div

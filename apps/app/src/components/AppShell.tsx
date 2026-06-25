@@ -38,7 +38,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <SettingsUiProvider>
       <div className="min-h-screen bg-background text-foreground">
-        <header className="sticky top-0 z-50 border-b border-border bg-background px-6 pb-3 pt-4">
+        <header className="sticky top-0 z-50 bg-background px-6 pb-3 pt-4">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="flex items-center gap-3">
               <BrandMark className="size-7 shrink-0" />

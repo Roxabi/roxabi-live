@@ -9,7 +9,8 @@ import {
   type AnnotatedNode,
   EMPTY_ASSIGNEE,
   EMPTY_DIM,
-  type NodeStatus,
+  type StatusKey,
+  displayStatus,
 } from "@roxabi-live/shared";
 import { useMemo } from "react";
 
@@ -21,9 +22,10 @@ export interface FilterOption {
 
 export type FilterOptions = Record<FacetKey, FilterOption[]>;
 
-const STATUS_ORDER: NodeStatus[] = ["ready", "blocked", "done"];
-const STATUS_LABEL: Record<NodeStatus, string> = {
+const STATUS_ORDER: StatusKey[] = ["ready", "running", "blocked", "done"];
+const STATUS_LABEL: Record<StatusKey, string> = {
   ready: "Ready",
+  running: "Running",
   blocked: "Blocked",
   done: "Done",
 };
@@ -84,7 +86,7 @@ export function useFilterOptions(nodes: AnnotatedNode[]): FilterOptions {
         });
       }
       bump(priority, n.priority ?? EMPTY_DIM);
-      bump(status, n.computedStatus);
+      bump(status, displayStatus(n));
       for (const l of n.labels) if (!isStructuredLabel(l)) bump(label, l);
       if (n.assignees.length) {
         for (const a of n.assignees) bump(assignee, a);

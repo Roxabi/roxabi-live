@@ -19,7 +19,7 @@ export function ViewToggle() {
     <div
       role="group"
       aria-label="View"
-      className="inline-flex overflow-hidden rounded-md border border-border bg-card"
+      className="inline-flex h-9 overflow-hidden rounded-md border border-border bg-card"
     >
       {VIEWS.map(({ key, label, Icon }, i) => {
         const on = view === key;
@@ -32,7 +32,7 @@ export function ViewToggle() {
             aria-pressed={on}
             title={label}
             className={cn(
-              "inline-flex items-center gap-1.5 px-3 py-1.5 font-mono text-[11px] tracking-[0.02em] transition-colors",
+              "inline-flex h-full items-center gap-1.5 px-3 font-mono text-[11px] tracking-[0.02em] transition-colors",
               i > 0 && "border-l border-border",
               on
                 ? "bg-[var(--accent-dim)] font-semibold text-primary"

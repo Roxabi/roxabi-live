@@ -133,8 +133,9 @@ export interface NodeFilters {
   priority: string[];
   /** assignee logins, or EMPTY_ASSIGNEE. */
   assignee: string[];
-  /** computedStatus values (ready/blocked/done). */
-  status: NodeStatus[];
+  /** displayStatus values (ready/running/blocked/done) — 'running' = a ready
+   *  issue with active dev work (branch/open PR/reviewed PR). */
+  status: StatusKey[];
   label: string[];
   search: string;
   /** When false, parent (epic) nodes are hidden — they group children, not rows. */
@@ -171,7 +172,7 @@ export function filterNodes(
     if (f.milestone.length && !f.milestone.includes(msCode)) return false;
     const pri = n.priority ?? EMPTY_DIM;
     if (f.priority.length && !f.priority.includes(pri)) return false;
-    if (f.status.length && !f.status.includes(n.computedStatus)) {
+    if (f.status.length && !f.status.includes(displayStatus(n))) {
       // Graph "Closed" toggle: a done issue under a still-open epic stays visible.
       if (!(byKey && n.computedStatus === "done" && n.parentKey)) return false;
       if (byKey.get(n.parentKey)?.state !== "open") return false;

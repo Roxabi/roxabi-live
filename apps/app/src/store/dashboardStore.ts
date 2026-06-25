@@ -9,7 +9,7 @@
  * prefix) — no migration from the old v6:/v7: keys is needed.
  */
 
-import type { Dim, NodeStatus } from "@roxabi-live/shared";
+import type { Dim, StatusKey } from "@roxabi-live/shared";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -22,7 +22,7 @@ export interface FilterFacets {
   milestone: string[];
   priority: string[];
   assignee: string[];
-  status: NodeStatus[];
+  status: StatusKey[];
   label: string[];
 }
 
@@ -63,7 +63,7 @@ const DEFAULT_FACETS: FilterFacets = {
   milestone: [],
   priority: [],
   assignee: [],
-  status: ["ready", "blocked"],
+  status: ["ready", "running", "blocked"],
   label: [],
 };
 

@@ -42,8 +42,12 @@ export function ZkNotices({
   const dismissKey = infoDismissKey(githubLogin);
   const [infoDismissed, setInfoDismissed] = useState(() => readInfoDismissed(dismissKey));
   const showInfo = zkActive && !infoDismissed;
+  // The manual "link GitHub" prompt is a pre-auto-handoff relic: an active ZK
+  // user gets their token handed off on every login, so never surface it to
+  // them — the reassuring info banner is the replacement.
+  const showGithubLink = needsGithubLink && !zkActive;
 
-  if (!showInfo && !needsGithubLink && !migrationIncomplete) return null;
+  if (!showInfo && !showGithubLink && !migrationIncomplete) return null;
 
   return (
     <div className="space-y-2">
@@ -81,7 +85,7 @@ export function ZkNotices({
           </button>
         </div>
       )}
-      {needsGithubLink && (
+      {showGithubLink && (
         <div
           data-testid="zk-github-link-notice"
           className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-foreground"
