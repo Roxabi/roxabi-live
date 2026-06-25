@@ -10,7 +10,6 @@ import {
   displayStatus,
   edgePath,
   layoutV5,
-  statusColor,
   toneHex,
 } from "@roxabi-live/shared";
 import { useMemo, useState } from "react";
@@ -42,6 +41,7 @@ function GraphNode({
   const tone = toneHex(node.repo);
   const status = displayStatus(node);
   const done = node.computedStatus === "done";
+  const blocked = status === "blocked";
   // Epics (parent issues) render as a slightly larger rounded square to stand
   // out from leaf issues — matches the legacy `.gg-node.parent` (14px, r:3px).
   const isParent = node.isParent;
@@ -78,10 +78,11 @@ function GraphNode({
           )}
           style={{
             color: tone,
-            backgroundColor: done ? "transparent" : tone,
-            border: `1.5px solid ${tone}`,
-            boxShadow:
-              status === "blocked" ? `0 0 0 1.5px ${statusColor.blocked}` : "0 0 0 2px var(--bg)",
+            // Blocked = hollow + dashed border in the repo tone (legacy
+            // `.gg-node.blocked`) — never red. Done = hollow solid; open = filled.
+            backgroundColor: done || blocked ? "transparent" : tone,
+            border: blocked ? `2px dashed ${tone}` : `1.5px solid ${tone}`,
+            boxShadow: "0 0 0 2px var(--bg)",
           }}
           aria-hidden
         >
