@@ -29,6 +29,36 @@ const STATUS_LABEL: Record<NodeStatus, string> = {
 };
 const PRIORITY_ORDER = ["P0", "P1", "P2", "P3", EMPTY_DIM];
 
+// Structured/metadata labels conveyed by dedicated facets (size, priority, lane)
+// are hidden from the Label facet so it only lists meaningful free-form labels.
+// Ported verbatim from frontend/app.js LABEL_EXCLUDES + isStructuredLabel.
+const LABEL_EXCLUDES = new Set([
+  "graph:lane/",
+  "size:",
+  "XS",
+  "S",
+  "M",
+  "L",
+  "XL",
+  "P0",
+  "priority:P0",
+  "P1-high",
+  "priority:high",
+  "priority:P1",
+  "P2-medium",
+  "priority:medium",
+  "priority:P2",
+  "P3-low",
+  "priority:low",
+  "priority: low",
+  "priority:P3",
+]);
+
+function isStructuredLabel(lbl: string): boolean {
+  if (LABEL_EXCLUDES.has(lbl)) return true;
+  return lbl.startsWith("graph:lane/") || lbl.startsWith("size:");
+}
+
 function bump(map: Map<string, number>, key: string): void {
   map.set(key, (map.get(key) ?? 0) + 1);
 }
@@ -55,7 +85,7 @@ export function useFilterOptions(nodes: AnnotatedNode[]): FilterOptions {
       }
       bump(priority, n.priority ?? EMPTY_DIM);
       bump(status, n.computedStatus);
-      for (const l of n.labels) bump(label, l);
+      for (const l of n.labels) if (!isStructuredLabel(l)) bump(label, l);
       if (n.assignees.length) {
         for (const a of n.assignees) bump(assignee, a);
       } else {

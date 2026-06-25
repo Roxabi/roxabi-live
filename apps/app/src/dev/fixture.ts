@@ -46,6 +46,10 @@ export const fixtureGraph: GraphResponse = {
       milestone_code: "M2",
       milestone_sort_key: 2,
       priority: "P1",
+      lane: "e",
+      size: "L",
+      labels: ["area:frontend", "size:L", "priority:P1"],
+      assignees: ["mickael"],
     }),
     node({
       key: "Roxabi/roxabi-live#271",
@@ -55,6 +59,10 @@ export const fixtureGraph: GraphResponse = {
       milestone_code: "M2",
       milestone_sort_key: 2,
       priority: "P0",
+      lane: "e",
+      size: "XL",
+      labels: ["area:infra"],
+      assignees: ["mickael", "roxabi-ci"],
     }),
     node({
       key: "Roxabi/roxabi-factory#1672",
@@ -63,6 +71,8 @@ export const fixtureGraph: GraphResponse = {
       milestone_code: "M1",
       milestone_sort_key: 1,
       priority: "P2",
+      lane: "b",
+      size: "M",
     }),
     node({
       key: "Roxabi/roxabi-factory#1671",

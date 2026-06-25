@@ -22,6 +22,12 @@ export function useFilteredNodes(nodes: AnnotatedNode[], edges: GraphEdge[]): An
   const label = useDashboardStore((s) => s.label);
   const search = useDashboardStore((s) => s.search);
   const showParents = useDashboardStore((s) => s.showParents);
+  const view = useDashboardStore((s) => s.view);
+  const showClosedUnderOpenEpic = useDashboardStore((s) => s.showClosedUnderOpenEpic);
+
+  // The "Closed under open epic" override is a graph-only concern (legacy
+  // filteredNodesForGraph). In list/pivot the status facet stays strict.
+  const closedUnderOpenEpic = view === "graph" && showClosedUnderOpenEpic;
 
   return useMemo(() => {
     const filters: NodeFilters = {
@@ -33,7 +39,20 @@ export function useFilteredNodes(nodes: AnnotatedNode[], edges: GraphEdge[]): An
       label,
       search,
       showParents,
+      closedUnderOpenEpic,
     };
     return filterNodes(nodes, edges, filters);
-  }, [nodes, edges, repo, milestone, priority, assignee, status, label, search, showParents]);
+  }, [
+    nodes,
+    edges,
+    repo,
+    milestone,
+    priority,
+    assignee,
+    status,
+    label,
+    search,
+    showParents,
+    closedUnderOpenEpic,
+  ]);
 }

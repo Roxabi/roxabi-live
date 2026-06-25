@@ -1,8 +1,10 @@
+import "@/components/graph-anim.css";
 import { useHighlightChain } from "@/hooks/useHighlightChain";
 import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboardStore";
 import {
   type AnnotatedNode,
+  type DevState,
   type GraphEdge,
   type NodePos,
   displayStatus,
@@ -17,17 +19,28 @@ function truncate(s: string, n = 26): string {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 }
 
+/** Dev-state → animation classes (mirrors frontend/state.js mapDevStateToClass). */
+function devStateClasses(dev: DevState, done: boolean): string {
+  if (done) return "rl-gg-dot";
+  if (dev === "pr_reviewed") return "rl-gg-dot pulse orbit-2";
+  if (dev === "pr_open") return "rl-gg-dot pulse orbit-1";
+  if (dev === "dev") return "rl-gg-dot pulse";
+  return "rl-gg-dot";
+}
+
 function GraphNode({
   node,
   pos,
   dimmed,
   active,
+  showAssignees,
   onHover,
 }: {
   node: AnnotatedNode;
   pos: NodePos;
   dimmed: boolean;
   active: boolean;
+  showAssignees: boolean;
   onHover: (key: string | null) => void;
 }) {
   const tone = toneHex(node.repo);
@@ -53,18 +66,32 @@ function GraphNode({
       )}
     >
       <span
-        className={cn("size-2.5 shrink-0 rounded-full", status === "running" && "animate-pulse")}
+        className={cn("size-2.5 shrink-0 rounded-full", devStateClasses(node.dev_state, done))}
         style={{
+          color: tone,
           backgroundColor: done ? "transparent" : tone,
           border: `1.5px solid ${tone}`,
           boxShadow:
             status === "blocked" ? `0 0 0 1.5px ${statusColor.blocked}` : "0 0 0 2px var(--bg)",
         }}
         aria-hidden
-      />
-      <span className="whitespace-nowrap rounded bg-background/85 px-1 text-[10px] leading-tight">
+      >
+        {node.dev_state === "pr_reviewed" && !done && <span className="rl-gg-orbit2" aria-hidden />}
+      </span>
+      <span className="flex items-center gap-1 whitespace-nowrap rounded bg-background/85 px-1 text-[10px] leading-tight">
         <span className="font-mono text-muted-foreground">#{node.number}</span>
-        {node.title && <span className="ml-1 text-foreground">{truncate(node.title)}</span>}
+        {node.size && (
+          <span className="font-mono text-[9px] text-muted-foreground">{node.size}</span>
+        )}
+        {node.title && <span className="text-foreground">{truncate(node.title)}</span>}
+        {showAssignees && node.assignees.length > 0 && (
+          <span
+            className="font-mono text-[9px] text-muted-foreground opacity-85"
+            title={`Assignees: ${node.assignees.join(", ")}`}
+          >
+            {node.assignees.join(", ")}
+          </span>
+        )}
       </span>
     </a>
   );
@@ -74,6 +101,7 @@ function GraphNode({
 export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: GraphEdge[] }) {
   const graphRow = useDashboardStore((s) => s.graphRow);
   const graphCol = useDashboardStore((s) => s.graphCol);
+  const showAssignees = useDashboardStore((s) => s.showAssignees);
   const [hovered, setHovered] = useState<string | null>(null);
 
   const layout = useMemo(
@@ -170,6 +198,7 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
               pos={pos}
               dimmed={chain ? !chain.all.has(key) : false}
               active={hovered === key}
+              showAssignees={showAssignees}
               onHover={setHovered}
             />
           );

@@ -139,6 +139,12 @@ export interface NodeFilters {
   search: string;
   /** When false, parent (epic) nodes are hidden — they group children, not rows. */
   showParents: boolean;
+  /**
+   * Graph-view override: keep a closed ('done') issue whose parent epic is still
+   * open even when the status facet excludes 'done'. Mirrors the legacy
+   * frontend/state.js::filteredNodesForGraph behaviour (graph view only).
+   */
+  closedUnderOpenEpic?: boolean;
 }
 
 /**
@@ -156,6 +162,7 @@ export function filterNodes(
   const parentKeys = f.showParents
     ? null
     : new Set(edges.filter((e) => e.kind === "parent").map((e) => e.src));
+  const byKey = f.closedUnderOpenEpic ? new Map(nodes.map((n) => [n.key, n])) : null;
 
   return nodes.filter((n) => {
     if (parentKeys?.has(n.key)) return false;
@@ -164,7 +171,11 @@ export function filterNodes(
     if (f.milestone.length && !f.milestone.includes(msCode)) return false;
     const pri = n.priority ?? EMPTY_DIM;
     if (f.priority.length && !f.priority.includes(pri)) return false;
-    if (f.status.length && !f.status.includes(n.computedStatus)) return false;
+    if (f.status.length && !f.status.includes(n.computedStatus)) {
+      // Graph "Closed" toggle: a done issue under a still-open epic stays visible.
+      if (!(byKey && n.computedStatus === "done" && n.parentKey)) return false;
+      if (byKey.get(n.parentKey)?.state !== "open") return false;
+    }
     if (f.label.length && !f.label.some((l) => n.labels.includes(l))) return false;
     if (f.assignee.length) {
       if (n.assignees.length === 0) {
