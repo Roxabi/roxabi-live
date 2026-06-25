@@ -1,6 +1,8 @@
+import { AuthGate } from "@/auth/AuthGate";
+import { SignInScreen } from "@/auth/SignInScreen";
+import { AppShell } from "@/components/AppShell";
 import { BoardView } from "@/components/BoardView";
 import { SyncProgressBanner } from "@/components/SyncProgressBanner";
-import { Button } from "@/components/ui/button";
 import { useGraphData } from "@/hooks/useGraphData";
 import { useSyncProgressMonitor } from "@/hooks/useSyncProgressMonitor";
 import { useVersionPoll } from "@/hooks/useVersionPoll";
@@ -20,12 +22,7 @@ interface RouterContext {
 function RootLayout() {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border px-6 py-4">
-        <span className="text-lg font-semibold tracking-tight text-foreground">Roxabi Live</span>
-      </header>
-      <main className="p-6">
-        <Outlet />
-      </main>
+      <Outlet />
     </div>
   );
 }
@@ -40,7 +37,8 @@ const indexRoute = createRoute({
   component: CockpitPage,
 });
 
-function CockpitPage() {
+/** The authenticated dashboard body — mounts only inside AuthGate's ready branch. */
+function Dashboard() {
   useVersionPoll();
   const syncStatus = useSyncProgressMonitor();
   const { nodes, edges, isLoading, isError, error } = useGraphData();
@@ -64,27 +62,29 @@ function CockpitPage() {
   );
 }
 
-const signInRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/sign-in",
-  component: SignInPage,
-});
-
-function SignInPage() {
+function CockpitPage() {
   return (
-    <div className="flex min-h-[60vh] items-center justify-center">
-      <div className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-8">
-        <h1 className="text-xl font-semibold text-foreground">Sign in</h1>
-        <p className="text-sm text-muted-foreground">
-          Access is gated by Cloudflare Access. Use your email OTP to continue.
-        </p>
-        <Button className="w-full">Continue with email</Button>
-      </div>
-    </div>
+    <AuthGate>
+      <AppShell>
+        <Dashboard />
+      </AppShell>
+    </AuthGate>
   );
 }
 
-// DEV-only fixture route — lazy so it never enters the production bundle.
+const signInRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sign-in",
+  component: () => <SignInScreen mode="signin" />,
+});
+
+const signUpRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sign-up",
+  component: () => <SignInScreen mode="signup" />,
+});
+
+// DEV-only fixture routes — lazy so they never enter the production bundle.
 const DevTablePage = lazy(() => import("./dev/DevTablePage"));
 const devTableRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -107,10 +107,22 @@ const devSyncRoute = createRoute({
   ),
 });
 
+const DevAuthPage = lazy(() => import("./dev/DevAuthPage"));
+const devAuthRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/dev/auth",
+  component: () => (
+    <Suspense fallback={null}>
+      <DevAuthPage />
+    </Suspense>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   signInRoute,
-  ...(import.meta.env.DEV ? [devTableRoute, devSyncRoute] : []),
+  signUpRoute,
+  ...(import.meta.env.DEV ? [devTableRoute, devSyncRoute, devAuthRoute] : []),
 ]);
 
 export const router = createRouter({
