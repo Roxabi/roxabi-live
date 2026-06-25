@@ -1,4 +1,5 @@
 import { AuthGate } from "@/auth/AuthGate";
+import { useAuth } from "@/auth/AuthContext";
 import { SignInScreen } from "@/auth/SignInScreen";
 import { AppShell } from "@/components/AppShell";
 import { BoardView } from "@/components/BoardView";
@@ -43,13 +44,22 @@ const indexRoute = createRoute({
 /** The authenticated dashboard body — mounts only inside ZkGate's unlocked branch. */
 function Dashboard() {
   useVersionPoll();
+  const me = useAuth();
   const syncStatus = useSyncProgressMonitor();
   const { nodes, edges, isLoading, isError, error, needsGithubLink, zkMigrationIncomplete } =
     useDecryptedGraph();
+  // ZK is "active" once the feature flag is on and the user has enrolled a
+  // passphrase (zk_key_backups row) — gates the encryption-info banner.
+  const zkActive = me.user.zk_account_key_enabled && me.user.zk_enrolled;
 
   return (
     <div className="space-y-3">
-      <ZkNotices needsGithubLink={needsGithubLink} migrationIncomplete={zkMigrationIncomplete} />
+      <ZkNotices
+        needsGithubLink={needsGithubLink}
+        migrationIncomplete={zkMigrationIncomplete}
+        zkActive={zkActive}
+        githubLogin={me.user.github_login}
+      />
       <SyncProgressBanner status={syncStatus} />
       {isError ? (
         <div className="rounded-lg border border-blocked/30 bg-blocked/10 p-4 text-sm text-blocked">

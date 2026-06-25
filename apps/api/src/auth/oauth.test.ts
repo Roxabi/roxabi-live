@@ -1308,4 +1308,114 @@ describe("callbackRoute", () => {
       expect(targets.some((t) => t.login === "Roxabi" && t.type === "Organization")).toBe(true);
     });
   });
+
+  // An enrolled ZK user (zk_key_backups row) must get the browser-side GitHub
+  // token handed off on EVERY login — not just ?zk=1 — so the dashboard never has
+  // to nag with a "Link GitHub" banner to seal newly-synced titles.
+  describe("ZK auto-handoff", () => {
+    function makeAutoHandoffDb(captured: FakeStmt[], enrolled: boolean, reauth = 0): D1Database {
+      const db = makeFakeDb((sql, args) => {
+        const lower = sql.toLowerCase();
+        let row: FakeResult | null = null;
+        if (lower.includes("oauth_state") && lower.includes("delete")) {
+          // Normal login (no ?zk=1); reauth flag is parametrised.
+          row = { redirect_after: "/", zk_token_handoff: 0, reauth, remember: 0 } as FakeResult;
+        } else if (lower.includes("users") && lower.includes("returning")) {
+          row = { id: 1 } as FakeResult;
+        } else if (lower.includes("tenants") && lower.includes("returning")) {
+          row = { id: 10 } as FakeResult;
+        } else if (lower.includes("zk_key_backups")) {
+          row = enrolled ? ({ ok: 1 } as FakeResult) : null;
+        }
+        const stmt = makeFakeStmt(sql, args, row ? [row] : [], 0);
+        (stmt as { first: <T>() => Promise<T | null> }).first = vi.fn().mockResolvedValue(row);
+        captured.push(stmt);
+        return stmt;
+      });
+      applyBatchOverride(db);
+      return db;
+    }
+
+    function stubGithub(): void {
+      let n = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          n++;
+          const json = (b: unknown) =>
+            new Response(JSON.stringify(b), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          if (n === 1) return json({ access_token: "tok" });
+          if (n === 2) return json({ id: 42, login: "alice" });
+          return json({ installations: [{ id: 9, account: { login: "Roxabi", type: "Organization" } }] });
+        }),
+      );
+    }
+
+    const dek = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+
+    async function run(env: Env, state: string): Promise<void> {
+      const app = new Hono<{ Bindings: Env }>();
+      app.get("/oauth/callback", callbackRoute);
+      await app.request(
+        `http://localhost/oauth/callback?code=c&state=${state}`,
+        { method: "GET" },
+        env,
+      );
+    }
+
+    it("mints a handoff on a normal login when the user is enrolled (flag on)", async () => {
+      const captured: FakeStmt[] = [];
+      const db = makeAutoHandoffDb(captured, true);
+      stubGithub();
+      const env = { ...makeEnv(db), ZK_ACCOUNT_KEY: "1", INSTALL_TOKEN_KEY: dek() } as unknown as Env;
+      await run(env, "a".repeat(32));
+      expect(captured.some((s) => s.sql.toLowerCase().includes("user_token_handoffs"))).toBe(true);
+    });
+
+    it("does NOT mint a handoff when the user is not enrolled", async () => {
+      const captured: FakeStmt[] = [];
+      const db = makeAutoHandoffDb(captured, false);
+      stubGithub();
+      const env = { ...makeEnv(db), ZK_ACCOUNT_KEY: "1", INSTALL_TOKEN_KEY: dek() } as unknown as Env;
+      await run(env, "b".repeat(32));
+      expect(captured.some((s) => s.sql.toLowerCase().includes("zk_key_backups"))).toBe(true);
+      expect(captured.some((s) => s.sql.toLowerCase().includes("user_token_handoffs"))).toBe(false);
+    });
+
+    it("does NOT query zk_key_backups when the ZK flag is off", async () => {
+      const captured: FakeStmt[] = [];
+      const db = makeAutoHandoffDb(captured, true);
+      stubGithub();
+      const env = { ...makeEnv(db), INSTALL_TOKEN_KEY: dek() } as unknown as Env; // ZK_ACCOUNT_KEY unset
+      await run(env, "d".repeat(32));
+      expect(captured.some((s) => s.sql.toLowerCase().includes("zk_key_backups"))).toBe(false);
+      expect(captured.some((s) => s.sql.toLowerCase().includes("user_token_handoffs"))).toBe(false);
+    });
+
+    it("does NOT auto-handoff on a reauth login (reauth takes precedence)", async () => {
+      const captured: FakeStmt[] = [];
+      const db = makeAutoHandoffDb(captured, true, 1); // enrolled, but reauth=1
+      stubGithub();
+      const env = { ...makeEnv(db), ZK_ACCOUNT_KEY: "1", INSTALL_TOKEN_KEY: dek() } as unknown as Env;
+      await run(env, "e".repeat(32));
+      // The !wantsReauth guard must short-circuit before the enrolled-check.
+      expect(captured.some((s) => s.sql.toLowerCase().includes("zk_key_backups"))).toBe(false);
+      expect(captured.some((s) => s.sql.toLowerCase().includes("user_token_handoffs"))).toBe(false);
+      // The reauth branch ran instead.
+      expect(captured.some((s) => s.sql.toLowerCase().includes("zk_reauth_proofs"))).toBe(true);
+    });
+
+    it("does NOT query zk_key_backups when INSTALL_TOKEN_KEY is absent (no DEK)", async () => {
+      const captured: FakeStmt[] = [];
+      const db = makeAutoHandoffDb(captured, true);
+      stubGithub();
+      const env = { ...makeEnv(db), ZK_ACCOUNT_KEY: "1" } as unknown as Env; // INSTALL_TOKEN_KEY unset
+      await run(env, "f".repeat(32));
+      expect(captured.some((s) => s.sql.toLowerCase().includes("zk_key_backups"))).toBe(false);
+      expect(captured.some((s) => s.sql.toLowerCase().includes("user_token_handoffs"))).toBe(false);
+    });
+  });
 });

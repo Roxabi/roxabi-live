@@ -15,6 +15,7 @@ import {
   isZkRememberPreferred,
   setZkRememberPreferred,
 } from "./enroll";
+import { zkLoginUrl } from "./github";
 
 export function ZkEnrollDialog({ login }: { login: string }) {
   const logout = useLogout();
@@ -44,7 +45,12 @@ export function ZkEnrollDialog({ login }: { login: string }) {
     try {
       await enrollAccountKey(pass, login);
       await applyZkRememberChoice(login, pass, remember);
-      // unlocked is now true; ZkGate re-renders to the dashboard.
+      // Kick off the GitHub token handoff so titles are imported + sealed right
+      // away (otherwise they'd stay "(sealed)" until the next login picks up the
+      // server auto-handoff). enrollAccountKey() saved a device session, so the
+      // post-OAuth return auto-unlocks — no second passphrase prompt.
+      window.location.assign(zkLoginUrl(window.location.pathname + window.location.search));
+      return;
     } catch (err) {
       const msg = String((err as Error)?.message ?? "");
       setError(
