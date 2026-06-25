@@ -45,12 +45,12 @@ export function IssueRow({ node, refs = EMPTY_REFS }: { node: AnnotatedNode; ref
             href={node.url}
             target="_blank"
             rel="noreferrer"
-            className="font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
+            className="font-mono text-[11px] font-bold text-primary hover:underline"
           >
             {ref}
           </a>
         ) : (
-          <span className="font-mono text-xs text-muted-foreground">{ref}</span>
+          <span className="font-mono text-[11px] font-bold text-primary">{ref}</span>
         )}
       </td>
       <td className="px-3 py-2 align-middle text-sm text-foreground">

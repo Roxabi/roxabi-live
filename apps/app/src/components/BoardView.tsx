@@ -3,7 +3,6 @@ import { FilterBar } from "@/components/FilterBar";
 import { GraphPanel } from "@/components/GraphPanel";
 import { IssueTable } from "@/components/IssueTable";
 import { PivotMatrix } from "@/components/PivotMatrix";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useFilteredNodes } from "@/hooks/useFilteredNodes";
 import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboardStore";
@@ -122,17 +121,18 @@ export function BoardView({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gra
   const filtered = useFilteredNodes(nodes, edges);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      {/* Filters row (legacy .toolbar-filters) */}
+      <FilterBar nodes={nodes} />
+      {/* Layout row (legacy .toolbar-layout): per-view controls + filtered count */}
       <div className="flex flex-wrap items-center gap-3">
-        <ViewToggle />
         {view === "list" && <ListControls />}
         {view === "pivot" && <PivotControls />}
         {view === "graph" && <GraphControls />}
-        <span className="ml-auto text-sm text-muted-foreground">
+        <span className="ml-auto font-mono text-xs text-muted-foreground">
           {filtered.length} of {nodes.length}
         </span>
       </div>
-      <FilterBar nodes={nodes} />
       {view === "list" && (
         <IssueTable nodes={filtered} edges={edges} group={listGroup} group2={listGroup2} />
       )}
