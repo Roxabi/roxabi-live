@@ -9,3 +9,6 @@
 
 export * as brand from "./brand.ts";
 export { status, statusColor, type StatusKey } from "./brand.ts";
+
+// The Worker HTTP API contract — shared by apps/app and (later) apps/api.
+export * from "./types.ts";
