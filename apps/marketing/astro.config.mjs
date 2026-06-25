@@ -11,6 +11,13 @@ export default defineConfig({
   site: "https://live.roxabi.dev",
   envDir: repoRoot,
   integrations: [sitemap()],
+  i18n: {
+    defaultLocale: "fr",
+    locales: ["fr", "en"],
+    routing: {
+      prefixDefaultLocale: false,
+    },
+  },
   vite: {
     server: {
       // Allow importing the shared design system from `brand/` at the repo root.

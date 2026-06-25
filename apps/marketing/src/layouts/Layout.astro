@@ -4,15 +4,26 @@ import "../styles/global.css";
 interface Props {
   title?: string;
   description?: string;
+  lang?: "fr" | "en";
 }
 const {
-  title = "Roxabi Live — Le poste de pilotage de votre flotte d'agents",
-  description = "Lancez dix agents à la fois, sans qu'ils se marchent dessus. Roxabi Live lit vos issues GitHub et leurs liens blocked-by pour révéler ce que vous pouvez lancer en parallèle.",
+  lang = "fr",
+  title = lang === "en"
+    ? "Roxabi Live — Command center for your agent fleet"
+    : "Roxabi Live — Le poste de pilotage de votre flotte d'agents",
+  description = lang === "en"
+    ? "Launch ten agents at once without collisions. Roxabi Live reads your GitHub issues and their blocked-by links to reveal what you can run in parallel."
+    : "Lancez dix agents à la fois, sans qu'ils se marchent dessus. Roxabi Live lit vos issues GitHub et leurs liens blocked-by pour révéler ce que vous pouvez lancer en parallèle.",
 } = Astro.props;
+
+const altLang = lang === "fr" ? "en" : "fr";
+const canonicalBase = "https://live.roxabi.dev";
+const canonicalUrl = lang === "fr" ? canonicalBase + "/" : `${canonicalBase}/en/`;
+const altUrl      = lang === "fr" ? `${canonicalBase}/en/` : canonicalBase + "/";
 ---
 
 <!doctype html>
-<html lang="fr">
+<html lang={lang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -22,6 +33,10 @@ const {
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    <link rel="canonical" href={canonicalUrl} />
+    <link rel="alternate" hreflang={lang}    href={canonicalUrl} />
+    <link rel="alternate" hreflang={altLang} href={altUrl} />
+    <link rel="alternate" hreflang="x-default" href={canonicalBase + "/"} />
   </head>
   <body class="bloom-canvas">
     <slot />

@@ -1,27 +1,27 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import { fr } from "../i18n/index";
+import SiteHeader from "../components/SiteHeader.astro";
+import Hero from "../components/Hero.astro";
+import Problem from "../components/Problem.astro";
+import Method from "../components/Method.astro";
+import Paradigm from "../components/Paradigm.astro";
+import GitHubNative from "../components/GitHubNative.astro";
+import CtaBand from "../components/CtaBand.astro";
+import SiteFooter from "../components/SiteFooter.astro";
 
-// PHASE-1 PLACEHOLDER — smoke test that the shared `brand/` design system is
-// wired through Astro. The real landing (ported from the Claude Design landing,
-// concept-b) is built in step 2 as proper .astro components (SiteHeader, Hero +
-// LaunchBoard, Problem, Method, CTA). Do not treat this as final copy/design.
+const t = fr;
 ---
 
-<Layout>
-  <main class="container" style="min-height:100vh;display:flex;flex-direction:column;justify-content:center;gap:var(--space-6);padding-block:var(--space-20);">
-    <p class="eyebrow">Pilotage de flotte · GitHub natif</p>
-    <h1 style="max-width:18ch;">
-      Lancez dix agents à la fois.
-      <span class="accent">Sans qu'ils se marchent dessus.</span>
-    </h1>
-    <p class="lead" style="max-width:60ch;">
-      Le goulot d'étranglement d'une flotte d'agents, ce n'est plus l'écriture du
-      code&nbsp;— c'est la concurrence. Roxabi Live lit vos issues GitHub et leurs
-      liens <span class="mono">blocked-by</span> pour révéler, d'un coup d'œil, ce
-      que vous pouvez lancer en parallèle.
-    </p>
-    <p class="mono" style="color:var(--text-dim);font-size:var(--fs-micro);letter-spacing:var(--tracking-mono);text-transform:uppercase;">
-      Phase 1 · placeholder — design réel = étape 2
-    </p>
+<Layout lang="fr" title={t.siteTitle} description={t.siteDescription}>
+  <SiteHeader t={t} />
+  <main>
+    <Hero t={t} />
+    <Problem t={t} />
+    <Method t={t} />
+    <Paradigm t={t} />
+    <GitHubNative t={t} />
+    <CtaBand t={t} />
   </main>
+  <SiteFooter t={t} />
 </Layout>
