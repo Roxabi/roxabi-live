@@ -1,7 +1,5 @@
-import { FilterBar } from "@/components/FilterBar";
-import { IssueTable } from "@/components/IssueTable";
+import { BoardView } from "@/components/BoardView";
 import { Button } from "@/components/ui/button";
-import { useFilteredNodes } from "@/hooks/useFilteredNodes";
 import { useGraphData } from "@/hooks/useGraphData";
 import { useVersionPoll } from "@/hooks/useVersionPoll";
 import type { QueryClient } from "@tanstack/react-query";
@@ -43,16 +41,10 @@ const indexRoute = createRoute({
 function CockpitPage() {
   useVersionPoll();
   const { nodes, edges, isLoading, isError, error } = useGraphData();
-  const filtered = useFilteredNodes(nodes, edges);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Launch Board</h1>
-        <span className="text-sm text-muted-foreground">
-          {isLoading ? "loading…" : `${filtered.length} of ${nodes.length} issues`}
-        </span>
-      </div>
+      <h1 className="text-2xl font-bold text-foreground">Launch Board</h1>
       {isError ? (
         <div className="rounded-lg border border-blocked/30 bg-blocked/10 p-4 text-sm text-blocked">
           Failed to load the corpus: {(error as Error).message}
@@ -62,10 +54,7 @@ function CockpitPage() {
           Loading the corpus…
         </div>
       ) : (
-        <>
-          <FilterBar nodes={nodes} />
-          <IssueTable nodes={filtered} />
-        </>
+        <BoardView nodes={nodes} edges={edges} />
       )}
     </div>
   );

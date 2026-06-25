@@ -9,21 +9,11 @@
  * prefix) — no migration from the old v6:/v7: keys is needed.
  */
 
-import type { NodeStatus } from "@roxabi-live/shared";
+import type { Dim, NodeStatus } from "@roxabi-live/shared";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-export type Dim =
-  | "none"
-  | "milestone"
-  | "priority"
-  | "repo"
-  | "lane"
-  | "size"
-  | "status"
-  | "parent"
-  | "assignee";
-
+export type { Dim };
 export type ViewKey = "list" | "pivot" | "graph";
 
 /** Multi-select filter facets. */

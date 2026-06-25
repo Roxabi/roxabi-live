@@ -15,3 +15,6 @@ export * from "./types.ts";
 
 // Pure graph status + annotation logic (ported from frontend/state.js).
 export * from "./graph.ts";
+
+// Pivot/group dimension helpers (ported from frontend/state.js).
+export * from "./dims.ts";
