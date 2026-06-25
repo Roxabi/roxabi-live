@@ -1,5 +1,12 @@
+/* Layer order: brand sits BELOW Tailwind's components/utilities so utility
+   classes (text-2xl, bg-card, …) win over the brand design-system's element
+   styles (h1/body/links), which are authored for the marketing site. The brand
+   still supplies every design TOKEN (CSS custom properties resolve regardless of
+   layer), which @theme below bridges into Tailwind. Without this, unlayered brand
+   rules override ALL layered Tailwind output — the "lost CSS" prod regression. */
+@layer theme, base, brand, components, utilities;
 @import "tailwindcss";
-@import "../../../brand/styles.css";
+@import "../../../brand/styles.css" layer(brand);
 
 @theme {
   --color-background: var(--bg);

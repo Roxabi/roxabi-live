@@ -54,9 +54,12 @@ bucket_name = "roxabi-live-logs"
 [env.staging]
 name = "roxabi-live-staging"
 workers_dev = true
-# `routes` is inheritable — explicit empty override keeps the api.* custom domain
-# off the staging worker (see cloudflare/workers-sdk#13925).
-routes = []
+# Public staging api domain — ONLY needed so GitHub can POST webhooks server→server
+# (the webhook can't go through the app proxy). Browser/OAuth traffic still reaches
+# this worker via the service binding from roxabi-live-app-staging.
+routes = [
+  { pattern = "api-staging.live.roxabi.dev", custom_domain = true },
+]
 
 [env.staging.vars]
 APP_RELEASE = "0.21.3"
