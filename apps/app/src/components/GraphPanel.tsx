@@ -42,6 +42,9 @@ function GraphNode({
   const tone = toneHex(node.repo);
   const status = displayStatus(node);
   const done = node.computedStatus === "done";
+  // Epics (parent issues) render as a slightly larger rounded square to stand
+  // out from leaf issues — matches the legacy `.gg-node.parent` (14px, r:3px).
+  const isParent = node.isParent;
   const title = `#${node.number} — ${node.title ?? ""}`;
   const hover = {
     onMouseEnter: () => onHover(node.key),
@@ -68,7 +71,11 @@ function GraphNode({
         className={cn("absolute -translate-x-1/2 -translate-y-1/2 transition-opacity", dim, active && "z-30")}
       >
         <span
-          className={cn("block size-2.5 rounded-full", devStateClasses(node.dev_state, done))}
+          className={cn(
+            "block",
+            isParent ? "size-3 rounded-[3px]" : "size-2.5 rounded-full",
+            devStateClasses(node.dev_state, done),
+          )}
           style={{
             color: tone,
             backgroundColor: done ? "transparent" : tone,
@@ -185,8 +192,13 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
             const d = layout.positions.get(e.dst);
             if (!s || !d) return null;
             const inChain = chain ? chain.all.has(e.src) && chain.all.has(e.dst) : true;
-            const blocked = byKey.get(e.dst)?.computedStatus === "blocked";
-            const stroke = blocked ? statusColor.blocked : toneHex(byKey.get(e.src)?.repo ?? "");
+            const isParent = e.kind === "parent";
+            const dstBlocked = byKey.get(e.dst)?.computedStatus === "blocked";
+            // Edges follow the source repo tone — never red (legacy `.gg-edge`).
+            // A live blocker (blocks → still-blocked node) is cued by opacity, not
+            // colour; parent (sub-issue) edges are dashed + faint.
+            const stroke = toneHex(byKey.get(e.src)?.repo ?? "");
+            const dimmed = chain && !inChain;
             return (
               <path
                 key={`${e.src}->${e.dst}:${e.kind}`}
@@ -194,8 +206,8 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
                 fill="none"
                 stroke={stroke}
                 strokeWidth={inChain ? 1.4 : 0.8}
-                strokeOpacity={chain && !inChain ? 0.07 : blocked ? 0.7 : 0.32}
-                strokeDasharray={e.kind === "parent" ? "2 2" : undefined}
+                strokeOpacity={dimmed ? 0.07 : isParent ? 0.3 : dstBlocked ? 0.85 : 0.45}
+                strokeDasharray={isParent ? "2 2" : undefined}
                 vectorEffect="non-scaling-stroke"
               />
             );

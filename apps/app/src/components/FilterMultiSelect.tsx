@@ -43,7 +43,7 @@ export function FilterMultiSelect({
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-56 p-1">
-        <div className="max-h-72 overflow-auto">
+        <div className="rl-scroll max-h-72 overflow-y-auto overflow-x-hidden">
           {options.length === 0 ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">No options</div>
           ) : (
@@ -56,7 +56,7 @@ export function FilterMultiSelect({
                   data-testid={`facet-option-${o.value}`}
                   onClick={() => onToggle(o.value)}
                   className={cn(
-                    "flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-background",
+                    "flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors hover:bg-[var(--bg-elevated)] focus:outline-none focus-visible:bg-[var(--accent-dim)] focus-visible:text-foreground",
                     on ? "text-foreground" : "text-muted-foreground",
                   )}
                 >
