@@ -19,10 +19,14 @@ export const AUTH_NO_CACHE: Record<string, string> = {
   Vary: "Cookie",
 };
 
+// Post-cutover the cockpit is the SPA index "/" (app.live.roxabi.dev), not the
+// legacy "/dashboard" shell — so the open-redirect-safe default lands on "/".
+const DEFAULT_AUTH_DEST = "/";
+
 /** Safe relative redirect target (open-redirect guards). */
 export function sanitizeAuthRedirect(raw: string | undefined): string {
   let candidate = raw?.trim();
-  if (!candidate) return "/dashboard";
+  if (!candidate) return DEFAULT_AUTH_DEST;
 
   // Recover once-encoded paths from double-encoded login links (%252F → %2F → /).
   if (!/^\/(?![/\\])/.test(candidate) && /^%2[fF]/.test(candidate)) {
@@ -39,13 +43,20 @@ export function sanitizeAuthRedirect(raw: string | undefined): string {
   if (/^\/(?![/\\])/.test(candidate) && !/[\r\n\0]/.test(candidate) && !/["'<>]/.test(candidate)) {
     return candidate;
   }
-  return "/dashboard";
+  return DEFAULT_AUTH_DEST;
 }
 
-/** True when a relative path targets the dashboard shell. */
+/**
+ * True when a relative path targets the cockpit landing — the SPA index "/" or
+ * the legacy "/dashboard" shell. completeOAuthSession routes these through the
+ * 200 + poll-/api/me page (authNavigateHtml) so the session cookie is reliably
+ * set before navigation (a bare 302 + Set-Cookie can drop the cookie).
+ */
 export function isDashboardDest(path: string): boolean {
   const url = new URL(path, "https://_/");
-  return url.pathname === "/dashboard" || url.pathname === "/dashboard/";
+  return (
+    url.pathname === "/" || url.pathname === "/dashboard" || url.pathname === "/dashboard/"
+  );
 }
 
 /** Remove ?install=1 — only needed to trigger server-side re-OAuth, not for rendering. */

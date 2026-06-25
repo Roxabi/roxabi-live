@@ -62,8 +62,8 @@ const STUB_SESSION: SessionContext = {
 };
 
 describe("authPageRedirectDest", () => {
-  it("defaults to /dashboard", () => {
-    expect(authPageRedirectDest(new URL("https://_/sign-in/"))).toBe("/dashboard");
+  it("defaults to / (SPA index)", () => {
+    expect(authPageRedirectDest(new URL("https://_/sign-in/"))).toBe("/");
   });
 
   it("honours a safe redirect query param", () => {
@@ -90,7 +90,7 @@ describe.each([
     expect(env.ASSETS.fetch).toHaveBeenCalledOnce();
   });
 
-  it("redirects to /dashboard when session is valid", async () => {
+  it("redirects to / (SPA index) when session is valid", async () => {
     const db = makeSessionDb(STUB_SESSION);
     const env = makeEnv(db);
 
@@ -101,7 +101,7 @@ describe.each([
     );
 
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/dashboard");
+    expect(res.headers.get("Location")).toBe("/");
     expect(env.ASSETS.fetch).not.toHaveBeenCalled();
   });
 

@@ -6,15 +6,15 @@
     "repo": "roxabi-live",
     "repoId": 1175843511
   },
-  "pathIncludes": ["worker/*", "frontend/*", "wrangler.toml", "scripts/deploy-*.sh"],
+  "pathIncludes": ["apps/*", "packages/*", "scripts/deploy-*.sh", "bun.lock"],
   "pathExcludes": [],
   "workers": [
     {
       "workerName": "roxabi-live",
       "trigger": {
-        "name": "Deploy production",
+        "name": "Deploy production (api)",
         "rootDirectory": "/",
-        "buildCommand": "cd worker && npm ci",
+        "buildCommand": "bun install --frozen-lockfile",
         "deployCommand": "bash scripts/deploy-production.sh",
         "branchIncludes": ["main"],
         "branchExcludes": []
@@ -23,11 +23,22 @@
     {
       "workerName": "roxabi-live-staging",
       "trigger": {
-        "name": "Deploy staging",
+        "name": "Deploy staging (api)",
         "rootDirectory": "/",
-        "buildCommand": "cd worker && npm ci",
+        "buildCommand": "bun install --frozen-lockfile",
         "deployCommand": "bash scripts/deploy-staging.sh",
         "branchIncludes": ["staging"],
+        "branchExcludes": []
+      }
+    },
+    {
+      "workerName": "roxabi-live-app",
+      "trigger": {
+        "name": "Deploy production (SPA)",
+        "rootDirectory": "/",
+        "buildCommand": "bun install --frozen-lockfile && bun --filter @roxabi-live/app build",
+        "deployCommand": "cd apps/app && bunx wrangler deploy --config wrangler.deploy.jsonc",
+        "branchIncludes": ["main"],
         "branchExcludes": []
       }
     }

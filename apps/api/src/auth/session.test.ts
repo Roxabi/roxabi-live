@@ -443,7 +443,8 @@ describe("authNavigateHtml", () => {
   it("rejects open-redirect destinations", async () => {
     const res = authNavigateHtml("//evil.test");
     const body = await res.text();
-    expect(body).toContain("/dashboard");
+    // Unsafe dest falls back to the safe default "/" (SPA index).
+    expect(body).toContain('})("/")');
     expect(body).not.toContain("//evil");
   });
 
@@ -451,7 +452,7 @@ describe("authNavigateHtml", () => {
     const res = authNavigateHtml('/dashboard" onclick="alert(1)');
     const body = await res.text();
     expect(body).not.toContain("onclick");
-    expect(body).toContain("/dashboard");
+    expect(body).toContain('})("/")');
   });
 
   it("renders safe noscript fallback link for ZK destinations", async () => {

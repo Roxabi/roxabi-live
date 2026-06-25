@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { sanitizeAuthRedirect } from "./cookies";
 
 describe("sanitizeAuthRedirect", () => {
-  it("returns /dashboard for missing input", () => {
-    expect(sanitizeAuthRedirect(undefined)).toBe("/dashboard");
+  // Post-cutover the safe default is the SPA index "/" (app.live.roxabi.dev),
+  // not the legacy "/dashboard" shell.
+  it("returns / for missing input", () => {
+    expect(sanitizeAuthRedirect(undefined)).toBe("/");
   });
 
   it("accepts normal relative paths", () => {
@@ -16,13 +18,13 @@ describe("sanitizeAuthRedirect", () => {
   });
 
   it("rejects open redirects", () => {
-    expect(sanitizeAuthRedirect("//evil")).toBe("/dashboard");
-    expect(sanitizeAuthRedirect("https://evil")).toBe("/dashboard");
+    expect(sanitizeAuthRedirect("//evil")).toBe("/");
+    expect(sanitizeAuthRedirect("https://evil")).toBe("/");
   });
 
   it("rejects paths containing quotes or angle brackets", () => {
-    expect(sanitizeAuthRedirect('/x" onclick')).toBe("/dashboard");
-    expect(sanitizeAuthRedirect("/x<script>")).toBe("/dashboard");
-    expect(sanitizeAuthRedirect("/x'y")).toBe("/dashboard");
+    expect(sanitizeAuthRedirect('/x" onclick')).toBe("/");
+    expect(sanitizeAuthRedirect("/x<script>")).toBe("/");
+    expect(sanitizeAuthRedirect("/x'y")).toBe("/");
   });
 });

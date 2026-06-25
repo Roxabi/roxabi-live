@@ -204,12 +204,12 @@ describe("requireSession auth gate", () => {
   // -------------------------------------------------------------------------
 
   describe("GET /install/complete — post-install return", () => {
-    it("returns 302 to /dashboard without touching DB", async () => {
+    it("returns 302 to / (SPA index) without touching DB", async () => {
       const db = makeDbThatMustNotBeCalled();
       const env = makeEnv(db);
       const res = await app.request("/install/complete", {}, env);
       expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe("/dashboard");
+      expect(res.headers.get("Location")).toBe("/");
       expect(res.headers.get("Cache-Control")).toContain("no-store");
       expect(db.prepare).not.toHaveBeenCalled();
     });

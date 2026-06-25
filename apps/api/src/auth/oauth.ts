@@ -186,7 +186,7 @@ export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Resp
     return c.json({ error: "bad_request" }, 400);
   }
 
-  let redirectAfter = stateRow.redirect_after ?? "/dashboard";
+  let redirectAfter = stateRow.redirect_after ?? "/";
   const wantsZkHandoff = stateRow.zk_token_handoff === 1;
   const wantsReauth = stateRow.reauth === 1;
   const rememberSession = stateRow.remember === 1;

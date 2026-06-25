@@ -6,15 +6,15 @@
 # Production sources above QG_FILE_MAX=300 (split deferred; cap prevents growth)
 
 # Test files (colocated *.test.ts — exempt with local caps, not production code)
-worker/src/sync/sync.test.ts  # 1758 lines — #180 integration harness for runSync; #216 structure-only (+biome reflow)
-worker/src/api/zk-key-backup.test.ts  # 506 lines — #216 backup API security + CAS/reauth tests; fp enforcement + atomic UPSERT tests
-worker/src/webhook/handlers.test.ts  # 945 lines — #180 webhook handler contract tests
-worker/src/auth/oauth.test.ts  # 1145 lines — #180 OAuth + install-pending; mustReOAuth webhook-link short-circuit
-worker/src/api/issues.test.ts  # 710 lines — #180 tenant-scoped issues API tests; #216 zk redaction
-worker/src/api/graph.test.ts  # 776 lines — tenant-scoped graph + zk + repo activity stats tests
-worker/src/migrations.test.ts  # 323 lines — schema tests incl. users.consent_at (0020)
-worker/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
-worker/src/webhook/handlers-app.test.ts  # 538 lines — #180 app lifecycle + sender→user_installations tests (+biome reflow)
-worker/src/auth/installToken.test.ts  # 470 lines — #180 install token + pagination tests
-worker/src/auth/session.test.ts  # 370 lines — #180 session + remember-me TTL tests
-worker/src/api/me.test.ts  # 335 lines — onboarding_step + install_options + suspended tenant filter tests
+apps/api/src/sync/sync.test.ts  # 1758 lines — #180 integration harness for runSync; #216 structure-only (+biome reflow)
+apps/api/src/api/zk-key-backup.test.ts  # 506 lines — #216 backup API security + CAS/reauth tests; fp enforcement + atomic UPSERT tests
+apps/api/src/webhook/handlers.test.ts  # 945 lines — #180 webhook handler contract tests
+apps/api/src/auth/oauth.test.ts  # 1145 lines — #180 OAuth + install-pending; mustReOAuth webhook-link short-circuit
+apps/api/src/api/issues.test.ts  # 710 lines — #180 tenant-scoped issues API tests; #216 zk redaction
+apps/api/src/api/graph.test.ts  # 776 lines — tenant-scoped graph + zk + repo activity stats tests
+apps/api/src/migrations.test.ts  # 323 lines — schema tests incl. users.consent_at (0020)
+apps/api/src/webhook/mutations.test.ts  # 587 lines — #180 webhook mutation tests
+apps/api/src/webhook/handlers-app.test.ts  # 538 lines — #180 app lifecycle + sender→user_installations tests (+biome reflow)
+apps/api/src/auth/installToken.test.ts  # 470 lines — #180 install token + pagination tests
+apps/api/src/auth/session.test.ts  # 370 lines — #180 session + remember-me TTL tests
+apps/api/src/api/me.test.ts  # 335 lines — onboarding_step + install_options + suspended tenant filter tests

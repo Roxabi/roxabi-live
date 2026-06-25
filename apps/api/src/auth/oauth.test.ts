@@ -64,7 +64,7 @@ describe("loginRoute", () => {
       const res = await app.request("http://localhost/login", { method: "GET" }, env);
 
       expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe("/sign-in/?redirect=%2Fdashboard");
+      expect(res.headers.get("Location")).toBe("/sign-in/?redirect=%2F");
       expect(stmts()).toHaveLength(0);
     });
 
@@ -151,7 +151,7 @@ describe("loginRoute", () => {
       expect(insertStmt).toBeDefined();
       // args[0] = state (32 hex), args[1] = redirectAfter
       expect(insertStmt?.args[0]).toMatch(/^[0-9a-f]{32}$/);
-      expect(insertStmt?.args[1]).toBe("/dashboard"); // default when no ?redirect param
+      expect(insertStmt?.args[1]).toBe("/"); // default when no ?redirect param (SPA index)
     });
 
     it("?redirect=/dash stores '/dash' as redirect_after", async () => {
@@ -168,7 +168,7 @@ describe("loginRoute", () => {
       expect(insertStmt?.args[1]).toBe("/dash");
     });
 
-    it("?redirect=//evil stores '/dashboard' (open-redirect guard)", async () => {
+    it("?redirect=//evil stores '/' (open-redirect guard)", async () => {
       // Arrange
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
@@ -179,10 +179,10 @@ describe("loginRoute", () => {
       // Assert
       const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt?.args[1]).toBe("/dashboard");
+      expect(insertStmt?.args[1]).toBe("/");
     });
 
-    it("?redirect=https://evil stores '/dashboard' (absolute URL guard)", async () => {
+    it("?redirect=https://evil stores '/' (absolute URL guard)", async () => {
       // Arrange
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
@@ -197,10 +197,10 @@ describe("loginRoute", () => {
       // Assert
       const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt?.args[1]).toBe("/dashboard");
+      expect(insertStmt?.args[1]).toBe("/");
     });
 
-    it("?redirect=/\\evil stores '/dashboard' (backslash bypass guard)", async () => {
+    it("?redirect=/\\evil stores '/' (backslash bypass guard)", async () => {
       // Arrange — backslash-prefixed path; sanitizeRedirect regex (?![/\\]) rejects it
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
@@ -211,10 +211,10 @@ describe("loginRoute", () => {
       // Assert — deleting the /[/\\]/ check in sanitizeRedirect would let "/\evil" pass
       const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt?.args[1]).toBe("/dashboard");
+      expect(insertStmt?.args[1]).toBe("/");
     });
 
-    it("?redirect=/ok\\r\\nX-Injected:x stores '/dashboard' (CRLF injection guard)", async () => {
+    it("?redirect=/ok\\r\\nX-Injected:x stores '/' (CRLF injection guard)", async () => {
       // Arrange — CRLF chars smuggled in the redirect param; sanitizeRedirect rejects via /[\r\n\0]/
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
@@ -229,10 +229,10 @@ describe("loginRoute", () => {
       // Assert — deleting the /[\r\n\0]/ check in sanitizeRedirect would let the injection through
       const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt?.args[1]).toBe("/dashboard");
+      expect(insertStmt?.args[1]).toBe("/");
     });
 
-    it("?redirect=/ok\\0null stores '/dashboard' (NUL injection guard)", async () => {
+    it("?redirect=/ok\\0null stores '/' (NUL injection guard)", async () => {
       // Arrange — NUL byte smuggled in the redirect param; sanitizeRedirect rejects via /[\r\n\0]/
       const { db, stmts } = captureDb();
       const { app, env } = makeApp(db);
@@ -247,7 +247,7 @@ describe("loginRoute", () => {
       // Assert — deleting the /[\r\n\0]/ check in sanitizeRedirect would let the NUL through
       const insertStmt = stmts().find((s) => s.sql.toLowerCase().includes("oauth_state"));
       expect(insertStmt).toBeDefined();
-      expect(insertStmt?.args[1]).toBe("/dashboard");
+      expect(insertStmt?.args[1]).toBe("/");
     });
 
     it("?remember=1 stores remember=1 in oauth_state", async () => {
@@ -975,10 +975,12 @@ describe("callbackRoute", () => {
         env,
       );
 
-      // Assert — first request succeeds with redirect + cookie
-      expect(res1.status).toBe(302);
-      expect(res1.headers.get("Location")).toBe("/");
+      // Assert — first request succeeds. Landing on the SPA index "/" is a
+      // dashboard dest, so it returns the 200 navigate HTML (poll /api/me then
+      // location.replace) with Set-Cookie — the cookie-loss-safe path.
+      expect(res1.status).toBe(200);
       expect(res1.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
+      expect(await res1.text()).toContain('})("/")');
 
       // Assert — second request fails (state row gone after first consume)
       expect(res2.status).toBe(400);

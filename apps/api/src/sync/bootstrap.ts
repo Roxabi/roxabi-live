@@ -11,6 +11,14 @@ import { releaseSyncLock, resumeSyncControl } from "./control";
 import { ensureGlobalSyncControlSeeded, isHalted, runSync } from "./sync";
 import { listAccessibleRepos, listUnsyncedRepos as unsyncedAmong } from "./window";
 
+/**
+ * The only ExecutionContext capability these schedulers use is waitUntil.
+ * Typing it structurally decouples from the workers-types ExecutionContext shape
+ * (which gained a required `tracing` field), so Hono's `c.executionCtx` — the
+ * actual caller — assigns cleanly without a cast.
+ */
+type WaitUntilCtx = { waitUntil(promise: Promise<unknown>): void };
+
 const BOOTSTRAP_KEY = "bootstrap_at";
 /** Debounce rapid /api/sync/status polls from scheduling duplicate chains. */
 const BOOTSTRAP_SCHEDULE_DEBOUNCE_MS = 3_000;
@@ -186,7 +194,7 @@ async function maybeAutoResumeBootstrapHalt(db: D1Database): Promise<void> {
 export async function maybeScheduleMaintenanceBootstrap(
   db: D1Database,
   env: Env,
-  ctx: ExecutionContext,
+  ctx: WaitUntilCtx,
 ): Promise<boolean> {
   await ensureGlobalSyncControlSeeded(db);
   await maybeAutoResumeBootstrapHalt(db);
@@ -208,7 +216,7 @@ export async function maybeScheduleMaintenanceBootstrap(
 export async function maybeScheduleBootstrapSync(
   db: D1Database,
   env: Env,
-  ctx: ExecutionContext,
+  ctx: WaitUntilCtx,
   syncCtx?: BootstrapSyncContext,
 ): Promise<boolean> {
   await ensureGlobalSyncControlSeeded(db);

@@ -1,10 +1,10 @@
 /**
  * GET /install/complete — post-install return URL (GitHub App Setup URL).
  *
- * Operator config (GitHub App settings → Setup URL):
- *   https://live.roxabi.dev/install/complete
+ * Operator config (GitHub App settings → Setup URL, post-cutover):
+ *   https://app.live.roxabi.dev/install/complete   (proxied to this worker)
  *
- * Session already exists; dashboard calls POST /api/install/refresh to link tenants.
+ * Session already exists; the SPA calls POST /api/install/refresh to link tenants.
  */
 
 import type { Context } from "hono";
@@ -21,5 +21,5 @@ export async function installCompleteRoute(c: Context<AuthEnv>): Promise<Respons
       await tryLinkInstallPendingSession(c.env.DB, token, session);
     }
   }
-  return authRedirect("/dashboard");
+  return authRedirect("/");
 }
