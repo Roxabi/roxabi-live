@@ -261,7 +261,7 @@ export function IssueTable({
             {COLUMNS.map(({ col, label, center }) => (
               <th
                 key={col}
-                className={`px-3 py-2 text-xs font-medium text-muted-foreground ${center ? "text-center" : ""}`}
+                className={`px-3 py-2 font-mono text-[10px] font-semibold tracking-[0.04em] text-muted-foreground ${center ? "text-center" : ""}`}
               >
                 <button
                   type="button"
@@ -288,14 +288,20 @@ export function IssueTable({
                     type="button"
                     onClick={() => toggleCollapse(it.collapseKey)}
                     aria-expanded={!collapsed.has(it.collapseKey)}
-                    className={`flex w-full items-center px-3 py-1.5 text-left text-xs font-medium text-foreground hover:bg-card ${it.level === 2 ? "pl-8" : ""}`}
+                    className={`flex w-full items-center px-3 py-1.5 text-left font-mono font-semibold hover:bg-card ${it.level === 2 ? "pl-8 text-[10px] text-muted-foreground" : "text-xs text-primary"}`}
                   >
                     <span aria-hidden className="mr-1 text-muted-foreground">
                       {collapsed.has(it.collapseKey) ? "▸" : "▾"}
                     </span>
                     {dimDisplayLabel(it.value, it.dim)}
-                    {it.title && <span className="ml-2 text-muted-foreground">{it.title}</span>}
-                    <span className="ml-2 text-muted-foreground tabular-nums">{it.count}</span>
+                    {it.title && (
+                      <span className="ml-2 font-sans font-normal text-muted-foreground">
+                        {it.title}
+                      </span>
+                    )}
+                    <span className="ml-2 font-normal text-muted-foreground tabular-nums">
+                      {it.count}
+                    </span>
                   </button>
                 </td>
               </tr>

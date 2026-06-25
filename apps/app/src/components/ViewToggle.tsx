@@ -1,35 +1,49 @@
 import { cn } from "@/lib/utils";
 import { type ViewKey, useDashboardStore } from "@/store/dashboardStore";
+import { type Icon, ListBullets, Table, TreeStructure } from "@phosphor-icons/react";
 
-const VIEWS: { key: ViewKey; label: string }[] = [
-  { key: "list", label: "List" },
-  { key: "pivot", label: "Pivot" },
-  { key: "graph", label: "Graph" },
+// Order + labels mirror the legacy header view-segs (Graph / List / Table).
+// The store key `pivot` is the legacy "Table" (pivot-matrix) renderer.
+const VIEWS: { key: ViewKey; label: string; Icon: Icon }[] = [
+  { key: "graph", label: "Graph", Icon: TreeStructure },
+  { key: "list", label: "List", Icon: ListBullets },
+  { key: "pivot", label: "Table", Icon: Table },
 ];
 
-/** Segmented control: List / Pivot / Graph. */
+/** Segmented view control (Graph / List / Table) — legacy `.view-segs`. */
 export function ViewToggle() {
   const view = useDashboardStore((s) => s.view);
   const patch = useDashboardStore((s) => s.patch);
 
   return (
-    <div className="inline-flex rounded-md border border-border p-0.5">
-      {VIEWS.map((v) => (
-        <button
-          key={v.key}
-          type="button"
-          data-testid={`view-${v.key}`}
-          onClick={() => patch({ view: v.key })}
-          className={cn(
-            "rounded-[5px] px-3 py-1 text-xs transition-colors",
-            view === v.key
-              ? "bg-primary/15 text-primary"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {v.label}
-        </button>
-      ))}
+    <div
+      role="group"
+      aria-label="View"
+      className="inline-flex overflow-hidden rounded-md border border-border bg-card"
+    >
+      {VIEWS.map(({ key, label, Icon }, i) => {
+        const on = view === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            data-testid={`view-${key}`}
+            onClick={() => patch({ view: key })}
+            aria-pressed={on}
+            title={label}
+            className={cn(
+              "inline-flex items-center gap-1.5 px-3 py-1.5 font-mono text-[11px] tracking-[0.02em] transition-colors",
+              i > 0 && "border-l border-border",
+              on
+                ? "bg-[var(--accent-dim)] font-semibold text-primary"
+                : "font-medium text-[var(--text-dim)] hover:bg-[var(--bg-elevated)] hover:text-foreground",
+            )}
+          >
+            <Icon size={13} weight={on ? "fill" : "regular"} aria-hidden />
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -48,8 +48,7 @@ function Dashboard() {
     useDecryptedGraph();
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-foreground">Launch Board</h1>
+    <div className="space-y-3">
       <ZkNotices needsGithubLink={needsGithubLink} migrationIncomplete={zkMigrationIncomplete} />
       <SyncProgressBanner status={syncStatus} />
       {isError ? (

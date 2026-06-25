@@ -1,4 +1,5 @@
 import { BoardView } from "@/components/BoardView";
+import { ViewToggle } from "@/components/ViewToggle";
 import { annotateNodes } from "@roxabi-live/shared";
 import { useMemo } from "react";
 import { fixtureGraph } from "./fixture";
@@ -12,8 +13,11 @@ export default function DevTablePage() {
   const nodes = useMemo(() => annotateNodes(fixtureGraph.nodes, fixtureGraph.edges), []);
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-foreground">Launch Board — fixture</h1>
+    <div className="space-y-4 p-6">
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold text-foreground">Launch Board — fixture</h1>
+        <ViewToggle />
+      </div>
       <BoardView nodes={nodes} edges={fixtureGraph.edges} />
     </div>
   );
