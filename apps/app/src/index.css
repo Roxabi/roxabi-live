@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@import "../../../brand/styles.css";
+
+@theme {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--bg-card);
+  --color-border: var(--border);
+  --color-muted-foreground: var(--text-muted);
+  --color-primary: var(--accent);
+  --color-ready: var(--ready);
+  --color-blocked: var(--blocked);
+  --color-running: var(--running);
+  --color-done: var(--done);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+  --radius: var(--r-md);
+}
