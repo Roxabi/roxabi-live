@@ -17,6 +17,7 @@ import { completeOAuthSession } from "./post-oauth";
 import { mintSession, revokeOtherSessions, validateSession } from "./session";
 import { pickSessionTenantId, supersedeStaleTenants } from "./tenant-supersede";
 import { createUserTokenHandoff } from "./userTokenHandoff";
+import { zkAccountKeyEnabled } from "./zk-flags";
 import { createZkReauthCode } from "./zk-reauth";
 
 export type LoginIntent = "signin" | "install" | "reauth" | "zk" | "prompt";
@@ -360,12 +361,26 @@ export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Resp
   const rawToken = await mintSession(c.env.DB, userId, sessionTenantId, rememberSession);
   await revokeOtherSessions(c.env.DB, userId, rawToken);
 
+  // Auto-handoff: an already-enrolled ZK user (has a zk_key_backups row) needs the
+  // browser-side GitHub token every session to seal newly-synced titles. Mint it on
+  // any normal login — not just an explicit ?zk=1 — so the dashboard never has to
+  // nag with a "Link GitHub" banner. The first enrolment kicks off ?zk=1 itself.
+  let doZkHandoff = wantsZkHandoff;
+  if (!doZkHandoff && !wantsReauth && zkAccountKeyEnabled(c.env) && c.env.INSTALL_TOKEN_KEY) {
+    const enrolledRow = await c.env.DB.prepare(
+      "SELECT 1 AS ok FROM zk_key_backups WHERE user_id = ? LIMIT 1",
+    )
+      .bind(userId)
+      .first<{ ok: number }>();
+    doZkHandoff = enrolledRow != null;
+  }
+
   if (wantsReauth) {
     const reauthCode = await createZkReauthCode(c.env, userId);
     const dest = new URL(redirectAfter, origin);
     dest.searchParams.set("zk_reauth", reauthCode);
     redirectAfter = `${dest.pathname}${dest.search}`;
-  } else if (wantsZkHandoff) {
+  } else if (doZkHandoff) {
     try {
       const handoffCode = await createUserTokenHandoff(c.env, userId, access_token);
       const dest = new URL(redirectAfter, origin);

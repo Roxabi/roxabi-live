@@ -1,24 +1,86 @@
 /**
- * ZkNotices — dashboard banners ported from frontend/app.js showZkGithubLinkNotice
- * / showZkMigrationNotice. Surfaces two sealing side-effects the gate cannot fix
- * silently: (1) titles stayed "(sealed)" because no GitHub user token is linked
- * to pull issue content; (2) a v1→v2 migration left undecryptable rows behind.
+ * ZkNotices — dashboard banners for the ZK (zero-knowledge) encryption mode.
+ *
+ *  1. Info (dismissable): reassures that issue titles/content are encrypted
+ *     server-side and that the passphrase is unrecoverable.
+ *  2. GitHub link (fallback): titles stayed "(sealed)" because no GitHub user
+ *     token is available to import + encrypt them. Rare now — the server
+ *     auto-hands-off the token on every login of an enrolled user, and the first
+ *     enrolment kicks off the handoff itself — so this only shows if that failed.
+ *  3. Migration: a v1→v2 migration left undecryptable rows behind.
  */
 
 import { GithubLogo, Warning } from "@phosphor-icons/react";
+import { useState } from "react";
 import { zkLoginUrl } from "./github";
+
+// Per-user so a shared browser doesn't suppress the notice for another account
+// (matches the githubLogin-scoping of the ZK device/remember keys).
+function infoDismissKey(githubLogin: string): string {
+  return `rl:zk-info-dismissed:${githubLogin}`;
+}
+
+function readInfoDismissed(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function ZkNotices({
   needsGithubLink,
   migrationIncomplete,
+  zkActive = false,
+  githubLogin = "",
 }: {
   needsGithubLink: boolean;
   migrationIncomplete: boolean;
+  zkActive?: boolean;
+  githubLogin?: string;
 }) {
-  if (!needsGithubLink && !migrationIncomplete) return null;
+  const dismissKey = infoDismissKey(githubLogin);
+  const [infoDismissed, setInfoDismissed] = useState(() => readInfoDismissed(dismissKey));
+  const showInfo = zkActive && !infoDismissed;
+
+  if (!showInfo && !needsGithubLink && !migrationIncomplete) return null;
 
   return (
     <div className="space-y-2">
+      {showInfo && (
+        <div
+          data-testid="zk-info-notice"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card/60 px-3 py-2 text-sm text-muted-foreground"
+        >
+          <span aria-hidden className="shrink-0 text-primary">
+            🔒
+          </span>
+          <span className="min-w-0">
+            Les titres et le contenu de vos issues sont{" "}
+            <strong className="font-medium text-foreground">chiffrés</strong> et ne sont{" "}
+            <strong className="font-medium text-foreground">jamais accessibles en clair sur le
+            serveur</strong>. Votre passphrase n'est{" "}
+            <strong className="font-medium text-foreground">pas récupérable</strong> : en cas de
+            perte, vous devrez en générer une nouvelle.
+          </span>
+          <button
+            type="button"
+            data-testid="zk-info-dismiss"
+            aria-label="Fermer"
+            onClick={() => {
+              try {
+                localStorage.setItem(dismissKey, "1");
+              } catch {
+                /* ignore disabled storage */
+              }
+              setInfoDismissed(true);
+            }}
+            className="ml-auto shrink-0 rounded px-1.5 text-lg leading-none text-muted-foreground transition-colors hover:text-foreground"
+          >
+            ×
+          </button>
+        </div>
+      )}
       {needsGithubLink && (
         <div
           data-testid="zk-github-link-notice"
