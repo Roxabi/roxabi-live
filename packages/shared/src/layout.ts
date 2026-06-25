@@ -15,10 +15,11 @@ import type { GraphEdge } from "./types.ts";
 // v5 positioning constants (match Python layout_graph.py).
 const LANE_X_START = 4.0;
 const LANE_X_END = 96.0;
-// Top inset for the first depth band. Kept large enough that the top row's node
-// dot (+ its ring/label) clears the graph container's clipped top edge even when
-// the container is at its minimum height (single-milestone / few-band layouts).
-const Y_TOP = 5.0;
+// Small percentage top inset. The fixed-pixel headroom that keeps the first row
+// off the top edge on short/filtered graphs lives in GraphPanel's container
+// padding (a % inset alone is too small when the container is near its minimum
+// height); this just spaces the first band within the field.
+const Y_TOP = 2.5;
 const Y_BOT = 88.0;
 const MIN_NODE_X = 8.0;
 const MIN_VIS_NODE_GAP = 4.0;

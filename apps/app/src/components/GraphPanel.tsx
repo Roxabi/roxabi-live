@@ -73,7 +73,7 @@ function GraphNode({
         <span
           className={cn(
             "block",
-            isParent ? "size-3 rounded-[3px]" : "size-2.5 rounded-full",
+            isParent ? "size-3.5 rounded-[4px]" : "size-3 rounded-full",
             devStateClasses(node.dev_state, done),
           )}
           style={{
@@ -82,7 +82,10 @@ function GraphNode({
             // `.gg-node.blocked`) — never red. Done = hollow solid; open = filled.
             backgroundColor: done || blocked ? "transparent" : tone,
             border: blocked ? `2px dashed ${tone}` : `1.5px solid ${tone}`,
-            boxShadow: "0 0 0 2px var(--bg)",
+            // Separator ring vs the canvas + a soft tone bloom (legacy
+            // `.gg-node` 0 0 8px currentColor) — the premium glow. Done = no glow.
+            boxShadow: done ? "0 0 0 2px var(--bg)" : `0 0 0 2px var(--bg), 0 0 8px ${tone}`,
+            opacity: done ? 0.55 : undefined,
           }}
           aria-hidden
         >
@@ -143,7 +146,10 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
   }
 
   return (
-    <div className="flex overflow-hidden rounded-lg border border-border bg-background/40">
+    // pt/pb give a fixed-pixel headroom so the first band never crowds the top
+    // edge on short/filtered graphs (the % Y_TOP alone is too small there). The
+    // gutter + stage both sit inside this padding, so they shift together.
+    <div className="flex overflow-hidden rounded-lg border border-border bg-background/40 pt-6 pb-3">
       {/* Row-band gutter */}
       <div
         className="relative w-28 shrink-0 border-r border-border"
