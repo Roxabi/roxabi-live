@@ -33,4 +33,12 @@ describe("ZkNotices", () => {
     const out = html({ needsGithubLink: true, migrationIncomplete: false, zkActive: false });
     expect(out).not.toContain('data-testid="zk-info-notice"');
   });
+
+  it("suppresses the GitHub-link prompt for active ZK users (auto-handoff replaces it)", () => {
+    const out = html({ needsGithubLink: true, migrationIncomplete: false, zkActive: true });
+    // The reassuring info banner shows; the scary manual-link prompt does not.
+    expect(out).toContain('data-testid="zk-info-notice"');
+    expect(out).not.toContain('data-testid="zk-github-link-notice"');
+    expect(out).not.toContain("Lier GitHub");
+  });
 });

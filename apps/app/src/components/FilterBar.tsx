@@ -55,7 +55,7 @@ export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
           onChange={(e) => patch({ search: e.target.value })}
           placeholder="Search issues…"
           aria-label="Search issues"
-          className="h-7 w-52 rounded-md border border-border bg-background pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/60 focus:outline-none"
+          className="h-8 w-52 rounded-md border border-border bg-background pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/60 focus:outline-none"
         />
       </div>
 
@@ -76,7 +76,7 @@ export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
         onClick={() => patch({ showParents: !showParents })}
         aria-pressed={showParents}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors hover:border-primary/60",
+          "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors hover:border-primary/60",
           showParents ? "border-primary/50 text-foreground" : "border-border text-muted-foreground",
         )}
       >
@@ -87,7 +87,7 @@ export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
         type="button"
         data-testid="facet-reset"
         onClick={resetFilters}
-        className="ml-auto rounded-md px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        className="ml-auto inline-flex h-8 items-center rounded-md px-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         Reset
       </button>

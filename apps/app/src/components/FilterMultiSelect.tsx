@@ -29,7 +29,7 @@ export function FilterMultiSelect({
           type="button"
           data-testid={`facet-trigger-${label}`}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors hover:border-primary/60",
+            "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors hover:border-primary/60",
             count > 0 ? "border-primary/50 text-foreground" : "border-border text-muted-foreground",
           )}
         >

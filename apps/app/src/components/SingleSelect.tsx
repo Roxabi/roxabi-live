@@ -43,7 +43,7 @@ export function SingleSelect({
             type="button"
             aria-label={ariaLabel ?? label}
             className={cn(
-              "inline-flex min-w-[80px] items-center justify-between gap-1.5 rounded-md border border-border bg-card px-2 py-1 font-mono text-[11px] text-foreground transition-colors hover:border-[var(--border-hi)] data-[state=open]:border-primary",
+              "inline-flex h-8 min-w-[80px] items-center justify-between gap-1.5 rounded-md border border-border bg-card px-2 font-mono text-[11px] text-foreground transition-colors hover:border-[var(--border-hi)] data-[state=open]:border-primary",
               triggerClassName,
             )}
           >
