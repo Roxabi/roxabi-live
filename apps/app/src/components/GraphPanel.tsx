@@ -15,10 +15,6 @@ import {
 } from "@roxabi-live/shared";
 import { useMemo, useState } from "react";
 
-function truncate(s: string, n = 26): string {
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
-}
-
 /** Dev-state → animation classes (mirrors frontend/state.js mapDevStateToClass). */
 function devStateClasses(dev: DevState, done: boolean): string {
   if (done) return "rl-gg-dot";
@@ -46,54 +42,73 @@ function GraphNode({
   const tone = toneHex(node.repo);
   const status = displayStatus(node);
   const done = node.computedStatus === "done";
+  const title = `#${node.number} — ${node.title ?? ""}`;
+  const hover = {
+    onMouseEnter: () => onHover(node.key),
+    onMouseLeave: () => onHover(null),
+    onFocus: () => onHover(node.key),
+    onBlur: () => onHover(null),
+  };
+  const dim = dimmed ? "opacity-20" : "opacity-100";
 
+  // Dot and label are SEPARATE absolutely-positioned elements (matches the
+  // legacy gg-node + gg-ilabel): the dot sits ON the node point, the label hangs
+  // BELOW it. Rendering them inline made each node ~100px wide → dense bands
+  // overlapped into illegibility. The label truncates and expands on hover.
   return (
-    <a
-      href={node.url ?? "#"}
-      target={node.url ? "_blank" : undefined}
-      rel="noreferrer"
-      data-iss={node.key}
-      onMouseEnter={() => onHover(node.key)}
-      onMouseLeave={() => onHover(null)}
-      onFocus={() => onHover(node.key)}
-      onBlur={() => onHover(null)}
-      title={`#${node.number} — ${node.title ?? ""}`}
-      style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-      className={cn(
-        "absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 transition-opacity",
-        dimmed ? "opacity-20" : "opacity-100",
-        active && "z-20",
-      )}
-    >
-      <span
-        className={cn("size-2.5 shrink-0 rounded-full", devStateClasses(node.dev_state, done))}
-        style={{
-          color: tone,
-          backgroundColor: done ? "transparent" : tone,
-          border: `1.5px solid ${tone}`,
-          boxShadow:
-            status === "blocked" ? `0 0 0 1.5px ${statusColor.blocked}` : "0 0 0 2px var(--bg)",
-        }}
-        aria-hidden
+    <>
+      <a
+        href={node.url ?? "#"}
+        target={node.url ? "_blank" : undefined}
+        rel="noreferrer"
+        data-iss={node.key}
+        {...hover}
+        title={title}
+        style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+        className={cn("absolute -translate-x-1/2 -translate-y-1/2 transition-opacity", dim, active && "z-30")}
       >
-        {node.dev_state === "pr_reviewed" && !done && <span className="rl-gg-orbit2" aria-hidden />}
-      </span>
-      <span className="flex items-center gap-1 whitespace-nowrap rounded bg-background/85 px-1 text-[10px] leading-tight">
-        <span className="font-mono text-muted-foreground">#{node.number}</span>
-        {node.size && (
-          <span className="font-mono text-[9px] text-muted-foreground">{node.size}</span>
+        <span
+          className={cn("block size-2.5 rounded-full", devStateClasses(node.dev_state, done))}
+          style={{
+            color: tone,
+            backgroundColor: done ? "transparent" : tone,
+            border: `1.5px solid ${tone}`,
+            boxShadow:
+              status === "blocked" ? `0 0 0 1.5px ${statusColor.blocked}` : "0 0 0 2px var(--bg)",
+          }}
+          aria-hidden
+        >
+          {node.dev_state === "pr_reviewed" && !done && (
+            <span className="rl-gg-orbit2" aria-hidden />
+          )}
+        </span>
+      </a>
+      <a
+        href={node.url ?? "#"}
+        target={node.url ? "_blank" : undefined}
+        rel="noreferrer"
+        data-iss={node.key}
+        {...hover}
+        title={title}
+        style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: "translate(-50%, 10px)" }}
+        className={cn(
+          "absolute flex items-center gap-1 overflow-hidden whitespace-nowrap rounded border border-border bg-card/90 px-1.5 py-0.5 text-[10px] leading-tight transition-[max-width,opacity]",
+          dim,
+          active ? "z-30 max-w-[280px]" : "z-10 max-w-[116px] hover:z-30 hover:max-w-[280px]",
         )}
-        {node.title && <span className="text-foreground">{truncate(node.title)}</span>}
+      >
+        <span className="shrink-0 font-mono text-muted-foreground">#{node.number}</span>
+        {node.size && (
+          <span className="shrink-0 font-mono text-[9px] text-muted-foreground">{node.size}</span>
+        )}
+        {node.title && <span className="min-w-0 truncate text-foreground">{node.title}</span>}
         {showAssignees && node.assignees.length > 0 && (
-          <span
-            className="font-mono text-[9px] text-muted-foreground opacity-85"
-            title={`Assignees: ${node.assignees.join(", ")}`}
-          >
+          <span className="shrink-0 font-mono text-[9px] text-muted-foreground opacity-85">
             {node.assignees.join(", ")}
           </span>
         )}
-      </span>
-    </a>
+      </a>
+    </>
   );
 }
 
