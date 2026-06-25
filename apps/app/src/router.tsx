@@ -1,6 +1,8 @@
 import { BoardView } from "@/components/BoardView";
+import { SyncProgressBanner } from "@/components/SyncProgressBanner";
 import { Button } from "@/components/ui/button";
 import { useGraphData } from "@/hooks/useGraphData";
+import { useSyncProgressMonitor } from "@/hooks/useSyncProgressMonitor";
 import { useVersionPoll } from "@/hooks/useVersionPoll";
 import type { QueryClient } from "@tanstack/react-query";
 import {
@@ -40,11 +42,13 @@ const indexRoute = createRoute({
 
 function CockpitPage() {
   useVersionPoll();
+  const syncStatus = useSyncProgressMonitor();
   const { nodes, edges, isLoading, isError, error } = useGraphData();
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-foreground">Launch Board</h1>
+      <SyncProgressBanner status={syncStatus} />
       {isError ? (
         <div className="rounded-lg border border-blocked/30 bg-blocked/10 p-4 text-sm text-blocked">
           Failed to load the corpus: {(error as Error).message}
@@ -92,10 +96,21 @@ const devTableRoute = createRoute({
   ),
 });
 
+const DevSyncPage = lazy(() => import("./dev/DevSyncPage"));
+const devSyncRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/dev/sync",
+  component: () => (
+    <Suspense fallback={null}>
+      <DevSyncPage />
+    </Suspense>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   signInRoute,
-  ...(import.meta.env.DEV ? [devTableRoute] : []),
+  ...(import.meta.env.DEV ? [devTableRoute, devSyncRoute] : []),
 ]);
 
 export const router = createRouter({
