@@ -1,0 +1,42 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   TYPOGRAPHY — Roxabi Live
+   Two families: Inter for everything human-facing (display + body), JetBrains
+   Mono for anything machine-flavoured — status pills, issue refs (#847),
+   commands (/issue-triage), tickers, metadata, eyebrows.
+   Display is heavy (800–900) and tightly tracked; mono is wide-tracked caps.
+────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* ── Families ───────────────────────────────────────────────────────── */
+  --font-display: "Inter", system-ui, -apple-system, sans-serif;
+  --font-body:    "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ── Type scale (px) ────────────────────────────────────────────────── */
+  --fs-display:   3.6rem;   /* hero h1 (clamps down) */
+  --fs-h1:        2.4rem;
+  --fs-h2:        2.1rem;
+  --fs-h3:        1.05rem;
+  --fs-lead:      1.0625rem; /* 17px */
+  --fs-body:      0.9375rem; /* 15px */
+  --fs-sm:        0.8125rem; /* 13px */
+  --fs-mono:      0.75rem;   /* 12px */
+  --fs-micro:     0.625rem;  /* 10px — pills, refs */
+
+  /* ── Weights ────────────────────────────────────────────────────────── */
+  --fw-regular:   400;
+  --fw-medium:    500;
+  --fw-semibold:  600;
+  --fw-bold:      700;
+  --fw-heavy:     800;
+  --fw-black:     900;
+
+  /* ── Tracking ───────────────────────────────────────────────────────── */
+  --tracking-display: -0.04em;  /* tight headlines     */
+  --tracking-tight:   -0.02em;
+  --tracking-mono:    0.12em;   /* wide-tracked eyebrows / pills */
+
+  /* ── Leading ────────────────────────────────────────────────────────── */
+  --leading-tight: 1.05;
+  --leading-snug:  1.3;
+  --leading-body:  1.65;
+}

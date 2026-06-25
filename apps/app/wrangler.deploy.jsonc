@@ -1,0 +1,25 @@
+{
+  // Production deploy config for apps/app
+  // Route activates at domain cutover — set custom_domain: true once DNS is pointed
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "roxabi-live-app",
+  "main": "worker.ts",
+  "compatibility_date": "2025-06-01",
+  "routes": [
+    {
+      "pattern": "app.live.roxabi.dev/*",
+      "zone_name": "live.roxabi.dev"
+      // "custom_domain": true  // uncomment at domain cutover
+    }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  // Same-origin proxy target: worker.ts forwards /api,/login,/oauth,/auth,/logout,
+  // /install,/admin,/health to the api worker (name "roxabi-live"). Staging app
+  // deploys must point this at "roxabi-live-staging".
+  "services": [{ "binding": "API", "service": "roxabi-live" }]
+}

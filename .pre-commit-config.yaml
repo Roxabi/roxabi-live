@@ -2,8 +2,8 @@ repos:
   - repo: local
     hooks:
       - id: biome
-        name: biome (lint + format) — worker/src + frontend
-        entry: bash -c 'cd worker && npx biome check src ../frontend'
+        name: biome (lint + format) — apps/api/src + apps/app/src
+        entry: bash -c 'bunx biome check apps/api/src apps/app/src packages/shared/src'
         language: system
         pass_filenames: false
       - id: trufflehog
@@ -17,9 +17,9 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]
-      - id: worker-typecheck
-        name: worker typecheck (tsc)
-        entry: bash -c 'cd worker && npm run typecheck'
+      - id: api-typecheck
+        name: api + app typecheck (tsc)
+        entry: bash -c 'bun --filter @roxabi-live/api typecheck && bun --filter @roxabi-live/app typecheck'
         language: system
         pass_filenames: false
         stages: [pre-push]

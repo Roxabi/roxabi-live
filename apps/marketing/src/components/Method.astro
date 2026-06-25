@@ -1,0 +1,57 @@
+---
+import type { Translations } from "../i18n/index";
+
+interface Props {
+  t: Translations;
+}
+const { t } = Astro.props;
+
+const steps = t.method.steps;
+const step1 = steps[0];
+const step2 = steps[1];
+const step3 = steps[2];
+---
+
+<section class="section-method" id="demo" aria-labelledby="method-h2">
+  <div class="container">
+    <div class="method-header">
+      <p class="method-kicker">{t.method.kicker}</p>
+      <h2 id="method-h2">{t.method.h2}</h2>
+      <p class="method-lead">{t.method.lead}</p>
+    </div>
+
+    <div class="method-steps">
+      <!-- Step 1 -->
+      <div class="method-step">
+        <span class="step-num">{step1.num}</span>
+        <code class="step-cmd">{step1.cmd}</code>
+        <h3>{step1.h3}</h3>
+        <p>
+          {step1.pPre}<code>/issue-triage</code>{step1.pMid}<code>blocked-by</code>{step1.pPost}
+        </p>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="method-step">
+        <span class="step-num">{step2.num}</span>
+        <code class="step-cmd">{step2.cmd}</code>
+        <h3>{step2.h3}</h3>
+        <div class="status-pills-row" aria-label={step2.pillsLabel}>
+          <span class="status-pill pill-ready">ready</span>
+          <span class="status-pill pill-blocked">blocked</span>
+          <span class="status-pill pill-running">running</span>
+          <span class="status-pill pill-done">done</span>
+        </div>
+        <p>{step2.p}</p>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="method-step">
+        <span class="step-num">{step3.num}</span>
+        <code class="step-cmd">{step3.cmd}</code>
+        <h3>{step3.h3}</h3>
+        <p>{step3.p}</p>
+      </div>
+    </div>
+  </div>
+</section>

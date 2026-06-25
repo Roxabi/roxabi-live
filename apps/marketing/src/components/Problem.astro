@@ -1,0 +1,31 @@
+---
+import type { Translations } from "../i18n/index";
+
+interface Props {
+  t: Translations;
+}
+const { t } = Astro.props;
+---
+
+<section class="section-problem" id="problem" aria-labelledby="problem-h2">
+  <div class="container">
+    <div class="problem-grid">
+      <div class="problem-header">
+        <p class="problem-kicker">{t.problem.kicker}</p>
+        <h2 id="problem-h2">{t.problem.h2}</h2>
+        <p class="problem-lead">{t.problem.lead}</p>
+      </div>
+      <div class="pain-list">
+        {t.problem.pains.map((pain) => (
+          <div class="pain-item">
+            <span class="pain-num" aria-hidden="true">{pain.num}</span>
+            <div class="pain-body">
+              <h3>{pain.h3}</h3>
+              <p>{pain.p}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</section>

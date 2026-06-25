@@ -1,0 +1,124 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   BASE — Roxabi Live
+   Reset, element defaults, the amber-bloom canvas, and a small set of utility
+   classes (.container, .eyebrow, .lead, .mono) that every Roxabi surface
+   shares. Reusable UI (buttons, pills, cards, boards) lives in React
+   components — see components/. The class equivalents below exist so plain
+   HTML artifacts can be built straight against styles.css.
+────────────────────────────────────────────────────────────────────────── */
+
+/* ── Reset ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+a { color: inherit; }
+::selection { background: var(--accent-dim); color: var(--text); }
+
+/* ── Amber bloom canvas ─────────────────────────────────────────────────── */
+.bloom-canvas { position: relative; }
+.bloom-canvas::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse 70% 45% at 50% -8%, var(--accent-glow), transparent 60%);
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────── */
+h1, .h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 5.2vw, var(--fs-display));
+  font-weight: var(--fw-black);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-tight);
+  text-wrap: pretty;
+  color: var(--text);
+}
+h2, .h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 3vw, var(--fs-h2));
+  font-weight: var(--fw-heavy);
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.15;
+  text-wrap: pretty;
+  color: var(--text);
+}
+h3, .h3 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.accent { color: var(--accent); }
+
+/* ── Utilities ──────────────────────────────────────────────────────────── */
+.container {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 var(--space-6);
+  position: relative;
+  z-index: 1;
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.lead {
+  font-size: clamp(15px, 1.15vw, var(--fs-lead));
+  line-height: var(--leading-body);
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+.mono { font-family: var(--font-mono); }
+
+/* ── Focus ──────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+  border-radius: var(--r-sm);
+}
+
+/* ── Graph node animations (gated by reduced-motion) ──────────────────────
+   Used by the DependencyGraph / IssueNode components. Keyframes are always
+   defined; the .rx-* classes that APPLY them only exist when motion is allowed,
+   so reduced-motion users see the calm end-state. */
+@keyframes rx-spin { to { transform: rotate(360deg); } }
+@keyframes rx-ready-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
+  50%      { box-shadow: 0 0 0 4px rgba(52,211,153,.18); }
+}
+@keyframes rx-run-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(56,189,248,.0); }
+  50%      { box-shadow: 0 0 0 5px rgba(56,189,248,.22); }
+}
+@keyframes rx-pr-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(240,180,41,0); }
+  50%      { box-shadow: 0 0 0 4px rgba(240,180,41,.22); }
+}
+@keyframes rx-merge-flow { to { stroke-dashoffset: -16; } }
+@keyframes rx-merge-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
+  50%      { box-shadow: 0 0 10px 2px rgba(52,211,153,.35); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rx-spin       { animation: rx-spin 1.5s linear infinite; }
+  .rx-ready-glow { animation: rx-ready-glow 3.2s var(--ease-in-out) infinite; }
+  .rx-run-pulse  { animation: rx-run-pulse 1.9s var(--ease-in-out) infinite; }
+  .rx-pr-pulse   { animation: rx-pr-pulse 2.4s var(--ease-in-out) infinite; }
+  .rx-merge-flow { animation: rx-merge-flow 1s linear infinite; }
+  .rx-merge-glow { animation: rx-merge-glow 1.8s var(--ease-in-out) infinite; }
+}
