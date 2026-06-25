@@ -118,11 +118,22 @@ const devAuthRoute = createRoute({
   ),
 });
 
+const DevZkPage = lazy(() => import("./dev/DevZkPage"));
+const devZkRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/dev/zk",
+  component: () => (
+    <Suspense fallback={null}>
+      <DevZkPage />
+    </Suspense>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   signInRoute,
   signUpRoute,
-  ...(import.meta.env.DEV ? [devTableRoute, devSyncRoute, devAuthRoute] : []),
+  ...(import.meta.env.DEV ? [devTableRoute, devSyncRoute, devAuthRoute, devZkRoute] : []),
 ]);
 
 export const router = createRouter({
