@@ -1,3 +1,4 @@
+import { SingleSelect } from "@/components/SingleSelect";
 import type { Dim } from "@roxabi-live/shared";
 
 const DIMS: { value: Dim; label: string }[] = [
@@ -19,22 +20,15 @@ interface DimSelectProps {
   allowNone?: boolean;
 }
 
-/** A small labelled dimension picker (pivot rows/cols/group). */
+/** A small labelled dimension picker (pivot rows/cols/group) — themed dropdown. */
 export function DimSelect({ label, value, onChange, allowNone = true }: DimSelectProps) {
+  const options = DIMS.filter((d) => allowNone || d.value !== "none");
   return (
-    <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      {label}
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as Dim)}
-        className="rounded-md border border-border bg-background px-1.5 py-1 text-xs text-foreground focus:border-primary/60 focus:outline-none"
-      >
-        {DIMS.filter((d) => allowNone || d.value !== "none").map((d) => (
-          <option key={d.value} value={d.value}>
-            {d.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <SingleSelect
+      label={label}
+      value={value}
+      options={options}
+      onChange={(v) => onChange(v as Dim)}
+    />
   );
 }

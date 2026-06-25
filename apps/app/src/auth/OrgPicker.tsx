@@ -4,7 +4,7 @@
  */
 
 import { useActiveTenant } from "@/auth/useAuthMutations";
-import { cn } from "@/lib/utils";
+import { SingleSelect } from "@/components/SingleSelect";
 import type { MePayload } from "@roxabi-live/shared";
 
 export function OrgPicker({ me }: { me: MePayload }) {
@@ -12,21 +12,15 @@ export function OrgPicker({ me }: { me: MePayload }) {
   if (me.installations.length <= 1) return null;
 
   return (
-    <select
-      aria-label="Active installation"
-      value={me.active_tenant_id ?? ""}
-      disabled={switchTenant.isPending}
-      onChange={(e) => switchTenant.mutate(Number(e.target.value))}
-      className={cn(
-        "h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
-      )}
-    >
-      {me.installations.map((inst) => (
-        <option key={inst.tenant_id} value={inst.tenant_id}>
-          {inst.account_login}
-        </option>
-      ))}
-    </select>
+    <SingleSelect
+      ariaLabel="Active installation"
+      value={String(me.active_tenant_id ?? "")}
+      options={me.installations.map((inst) => ({
+        value: String(inst.tenant_id),
+        label: inst.account_login,
+      }))}
+      onChange={(v) => switchTenant.mutate(Number(v))}
+      triggerClassName="h-9"
+    />
   );
 }
