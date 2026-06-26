@@ -1,5 +1,5 @@
 {
-  "_note": "SSOT for Cloudflare Workers Builds (enishu model). Apply: source scripts/bw-cloudflare-live-build-env.sh && CLOUDFLARE_API_TOKEN=$CLOUDFLARE_BUILDS_ADMIN_TOKEN bun run setup:workers-builds. GHA = CI only, no deploy.",
+  "_note": "SSOT — API only (enishu model). Frontends = CF Pages (infra/pages-*.json). Apply: source scripts/bw-cloudflare-live-build-env.sh && CLOUDFLARE_API_TOKEN=$CLOUDFLARE_BUILDS_ADMIN_TOKEN bun run setup:workers-builds",
   "accountId": "b5e90be971920ce406f7b679c4f1cd33",
   "github": {
     "owner": "Roxabi",
@@ -7,8 +7,6 @@
     "repo": "roxabi-live",
     "repoId": 1175843511
   },
-  "pathIncludes": ["apps/*", "packages/*", "scripts/deploy-*.sh", "bun.lock"],
-  "pathExcludes": [],
   "workers": [
     {
       "workerName": "roxabi-live",
@@ -18,7 +16,8 @@
         "buildCommand": "bun install --frozen-lockfile",
         "deployCommand": "bash scripts/deploy-production.sh",
         "branchIncludes": ["main"],
-        "branchExcludes": []
+        "branchExcludes": [],
+        "pathIncludes": ["apps/api/*", "packages/*", "scripts/deploy-production.sh", "bun.lock"]
       }
     },
     {
@@ -29,51 +28,8 @@
         "buildCommand": "bun install --frozen-lockfile",
         "deployCommand": "bash scripts/deploy-staging.sh",
         "branchIncludes": ["staging"],
-        "branchExcludes": []
-      }
-    },
-    {
-      "workerName": "roxabi-live-app",
-      "trigger": {
-        "name": "Deploy production (SPA)",
-        "rootDirectory": "/",
-        "buildCommand": "bun install --frozen-lockfile && bun --filter @roxabi-live/app build",
-        "deployCommand": "cd apps/app && bunx wrangler deploy --config wrangler.deploy.jsonc",
-        "branchIncludes": ["main"],
-        "branchExcludes": []
-      }
-    },
-    {
-      "workerName": "roxabi-live-app-staging",
-      "trigger": {
-        "name": "Deploy staging (SPA)",
-        "rootDirectory": "/",
-        "buildCommand": "bun install --frozen-lockfile && bun --filter @roxabi-live/app build",
-        "deployCommand": "cd apps/app && bunx wrangler deploy --config wrangler.staging.jsonc",
-        "branchIncludes": ["staging"],
-        "branchExcludes": []
-      }
-    },
-    {
-      "workerName": "roxabi-live-marketing-staging",
-      "trigger": {
-        "name": "Deploy staging (marketing)",
-        "rootDirectory": "/",
-        "buildCommand": "bun install --frozen-lockfile && bun --filter @roxabi-live/marketing build",
-        "deployCommand": "cd apps/marketing && bunx wrangler deploy --config wrangler.staging.jsonc",
-        "branchIncludes": ["staging"],
-        "branchExcludes": []
-      }
-    },
-    {
-      "workerName": "roxabi-live-marketing",
-      "trigger": {
-        "name": "Deploy production (marketing)",
-        "rootDirectory": "/",
-        "buildCommand": "bun install --frozen-lockfile && bun --filter @roxabi-live/marketing build",
-        "deployCommand": "cd apps/marketing && bunx wrangler deploy --config wrangler.deploy.jsonc",
-        "branchIncludes": ["main"],
-        "branchExcludes": []
+        "branchExcludes": [],
+        "pathIncludes": ["apps/api/*", "packages/*", "scripts/deploy-staging.sh", "bun.lock"]
       }
     }
   ]

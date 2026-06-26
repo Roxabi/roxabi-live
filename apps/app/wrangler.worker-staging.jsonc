@@ -1,0 +1,18 @@
+{
+  // Staging edge proxy (Pages project roxabi-live-app-staging serves static).
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "roxabi-live-app-staging",
+  "main": "worker.ts",
+  "compatibility_date": "2025-06-01",
+  "routes": [
+    { "pattern": "app-staging.live.roxabi.dev/api*", "zone_name": "roxabi.dev" },
+    { "pattern": "app-staging.live.roxabi.dev/login*", "zone_name": "roxabi.dev" },
+    { "pattern": "app-staging.live.roxabi.dev/oauth*", "zone_name": "roxabi.dev" },
+    { "pattern": "app-staging.live.roxabi.dev/auth*", "zone_name": "roxabi.dev" },
+    { "pattern": "app-staging.live.roxabi.dev/logout*", "zone_name": "roxabi.dev" },
+    { "pattern": "app-staging.live.roxabi.dev/install*", "zone_name": "roxabi.dev" },
+    { "pattern": "app-staging.live.roxabi.dev/admin*", "zone_name": "roxabi.dev" },
+    { "pattern": "app-staging.live.roxabi.dev/health*", "zone_name": "roxabi.dev" }
+  ],
+  "services": [{ "binding": "API", "service": "roxabi-live-staging" }]
+}

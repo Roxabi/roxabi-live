@@ -1,0 +1,17 @@
+{
+  "accountId": "b5e90be971920ce406f7b679c4f1cd33",
+  "projectName": "roxabi-live-app-staging",
+  "productionBranch": "staging",
+  "domains": ["app-staging.live.roxabi.dev"],
+  "buildConfig": {
+    "root_dir": "",
+    "build_command": "curl -fsSL https://bun.sh/install | bash && export BUN_INSTALL=\"$HOME/.bun\" && export PATH=\"$BUN_INSTALL/bin:$PATH\" && bun install --frozen-lockfile && bun --filter @roxabi-live/app build",
+    "destination_dir": "apps/app/dist"
+  },
+  "source": {
+    "path_includes": ["apps/app/*", "packages/*", "package.json", "bun.lock"]
+  },
+  "notes": [
+    "Staging Pages project (production_branch=staging). Proxy Worker: roxabi-live-app-staging (wrangler.worker-staging.jsonc)."
+  ]
+}

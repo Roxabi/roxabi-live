@@ -1,8 +1,5 @@
 {
-  // Cloudflare Pages target for the marketing site (static SSG output).
-  // Deployed git-connected as its own Pages project — separate from the
-  // roxabi-live Worker. Domain decision (apex vs subdomain) is pending; see
-  // MONOREPO.md "Step 2 — open decisions".
+  // CF Pages — git-connected (SSOT: infra/pages-marketing.json + pages-marketing-staging.json).
   "name": "roxabi-live-marketing",
   "compatibility_date": "2025-06-01",
   "pages_build_output_dir": "./dist"
