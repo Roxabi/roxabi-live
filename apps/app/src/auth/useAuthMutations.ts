@@ -64,7 +64,7 @@ export async function installRefresh(): Promise<InstallRefreshResult> {
   return (await res.json()) as InstallRefreshResult;
 }
 
-/** POST /logout — revoke the session, then navigate to the marketing root. */
+/** POST /logout — revoke the session, then land on the neutral sign-in screen. */
 export function useLogout() {
   const qc = useQueryClient();
   return useMutation<void, ApiError, { to?: string } | undefined>({
@@ -73,7 +73,10 @@ export function useLogout() {
     },
     onSuccess: (_data, vars) => {
       qc.clear();
-      window.location.href = vars?.to ?? "/";
+      // Default to /sign-in (a neutral SignInScreen). Landing on "/" would let
+      // AuthGate read the now-revoked session as a 401 and flash the alarming
+      // "Session expired" banner — wrong after a deliberate logout.
+      window.location.href = vars?.to ?? "/sign-in";
     },
   });
 }

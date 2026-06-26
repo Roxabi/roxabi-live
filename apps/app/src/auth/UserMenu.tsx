@@ -60,7 +60,7 @@ export function UserMenu() {
             data-testid="user-menu-signout"
             onClick={() => {
               setOpen(false);
-              logout.mutate({ to: "/" });
+              logout.mutate(undefined);
             }}
             className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm text-foreground hover:bg-card"
           >

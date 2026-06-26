@@ -140,7 +140,7 @@ export function InstallGate({ me }: { me: MePayload }) {
         <div className="flex items-center justify-between gap-3">
           <Button
             variant="ghost"
-            onClick={() => logout.mutate({ to: "/" })}
+            onClick={() => logout.mutate(undefined)}
             loading={logout.isPending}
           >
             Se déconnecter

@@ -78,7 +78,7 @@ export function SettingsDialog({
       clearZkReauthProof();
       await clearLocalZkState(login);
       clearDisplayName(login);
-      logout.mutate({ to: "/" });
+      logout.mutate(undefined);
     },
     onError: (err) => {
       if (err.status === 403) {
