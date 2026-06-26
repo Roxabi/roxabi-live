@@ -1,5 +1,5 @@
 {
-  "_note": "UNAPPLIED — CF Workers Builds was never connected (no Cloudflare GitHub App). Staging auto-deploy lives in .github/workflows/deploy-staging.yml. Do not treat this file as live infra.",
+  "_note": "UNAPPLIED — CF Workers Builds API returns 404 until the Cloudflare GitHub App is authorized in the dashboard (Workers & Pages → Builds → Connect GitHub). Until then, staging auto-deploy uses .github/workflows/deploy-staging.yml (GHA → wrangler).",
   "accountId": "b5e90be971920ce406f7b679c4f1cd33",
   "github": {
     "owner": "Roxabi",
@@ -40,6 +40,28 @@
         "buildCommand": "bun install --frozen-lockfile && bun --filter @roxabi-live/app build",
         "deployCommand": "cd apps/app && bunx wrangler deploy --config wrangler.deploy.jsonc",
         "branchIncludes": ["main"],
+        "branchExcludes": []
+      }
+    },
+    {
+      "workerName": "roxabi-live-app-staging",
+      "trigger": {
+        "name": "Deploy staging (SPA)",
+        "rootDirectory": "/",
+        "buildCommand": "bun install --frozen-lockfile && bun --filter @roxabi-live/app build",
+        "deployCommand": "cd apps/app && bunx wrangler deploy --config wrangler.staging.jsonc",
+        "branchIncludes": ["staging"],
+        "branchExcludes": []
+      }
+    },
+    {
+      "workerName": "roxabi-live-marketing-staging",
+      "trigger": {
+        "name": "Deploy staging (marketing)",
+        "rootDirectory": "/",
+        "buildCommand": "bun install --frozen-lockfile && bun --filter @roxabi-live/marketing build",
+        "deployCommand": "cd apps/marketing && bunx wrangler deploy --config wrangler.staging.jsonc",
+        "branchIncludes": ["staging"],
         "branchExcludes": []
       }
     }
