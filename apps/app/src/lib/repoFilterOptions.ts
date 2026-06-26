@@ -37,15 +37,12 @@ function repoToOption(repo: RepoSummary, nodes: AnnotatedNode[]): FilterOption {
   };
 }
 
-/** Repo facet options: live repos first; selected archived repos after a divider. */
+/** Repo facet options: live repos first; all archived repos after a divider (legacy parity). */
 export function buildRepoFilterOptions(
   repoData: RepoSummary[],
   nodes: AnnotatedNode[],
-  selectedRepos: string[],
   archivedDividerLabel: string,
 ): FilterOption[] {
-  const selected = new Set(selectedRepos);
-
   const data: RepoSummary[] =
     repoData.length > 0
       ? repoData
@@ -61,15 +58,15 @@ export function buildRepoFilterOptions(
     data.filter((r) => !r.archived),
     nodes,
   );
-  const archivedVisible = sortReposByActivity(
-    data.filter((r) => r.archived && selected.has(r.repo)),
+  const archived = sortReposByActivity(
+    data.filter((r) => r.archived),
     nodes,
   );
 
   const liveOpts = live.map((r) => repoToOption(r, nodes));
-  if (archivedVisible.length === 0) return liveOpts;
+  if (archived.length === 0) return liveOpts;
 
-  const archOpts: FilterOption[] = archivedVisible.map((r) => ({
+  const archOpts: FilterOption[] = archived.map((r) => ({
     ...repoToOption(r, nodes),
     archived: true,
   }));

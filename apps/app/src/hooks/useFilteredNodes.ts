@@ -9,11 +9,16 @@ import {
   type AnnotatedNode,
   type GraphEdge,
   type NodeFilters,
+  type RepoSummary,
   filterNodes,
 } from "@roxabi-live/shared";
 import { useMemo } from "react";
 
-export function useFilteredNodes(nodes: AnnotatedNode[], edges: GraphEdge[]): AnnotatedNode[] {
+export function useFilteredNodes(
+  nodes: AnnotatedNode[],
+  edges: GraphEdge[],
+  repos: RepoSummary[] = [],
+): AnnotatedNode[] {
   const repo = useDashboardStore((s) => s.repo);
   const milestone = useDashboardStore((s) => s.milestone);
   const priority = useDashboardStore((s) => s.priority);
@@ -29,6 +34,11 @@ export function useFilteredNodes(nodes: AnnotatedNode[], edges: GraphEdge[]): An
   // filteredNodesForGraph). In list/pivot the status facet stays strict.
   const closedUnderOpenEpic = view === "graph" && showClosedUnderOpenEpic;
 
+  const archivedRepos = useMemo(
+    () => new Set(repos.filter((r) => r.archived).map((r) => r.repo)),
+    [repos],
+  );
+
   return useMemo(() => {
     const filters: NodeFilters = {
       repo,
@@ -40,11 +50,13 @@ export function useFilteredNodes(nodes: AnnotatedNode[], edges: GraphEdge[]): An
       search,
       showParents,
       closedUnderOpenEpic,
+      archivedRepos: archivedRepos.size > 0 ? archivedRepos : undefined,
     };
     return filterNodes(nodes, edges, filters);
   }, [
     nodes,
     edges,
+    archivedRepos,
     repo,
     milestone,
     priority,

@@ -36,32 +36,25 @@ const repos: RepoSummary[] = [
 ];
 
 describe("buildRepoFilterOptions", () => {
-  it("lists live repos only when no archived repo is selected", () => {
-    const opts = buildRepoFilterOptions(repos, nodes, [], "Archived");
+  it("lists live repos only when registry has no archived repos", () => {
+    const liveOnly = repos.filter((r) => !r.archived);
+    const opts = buildRepoFilterOptions(liveOnly, nodes, "Archived");
     expect(opts.map((o) => ("kind" in o && o.kind === "separator" ? "|" : o.value))).toEqual([
       "Roxabi/live-a",
       "Roxabi/live-b",
     ]);
   });
 
-  it("appends a divider and only selected archived repos", () => {
-    const opts = buildRepoFilterOptions(repos, nodes, ["Roxabi/old-vault"], "Archived");
+  it("appends a divider and all archived repos", () => {
+    const opts = buildRepoFilterOptions(repos, nodes, "Archived");
     expect(opts.map((o) => ("kind" in o && o.kind === "separator" ? "sep" : o.value))).toEqual([
       "Roxabi/live-a",
       "Roxabi/live-b",
       "sep",
       "Roxabi/old-vault",
+      "Roxabi/legacy",
     ]);
     const archived = opts.find((o) => o.kind !== "separator" && o.value === "Roxabi/old-vault");
     expect(archived && "archived" in archived && archived.archived).toBe(true);
-  });
-
-  it("hides unselected archived repos even when other archived are selected", () => {
-    const opts = buildRepoFilterOptions(repos, nodes, ["Roxabi/legacy"], "Archived");
-    const values = opts
-      .filter((o) => o.kind !== "separator")
-      .map((o) => o.value);
-    expect(values).not.toContain("Roxabi/old-vault");
-    expect(values).toContain("Roxabi/legacy");
   });
 });

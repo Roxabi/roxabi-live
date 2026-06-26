@@ -15,7 +15,7 @@ export function FilterBar({
 }) {
   const t = useT();
   const repoSelected = useDashboardStore((s) => s.repo);
-  const options = useFilterOptions(nodes, repos, repoSelected);
+  const options = useFilterOptions(nodes, repos);
 
   const FACETS: { key: FacetKey; label: string }[] = [
     { key: "status", label: t("filter.facet.status") },

@@ -55,12 +55,12 @@ export function FilterMultiSelect({
                   <div
                     key={o.value}
                     role="separator"
-                    aria-hidden
-                    className="my-1 border-t border-border px-2 pt-1.5"
+                    className="pointer-events-none mt-2 flex items-center gap-2 border-t border-border px-3 py-1.5 select-none"
                   >
-                    <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
                       {o.label}
                     </span>
+                    <span className="h-px flex-1 bg-border" aria-hidden />
                   </div>
                 );
               }

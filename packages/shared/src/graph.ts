@@ -146,6 +146,8 @@ export interface NodeFilters {
    * frontend/state.js::filteredNodesForGraph behaviour (graph view only).
    */
   closedUnderOpenEpic?: boolean;
+  /** When repo facet is empty, hide issues from these archived repos unless explicitly selected. */
+  archivedRepos?: ReadonlySet<string>;
 }
 
 /**
@@ -168,6 +170,7 @@ export function filterNodes(
   return nodes.filter((n) => {
     if (parentKeys?.has(n.key)) return false;
     if (f.repo.length && !f.repo.includes(n.repo)) return false;
+    if (!f.repo.length && f.archivedRepos?.has(n.repo)) return false;
     const msCode = n.milestone_code ?? EMPTY_DIM;
     if (f.milestone.length && !f.milestone.includes(msCode)) return false;
     const pri = n.priority ?? EMPTY_DIM;

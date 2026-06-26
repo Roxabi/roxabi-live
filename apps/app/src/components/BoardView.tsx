@@ -161,7 +161,7 @@ export function BoardView({
   const view = useDashboardStore((s) => s.view);
   const listGroup = useDashboardStore((s) => s.listGroup);
   const listGroup2 = useDashboardStore((s) => s.listGroup2);
-  const filtered = useFilteredNodes(nodes, edges);
+  const filtered = useFilteredNodes(nodes, edges, repos);
 
   return (
     <div className="space-y-3">

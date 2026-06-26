@@ -70,11 +70,7 @@ function bump(map: Map<string, number>, key: string): void {
   map.set(key, (map.get(key) ?? 0) + 1);
 }
 
-export function useFilterOptions(
-  nodes: AnnotatedNode[],
-  repos: RepoSummary[] = [],
-  selectedRepos: string[] = [],
-): FilterOptions {
+export function useFilterOptions(nodes: AnnotatedNode[], repos: RepoSummary[] = []): FilterOptions {
   const t = useT();
   return useMemo(() => {
     const milestone = new Map<string, number>();
@@ -114,7 +110,7 @@ export function useFilterOptions(
       status: STATUS_ORDER.filter((s) => status.has(s)).map((s) =>
         opt(s, t(`status.${s}`), status.get(s) ?? 0),
       ),
-      repo: buildRepoFilterOptions(repos, nodes, selectedRepos, t("filter.repo.archivedDivider")),
+      repo: buildRepoFilterOptions(repos, nodes, t("filter.repo.archivedDivider")),
       milestone: [...milestone]
         .map(([v, c]) =>
           opt(v, v === EMPTY_DIM ? t("filter.empty.milestone") : (msMeta.get(v)?.name ?? v), c),
@@ -138,5 +134,5 @@ export function useFilterOptions(
           return bCount - aCount || a.label.localeCompare(b.label);
         }),
     };
-  }, [nodes, repos, selectedRepos, t]);
+  }, [nodes, repos, t]);
 }
