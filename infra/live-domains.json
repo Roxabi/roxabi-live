@@ -1,0 +1,34 @@
+{
+  "_note": "DNS CNAMEs for Pages frontends on zone roxabi.dev. Run: source scripts/bw-cloudflare-global-env.sh && bun run setup:live-domains",
+  "zone": "roxabi.dev",
+  "records": [
+    {
+      "type": "CNAME",
+      "name": "app.live",
+      "content": "roxabi-live-app.pages.dev",
+      "proxied": true,
+      "comment": "App SPA (Pages) + zone routes for /api*, /login*, …"
+    },
+    {
+      "type": "CNAME",
+      "name": "app-staging.live",
+      "content": "roxabi-live-app-staging.pages.dev",
+      "proxied": true,
+      "comment": "Staging app (Pages)"
+    },
+    {
+      "type": "CNAME",
+      "name": "live",
+      "content": "roxabi-live-marketing.pages.dev",
+      "proxied": true,
+      "comment": "Marketing apex live.roxabi.dev (Pages)"
+    },
+    {
+      "type": "CNAME",
+      "name": "marketing-staging.live",
+      "content": "roxabi-live-marketing-staging.pages.dev",
+      "proxied": true,
+      "comment": "Staging marketing (Pages)"
+    }
+  ]
+}

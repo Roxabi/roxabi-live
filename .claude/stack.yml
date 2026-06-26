@@ -23,7 +23,7 @@ lsp:
   server: typescript-language-server
 
 deploy:
-  platform: cloudflare  # Workers Builds (git-connected); SSOT infra/workers-builds.json. GHA = CI only.
+  platform: cloudflare  # Pages (app+marketing) + Workers Builds (API); SSOT infra/pages-*.json + infra/workers-builds.json. GHA = CI only.
 
 docs:
   framework: none

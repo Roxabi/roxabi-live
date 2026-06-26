@@ -33,11 +33,13 @@ export default {
       // so OAuth redirect_uri + Set-Cookie + Origin all resolve to app.live.roxabi.dev.
       return env.API.fetch(request);
     }
-    return env.ASSETS.fetch(request);
+    // Pages serves static assets in prod; ASSETS exists only in local wrangler.dev.jsonc.
+    if (env.ASSETS) return env.ASSETS.fetch(request);
+    return new Response("Not Found", { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
 
 interface Env {
-  ASSETS: Fetcher;
+  ASSETS?: Fetcher;
   API: Fetcher;
 }

@@ -98,8 +98,8 @@ function triggerBody(repoConnectionUuid, buildTokenUuid, workerTag, spec) {
     root_directory: spec.rootDirectory,
     branch_includes: spec.branchIncludes,
     branch_excludes: spec.branchExcludes ?? [],
-    path_includes: spec.pathIncludes ?? CONFIG.pathIncludes,
-    path_excludes: spec.pathExcludes ?? CONFIG.pathExcludes ?? [],
+    path_includes: spec.pathIncludes ?? [],
+    path_excludes: spec.pathExcludes ?? [],
     build_caching_enabled: true,
   };
 }
@@ -147,10 +147,11 @@ async function main() {
     await upsertTrigger(workerTag, repoConnectionUuid, buildTokenUuid, trigger);
   }
 
-  console.log("\n--- Workers Builds ready ---");
-  console.log("Push to staging → staging Workers (api, app, marketing)");
-  console.log("Push to main    → production Workers");
-  console.log("\nCI (GitHub Actions) = quality gates only. Deploy = Cloudflare Workers Builds.");
+  console.log("\n--- Workers Builds ready (API only) ---");
+  console.log("Push to staging → roxabi-live-staging (api)");
+  console.log("Push to main    → roxabi-live (api)");
+  console.log("Frontends (app + marketing) = Cloudflare Pages — bun run setup:cloudflare-deploy");
+  console.log("\nCI (GitHub Actions) = quality gates only. Deploy = CF Pages + Workers Builds.");
 }
 
 main().catch((err) => {

@@ -1,0 +1,36 @@
+{
+  "_note": "One-time cutover: Workers full-stack app/marketing → Pages + thin proxy workers. Run: source scripts/bw-cloudflare-live-build-env.sh && export CLOUDFLARE_API_TOKEN=\"$CLOUDFLARE_BUILDS_ADMIN_TOKEN\" && node scripts/migrate-to-pages-model.mjs",
+  "accountId": "b5e90be971920ce406f7b679c4f1cd33",
+  "legacyWorkers": [
+    "roxabi-live-app",
+    "roxabi-live-app-staging",
+    "roxabi-live-marketing",
+    "roxabi-live-marketing-staging"
+  ],
+  "workerCustomDomains": [
+    "app.live.roxabi.dev",
+    "app-staging.live.roxabi.dev",
+    "live.roxabi.dev",
+    "marketing-staging.live.roxabi.dev"
+  ],
+  "pagesConfigs": [
+    "infra/pages-app.json",
+    "infra/pages-app-staging.json",
+    "infra/pages-marketing.json",
+    "infra/pages-marketing-staging.json"
+  ],
+  "proxyWorkers": [
+    {
+      "name": "roxabi-live-app",
+      "deploy": "bun --filter @roxabi-live/app deploy:worker"
+    },
+    {
+      "name": "roxabi-live-app-staging",
+      "deploy": "bun --filter @roxabi-live/app deploy:worker:staging"
+    }
+  ],
+  "notes": [
+    "API workers (roxabi-live, roxabi-live-staging) keep Workers Builds — do not delete their triggers.",
+    "After migration, frontends deploy via Pages git-connect; proxy workers only on worker.ts changes."
+  ]
+}
