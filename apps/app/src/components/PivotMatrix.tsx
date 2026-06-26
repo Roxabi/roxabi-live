@@ -1,12 +1,12 @@
 import { IssueCard } from "@/components/IssueCard";
 import { useT } from "@/i18n";
+import { localizedDimLabel } from "@/i18n/dimLabel";
 import { useDashboardStore } from "@/store/dashboardStore";
 import {
   type AnnotatedNode,
   type Dim,
   type GraphEdge,
   compareDimValues,
-  dimDisplayLabel,
   dimValue,
 } from "@roxabi-live/shared";
 import { Fragment, useMemo, useState } from "react";
@@ -154,7 +154,7 @@ export function PivotMatrix({ nodes, edges }: { nodes: AnnotatedNode[]; edges: G
             key={cv}
             className="border-b border-border bg-card/40 p-2 font-medium uppercase tracking-wide text-muted-foreground"
           >
-            {dimDisplayLabel(cv, pivotCol)}
+            {localizedDimLabel(t, cv, pivotCol)}
           </div>
         ))}
 
@@ -162,7 +162,7 @@ export function PivotMatrix({ nodes, edges }: { nodes: AnnotatedNode[]; edges: G
         {rowVals.map((rv) => (
           <Fragment key={rv}>
             <div className="sticky left-0 z-10 border-r border-b border-border bg-card/60 p-2 font-medium text-foreground">
-              {dimDisplayLabel(rv, pivotRow)}
+              {localizedDimLabel(t, rv, pivotRow)}
             </div>
             {colVals.map((cv) => {
               const cellNodes = matrix.get(rv)?.get(cv) ?? [];

@@ -1,6 +1,7 @@
 import "@/components/graph-anim.css";
 import { useHighlightChain } from "@/hooks/useHighlightChain";
 import { useT } from "@/i18n";
+import { localizedDimLabel } from "@/i18n/dimLabel";
 import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboardStore";
 import {
@@ -174,7 +175,9 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
               )}
               style={{ top: `${r.y}%`, height: `${r.height}%` }}
             >
-              <div className="font-mono text-xs font-bold tracking-wide text-primary">{r.label}</div>
+              <div className="font-mono text-xs font-bold tracking-wide text-primary">
+                {localizedDimLabel(t, r.code, graphRow, r.label)}
+              </div>
               {r.name && <div className="truncate text-[10px] text-muted-foreground">{r.name}</div>}
             </div>
           ))}
@@ -205,7 +208,7 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
             className="absolute top-0 -translate-x-1/2 whitespace-nowrap text-[10px] uppercase tracking-wide text-muted-foreground"
             style={{ left: `${c.x}%` }}
           >
-            {c.label}
+            {localizedDimLabel(t, c.code, graphCol, c.label)}
           </div>
         ))}
 

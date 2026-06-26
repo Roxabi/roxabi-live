@@ -1,12 +1,11 @@
 import { FilterMultiSelect } from "@/components/FilterMultiSelect";
 import { useFilterOptions } from "@/hooks/useFilterOptions";
 import { useT } from "@/i18n";
-import { cn } from "@/lib/utils";
 import { type FacetKey, useDashboardStore } from "@/store/dashboardStore";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import type { AnnotatedNode } from "@roxabi-live/shared";
 
-/** The cockpit filter row: search + per-facet multi-selects + parent toggle. */
+/** The cockpit filter row: search + per-facet multi-selects + reset. */
 export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
   const t = useT();
   const options = useFilterOptions(nodes);
@@ -27,7 +26,6 @@ export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
   const label = useDashboardStore((s) => s.label);
   const assignee = useDashboardStore((s) => s.assignee);
   const search = useDashboardStore((s) => s.search);
-  const showParents = useDashboardStore((s) => s.showParents);
 
   const patch = useDashboardStore((s) => s.patch);
   const toggleFacet = useDashboardStore((s) => s.toggleFacet);
@@ -71,19 +69,6 @@ export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
           onClear={() => clearFacet(key)}
         />
       ))}
-
-      <button
-        type="button"
-        data-testid="facet-epics"
-        onClick={() => patch({ showParents: !showParents })}
-        aria-pressed={showParents}
-        className={cn(
-          "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors hover:border-primary/60",
-          showParents ? "border-primary/50 text-foreground" : "border-border text-muted-foreground",
-        )}
-      >
-        {t("filter.epics.label")}
-      </button>
 
       <button
         type="button"

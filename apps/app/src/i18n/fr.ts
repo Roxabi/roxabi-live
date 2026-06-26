@@ -149,6 +149,13 @@ export const fr = {
       parent: "Parent",
       assignee: "Assigné",
     },
+    empty: {
+      milestone: "Aucun milestone",
+      priority: "Aucune priorité",
+      lane: "Aucun couloir",
+      size: "Aucune taille",
+      assignee: "Non assigné",
+    },
   },
   graph: {
     toggle: {
@@ -169,6 +176,7 @@ export const fr = {
   },
   toolbar: {
     filteredCount: "{count} sur {total}",
+    display: "Affichage",
   },
   filter: {
     search: {
@@ -185,6 +193,7 @@ export const fr = {
     },
     epics: {
       label: "Epics",
+      title: "Afficher les epics (issues parentes)",
     },
     reset: {
       label: "Réinitialiser",

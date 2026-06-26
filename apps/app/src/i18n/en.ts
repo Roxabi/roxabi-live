@@ -150,6 +150,13 @@ export const en: Translations = {
       parent: "Parent",
       assignee: "Assignee",
     },
+    empty: {
+      milestone: "No milestone",
+      priority: "No priority",
+      lane: "No lane",
+      size: "No size",
+      assignee: "Unassigned",
+    },
   },
   graph: {
     toggle: {
@@ -170,6 +177,7 @@ export const en: Translations = {
   },
   toolbar: {
     filteredCount: "{count} of {total}",
+    display: "Display",
   },
   filter: {
     search: {
@@ -186,6 +194,7 @@ export const en: Translations = {
     },
     epics: {
       label: "Epics",
+      title: "Show epics (parent issues)",
     },
     reset: {
       label: "Reset",

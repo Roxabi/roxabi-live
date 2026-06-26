@@ -1,12 +1,12 @@
 import { IssueRow, type RowEdgeRefs } from "@/components/IssueRow";
 import { useT } from "@/i18n";
+import { localizedDimLabel } from "@/i18n/dimLabel";
 import {
   type AnnotatedNode,
   type Dim,
   type GraphEdge,
   type StatusKey,
   compareDimValues,
-  dimDisplayLabel,
   dimValue,
   displayStatus,
   isEmptyDimValue,
@@ -295,7 +295,7 @@ export function IssueTable({
                     <span aria-hidden className="mr-1 text-muted-foreground">
                       {collapsed.has(it.collapseKey) ? "▸" : "▾"}
                     </span>
-                    {dimDisplayLabel(it.value, it.dim)}
+                    {localizedDimLabel(t, it.value, it.dim)}
                     {it.title && (
                       <span className="ml-2 font-sans font-normal text-muted-foreground">
                         {it.title}
