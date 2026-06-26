@@ -154,12 +154,16 @@ Rules: add/delete/move → update P | new `apps/api/src/` or `apps/app/src/` sub
 
 Manual: `gh workflow run deploy-staging.yml --ref staging`
 
-**Prod (manual wrangler for now — Workers Builds never connected)**
+**Prod (GitHub Actions on `main` + break-glass wrangler)**
 
-`infra/workers-builds.json` is an **unapplied** spec (no Cloudflare GitHub App on the repo):
+`.github/workflows/deploy-main.yml` — same token, order: api → app + marketing:
 - `roxabi-live` (api) — `scripts/deploy-production.sh` → `api.live.roxabi.dev`
-- `roxabi-live-app` (SPA) — `bun --filter @roxabi-live/app build` → `wrangler.deploy.jsonc` → `app.live.roxabi.dev` (DNS pending)
-- marketing (`apps/marketing`) — Astro Worker/Pages target at apex `live.roxabi.dev` (not yet live; prod apex still serves legacy `frontend/`)
+- `roxabi-live-app` (SPA) — `wrangler.deploy.jsonc` → `app.live.roxabi.dev`
+- `roxabi-live-marketing` (Astro) — `wrangler.deploy.jsonc` → `live.roxabi.dev`
+
+Break-glass (BW global key): `source scripts/bw-cloudflare-global-env.sh` then the deploy scripts / `wrangler deploy`.
+
+`infra/workers-builds.json` is **unapplied** until the Cloudflare GitHub App is authorized in the dashboard; GHA is the live automation.
 
 Secrets (set once on the api worker; `CLOUDFLARE_ACCOUNT_ID` required — token sees 2 accounts):
 ```bash
