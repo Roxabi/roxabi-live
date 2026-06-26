@@ -30,8 +30,22 @@ const { t } = Astro.props;
 
     <div class="header-actions">
       <a href={t.langSwitchHref} class="btn-header-login">{t.langSwitchLabel}</a>
-      <a href="/admin" class="btn-header-login">{t.header.loginLabel}</a>
+      <a href="https://app.live.roxabi.dev" data-app-link class="btn-header-login">{t.header.loginLabel}</a>
       <a href="#cta" class="btn-header-cta">{t.header.ctaLabel}</a>
     </div>
   </div>
 </header>
+
+<script is:inline>
+  // The marketing site and the app live on sibling subdomains; point every
+  // login link at the app env matching the current marketing env (staging ↔
+  // staging, prod ↔ prod) so a staging visitor isn't bounced to the prod app.
+  // Default href in markup is the prod app, so the link works without JS too.
+  (function () {
+    var app = location.hostname.indexOf("staging") !== -1
+      ? "https://app-staging.live.roxabi.dev"
+      : "https://app.live.roxabi.dev";
+    var links = document.querySelectorAll("[data-app-link]");
+    for (var i = 0; i < links.length; i++) links[i].setAttribute("href", app);
+  })();
+</script>
