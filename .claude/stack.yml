@@ -23,7 +23,7 @@ lsp:
   server: typescript-language-server
 
 deploy:
-  platform: cloudflare  # Staging: GitHub Actions → wrangler (.github/workflows/deploy-staging.yml). Prod: manual wrangler for now.
+  platform: cloudflare  # Workers Builds (git-connected); SSOT infra/workers-builds.json. GHA = CI only.
 
 docs:
   framework: none

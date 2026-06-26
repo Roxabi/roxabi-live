@@ -145,25 +145,26 @@ Rules: add/delete/move → update P | new `apps/api/src/` or `apps/app/src/` sub
 
 ## Deploy pattern
 
-**Staging (GitHub Actions — auto on push to `staging`)**
+**Cloudflare Workers Builds (enishu model — CF pulls GitHub, GHA = CI only)**
 
-`.github/workflows/deploy-staging.yml` — wrangler deploy via `CLOUDFLARE_API_TOKEN` repo secret:
-- `roxabi-live-staging` (api) — `scripts/deploy-staging.sh` → `api-staging.live.roxabi.dev`
-- `roxabi-live-app-staging` (SPA) — build `@roxabi-live/app` → `app-staging.live.roxabi.dev`
-- `roxabi-live-marketing-staging` (Astro) — build `@roxabi-live/marketing` → `marketing-staging.live.roxabi.dev`
+SSOT: `infra/workers-builds.json`. Setup once:
 
-Manual: `gh workflow run deploy-staging.yml --ref staging`
+```bash
+source scripts/bw-cloudflare-live-build-env.sh
+export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_BUILDS_ADMIN_TOKEN"
+bun run setup:workers-builds
+```
 
-**Prod (GitHub Actions on `main` + break-glass wrangler)**
+| Branch | Worker | URL |
+|---|---|---|
+| `staging` | `roxabi-live-staging` | `api-staging.live.roxabi.dev` |
+| `staging` | `roxabi-live-app-staging` | `app-staging.live.roxabi.dev` |
+| `staging` | `roxabi-live-marketing-staging` | `marketing-staging.live.roxabi.dev` |
+| `main` | `roxabi-live` | `api.live.roxabi.dev` |
+| `main` | `roxabi-live-app` | `app.live.roxabi.dev` |
+| `main` | `roxabi-live-marketing` | `live.roxabi.dev` |
 
-`.github/workflows/deploy-main.yml` — same token, order: api → app + marketing:
-- `roxabi-live` (api) — `scripts/deploy-production.sh` → `api.live.roxabi.dev`
-- `roxabi-live-app` (SPA) — `wrangler.deploy.jsonc` → `app.live.roxabi.dev`
-- `roxabi-live-marketing` (Astro) — `wrangler.deploy.jsonc` → `live.roxabi.dev`
-
-Break-glass (BW global key): `source scripts/bw-cloudflare-global-env.sh` then the deploy scripts / `wrangler deploy`.
-
-`infra/workers-builds.json` is **unapplied** until the Cloudflare GitHub App is authorized in the dashboard; GHA is the live automation.
+Break-glass: `source scripts/bw-cloudflare-live-build-env.sh` → `bash scripts/deploy-{staging,production}.sh`
 
 Secrets (set once on the api worker; `CLOUDFLARE_ACCOUNT_ID` required — token sees 2 accounts):
 ```bash

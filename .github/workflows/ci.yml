@@ -102,6 +102,5 @@ jobs:
   # the cockpit is apps/app (covered by the `app` job). Its retirement removes the
   # old `frontend` CI job. frontend/ itself is deleted once the cutover is live.
 
-  # Deploy: GitHub Actions (.github/workflows/deploy-staging.yml on push to staging).
-  # CF Workers Builds is not connected (infra/workers-builds.json is unapplied).
-  # CI runs quality gates only — no wrangler deploy here.
+  # Deploy: Cloudflare Workers Builds (git-connected). See infra/workers-builds.json.
+  # CI runs quality gates only — no wrangler deploy here (enishu model).
