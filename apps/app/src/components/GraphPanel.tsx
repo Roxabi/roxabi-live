@@ -48,7 +48,7 @@ function GraphNode({
   // out from leaf issues — matches the legacy `.gg-node.parent` (14px, r:3px).
   const t = useT();
   const isParent = node.isParent;
-  const title = t("graph.node.title", { number: node.number, title: node.title ?? "" });
+  const ariaLabel = t("graph.node.title", { number: node.number, title: node.title ?? "" });
   const hover = {
     onMouseEnter: () => onHover(node.key),
     onMouseLeave: () => onHover(null),
@@ -56,6 +56,7 @@ function GraphNode({
     onBlur: () => onHover(null),
   };
   const dim = dimmed ? "opacity-20" : "opacity-100";
+  const expanded = active;
 
   // Dot and label are SEPARATE absolutely-positioned elements (matches the
   // legacy gg-node + gg-ilabel): the dot sits ON the node point, the label hangs
@@ -69,7 +70,7 @@ function GraphNode({
         rel="noreferrer"
         data-iss={node.key}
         {...hover}
-        title={title}
+        aria-label={ariaLabel}
         style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
         className={cn("absolute -translate-x-1/2 -translate-y-1/2 transition-opacity", dim, active && "z-30")}
       >
@@ -106,22 +107,49 @@ function GraphNode({
         rel="noreferrer"
         data-iss={node.key}
         {...hover}
-        title={title}
+        aria-label={ariaLabel}
         style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: "translate(-50%, 10px)" }}
         className={cn(
-          "absolute flex items-center gap-1 overflow-hidden whitespace-nowrap rounded border border-border bg-card/90 px-1.5 py-0.5 text-[10px] leading-tight transition-[max-width,opacity]",
+          "absolute min-w-[46px] rounded-full border border-border bg-card/90 leading-tight transition-[max-width,transform,box-shadow,padding,font-size] duration-150",
           dim,
-          active ? "z-30 max-w-[280px]" : "z-10 max-w-[116px] hover:z-30 hover:max-w-[280px]",
+          expanded
+            ? "z-30 max-w-[300px] scale-[1.04] rounded-lg border-primary/50 bg-card px-2.5 py-1.5 text-xs shadow-[0_6px_18px_rgba(0,0,0,0.45)]"
+            : "z-10 max-w-[116px] px-1.5 py-0.5 text-[10px] hover:z-30",
         )}
       >
-        <span className="shrink-0 font-mono text-muted-foreground">#{node.number}</span>
-        {node.size && (
-          <span className="shrink-0 font-mono text-[9px] text-muted-foreground">{node.size}</span>
-        )}
-        {node.title && <span className="min-w-0 truncate text-foreground">{node.title}</span>}
-        {showAssignees && node.assignees.length > 0 && (
-          <span className="shrink-0 font-mono text-[9px] text-muted-foreground opacity-85">
-            {node.assignees.join(", ")}
+        {expanded ? (
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="flex items-center gap-1.5 font-mono">
+              <span className="shrink-0 font-bold text-foreground">#{node.number}</span>
+              {node.size && (
+                <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
+                  {node.size}
+                </span>
+              )}
+            </span>
+            {node.title && (
+              <span className="line-clamp-2 text-[11px] font-medium leading-snug text-foreground">
+                {node.title}
+              </span>
+            )}
+            {showAssignees && node.assignees.length > 0 && (
+              <span className="font-mono text-[9px] text-muted-foreground opacity-85">
+                {node.assignees.join(", ")}
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
+            <span className="shrink-0 font-mono text-muted-foreground">#{node.number}</span>
+            {node.size && (
+              <span className="shrink-0 font-mono text-[9px] text-muted-foreground">{node.size}</span>
+            )}
+            {node.title && <span className="min-w-0 truncate text-foreground">{node.title}</span>}
+            {showAssignees && node.assignees.length > 0 && (
+              <span className="shrink-0 font-mono text-[9px] text-muted-foreground opacity-85">
+                {node.assignees.join(", ")}
+              </span>
+            )}
           </span>
         )}
       </a>
