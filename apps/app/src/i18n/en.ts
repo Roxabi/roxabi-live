@@ -188,6 +188,10 @@ export const en: Translations = {
       placeholder: "Search issues…",
       ariaLabel: "Search issues",
     },
+    repo: {
+      archivedDivider: "Archived",
+      archivedSublabel: "archived",
+    },
     facet: {
       status: "Status",
       repo: "Repo",

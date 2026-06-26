@@ -7,7 +7,7 @@ import { useFilteredNodes } from "@/hooks/useFilteredNodes";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboardStore";
-import type { AnnotatedNode, GraphEdge } from "@roxabi-live/shared";
+import type { AnnotatedNode, GraphEdge, RepoSummary } from "@roxabi-live/shared";
 
 function PivotControls() {
   const t = useT();
@@ -148,7 +148,15 @@ function ListControls() {
  * BoardView — the cockpit body shared by the live page and the dev fixture page.
  * Owns the view toggle, pivot controls, filter bar, and the active view.
  */
-export function BoardView({ nodes, edges }: { nodes: AnnotatedNode[]; edges: GraphEdge[] }) {
+export function BoardView({
+  nodes,
+  edges,
+  repos = [],
+}: {
+  nodes: AnnotatedNode[];
+  edges: GraphEdge[];
+  repos?: RepoSummary[];
+}) {
   const t = useT();
   const view = useDashboardStore((s) => s.view);
   const listGroup = useDashboardStore((s) => s.listGroup);
@@ -158,7 +166,7 @@ export function BoardView({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gra
   return (
     <div className="space-y-3">
       {/* Filters row (legacy .toolbar-filters) */}
-      <FilterBar nodes={nodes} />
+      <FilterBar nodes={nodes} repos={repos} />
       {/* Layout row (legacy .toolbar-layout): per-view controls + filtered count */}
       <div className="flex flex-wrap items-center gap-3">
         {view === "list" && <ListControls />}

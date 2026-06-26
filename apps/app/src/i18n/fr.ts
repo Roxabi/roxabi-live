@@ -187,6 +187,10 @@ export const fr = {
       placeholder: "Rechercher des issues…",
       ariaLabel: "Rechercher des issues",
     },
+    repo: {
+      archivedDivider: "Archivés",
+      archivedSublabel: "archivé",
+    },
     facet: {
       status: "Statut",
       repo: "Dépôt",

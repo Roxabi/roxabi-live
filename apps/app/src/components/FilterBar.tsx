@@ -3,12 +3,19 @@ import { useFilterOptions } from "@/hooks/useFilterOptions";
 import { useT } from "@/i18n";
 import { type FacetKey, useDashboardStore } from "@/store/dashboardStore";
 import { MagnifyingGlass } from "@phosphor-icons/react";
-import type { AnnotatedNode } from "@roxabi-live/shared";
+import type { AnnotatedNode, RepoSummary } from "@roxabi-live/shared";
 
 /** The cockpit filter row: search + per-facet multi-selects + reset. */
-export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
+export function FilterBar({
+  nodes,
+  repos = [],
+}: {
+  nodes: AnnotatedNode[];
+  repos?: RepoSummary[];
+}) {
   const t = useT();
-  const options = useFilterOptions(nodes);
+  const repoSelected = useDashboardStore((s) => s.repo);
+  const options = useFilterOptions(nodes, repos, repoSelected);
 
   const FACETS: { key: FacetKey; label: string }[] = [
     { key: "status", label: t("filter.facet.status") },
@@ -20,7 +27,7 @@ export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
   ];
 
   const status = useDashboardStore((s) => s.status);
-  const repo = useDashboardStore((s) => s.repo);
+
   const milestone = useDashboardStore((s) => s.milestone);
   const priority = useDashboardStore((s) => s.priority);
   const label = useDashboardStore((s) => s.label);
@@ -34,7 +41,7 @@ export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
 
   const selectedByFacet: Record<FacetKey, string[]> = {
     status,
-    repo,
+    repo: repoSelected,
     milestone,
     priority,
     label,

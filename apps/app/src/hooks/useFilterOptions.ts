@@ -4,22 +4,32 @@
  * the option lists and their counts stay stable as the user filters.
  */
 
+import { buildRepoFilterOptions } from "@/lib/repoFilterOptions";
 import { useT } from "@/i18n";
 import type { FacetKey } from "@/store/dashboardStore";
 import {
   type AnnotatedNode,
   EMPTY_ASSIGNEE,
   EMPTY_DIM,
+  type RepoSummary,
   type StatusKey,
   displayStatus,
 } from "@roxabi-live/shared";
 import { useMemo } from "react";
 
-export interface FilterOption {
-  value: string;
-  label: string;
-  count: number;
-}
+export type FilterOption =
+  | {
+      kind?: "option";
+      value: string;
+      label: string;
+      count: number;
+      archived?: boolean;
+    }
+  | {
+      kind: "separator";
+      value: string;
+      label: string;
+    };
 
 export type FilterOptions = Record<FacetKey, FilterOption[]>;
 
@@ -60,10 +70,13 @@ function bump(map: Map<string, number>, key: string): void {
   map.set(key, (map.get(key) ?? 0) + 1);
 }
 
-export function useFilterOptions(nodes: AnnotatedNode[]): FilterOptions {
+export function useFilterOptions(
+  nodes: AnnotatedNode[],
+  repos: RepoSummary[] = [],
+  selectedRepos: string[] = [],
+): FilterOptions {
   const t = useT();
   return useMemo(() => {
-    const repo = new Map<string, number>();
     const milestone = new Map<string, number>();
     const priority = new Map<string, number>();
     const assignee = new Map<string, number>();
@@ -72,7 +85,6 @@ export function useFilterOptions(nodes: AnnotatedNode[]): FilterOptions {
     const msMeta = new Map<string, { name: string | null; sortKey: number }>();
 
     for (const n of nodes) {
-      bump(repo, n.repo);
       const ms = n.milestone_code ?? EMPTY_DIM;
       bump(milestone, ms);
       if (!msMeta.has(ms)) {
@@ -92,6 +104,7 @@ export function useFilterOptions(nodes: AnnotatedNode[]): FilterOptions {
     }
 
     const opt = (value: string, lbl: string, count: number): FilterOption => ({
+      kind: "option",
       value,
       label: lbl,
       count,
@@ -101,9 +114,7 @@ export function useFilterOptions(nodes: AnnotatedNode[]): FilterOptions {
       status: STATUS_ORDER.filter((s) => status.has(s)).map((s) =>
         opt(s, t(`status.${s}`), status.get(s) ?? 0),
       ),
-      repo: [...repo]
-        .map(([v, c]) => opt(v, v.replace(/^[^/]+\//, ""), c))
-        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+      repo: buildRepoFilterOptions(repos, nodes, selectedRepos, t("filter.repo.archivedDivider")),
       milestone: [...milestone]
         .map(([v, c]) =>
           opt(v, v === EMPTY_DIM ? t("filter.empty.milestone") : (msMeta.get(v)?.name ?? v), c),
@@ -121,7 +132,11 @@ export function useFilterOptions(nodes: AnnotatedNode[]): FilterOptions {
         .sort((a, b) => a.label.localeCompare(b.label)),
       assignee: [...assignee]
         .map(([v, c]) => opt(v, v === EMPTY_ASSIGNEE ? t("filter.empty.assignee") : v, c))
-        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+        .sort((a, b) => {
+          const aCount = a.kind === "separator" ? 0 : a.count;
+          const bCount = b.kind === "separator" ? 0 : b.count;
+          return bCount - aCount || a.label.localeCompare(b.label);
+        }),
     };
-  }, [nodes, t]);
+  }, [nodes, repos, selectedRepos, t]);
 }
