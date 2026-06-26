@@ -12,14 +12,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertCfCredentials, cf } from "./lib/cf-access.mjs";
+import { pagesDeploymentConfigs } from "./lib/pages-env.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-function envVarsRecord(vars) {
-  return Object.fromEntries(
-    Object.entries(vars ?? {}).map(([key, value]) => [key, { type: "plain_text", value }]),
-  );
-}
 
 async function main() {
   const configPath = process.argv[2];
@@ -41,15 +36,7 @@ async function main() {
     },
   };
 
-  if (CONFIG.productionEnv && Object.keys(CONFIG.productionEnv).length > 0) {
-    body.deployment_configs = {
-      ...project.deployment_configs,
-      production: {
-        ...project.deployment_configs?.production,
-        env_vars: envVarsRecord(CONFIG.productionEnv),
-      },
-    };
-  }
+  body.deployment_configs = pagesDeploymentConfigs(project, CONFIG);
 
   if (CONFIG.source?.path_includes) {
     body.source = {

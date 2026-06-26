@@ -1,7 +1,7 @@
 {
   "accountId": "b5e90be971920ce406f7b679c4f1cd33",
   "projectName": "roxabi-live-marketing",
-  "productionBranch": "main",
+  "productionBranch": "staging",
   "domains": ["live.roxabi.dev"],
   "buildConfig": {
     "root_dir": "",
@@ -15,6 +15,7 @@
     "PUBLIC_APP_URL": "https://app.live.roxabi.dev"
   },
   "notes": [
-    "Apex marketing site. CTAs point at app.live.roxabi.dev (env-aware script in SiteHeader)."
+    "Apex marketing site. CTAs point at app.live.roxabi.dev (env-aware script in SiteHeader).",
+    "productionBranch=staging until staging is promoted to main (main lacks apps/* monorepo)."
   ]
 }

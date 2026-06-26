@@ -15,16 +15,11 @@ import { fileURLToPath } from "node:url";
 
 import { ACCOUNT_ID, assertCfCredentials, cf } from "./lib/cf-access.mjs";
 import { PAGES_CONFIG_PATHS } from "./lib/pages-configs.mjs";
+import { pagesEnvVarsRecord } from "./lib/pages-env.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GITHUB = JSON.parse(readFileSync(join(ROOT, "infra/workers-builds.json"), "utf8")).github;
 const DRY_RUN = process.argv.includes("--dry-run");
-
-function envVarsRecord(vars) {
-  return Object.fromEntries(
-    Object.entries(vars ?? {}).map(([key, value]) => [key, { type: "plain_text", value }]),
-  );
-}
 
 function log(msg) {
   console.log(DRY_RUN ? `[dry-run] ${msg}` : msg);
@@ -68,13 +63,10 @@ async function createProject(config) {
     },
   };
 
-  if (config.productionEnv && Object.keys(config.productionEnv).length > 0) {
-    body.deployment_configs = {
-      production: {
-        env_vars: envVarsRecord(config.productionEnv),
-      },
-    };
-  }
+  body.deployment_configs = {
+    production: { env_vars: pagesEnvVarsRecord(config) },
+    preview: { env_vars: pagesEnvVarsRecord(config) },
+  };
 
   log(`+ Create Pages project ${config.projectName} (branch=${body.production_branch})`);
   if (DRY_RUN) return;
