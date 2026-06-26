@@ -145,12 +145,21 @@ Rules: add/delete/move → update P | new `apps/api/src/` or `apps/app/src/` sub
 
 ## Deploy pattern
 
-**Prod (Cloudflare — CI-driven, 3 targets post-cutover)**
+**Staging (GitHub Actions — auto on push to `staging`)**
 
-CF Workers Builds (git-connected, SSoT `infra/workers-builds.json`):
-- `roxabi-live` (api) — push `main`/`staging` → `scripts/deploy-{production,staging}.sh` (bun install → D1 migrate → `wrangler deploy` from `apps/api`, route `api.live.roxabi.dev`)
-- `roxabi-live-app` (SPA) — push `main` → `bun --filter @roxabi-live/app build` → `wrangler deploy --config apps/app/wrangler.deploy.jsonc`, route `app.live.roxabi.dev`
-- marketing (`apps/marketing`) — CF **Pages** git-connect at apex `live.roxabi.dev`
+`.github/workflows/deploy-staging.yml` — wrangler deploy via `CLOUDFLARE_API_TOKEN` repo secret:
+- `roxabi-live-staging` (api) — `scripts/deploy-staging.sh` → `api-staging.live.roxabi.dev`
+- `roxabi-live-app-staging` (SPA) — build `@roxabi-live/app` → `app-staging.live.roxabi.dev`
+- `roxabi-live-marketing-staging` (Astro) — build `@roxabi-live/marketing` → `marketing-staging.live.roxabi.dev`
+
+Manual: `gh workflow run deploy-staging.yml --ref staging`
+
+**Prod (manual wrangler for now — Workers Builds never connected)**
+
+`infra/workers-builds.json` is an **unapplied** spec (no Cloudflare GitHub App on the repo):
+- `roxabi-live` (api) — `scripts/deploy-production.sh` → `api.live.roxabi.dev`
+- `roxabi-live-app` (SPA) — `bun --filter @roxabi-live/app build` → `wrangler.deploy.jsonc` → `app.live.roxabi.dev` (DNS pending)
+- marketing (`apps/marketing`) — Astro Worker/Pages target at apex `live.roxabi.dev` (not yet live; prod apex still serves legacy `frontend/`)
 
 Secrets (set once on the api worker; `CLOUDFLARE_ACCOUNT_ID` required — token sees 2 accounts):
 ```bash

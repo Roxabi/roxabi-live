@@ -1,4 +1,5 @@
 {
+  "_note": "UNAPPLIED — CF Workers Builds was never connected (no Cloudflare GitHub App). Staging auto-deploy lives in .github/workflows/deploy-staging.yml. Do not treat this file as live infra.",
   "accountId": "b5e90be971920ce406f7b679c4f1cd33",
   "github": {
     "owner": "Roxabi",

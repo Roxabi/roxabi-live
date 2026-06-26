@@ -1,7 +1,7 @@
 {
   // Staging preview of the marketing/landing site (Astro SSG → static assets).
-  // Prod target is CF Pages at the apex live.roxabi.dev (dashboard git-connect);
-  // this assets-only Worker gives a stable staging URL in the meantime.
+  // Staging preview Worker. Prod apex live.roxabi.dev still serves legacy frontend/
+  // until the Astro marketing deploy is cut over (see docs/cutover-monorepo.md).
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "roxabi-live-marketing-staging",
   "compatibility_date": "2025-06-01",

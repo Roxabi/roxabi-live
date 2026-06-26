@@ -64,7 +64,7 @@ export function stripInstallParam(path: string): string {
   const url = new URL(path, "https://_/");
   if (!url.searchParams.has("install")) return path;
   url.searchParams.delete("install");
-  const pathname = url.pathname.replace(/\/$/, "") || "/dashboard";
+  const pathname = url.pathname.replace(/\/$/, "") || "/";
   return `${pathname}${url.search}`;
 }
 

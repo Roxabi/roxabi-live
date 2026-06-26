@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeAuthRedirect } from "./cookies";
+import { sanitizeAuthRedirect, stripInstallParam } from "./cookies";
 
 describe("sanitizeAuthRedirect", () => {
   // Post-cutover the safe default is the SPA index "/" (app.live.roxabi.dev),
@@ -26,5 +26,16 @@ describe("sanitizeAuthRedirect", () => {
     expect(sanitizeAuthRedirect('/x" onclick')).toBe("/");
     expect(sanitizeAuthRedirect("/x<script>")).toBe("/");
     expect(sanitizeAuthRedirect("/x'y")).toBe("/");
+  });
+});
+
+describe("stripInstallParam", () => {
+  it("keeps SPA index / after stripping install (not legacy /dashboard)", () => {
+    expect(stripInstallParam("/?install=1")).toBe("/");
+    expect(stripInstallParam("/")).toBe("/");
+  });
+
+  it("strips install from deeper paths", () => {
+    expect(stripInstallParam("/dashboard/?install=1")).toBe("/dashboard");
   });
 });

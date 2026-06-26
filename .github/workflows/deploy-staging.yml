@@ -1,25 +1,26 @@
-name: Deploy staging frontend
+name: Deploy staging
 
-# Auto-deploy the two staging frontend Workers on a push to `staging`.
+# Auto-deploy the three staging Workers on push to `staging`.
 #
-# Why this lives in GitHub Actions and not CF Workers Builds: the repo's
-# infra/workers-builds.json is an UNAPPLIED spec — CF Workers Builds was never
-# actually connected (no Cloudflare GitHub App on the repo, zero GitHub
-# Deployments, every worker deploys via `wrangler` by hand). GitHub Actions is the
-# repo's real automation, so the staging auto-deploy belongs here. CI (ci.yml)
-# stays quality-gates-only; this is the deploy half, scoped to the two staging
-# preview Workers. The api worker + prod targets remain manual / out of scope.
+# CF Workers Builds is NOT connected on this repo (infra/workers-builds.json is an
+# unapplied spec — no Cloudflare GitHub App, zero GitHub Deployments). GitHub
+# Actions + wrangler is the real automation. CI (ci.yml) stays quality-gates-only.
 #
+#   apps/api       → roxabi-live-staging          → api-staging.live.roxabi.dev
 #   apps/app       → roxabi-live-app-staging       → app-staging.live.roxabi.dev
 #   apps/marketing → roxabi-live-marketing-staging → marketing-staging.live.roxabi.dev
+#
+# Prod targets remain manual until equivalent workflows exist on `main`.
 
 on:
   push:
     branches: [staging]
     paths:
+      - "apps/api/**"
       - "apps/app/**"
       - "apps/marketing/**"
       - "packages/**"
+      - "scripts/deploy-staging.sh"
       - "bun.lock"
   workflow_dispatch: {}
 
@@ -27,15 +28,25 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-staging-frontend-${{ github.ref }}
+  group: deploy-staging-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  # Account IDs are not secret; mirror the hardcoded default in scripts/deploy-staging.sh.
+  # Account IDs are not secret; mirror scripts/deploy-staging.sh.
   CLOUDFLARE_ACCOUNT_ID: b5e90be971920ce406f7b679c4f1cd33
 
 jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Deploy roxabi-live-staging (D1 migrate + wrangler)
+        run: bash scripts/deploy-staging.sh
+
   app:
     runs-on: ubuntu-latest
     timeout-minutes: 15
