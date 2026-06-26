@@ -14,17 +14,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ACCOUNT_ID, assertCfCredentials, cf } from "./lib/cf-access.mjs";
+import { PAGES_CONFIG_PATHS } from "./lib/pages-configs.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GITHUB = JSON.parse(readFileSync(join(ROOT, "infra/workers-builds.json"), "utf8")).github;
 const DRY_RUN = process.argv.includes("--dry-run");
-
-const PAGES_CONFIGS = [
-  "infra/pages-app.json",
-  "infra/pages-app-staging.json",
-  "infra/pages-marketing.json",
-  "infra/pages-marketing-staging.json",
-];
 
 function envVarsRecord(vars) {
   return Object.fromEntries(
@@ -95,7 +89,7 @@ async function createProject(config) {
 async function main() {
   assertCfCredentials();
 
-  for (const configPath of PAGES_CONFIGS) {
+  for (const configPath of PAGES_CONFIG_PATHS) {
     const config = JSON.parse(readFileSync(join(ROOT, configPath), "utf8"));
     if (await projectExists(config.projectName)) {
       log(`✓ Pages project ${config.projectName} exists`);

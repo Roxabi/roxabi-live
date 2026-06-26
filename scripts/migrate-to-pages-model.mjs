@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { bwEnvScripts, runWithBwEnv } from "./lib/cf-bw-run.mjs";
 import { ACCOUNT_ID, assertCfCredentials, cf } from "./lib/cf-access.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -84,8 +85,13 @@ async function removeWorkerCustomDomain(hostname) {
 }
 
 async function ensurePagesDomain(projectName, domain) {
-  const project = await cf(`/accounts/${ACCOUNT_ID}/pages/projects/${projectName}`);
-  if (project.domains?.includes(domain)) {
+  let customDomains = [];
+  try {
+    customDomains = await cf(`/accounts/${ACCOUNT_ID}/pages/projects/${projectName}/domains`);
+  } catch {
+    customDomains = [];
+  }
+  if (customDomains.some((d) => d.name === domain)) {
     log(`✓ Pages ${projectName} already has ${domain}`);
     return;
   }
@@ -154,14 +160,8 @@ async function main() {
 
   log("→ DNS CNAMEs for Pages frontends");
   if (!DRY_RUN) {
-    const result = spawnSync("node", [join(ROOT, "scripts/setup-live-domains.mjs")], {
-      cwd: ROOT,
-      stdio: "inherit",
-      env: process.env,
-    });
-    if (result.status !== 0) {
-      throw new Error("setup-live-domains failed");
-    }
+    const { global: GLOBAL_ENV } = bwEnvScripts(ROOT);
+    runWithBwEnv(ROOT, GLOBAL_ENV, "scripts/setup-live-domains.mjs");
   }
 
   console.log("\nDone. Next steps:");

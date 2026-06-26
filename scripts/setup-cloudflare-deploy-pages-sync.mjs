@@ -4,16 +4,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ACCOUNT_ID, assertCfCredentials, cf } from "./lib/cf-access.mjs";
+import { PAGES_CONFIG_PATHS } from "./lib/pages-configs.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const WORKERS_CONFIG = JSON.parse(readFileSync(join(ROOT, "infra/workers-builds.json"), "utf8"));
-
-const PAGES_CONFIGS = [
-  "infra/pages-app.json",
-  "infra/pages-app-staging.json",
-  "infra/pages-marketing.json",
-  "infra/pages-marketing-staging.json",
-];
 
 async function reconnectPagesRepo(projectName) {
   const { owner, ownerId, repo, repoId } = WORKERS_CONFIG.github;
@@ -44,7 +38,7 @@ async function reconnectPagesRepo(projectName) {
 
 async function main() {
   assertCfCredentials();
-  for (const configPath of PAGES_CONFIGS) {
+  for (const configPath of PAGES_CONFIG_PATHS) {
     const { projectName } = JSON.parse(readFileSync(join(ROOT, configPath), "utf8"));
     await reconnectPagesRepo(projectName);
   }
