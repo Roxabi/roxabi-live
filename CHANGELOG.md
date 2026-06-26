@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.22.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.21.3...roxabi-live/v0.22.0) (2026-06-26)
+
+
+### Features
+
+* **monorepo:** phase 1 cutover — `apps/api`, `apps/app`, `apps/marketing`, shared brand package, bun workspaces ([#271](https://github.com/Roxabi/roxabi-live/pull/271))
+* **app:** dashboard slices (Launch Board, filters, pivot, sync, graph, auth, ZK crypto flows) ported from legacy `frontend/`
+* **marketing:** Astro concept-B landing with FR/EN i18n; Connexion CTAs point at app (env-aware)
+* **app:** FR/EN dashboard i18n, ZK title import banner, session self-heal handoff ([#279](https://github.com/Roxabi/roxabi-live/pull/279))
+* **zk:** auto-handoff GitHub token for enrolled users ([#277](https://github.com/Roxabi/roxabi-live/pull/277))
+* **app:** light theme, graph polish, legacy dashboard chrome restored ([#274](https://github.com/Roxabi/roxabi-live/pull/274), [#275](https://github.com/Roxabi/roxabi-live/pull/275))
+
+
+### Bug Fixes
+
+* **deploy:** converge on Enishu model — API via Workers Builds, fronts via Pages + thin proxy Worker ([#284](https://github.com/Roxabi/roxabi-live/pull/284), [#285](https://github.com/Roxabi/roxabi-live/pull/285))
+* **deploy:** unblock Pages builds (`SKIP_DEPENDENCY_INSTALL`, `pyproject.toml` package discovery)
+* **app:** graph node layout, blocked-node styling, CSS cascade layers, native dropdown theming ([#272](https://github.com/Roxabi/roxabi-live/pull/272)–[#278](https://github.com/Roxabi/roxabi-live/pull/278))
+* **auth:** land logout on `/sign-in`; stop `/dashboard` redirects ([#281](https://github.com/Roxabi/roxabi-live/pull/281))
+
+
+### Changed
+
+* **deploy:** remove GitHub Actions CD; Cloudflare git-connected Workers Builds + Pages only
+* **infra:** dedicated Workers Builds token `roxabi-live-build`; `verify:cloudflare` dual-credential check
+
+
 ## [0.21.3](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.21.2...roxabi-live/v0.21.3) (2026-06-24)
 
 

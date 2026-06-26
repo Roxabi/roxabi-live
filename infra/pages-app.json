@@ -1,7 +1,7 @@
 {
   "accountId": "b5e90be971920ce406f7b679c4f1cd33",
   "projectName": "roxabi-live-app",
-  "productionBranch": "staging",
+  "productionBranch": "main",
   "domains": ["app.live.roxabi.dev"],
   "buildConfig": {
     "root_dir": "",
@@ -13,7 +13,6 @@
   },
   "notes": [
     "Pages builds the SPA; auth/api paths are proxied by Worker roxabi-live-app (wrangler.deploy.jsonc).",
-    "After worker.ts changes: bun --filter @roxabi-live/app deploy:worker",
-    "productionBranch=staging until staging is promoted to main (main lacks apps/* monorepo)."
+    "After worker.ts changes: bun --filter @roxabi-live/app deploy:worker"
   ]
 }
