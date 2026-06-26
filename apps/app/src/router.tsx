@@ -4,6 +4,7 @@ import { SignInScreen } from "@/auth/SignInScreen";
 import { AppShell } from "@/components/AppShell";
 import { BoardView } from "@/components/BoardView";
 import { SyncProgressBanner } from "@/components/SyncProgressBanner";
+import { TitleSyncBanner } from "@/components/TitleSyncBanner";
 import { useSyncProgressMonitor } from "@/hooks/useSyncProgressMonitor";
 import { useVersionPoll } from "@/hooks/useVersionPoll";
 import {
@@ -51,8 +52,17 @@ function Dashboard() {
   useVersionPoll();
   const me = useAuth();
   const syncStatus = useSyncProgressMonitor();
-  const { nodes, edges, isLoading, isError, error, needsGithubLink, zkMigrationIncomplete } =
-    useDecryptedGraph();
+  const {
+    nodes,
+    edges,
+    isLoading,
+    isError,
+    error,
+    needsGithubLink,
+    isSyncingTitles,
+    syncingTitleCount,
+    zkMigrationIncomplete,
+  } = useDecryptedGraph();
   // ZK is "active" once the feature flag is on and the user has enrolled a
   // passphrase (zk_key_backups row) — gates the encryption-info banner.
   const zkActive = me.user.zk_account_key_enabled && me.user.zk_enrolled;
@@ -82,6 +92,7 @@ function Dashboard() {
         githubLogin={login}
       />
       <SyncProgressBanner status={syncStatus} />
+      <TitleSyncBanner syncing={isSyncingTitles} count={syncingTitleCount} />
       {isError ? (
         <div className="rounded-lg border border-blocked/30 bg-blocked/10 p-4 text-sm text-blocked">
           Failed to load the corpus: {(error as Error).message}

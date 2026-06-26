@@ -130,6 +130,10 @@ export const en: Translations = {
       title: "Syncing your repositories…",
       detail: "{reposSynced} / {reposTotal} repos · {issueCount} issues",
     },
+    titles: {
+      inProgress: "Importing issue titles…",
+      detail: "{count} to decrypt",
+    },
   },
   dim: {
     label: {

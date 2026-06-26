@@ -129,6 +129,10 @@ export const fr = {
       title: "Synchronisation de vos dépôts…",
       detail: "{reposSynced} / {reposTotal} dépôts · {issueCount} issues",
     },
+    titles: {
+      inProgress: "Importation des titres d'issues…",
+      detail: "{count} à déchiffrer",
+    },
   },
   dim: {
     label: {

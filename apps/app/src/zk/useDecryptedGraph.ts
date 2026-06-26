@@ -43,6 +43,7 @@ export function useDecryptedGraph() {
   const [nodes, setNodes] = useState<AnnotatedNode[] | null>(null);
   const [sealTick, setSealTick] = useState(0);
   const [needsGithubLink, setNeedsGithubLink] = useState(false);
+  const [isSealingTitles, setIsSealingTitles] = useState(false);
   const sealedFor = useRef<GraphResponse | null>(null);
 
   // Decrypt → annotate whenever the graph, the lock state, or a fresh seal lands.
@@ -74,6 +75,12 @@ export function useDecryptedGraph() {
     sealedFor.current = data;
     let cancelled = false;
     (async () => {
+      // A linked GitHub token means the seal pass will fetch + import title
+      // content (potentially several batched GraphQL roundtrips) — surface that
+      // as a sync banner so redacted titles don't look stuck. No token → nothing
+      // to import here (the handoff bounce / fallback prompt handles that case).
+      const hasToken = Boolean(getGithubUserToken());
+      if (hasToken && !cancelled) setIsSealingTitles(true);
       try {
         const clones = data.nodes.map((n) => ({ ...n }));
         const sealResult = await ensureAccountKeySealing(githubLogin, clones);
@@ -82,13 +89,15 @@ export function useDecryptedGraph() {
         // is linked to pull issue content — surface the prompt (legacy
         // showZkGithubLinkNotice). Mirrors frontend/app.js init.
         if (!cancelled && sealResult?.needsGithubLink) setNeedsGithubLink(true);
-        if (getGithubUserToken()) {
+        if (hasToken) {
           const { synced } = await syncZkContentFromGitHub(clones, githubLogin);
           if (synced > 0) changed = true;
         }
         if (changed && !cancelled) setSealTick((t) => t + 1);
       } catch {
         /* sealing/sync is best-effort — titles fall back to "(sealed)" */
+      } finally {
+        if (!cancelled) setIsSealingTitles(false);
       }
     })();
     return () => {
@@ -96,14 +105,26 @@ export function useDecryptedGraph() {
     };
   }, [data, unlocked, zkAccountKeyEnabled, githubLogin]);
 
+  const annotated = nodes ?? [];
+  // Titles still being imported: null after decrypt (no ciphertext yet),
+  // excluding closed-hop stubs which legitimately carry no title.
+  const syncingTitleCount = annotated.reduce(
+    (n, node) => (node.title == null && !node.is_stub ? n + 1 : n),
+    0,
+  );
+
   return {
     ...query,
-    nodes: nodes ?? [],
+    nodes: annotated,
     edges: (data?.edges ?? []) as GraphEdge[],
     repos: (data?.repos ?? []) as RepoSummary[],
     // Hold "loading" through the first decrypt so titles never flash redacted.
     isLoading: query.isLoading || (Boolean(data) && nodes === null),
     needsGithubLink,
+    // True only while the GitHub-fetch seal pass runs AND titles remain redacted
+    // — gates the import banner (and suppresses its flicker once everything seals).
+    isSyncingTitles: isSealingTitles && syncingTitleCount > 0,
+    syncingTitleCount,
     // Re-read each render; sealTick state change after a migration re-evaluates it.
     zkMigrationIncomplete: isZkMigrationIncomplete(),
   };
