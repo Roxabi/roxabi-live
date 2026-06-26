@@ -11,7 +11,6 @@ export const en: Translations = {
     navComment:   "Feedback",
     navAdmin:     "Admin",
     loginLabel:   "Sign in",
-    ctaLabel:     "Early access",
   },
 
   // ── Hero ──────────────────────────────────────────────────────────────────
@@ -21,7 +20,7 @@ export const en: Translations = {
     h1Part1:      "Launch ten agents at once.",
     h1Accent:     "Without collisions.",
     lead:         "The bottleneck for an agent fleet is no longer writing code — it's concurrency. Roxabi Live reads your GitHub issues and their blocked-by links to reveal, at a glance, what you can run in parallel.",
-    ctaPrimary:   "Request early access",
+    ctaPrimary:   "Sign in",
     ctaGhost:     "View demo",
     note:         "Native GitHub Issues · no third-party tools · zero adoption friction",
     boardTitle:   "roxabi-live · dashboard",
@@ -151,13 +150,13 @@ export const en: Translations = {
 
   // ── CTA Band ──────────────────────────────────────────────────────────────
   cta: {
-    kicker:      "Early access",
+    kicker:      "Get started",
     h2Part1:     "Ready to run your fleet",
     h2Accent:    "without collisions?",
     body:        "Join the teams orchestrating their Claude agents with GitHub dependency graphs, in real time.",
-    ctaPrimary:  "Request early access",
+    ctaPrimary:  "Sign in",
     ctaGhost:    "View demo",
-    reassurance: "Invite-only access · Native GitHub Issues · no card required",
+    reassurance: "Native GitHub Issues · no card required · zero adoption friction",
   },
 
   // ── Footer ────────────────────────────────────────────────────────────────
