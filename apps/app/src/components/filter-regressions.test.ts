@@ -67,6 +67,28 @@ describe("filterNodes — closedUnderOpenEpic (R1)", () => {
     expect(out.map((n) => n.key)).toContain("r/x#2");
   });
 
+  it("hides archived-repo issues when repo facet is empty", () => {
+    const archived = annotateNodes(
+      [node({ key: "r/arch#1" }), node({ key: "r/live#2" })],
+      [],
+    );
+    const out = filterNodes(archived, [], {
+      ...baseFilters(),
+      archivedRepos: new Set(["r/arch"]),
+    });
+    expect(out.map((n) => n.key)).toEqual(["r/live#2"]);
+  });
+
+  it("shows archived-repo issues when explicitly selected in repo facet", () => {
+    const archived = annotateNodes([node({ key: "r/arch#1" })], []);
+    const out = filterNodes(archived, [], {
+      ...baseFilters(),
+      repo: ["r/arch"],
+      archivedRepos: new Set(["r/arch"]),
+    });
+    expect(out.map((n) => n.key)).toEqual(["r/arch#1"]);
+  });
+
   it("does NOT keep a done child whose parent epic is itself closed", () => {
     const closedEpic = [
       node({ key: "r/x#1", state: "closed" }),

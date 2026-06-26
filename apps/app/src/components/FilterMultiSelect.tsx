@@ -50,6 +50,20 @@ export function FilterMultiSelect({
             <div className="px-2 py-1.5 text-xs text-muted-foreground">{t("filter.multiselect.noOptions")}</div>
           ) : (
             options.map((o) => {
+              if (o.kind === "separator") {
+                return (
+                  <div
+                    key={o.value}
+                    role="separator"
+                    className="pointer-events-none mt-1.5 px-2 py-1 select-none"
+                  >
+                    <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {o.label}
+                    </span>
+                  </div>
+                );
+              }
+
               const on = selected.includes(o.value);
               return (
                 <button
@@ -60,6 +74,7 @@ export function FilterMultiSelect({
                   className={cn(
                     "flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors hover:bg-[var(--bg-elevated)] focus:outline-none focus-visible:bg-[var(--accent-dim)] focus-visible:text-foreground",
                     on ? "text-foreground" : "text-muted-foreground",
+                    o.archived && "opacity-70",
                   )}
                 >
                   <span className="flex min-w-0 items-center gap-2">
@@ -74,7 +89,14 @@ export function FilterMultiSelect({
                     </span>
                     <span className="truncate">{o.label}</span>
                   </span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">{o.count}</span>
+                  <span className="flex shrink-0 items-center gap-1.5 tabular-nums text-muted-foreground">
+                    {o.archived && (
+                      <span className="font-mono text-[10px] normal-case">
+                        {t("filter.repo.archivedSublabel")}
+                      </span>
+                    )}
+                    {o.count}
+                  </span>
                 </button>
               );
             })

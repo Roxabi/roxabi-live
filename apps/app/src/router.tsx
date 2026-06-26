@@ -55,6 +55,7 @@ function Dashboard() {
   const {
     nodes,
     edges,
+    repos,
     isLoading,
     isError,
     error,
@@ -102,7 +103,7 @@ function Dashboard() {
           Loading the corpus…
         </div>
       ) : (
-        <BoardView nodes={nodes} edges={edges} />
+        <BoardView nodes={nodes} edges={edges} repos={repos} />
       )}
     </div>
   );

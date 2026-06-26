@@ -18,7 +18,7 @@ export default function DevTablePage() {
         <h1 className="text-2xl font-bold text-foreground">Launch Board — fixture</h1>
         <ViewToggle />
       </div>
-      <BoardView nodes={nodes} edges={fixtureGraph.edges} />
+      <BoardView nodes={nodes} edges={fixtureGraph.edges} repos={fixtureGraph.repos} />
     </div>
   );
 }

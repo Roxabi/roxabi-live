@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.22.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.22.0...roxabi-live/v0.22.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* **app:** repo filter — archived section with divider; hide archived issues by default unless repo selected
+* **app:** graph hover — expand inline label (#number + size, title line-clamp-2) instead of native tooltip
+* **app:** repo dropdown — remove border line above Archived label
+
+
 ## [0.22.0](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.21.3...roxabi-live/v0.22.0) (2026-06-26)
 
 

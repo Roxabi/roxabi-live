@@ -166,5 +166,12 @@ export const fixtureGraph: GraphResponse = {
       issue_count: 1,
       last_updated_at: "2026-06-22T00:00:00Z",
     },
+    {
+      repo: "Roxabi/roxabi-vault",
+      archived: true,
+      is_private: true,
+      issue_count: 0,
+      last_updated_at: null,
+    },
   ],
 };
