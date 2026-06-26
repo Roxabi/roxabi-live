@@ -1,0 +1,7 @@
+<svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Roxabi Live">
+  <rect width="56" height="56" rx="12" fill="#f0b429"></rect>
+  <rect x="11" y="11" width="15.5" height="15.5" rx="3" fill="#0b0e14" opacity=".9"></rect>
+  <rect x="29.5" y="11" width="15.5" height="15.5" rx="3" fill="#0b0e14" opacity=".6"></rect>
+  <rect x="11" y="29.5" width="15.5" height="15.5" rx="3" fill="#0b0e14" opacity=".6"></rect>
+  <rect x="29.5" y="29.5" width="15.5" height="15.5" rx="3" fill="#0b0e14" opacity=".3"></rect>
+</svg>

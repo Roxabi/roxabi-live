@@ -1,0 +1,37 @@
+---
+import type { Translations } from "../i18n/index";
+import LaunchBoard from "./LaunchBoard.astro";
+
+interface Props {
+  t: Translations;
+}
+const { t } = Astro.props;
+---
+
+<section class="section-hero">
+  <div class="container">
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <p class="hero-eyebrow">
+          {t.hero.eyebrowLeft}
+          <span class="eyebrow-sep" aria-hidden="true"></span>
+          {t.hero.eyebrowRight}
+        </p>
+        <h1 class="hero-h1">
+          {t.hero.h1Part1}<br />
+          <span class="accent">{t.hero.h1Accent}</span>
+        </h1>
+        <p class="hero-lead">{t.hero.lead}</p>
+        <div class="hero-ctas">
+          <a href="https://app.live.roxabi.dev/" data-app-link class="btn btn-primary">{t.hero.ctaPrimary}</a>
+          <a href="#demo" class="btn btn-ghost">{t.hero.ctaGhost}</a>
+        </div>
+        <p class="hero-note">{t.hero.note}</p>
+      </div>
+
+      <div class="hero-board-wrap">
+        <LaunchBoard t={t} />
+      </div>
+    </div>
+  </div>
+</section>

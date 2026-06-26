@@ -129,8 +129,8 @@ wheels = [
 
 [[package]]
 name = "roxabi-live"
-version = "0.19.2"
-source = { virtual = "." }
+version = "0.22.0"
+source = { editable = "." }
 
 [package.dev-dependencies]
 dev = [

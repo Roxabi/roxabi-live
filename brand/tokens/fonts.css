@@ -1,0 +1,7 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   FONTS — Roxabi Live
+   Inter (display + body) · JetBrains Mono (code, status, metadata).
+   Loaded from Google Fonts. For production, self-host the woff2 files and
+   replace this @import with local @font-face rules.
+────────────────────────────────────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap");

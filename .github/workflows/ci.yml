@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
@@ -42,40 +42,53 @@ jobs:
       - name: License check
         run: uv run tools/license_check.py
 
-  worker:
+  api:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Install worker deps
-        run: cd worker && npm ci
-      - name: Assert E2E_TEST_MODE not in wrangler.toml
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install workspace deps
+        run: bun install --frozen-lockfile
+      - name: Assert E2E_TEST_MODE not in apps/api/wrangler.toml
         run: |
-          if grep -E '^\s*E2E_TEST_MODE\s*=' wrangler.toml; then
-            echo "E2E_TEST_MODE must not be committed in wrangler.toml (local Playwright only)"
+          if grep -E '^\s*E2E_TEST_MODE\s*=' apps/api/wrangler.toml; then
+            echo "E2E_TEST_MODE must not be committed (local Playwright only)"
             exit 1
           fi
-      - name: Lint + format (Biome)
-        run: cd worker && npm run ci:lint
-      - name: Typecheck (tsc)
-        run: cd worker && npm run typecheck
-      - name: Test (vitest)
-        run: cd worker && npm test
-      # Informational only — does NOT fail the build.
-      # Known advisory: undici (GHSA-xxx) is a dev-only transitive of wrangler,
-      # not present in production bundle. --omit=dev scopes to prod deps only.
-      - name: Audit prod deps (informational)
-        run: cd worker && npm audit --omit=dev --audit-level=high || true
+      - name: Lint + format (Biome — api + app)
+        run: bunx biome ci apps/api/src apps/app/src
+      - name: Typecheck (api)
+        run: bun --filter @roxabi-live/api typecheck
+      - name: Test (api — vitest)
+        run: bun --filter @roxabi-live/api test
+
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install workspace deps
+        run: bun install --frozen-lockfile
+      - name: Typecheck (shared + app)
+        run: |
+          bun --filter @roxabi-live/shared typecheck
+          bun --filter @roxabi-live/app typecheck
+      - name: Test (app — vitest)
+        run: bun --filter @roxabi-live/app test
+      # Marketing: gate on a successful Astro build (astro check has pre-existing
+      # i18n literal-type debt — tracked separately, not a cutover regression).
+      - name: Build (marketing — astro)
+        run: bun --filter @roxabi-live/marketing build
 
   plugin:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - name: Install plugin deps
@@ -85,19 +98,9 @@ jobs:
       - name: Test (vitest)
         run: cd plugins/roxabi-issues && bun run test
 
-  frontend:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Install frontend deps
-        run: cd frontend && npm ci
-      - name: Test (vitest)
-        run: cd frontend && npm test
+  # Legacy frontend/ (vanilla JS) is now ASSETS-only fallback on the api worker;
+  # the cockpit is apps/app (covered by the `app` job). Its retirement removes the
+  # old `frontend` CI job. frontend/ itself is deleted once the cutover is live.
 
-  # Deploy: Cloudflare Workers Builds (git-connected). See docs/DEPLOY.md §8 and
-  # infra/workers-builds.json. CI runs quality gates only — no wrangler deploy here.
+  # Deploy: Cloudflare Workers Builds (git-connected). See infra/workers-builds.json.
+  # CI runs quality gates only — no wrangler deploy here (enishu model).

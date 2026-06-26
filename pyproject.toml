@@ -1,10 +1,17 @@
 [project]
 license = { text = "AGPL-3.0-or-later" }
 name = "roxabi-live"
-version = "0.19.2"
+version = "0.22.0"
 description = "Roxabi Live — repo tooling (Worker + frontend are the application)"
 requires-python = ">=3.12,<3.13"
 dependencies = []
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["tools"]
 
 [dependency-groups]
 dev = [

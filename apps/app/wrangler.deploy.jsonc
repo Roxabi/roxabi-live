@@ -1,0 +1,19 @@
+{
+  // Thin edge proxy — deploy after worker.ts changes (not on every Pages build).
+  // Pages serves static assets; these zone routes forward auth/api paths to apps/api.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "roxabi-live-app",
+  "main": "worker.ts",
+  "compatibility_date": "2025-06-01",
+  "routes": [
+    { "pattern": "app.live.roxabi.dev/api*", "zone_name": "roxabi.dev" },
+    { "pattern": "app.live.roxabi.dev/login*", "zone_name": "roxabi.dev" },
+    { "pattern": "app.live.roxabi.dev/oauth*", "zone_name": "roxabi.dev" },
+    { "pattern": "app.live.roxabi.dev/auth*", "zone_name": "roxabi.dev" },
+    { "pattern": "app.live.roxabi.dev/logout*", "zone_name": "roxabi.dev" },
+    { "pattern": "app.live.roxabi.dev/install*", "zone_name": "roxabi.dev" },
+    { "pattern": "app.live.roxabi.dev/admin*", "zone_name": "roxabi.dev" },
+    { "pattern": "app.live.roxabi.dev/health*", "zone_name": "roxabi.dev" }
+  ],
+  "services": [{ "binding": "API", "service": "roxabi-live" }]
+}

@@ -1,0 +1,85 @@
+/*
+ * graph-anim.css — dev-state animations for the graph node dot.
+ * Ported verbatim (timings/keyframes) from frontend/graph.css gg-pulse / gg-orbit
+ * (issue #82). Tailwind has no keyframe primitive for these, so they live here and
+ * are applied via the rl-gg-dot helper classes in GraphPanel.tsx.
+ *
+ *   dev        → pulse (expanding halo)
+ *   pr_open    → pulse + orbit-1 (one revolving dot)
+ *   pr_reviewed→ pulse + orbit-2 (two revolving dots; the 2nd is a child element)
+ *
+ * Closed (done) nodes get dev_state='idle' server-side, so they never animate.
+ * currentColor resolves to the dot's repo tone (set inline in GraphPanel).
+ */
+
+.rl-gg-dot {
+  position: relative;
+  --rl-orbit2: #f0abfc;
+}
+
+.rl-gg-dot.pulse::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  animation: rl-gg-pulse 1.6s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  pointer-events: none;
+}
+
+.rl-gg-dot.orbit-1::after,
+.rl-gg-dot.orbit-2::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 0%, currentColor 0 2.2px, transparent 2.6px);
+  animation: rl-gg-orbit 1.8s linear infinite;
+  pointer-events: none;
+}
+
+.rl-gg-dot.orbit-2 .rl-gg-orbit2 {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.rl-gg-dot.orbit-2 .rl-gg-orbit2::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 0%, var(--rl-orbit2) 0 2.2px, transparent 2.6px);
+  animation: rl-gg-orbit 1.8s linear infinite;
+  animation-delay: -0.9s;
+  pointer-events: none;
+}
+
+@keyframes rl-gg-pulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.9;
+  }
+  80% {
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes rl-gg-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rl-gg-dot.pulse::before,
+  .rl-gg-dot.orbit-1::after,
+  .rl-gg-dot.orbit-2::after,
+  .rl-gg-dot.orbit-2 .rl-gg-orbit2::before {
+    animation: none;
+  }
+}

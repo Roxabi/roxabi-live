@@ -1,0 +1,9 @@
+{
+  // CF Pages — git-connected build of the SPA (SSOT: infra/pages-app.json).
+  // Same-origin auth paths are handled by the edge Worker (wrangler.deploy.jsonc).
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "roxabi-live-app",
+  "main": "worker.ts",
+  "compatibility_date": "2025-06-01",
+  "pages_build_output_dir": "./dist"
+}

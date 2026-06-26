@@ -1,0 +1,71 @@
+---
+import type { Translations } from "../i18n/index";
+
+interface Props {
+  t: Translations;
+}
+const { t } = Astro.props;
+---
+
+<section class="section-github" id="github" aria-labelledby="github-h2">
+  <div class="container">
+    <div class="github-inner">
+      <!-- Left: copy -->
+      <div class="github-copy">
+        <p class="github-kicker">{t.github.kicker}</p>
+        <h2 id="github-h2">{t.github.h2}</h2>
+        <p>{t.github.p1}</p>
+        <p>{t.github.p2}</p>
+
+        <ul class="github-trust-list" role="list">
+          {t.github.trust.map((item) => (
+            <li class="trust-item">
+              <span
+                class="trust-icon"
+                aria-hidden="true"
+                style={item.iconType === "lock" ? "background:var(--ready-dim);border-color:rgba(52,211,153,.2)" : ""}
+              >
+                {item.iconType === "shield" && (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M8 1.5L2.5 3.5v4c0 3.3 2.3 6.1 5.5 6.9 3.2-.8 5.5-3.6 5.5-6.9v-4L8 1.5z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round" fill="none"/>
+                  </svg>
+                )}
+                {item.iconType === "bolt" && (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M9 1.5L4 9h5l-2 5.5 7-8.5H9L11.5 1.5z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round" fill="none"/>
+                  </svg>
+                )}
+                {item.iconType === "lock" && (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <rect x="3" y="7" width="10" height="8" rx="1.5" stroke="currentColor" stroke-width="1.25" fill="none"/>
+                    <path d="M5 7V5a3 3 0 0 1 6 0v2" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" fill="none"/>
+                  </svg>
+                )}
+              </span>
+              <span class="trust-text">
+                <strong>{item.strong}</strong>
+                <span>{item.span}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <!-- Right: visual -->
+      <div class="github-visual">
+        <div class="gh-visual-row">
+          {t.github.events.map((event) => (
+            <div class={`gh-event gh-event-${event.iconClass}`}>
+              <span class={`gh-event-icon gh-icon-${event.iconClass}`} aria-hidden="true">{event.iconLabel}</span>
+              <div class="gh-event-body">
+                <span class="gh-event-type">{event.type}</span>
+                <span class="gh-event-desc">{event.desc}</span>
+                <span class="gh-event-detail">{event.detail}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

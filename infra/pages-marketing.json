@@ -1,0 +1,20 @@
+{
+  "accountId": "b5e90be971920ce406f7b679c4f1cd33",
+  "projectName": "roxabi-live-marketing",
+  "productionBranch": "main",
+  "domains": ["live.roxabi.dev"],
+  "buildConfig": {
+    "root_dir": "",
+    "build_command": "curl -fsSL https://bun.sh/install | bash && export BUN_INSTALL=\"$HOME/.bun\" && export PATH=\"$BUN_INSTALL/bin:$PATH\" && bun install --frozen-lockfile && bun --filter @roxabi-live/marketing build",
+    "destination_dir": "apps/marketing/dist"
+  },
+  "source": {
+    "path_includes": ["apps/marketing/*", "packages/*", "package.json", "bun.lock"]
+  },
+  "productionEnv": {
+    "PUBLIC_APP_URL": "https://app.live.roxabi.dev"
+  },
+  "notes": [
+    "Apex marketing site. CTAs point at app.live.roxabi.dev (env-aware script in SiteHeader)."
+  ]
+}

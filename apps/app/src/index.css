@@ -1,0 +1,90 @@
+/* Layer order: brand sits BELOW Tailwind's components/utilities so utility
+   classes (text-2xl, bg-card, …) win over the brand design-system's element
+   styles (h1/body/links), which are authored for the marketing site. The brand
+   still supplies every design TOKEN (CSS custom properties resolve regardless of
+   layer), which @theme below bridges into Tailwind. Without this, unlayered brand
+   rules override ALL layered Tailwind output — the "lost CSS" prod regression. */
+@layer theme, base, brand, components, utilities;
+@import "tailwindcss";
+@import "../../../brand/styles.css" layer(brand);
+
+@theme {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--bg-card);
+  --color-border: var(--border);
+  --color-muted-foreground: var(--text-muted);
+  --color-primary: var(--accent);
+  --color-ready: var(--ready);
+  --color-blocked: var(--blocked);
+  --color-running: var(--running);
+  --color-done: var(--done);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+  --radius: var(--r-md);
+}
+
+/* ── Light theme ──────────────────────────────────────────────────────────
+   Overrides the brand dark :root tokens when <html data-theme="light">. The
+   @theme map above resolves var(--bg)/var(--text)/… at use-site, so every
+   Tailwind utility (bg-background, text-foreground, …) re-themes for free.
+   Unlayered → wins over the layered brand :root. Default stays dark. */
+/* Tell the UA to render native controls (the <select> popup, scrollbars, date
+   pickers, autofill) in the matching scheme — kills the white/blue OS-default
+   dropdown on the dark cockpit. */
+:root {
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f7f5f1;
+  --bg-elevated: #efece6;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f1eee8;
+  --border: #ddd6cc;
+  --border-hi: #c6bdb0;
+  --text: #1c1917;
+  --text-muted: #5d6470;
+  --text-dim: #8a8f9c;
+  --accent: #c2780a;
+  --accent-hover: #a8680a;
+  --accent-press: #8a5408;
+  --accent-dim: rgba(194, 120, 10, 0.12);
+  --accent-glow: rgba(194, 120, 10, 0.22);
+  --ready: #047857;
+  --ready-dim: rgba(4, 120, 87, 0.12);
+  --blocked: #be123c;
+  --blocked-dim: rgba(190, 18, 60, 0.1);
+  --running: #0369a1;
+  --running-dim: rgba(3, 105, 161, 0.12);
+  --done: #94a3b8;
+  --done-dim: rgba(148, 163, 184, 0.2);
+  --node: #6d28d9;
+  --node-hi: #7c3aed;
+  --node-dim: rgba(109, 40, 217, 0.14);
+  --node-done: #b0b6c0;
+  --edge: rgba(71, 85, 105, 0.45);
+  --edge-dim: rgba(71, 85, 105, 0.18);
+}
+
+/* ── Thin, themed scrollbar for overflow panels (dropdowns, lists) ────────── */
+.rl-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hi) transparent;
+}
+.rl-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.rl-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.rl-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-hi);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.rl-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}

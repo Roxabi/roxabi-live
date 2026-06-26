@@ -1,0 +1,59 @@
+---
+import type { Translations } from "../i18n/index";
+
+interface Props {
+  t: Translations;
+}
+const { t } = Astro.props;
+---
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="/" class="logo" aria-label="Roxabi Live">
+      <span class="logo-mark">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <rect x="1" y="1" width="5" height="5" rx="1" fill="#0b0e14"/>
+          <rect x="8" y="1" width="5" height="5" rx="1" fill="#0b0e14"/>
+          <rect x="1" y="8" width="5" height="5" rx="1" fill="#0b0e14"/>
+          <rect x="8" y="8" width="5" height="5" rx="1" fill="#0b0e14" opacity=".4"/>
+        </svg>
+      </span>
+      <span class="logo-wordmark">Roxabi <span>Live</span></span>
+    </a>
+
+    <nav aria-label="Navigation principale">
+      <ul class="header-nav">
+        <li><a href="/feedback">{t.header.navComment}</a></li>
+        <li><a href="/admin">{t.header.navAdmin}</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <a href={t.langSwitchHref} class="btn-header-login">{t.langSwitchLabel}</a>
+      <a href="https://app.live.roxabi.dev/" data-app-link class="btn-header-cta">{t.header.loginLabel}</a>
+    </div>
+  </div>
+</header>
+
+<script is:inline>
+  // The marketing site and the app live on sibling subdomains; point every
+  // [data-app-link] (header + hero + CTA band) at the app env matching the
+  // current marketing env (staging ↔ staging, prod ↔ prod) so a staging visitor
+  // isn't bounced to the prod app. The markup default is the prod app URL, so
+  // the links work without JS too. Wait for DOMContentLoaded so links rendered
+  // below this header (hero, CTA band) are already in the DOM.
+  (function () {
+    function wire() {
+      var app = location.hostname.indexOf("staging") !== -1
+        ? "https://app-staging.live.roxabi.dev"
+        : "https://app.live.roxabi.dev";
+      var links = document.querySelectorAll("[data-app-link]");
+      for (var i = 0; i < links.length; i++) links[i].setAttribute("href", app + "/");
+    }
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", wire);
+    } else {
+      wire();
+    }
+  })();
+</script>

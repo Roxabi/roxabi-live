@@ -1,0 +1,8 @@
+<svg width="220" height="48" viewBox="0 0 220 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Roxabi Live">
+  <rect width="48" height="48" rx="11" fill="#f0b429"></rect>
+  <rect x="9.5" y="9.5" width="13" height="13" rx="2.5" fill="#0b0e14" opacity=".9"></rect>
+  <rect x="25.5" y="9.5" width="13" height="13" rx="2.5" fill="#0b0e14" opacity=".6"></rect>
+  <rect x="9.5" y="25.5" width="13" height="13" rx="2.5" fill="#0b0e14" opacity=".6"></rect>
+  <rect x="25.5" y="25.5" width="13" height="13" rx="2.5" fill="#0b0e14" opacity=".3"></rect>
+  <text x="62" y="32" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" letter-spacing="-0.02em" fill="#f2efe9">Roxabi <tspan fill="#f0b429">Live</tspan></text>
+</svg>

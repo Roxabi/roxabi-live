@@ -1,61 +1,27 @@
 #!/usr/bin/env node
 /**
  * Configure Cloudflare Workers Builds for roxabi-live (git-connected deploy).
+ * Model: enishu — CF pulls the repo and runs build/deploy commands; GHA is CI-only.
  *
- * Prerequisites (one-time):
- * 1. Cloudflare GitHub App authorized (Workers & Pages → any Worker → Settings → Builds → Connect)
- * 2. User-scoped API token with:
- *    - Workers Builds Configuration → Edit
- *    - Workers Scripts → Read
+ * Prerequisites:
+ * 1. Cloudflare GitHub App authorized (Workers & Pages → Builds → Connect GitHub)
+ * 2. Build API token on a worker (Settings → Builds → API token; D1 Edit required)
  *
- * Usage (API token — preferred):
- *   export CLOUDFLARE_API_TOKEN=<user token>
- *   node scripts/setup-workers-builds.mjs
- *
- * Usage (global API key — bw Secure Note):
- *   source scripts/bw-cloudflare-global-env.sh
- *   node scripts/setup-workers-builds.mjs
- *
- * Note body format: {CF_email: "…", CLOUDFLARE_API_KEY:"cfk_…"}
+ * Usage:
+ *   source scripts/bw-cloudflare-live-build-env.sh
+ *   export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_BUILDS_ADMIN_TOKEN"
+ *   bun run setup:workers-builds
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ACCOUNT_ID, assertCfCredentials, cf } from "./lib/cf-access.mjs";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const CONFIG = JSON.parse(readFileSync(join(ROOT, "infra/workers-builds.json"), "utf8"));
-const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID ?? CONFIG.accountId;
-const TOKEN = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
-const CF_EMAIL = process.env.CLOUDFLARE_EMAIL ?? process.env.CF_EMAIL;
-const CF_API_KEY = process.env.CLOUDFLARE_API_KEY;
-
-function cfAuthHeaders() {
-  if (TOKEN) {
-    return { Authorization: `Bearer ${TOKEN}` };
-  }
-  if (CF_EMAIL && CF_API_KEY) {
-    return { "X-Auth-Email": CF_EMAIL, "X-Auth-Key": CF_API_KEY };
-  }
-  return {};
-}
-
-async function cf(path, init = {}) {
-  const res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
-    ...init,
-    headers: {
-      ...cfAuthHeaders(),
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
-  const json = await res.json();
-  if (!json.success) {
-    throw new Error(`CF API ${path}: ${JSON.stringify(json.errors ?? json)}`);
-  }
-  return json.result;
-}
 
 async function getWorkerTag(workerName) {
   const scripts = await cf(`/accounts/${ACCOUNT_ID}/workers/scripts`);
@@ -66,19 +32,7 @@ async function getWorkerTag(workerName) {
   return worker.tag;
 }
 
-async function ensureRepoConnection() {
-  const connections = await cf(`/accounts/${ACCOUNT_ID}/builds/repos/connections`);
-  const existing = connections.find(
-    (c) =>
-      c.provider_type === "github" &&
-      c.repo_name === CONFIG.github.repo &&
-      c.provider_account_name?.toLowerCase() === CONFIG.github.owner.toLowerCase(),
-  );
-  if (existing) {
-    console.log(`✓ Repo connection exists (${existing.repo_connection_uuid})`);
-    return existing.repo_connection_uuid;
-  }
-
+async function upsertRepoConnection() {
   const created = await cf(`/accounts/${ACCOUNT_ID}/builds/repos/connections`, {
     method: "PUT",
     body: JSON.stringify({
@@ -89,9 +43,32 @@ async function ensureRepoConnection() {
       repo_name: CONFIG.github.repo,
     }),
   });
-
-  console.log(`✓ Repo connection created (${created.repo_connection_uuid})`);
+  console.log(`✓ Repo connection upserted (${created.repo_connection_uuid})`);
   return created.repo_connection_uuid;
+}
+
+async function ensureRepoConnection() {
+  try {
+    const connections = await cf(`/accounts/${ACCOUNT_ID}/builds/repos/connections`);
+    const existing = connections.find(
+      (c) =>
+        c.provider_type === "github" &&
+        String(c.repo_id) === String(CONFIG.github.repoId) &&
+        c.provider_account_name?.toLowerCase() === CONFIG.github.owner.toLowerCase(),
+    );
+    if (existing) {
+      console.log(
+        `✓ Repo connection exists (${existing.repo_connection_uuid}, repo=${existing.repo_name})`,
+      );
+      if (existing.repo_name !== CONFIG.github.repo) {
+        return upsertRepoConnection();
+      }
+      return existing.repo_connection_uuid;
+    }
+  } catch {
+    console.log("ℹ Repo connection list unavailable — upserting");
+  }
+  return upsertRepoConnection();
 }
 
 async function getBuildTokenUuid() {
@@ -99,11 +76,16 @@ async function getBuildTokenUuid() {
   if (!tokens?.length) {
     throw new Error(
       "No build token found. Create one: Worker roxabi-live → Settings → Builds → API token. " +
-        "Use a token with Workers Scripts + D1 + Routes edit.",
+        "Scopes: Workers Scripts Edit, D1 Edit, Workers Routes Edit.",
     );
   }
+  const preferred = CONFIG.buildTokenName;
   const token =
-    tokens.find((t) => t.build_token_name?.toLowerCase().includes("live")) ?? tokens[0];
+    (preferred ? tokens.find((t) => t.build_token_name === preferred) : null) ??
+    tokens.find((t) => t.build_token_name === "roxabi-live-build") ??
+    tokens.find((t) => /roxabi-live/i.test(t.build_token_name ?? "")) ??
+    tokens.find((t) => /live/i.test(t.build_token_name ?? "")) ??
+    tokens[0];
   console.log(`✓ Build token: ${token.build_token_name} (${token.build_token_uuid})`);
   return token.build_token_uuid;
 }
@@ -119,15 +101,23 @@ function triggerBody(repoConnectionUuid, buildTokenUuid, workerTag, spec) {
     root_directory: spec.rootDirectory,
     branch_includes: spec.branchIncludes,
     branch_excludes: spec.branchExcludes ?? [],
-    path_includes: CONFIG.pathIncludes,
-    path_excludes: CONFIG.pathExcludes ?? [],
+    path_includes: spec.pathIncludes ?? [],
+    path_excludes: spec.pathExcludes ?? [],
     build_caching_enabled: true,
   };
 }
 
+function branchesMatch(trigger, spec) {
+  const want = [...(spec.branchIncludes ?? [])].sort().join(",");
+  const have = [...(trigger.branch_includes ?? [])].sort().join(",");
+  return want === have;
+}
+
 async function upsertTrigger(workerTag, repoConnectionUuid, buildTokenUuid, spec) {
   const triggers = await cf(`/accounts/${ACCOUNT_ID}/builds/workers/${workerTag}/triggers`);
-  const existing = triggers.find((t) => t.trigger_name === spec.name);
+  const existing =
+    triggers.find((t) => t.trigger_name === spec.name) ??
+    triggers.find((t) => branchesMatch(t, spec));
   const body = triggerBody(repoConnectionUuid, buildTokenUuid, workerTag, spec);
 
   if (existing) {
@@ -135,7 +125,8 @@ async function upsertTrigger(workerTag, repoConnectionUuid, buildTokenUuid, spec
       method: "PATCH",
       body: JSON.stringify(body),
     });
-    console.log(`✓ Updated trigger "${spec.name}" (${existing.trigger_uuid})`);
+    const renamed = existing.trigger_name !== spec.name ? ` (was "${existing.trigger_name}")` : "";
+    console.log(`✓ Updated trigger "${spec.name}" (${existing.trigger_uuid})${renamed}`);
     return existing.trigger_uuid;
   }
 
@@ -148,25 +139,9 @@ async function upsertTrigger(workerTag, repoConnectionUuid, buildTokenUuid, spec
 }
 
 async function main() {
-  if (!TOKEN && !(CF_EMAIL && CF_API_KEY)) {
-    console.error(
-      "Set CLOUDFLARE_API_TOKEN or CLOUDFLARE_EMAIL + CLOUDFLARE_API_KEY (global API key)",
-    );
-    process.exit(1);
-  }
+  assertCfCredentials();
 
-  let repoConnectionUuid;
-  try {
-    repoConnectionUuid = await ensureRepoConnection();
-  } catch (err) {
-    console.error(err.message);
-    console.error(
-      "\nIf repo connection failed: authorize Cloudflare GitHub App in dashboard first,\n" +
-        "then re-run this script.",
-    );
-    process.exit(1);
-  }
-
+  const repoConnectionUuid = await ensureRepoConnection();
   const buildTokenUuid = await getBuildTokenUuid();
 
   for (const { workerName, trigger } of CONFIG.workers) {
@@ -175,15 +150,14 @@ async function main() {
     await upsertTrigger(workerTag, repoConnectionUuid, buildTokenUuid, trigger);
   }
 
-  console.log("\n--- Workers Builds ready ---");
-  console.log("Push to main   (worker/, frontend/, wrangler.toml) → production deploy");
-  console.log("Push to staging (same paths)                    → staging deploy");
-  console.log(
-    "\nBuild token must include D1 Edit for migrations. Runtime secrets → Worker Settings (not CI).",
-  );
+  console.log("\n--- Workers Builds ready (API only) ---");
+  console.log("Push to staging → roxabi-live-staging (api)");
+  console.log("Push to main    → roxabi-live (api)");
+  console.log("Frontends (app + marketing) = Cloudflare Pages — bun run setup:cloudflare-deploy");
+  console.log("\nCI (GitHub Actions) = quality gates only. Deploy = CF Pages + Workers Builds.");
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error(err.message ?? err);
   process.exit(1);
 });

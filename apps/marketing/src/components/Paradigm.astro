@@ -1,0 +1,28 @@
+---
+import type { Translations } from "../i18n/index";
+
+interface Props {
+  t: Translations;
+}
+const { t } = Astro.props;
+---
+
+<section class="section-paradigm" aria-labelledby="paradigm-h2">
+  <div class="paradigm-band">
+    <p class="paradigm-kicker">{t.paradigm.kicker}</p>
+    <p class="paradigm-headline" id="paradigm-h2">{t.paradigm.headline}</p>
+    <p class="paradigm-body">{t.paradigm.body}</p>
+    <div class="paradigm-vs" aria-label={`${t.paradigm.oldLabel} ${t.paradigm.arrow} ${t.paradigm.newLabel}`}>
+      <div class="paradigm-col old">
+        <p class="paradigm-col-label">{t.paradigm.oldLabel}</p>
+        <p class="paradigm-col-text">{t.paradigm.oldText}</p>
+      </div>
+      <span class="paradigm-arrow" aria-hidden="true">{t.paradigm.arrow}</span>
+      <div class="paradigm-col new">
+        <p class="paradigm-col-label">{t.paradigm.newLabel}</p>
+        <p class="paradigm-col-text">{t.paradigm.newText}</p>
+      </div>
+    </div>
+    <p class="paradigm-close">{t.paradigm.close}</p>
+  </div>
+</section>

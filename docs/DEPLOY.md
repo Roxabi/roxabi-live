@@ -347,34 +347,45 @@ npx wrangler secret list --env staging --config ../wrangler.toml
 
 ---
 
-## 6. Workers Builds (auto-deploy)
+## 6. Cloudflare git-connected deploy (enishu model)
 
-Deploy is **not** in GitHub Actions. Cloudflare **Workers Builds** watches the repo and
-runs `scripts/deploy-*.sh` on push (same model as `roxabi-links`).
+Deploy is **not** in GitHub Actions. Cloudflare pulls `Roxabi/roxabi-live` and builds on push.
 
-| Branch | Worker | URL |
+| URL | App | Mechanism |
 |---|---|---|
-| `main` | `roxabi-live` | `live.roxabi.dev` |
-| `staging` | `roxabi-live-staging` | `*.workers.dev` |
+| `api.live.roxabi.dev` / `api-staging…` | `apps/api` | **Workers Builds** |
+| `app.live.roxabi.dev` / `app-staging…` | `apps/app` | **Pages** + thin proxy Worker (`/api*`, `/login*`, …) |
+| `live.roxabi.dev` / `marketing-staging…` | `apps/marketing` | **Pages** |
 
-Path watch (only rebuild when these change): `worker/*`, `frontend/*`, `wrangler.toml`,
-`scripts/deploy-*.sh`. Config SSOT: `infra/workers-builds.json`.
+| Branch | Target | URL |
+|---|---|---|
+| `main` | API Worker | `api.live.roxabi.dev` |
+| `main` | Pages | `app.live.roxabi.dev`, `live.roxabi.dev` |
+| `staging` | API Worker | `api-staging.live.roxabi.dev` |
+| `staging` | Pages | `app-staging.live.roxabi.dev`, `marketing-staging.live.roxabi.dev` |
+
+SSOT: `infra/workers-builds.json` (API), `infra/pages-*.json` (frontends).
 
 ### One-time setup
 
-1. Authorize the Cloudflare GitHub App: Workers & Pages → **roxabi-live** → Settings → Builds → Connect GitHub (grant access to `Roxabi/roxabi-live`; re-authorize if the repo becomes private).
-2. Create a **build API token** on the Worker (Settings → Builds → API token) with Workers Scripts Edit, **D1 Edit**, Workers Routes Edit.
-3. Run the setup script (user-scoped CF token with **Workers Builds Configuration Edit**):
+1. Authorize the Cloudflare GitHub App for Workers & Pages (grant access to `Roxabi/roxabi-live`).
+2. Create **Pages projects** (git-connected): `roxabi-live-app`, `roxabi-live-app-staging`, `roxabi-live-marketing`, `roxabi-live-marketing-staging`.
+3. Create a **build API token** on the API worker (Settings → Builds → API token) with Workers Scripts Edit, **D1 Edit**, Workers Routes Edit.
+4. Run setup (user-scoped CF token with **Workers Builds Configuration Edit** + **Pages Configuration Edit**):
 
 ```bash
-# API token (preferred)
-export CLOUDFLARE_API_TOKEN=<user token>
-npm run setup:workers-builds
+source scripts/bw-cloudflare-live-build-env.sh
+export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_BUILDS_ADMIN_TOKEN"
+bun run setup:cloudflare-deploy   # API triggers + Pages build commands
+bun run migrate:pages-model       # one-time: remove legacy Workers Builds on app/marketing
+bun run verify:cloudflare
+```
 
-# Or global API key from Bitwarden Secure Note:
-#   {CF_email: "…", CLOUDFLARE_API_KEY:"cfk_…"}
-source scripts/bw-cloudflare-global-env.sh
-npm run setup:workers-builds
+After `apps/app/worker.ts` changes, deploy the edge proxy manually:
+
+```bash
+bun --filter @roxabi-live/app deploy:worker           # prod routes
+bun --filter @roxabi-live/app deploy:worker:staging # staging routes
 ```
 
 GitHub Actions runs **quality gates only** (lint, test, license) — no deploy job.

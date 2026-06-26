@@ -1,0 +1,85 @@
+name = "roxabi-live"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+# NO nodejs_compat — Web Crypto is available natively in the Workers runtime.
+
+# ── API custom domain (monorepo cutover) ─────────────────────────────────────
+# Post-cutover topology: apex live.roxabi.dev = marketing (CF Pages),
+# app.live.roxabi.dev = SPA (apps/app worker, run_worker_first), and this worker
+# serves api.live.roxabi.dev. The browser never hits api.* directly — the app
+# worker proxies /api,/login,/oauth,/auth,/logout,/install,/admin,/health here via
+# a service binding (same-origin from the browser). api.* is public ONLY for the
+# GitHub App webhook (server→server) + cron + admin.
+# ⚠️ `routes` is INHERITABLE — [env.staging] sets `routes = []` to break the chain.
+# ⚠️ SECURITY GATE: CF Access (Bypass on /webhook/*) MUST front api.live.roxabi.dev
+# before this route goes live (see docs/s9-cutover.md → human cutover steps).
+routes = [
+  { pattern = "api.live.roxabi.dev", custom_domain = true },
+]
+
+[vars]
+APP_RELEASE = "0.21.3"
+ZK_ACCOUNT_KEY = "1"
+# structure-only MUST be "1" whenever ZK_ACCOUNT_KEY is "1" — otherwise the daily
+# cron re-fetches and stores plaintext issue titles in D1, breaking the ZK promise.
+ZK_STRUCTURE_ONLY = "1"
+
+# Legacy auth-shell assets (sign-in/dashboard HTML) still served by ASSETS for
+# direct hits; the SPA (apps/app) is the real cockpit. Cleanup: drop [assets] +
+# the dead /dashboard,/sign-in page routes once the cutover is verified live.
+[assets]
+directory = "../../frontend"
+binding   = "ASSETS"
+run_worker_first = [ "/dashboard", "/dashboard/" ]
+
+[triggers]
+crons = []
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[[d1_databases]]
+binding        = "DB"
+database_name  = "roxabi-live-production"
+database_id    = "c3951107-146c-4a7d-a8a5-86d09e4570e9"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding     = "LOGS"
+bucket_name = "roxabi-live-logs"
+
+# ── Staging environment ──────────────────────────────────────────────────────
+
+[env.staging]
+name = "roxabi-live-staging"
+workers_dev = true
+# Public staging api domain — ONLY needed so GitHub can POST webhooks server→server
+# (the webhook can't go through the app proxy). Browser/OAuth traffic still reaches
+# this worker via the service binding from roxabi-live-app-staging.
+routes = [
+  { pattern = "api-staging.live.roxabi.dev", custom_domain = true },
+]
+
+[env.staging.vars]
+APP_RELEASE = "0.21.3"
+GITHUB_APP_SLUG = "roxabi-live-staging"
+ZK_ACCOUNT_KEY = "1"
+ZK_STRUCTURE_ONLY = "1"
+
+[[env.staging.d1_databases]]
+binding        = "DB"
+database_name  = "roxabi-live-staging"
+database_id    = "dd96d8cd-db6b-49ed-8218-53c88773aff4"
+migrations_dir = "migrations"
+
+[env.staging.triggers]
+crons = []
+
+[env.staging.observability]
+enabled = true
+head_sampling_rate = 1
+
+[[env.staging.r2_buckets]]
+binding     = "LOGS"
+bucket_name = "roxabi-live-logs-staging"

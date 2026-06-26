@@ -1,0 +1,6 @@
+{
+  // CF Pages — git-connected (SSOT: infra/pages-marketing.json + pages-marketing-staging.json).
+  "name": "roxabi-live-marketing",
+  "compatibility_date": "2025-06-01",
+  "pages_build_output_dir": "./dist"
+}

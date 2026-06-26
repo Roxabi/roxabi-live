@@ -2,18 +2,18 @@
 schema_version: "1.0"
 
 runtime: node
-package_manager: npm
+package_manager: bun  # monorepo: bun workspaces (apps/*, packages/*)
 
 backend:
   framework: hono
-  path: worker/src
+  path: apps/api/src  # moved from worker/ at the monorepo cutover
 
 frontend:
-  framework: none  # static HTML/JS/CSS; served via CF Worker ASSETS binding
-  path: frontend
+  framework: react  # apps/app — React 19 + Vite + TanStack + Tailwind v4 + shadcn (SPA)
+  path: apps/app/src
 
 build:
-  formatter: biome  # Biome (lint+format) over worker/src + frontend; config in biome.json (repo root)
+  formatter: biome  # Biome (lint+format) over apps/api/src + apps/app/src; config in biome.json (repo root)
 
 testing:
   unit: vitest
@@ -23,7 +23,7 @@ lsp:
   server: typescript-language-server
 
 deploy:
-  platform: cloudflare  # Workers Builds (git-connected); push staging/main → CF auto deploy. SSOT: infra/workers-builds.json
+  platform: cloudflare  # Pages (app+marketing) + Workers Builds (API); SSOT infra/pages-*.json + infra/workers-builds.json. GHA = CI only.
 
 docs:
   framework: none
@@ -31,12 +31,12 @@ docs:
   format: md
 
 commands:
-  dev: cd worker && npm run dev
-  test: cd worker && npm test
-  typecheck: cd worker && npm run typecheck
-  install: cd worker && npm ci
-  lint: cd worker && npm run lint  # biome check src ../frontend
-  format: cd worker && npm run format  # biome check --write src ../frontend
+  dev: bun --filter @roxabi-live/api dev
+  test: bun --filter @roxabi-live/api test
+  typecheck: bun --filter @roxabi-live/api typecheck
+  install: bun install
+  lint: bunx biome check apps/api/src apps/app/src
+  format: bunx biome check --write apps/api/src apps/app/src
 
 artifacts:
   analyses: artifacts/analyses
@@ -52,7 +52,7 @@ quality_gates:
     # CI-authoritative config in tools/qg.conf (regenerated from this block, #180).
     # Scans worker/src/**/*.ts via sloc-npm; legacy frozen Python (src/) is out of scope.
     # Files above the cap are listed in tools/file_exemptions.txt with local SLOC ceilings.
-    globs: ["worker/src/**/*.ts"]
+    globs: ["apps/api/src/**/*.ts"]
     exemptions_file: tools/file_exemptions.txt
 
   folder_size:
@@ -60,7 +60,7 @@ quality_gates:
     max_files: 12
     # Node runtime: canonical check_folder_size.sh counts *.py only (dev-core N1).
     # worker/src subdirs are all ≤9 non-test .ts files — no gate needed until a TS folder counter exists.
-    globs: ["worker/src/**"]
+    globs: ["apps/api/src/**"]
     exemptions_file: tools/folder_exemptions.txt
 
   duplicate_test_basenames:

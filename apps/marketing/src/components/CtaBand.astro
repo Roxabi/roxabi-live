@@ -1,0 +1,33 @@
+---
+import type { Translations } from "../i18n/index";
+
+interface Props {
+  t: Translations;
+}
+const { t } = Astro.props;
+---
+
+<section class="section-cta" id="cta" aria-labelledby="cta-h2">
+  <div class="cta-band">
+    <div class="cta-band-inner">
+      <p class="cta-kicker">{t.cta.kicker}</p>
+      <h2 class="cta-h2" id="cta-h2">
+        {t.cta.h2Part1}<br />
+        <span class="accent">{t.cta.h2Accent}</span>
+      </h2>
+      <p class="cta-body">{t.cta.body}</p>
+      <div class="cta-actions">
+        <a href="https://app.live.roxabi.dev/" data-app-link class="btn btn-primary">
+          {t.cta.ctaPrimary}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+        <a href="https://github.com/apps/roxabi-live" class="btn btn-ghost" target="_blank" rel="noopener noreferrer">
+          {t.cta.ctaGhost}
+        </a>
+      </div>
+      <p class="cta-reassurance">{t.cta.reassurance}</p>
+    </div>
+  </div>
+</section>

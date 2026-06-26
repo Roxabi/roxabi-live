@@ -6,7 +6,8 @@
 #
 # Usage:
 #   source scripts/bw-cloudflare-live-build-env.sh
-#   bash scripts/deploy-production.sh
+#   export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_BUILDS_ADMIN_TOKEN" && bun run setup:workers-builds
+#   bash scripts/deploy-production.sh   # break-glass (uses CLOUDFLARE_API_TOKEN deploy token)
 set -euo pipefail
 
 BW_ITEM="${BW_CF_LIVE_BUILD_ITEM:-cloudflare/roxabi-live-build-token}"

@@ -1,34 +1,37 @@
 {
+  "_note": "SSOT — API only (enishu model). Frontends = CF Pages (infra/pages-*.json). Build token: roxabi-live-build → user API token roxabi-live-workers-build. Apply: bun run setup:cloudflare-deploy",
   "accountId": "b5e90be971920ce406f7b679c4f1cd33",
+  "buildTokenName": "roxabi-live-build",
+  "buildCloudflareTokenId": "9dfd88902b221961e377ab2a0eb4b1d4",
   "github": {
     "owner": "Roxabi",
     "ownerId": 130185740,
     "repo": "roxabi-live",
     "repoId": 1175843511
   },
-  "pathIncludes": ["worker/*", "frontend/*", "wrangler.toml", "scripts/deploy-*.sh"],
-  "pathExcludes": [],
   "workers": [
     {
       "workerName": "roxabi-live",
       "trigger": {
-        "name": "Deploy production",
+        "name": "Deploy production (api)",
         "rootDirectory": "/",
-        "buildCommand": "cd worker && npm ci",
+        "buildCommand": "bun install --frozen-lockfile",
         "deployCommand": "bash scripts/deploy-production.sh",
         "branchIncludes": ["main"],
-        "branchExcludes": []
+        "branchExcludes": [],
+        "pathIncludes": ["apps/api/*", "packages/*", "scripts/deploy-production.sh", "bun.lock"]
       }
     },
     {
       "workerName": "roxabi-live-staging",
       "trigger": {
-        "name": "Deploy staging",
+        "name": "Deploy staging (api)",
         "rootDirectory": "/",
-        "buildCommand": "cd worker && npm ci",
+        "buildCommand": "bun install --frozen-lockfile",
         "deployCommand": "bash scripts/deploy-staging.sh",
         "branchIncludes": ["staging"],
-        "branchExcludes": []
+        "branchExcludes": [],
+        "pathIncludes": ["apps/api/*", "packages/*", "scripts/deploy-staging.sh", "bun.lock"]
       }
     }
   ]

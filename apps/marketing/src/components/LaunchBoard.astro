@@ -1,0 +1,85 @@
+---
+import type { Translations } from "../i18n/index";
+import { BOARD } from "../i18n/index";
+
+interface Props {
+  t: Translations;
+}
+const { t } = Astro.props;
+---
+
+<div class="launch-board" role="img" aria-label={t.hero.boardTitle}>
+  <!-- chrome bar -->
+  <div class="board-chrome">
+    <span class="chrome-dots" aria-hidden="true">
+      <span class="chrome-dot"></span>
+      <span class="chrome-dot"></span>
+      <span class="chrome-dot"></span>
+    </span>
+    <span class="chrome-title">{t.hero.boardTitle}</span>
+    <span class="chrome-status-bar" aria-hidden="true">
+      <span class="status-dot"></span>
+      <span class="chrome-live-text">{t.hero.boardLive}</span>
+    </span>
+  </div>
+
+  <!-- columns -->
+  <div class="board-columns">
+    {BOARD.map((col) => (
+      <div class="board-col">
+        <div class="col-header">
+          <span class="col-name">{col.repo}</span>
+          <span class="col-count">{col.count}</span>
+        </div>
+
+        {col.issues.map((issue) => (
+          <div class={`issue-card is-${issue.status}`}>
+            <div class="issue-meta">
+              <span class="issue-num">{issue.num}</span>
+              <span class={`status-badge status-${issue.status}`}>{issue.status}</span>
+            </div>
+            <div class="issue-title">{issue.title}</div>
+            {issue.status === "blocked" && "blockedBy" in issue && (
+              <div class="issue-blocker">blocked-by {issue.blockedBy}</div>
+            )}
+            {issue.status === "running" && "agent" in issue && (
+              <div class="issue-agent">
+                <span class="agent-avatar">{issue.agent}</span>
+                <span class="agent-label">{issue.agentLabel}</span>
+              </div>
+            )}
+            {issue.status === "running" && (
+              <div class="card-running-bar" aria-hidden="true"></div>
+            )}
+          </div>
+        ))}
+      </div>
+    ))}
+  </div>
+
+  <!-- footer -->
+  <div class="board-footer">
+    <div class="board-legend" aria-hidden="true">
+      <span class="legend-item">
+        <span class="legend-dot" style="background:var(--ready)"></span>
+        {t.hero.legendReady}
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot" style="background:var(--running)"></span>
+        {t.hero.legendRunning}
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot" style="background:var(--blocked)"></span>
+        {t.hero.legendBlocked}
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot" style="background:var(--done)"></span>
+        {t.hero.legendDone}
+      </span>
+    </div>
+    <span class="board-launch-count">{t.hero.launchCount}</span>
+    <span class="board-ticker" aria-hidden="true">
+      {t.hero.ticker}<span class="ticker-cursor">▮</span>
+    </span>
+  </div>
+</div>

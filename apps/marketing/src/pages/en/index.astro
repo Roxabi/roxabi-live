@@ -1,0 +1,27 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { en } from "../../i18n/index";
+import SiteHeader from "../../components/SiteHeader.astro";
+import Hero from "../../components/Hero.astro";
+import Problem from "../../components/Problem.astro";
+import Method from "../../components/Method.astro";
+import Paradigm from "../../components/Paradigm.astro";
+import GitHubNative from "../../components/GitHubNative.astro";
+import CtaBand from "../../components/CtaBand.astro";
+import SiteFooter from "../../components/SiteFooter.astro";
+
+const t = en;
+---
+
+<Layout lang="en" title={t.siteTitle} description={t.siteDescription}>
+  <SiteHeader t={t} />
+  <main>
+    <Hero t={t} />
+    <Problem t={t} />
+    <Method t={t} />
+    <Paradigm t={t} />
+    <GitHubNative t={t} />
+    <CtaBand t={t} />
+  </main>
+  <SiteFooter t={t} />
+</Layout>
