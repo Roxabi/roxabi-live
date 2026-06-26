@@ -1,5 +1,5 @@
 {
-  "_note": "UNAPPLIED — CF Workers Builds API returns 404 until the Cloudflare GitHub App is authorized in the dashboard (Workers & Pages → Builds → Connect GitHub). Until then, staging auto-deploy uses .github/workflows/deploy-staging.yml (GHA → wrangler).",
+  "_note": "SSOT for Cloudflare Workers Builds (enishu model). Apply: source scripts/bw-cloudflare-live-build-env.sh && CLOUDFLARE_API_TOKEN=$CLOUDFLARE_BUILDS_ADMIN_TOKEN bun run setup:workers-builds. GHA = CI only, no deploy.",
   "accountId": "b5e90be971920ce406f7b679c4f1cd33",
   "github": {
     "owner": "Roxabi",
