@@ -9,13 +9,13 @@ import { useT } from "@/i18n";
 import { GithubLogo } from "@phosphor-icons/react";
 import { useState } from "react";
 
-const DASHBOARD_PATH = "/dashboard";
+const COCKPIT_PATH = "/";
 const REMEMBER_SESSION_KEY = "roxabi:remember_session";
 
 function safeRedirect(raw: string | null): string {
   const c = raw?.trim();
   if (c && /^\/(?![/\\])/.test(c) && !/[\r\n\0]/.test(c) && !/["'<>]/.test(c)) return c;
-  return DASHBOARD_PATH;
+  return COCKPIT_PATH;
 }
 
 function loginUrl(remember: boolean): string {

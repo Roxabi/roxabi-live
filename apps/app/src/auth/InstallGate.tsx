@@ -15,7 +15,7 @@ import type { InstallOption, MePayload } from "@roxabi-live/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const DEFAULT_FALLBACK = "/login?intent=install&redirect=%2Fdashboard";
+const DEFAULT_FALLBACK = "/login?intent=install&redirect=%2F";
 
 function optionCopy(
   opt: InstallOption,

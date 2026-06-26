@@ -23,7 +23,7 @@ lsp:
   server: typescript-language-server
 
 deploy:
-  platform: cloudflare  # Workers Builds (git-connected); push staging/main → CF auto deploy. SSOT: infra/workers-builds.json
+  platform: cloudflare  # Staging: GitHub Actions → wrangler (.github/workflows/deploy-staging.yml). Prod: manual wrangler for now.
 
 docs:
   framework: none

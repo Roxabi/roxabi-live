@@ -30,7 +30,7 @@ const { t } = Astro.props;
 
     <div class="header-actions">
       <a href={t.langSwitchHref} class="btn-header-login">{t.langSwitchLabel}</a>
-      <a href="https://app.live.roxabi.dev" data-app-link class="btn-header-cta">{t.header.loginLabel}</a>
+      <a href="https://app.live.roxabi.dev/" data-app-link class="btn-header-cta">{t.header.loginLabel}</a>
     </div>
   </div>
 </header>
@@ -48,7 +48,7 @@ const { t } = Astro.props;
         ? "https://app-staging.live.roxabi.dev"
         : "https://app.live.roxabi.dev";
       var links = document.querySelectorAll("[data-app-link]");
-      for (var i = 0; i < links.length; i++) links[i].setAttribute("href", app);
+      for (var i = 0; i < links.length; i++) links[i].setAttribute("href", app + "/");
     }
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", wire);
