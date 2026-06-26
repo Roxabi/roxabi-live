@@ -1,0 +1,65 @@
+name: Deploy staging frontend
+
+# Auto-deploy the two staging frontend Workers on a push to `staging`.
+#
+# Why this lives in GitHub Actions and not CF Workers Builds: the repo's
+# infra/workers-builds.json is an UNAPPLIED spec — CF Workers Builds was never
+# actually connected (no Cloudflare GitHub App on the repo, zero GitHub
+# Deployments, every worker deploys via `wrangler` by hand). GitHub Actions is the
+# repo's real automation, so the staging auto-deploy belongs here. CI (ci.yml)
+# stays quality-gates-only; this is the deploy half, scoped to the two staging
+# preview Workers. The api worker + prod targets remain manual / out of scope.
+#
+#   apps/app       → roxabi-live-app-staging       → app-staging.live.roxabi.dev
+#   apps/marketing → roxabi-live-marketing-staging → marketing-staging.live.roxabi.dev
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - "apps/app/**"
+      - "apps/marketing/**"
+      - "packages/**"
+      - "bun.lock"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  # Account IDs are not secret; mirror the hardcoded default in scripts/deploy-staging.sh.
+  CLOUDFLARE_ACCOUNT_ID: b5e90be971920ce406f7b679c4f1cd33
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install workspace deps
+        run: bun install --frozen-lockfile
+      - name: Build (app)
+        run: bun --filter @roxabi-live/app build
+      - name: Deploy roxabi-live-app-staging
+        run: cd apps/app && bunx wrangler deploy --config wrangler.staging.jsonc
+
+  marketing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install workspace deps
+        run: bun install --frozen-lockfile
+      - name: Build (marketing)
+        run: bun --filter @roxabi-live/marketing build
+      - name: Deploy roxabi-live-marketing-staging
+        run: cd apps/marketing && bunx wrangler deploy --config wrangler.staging.jsonc
