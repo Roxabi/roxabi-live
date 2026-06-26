@@ -10,6 +10,7 @@ const html = (props: {
   needsGithubLink: boolean;
   migrationIncomplete: boolean;
   zkActive?: boolean;
+  allowGithubLink?: boolean;
   githubLogin?: string;
 }) =>
   renderToStaticMarkup(
@@ -49,5 +50,19 @@ describe("ZkNotices", () => {
     expect(out).toContain('data-testid="zk-info-notice"');
     expect(out).not.toContain('data-testid="zk-github-link-notice"');
     expect(out).not.toContain("Lier GitHub");
+  });
+
+  it("re-surfaces the GitHub-link prompt for active users once the silent bounce is exhausted", () => {
+    const out = html({
+      needsGithubLink: true,
+      migrationIncomplete: false,
+      zkActive: true,
+      allowGithubLink: true,
+    });
+    // Silent handoff failed to yield a token → fall back to the manual prompt
+    // (alongside the info banner) so the user is never stuck without a path.
+    expect(out).toContain('data-testid="zk-info-notice"');
+    expect(out).toContain('data-testid="zk-github-link-notice"');
+    expect(out).toContain("Lier GitHub");
   });
 });

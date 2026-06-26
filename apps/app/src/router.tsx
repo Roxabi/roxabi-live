@@ -6,6 +6,11 @@ import { BoardView } from "@/components/BoardView";
 import { SyncProgressBanner } from "@/components/SyncProgressBanner";
 import { useSyncProgressMonitor } from "@/hooks/useSyncProgressMonitor";
 import { useVersionPoll } from "@/hooks/useVersionPoll";
+import {
+  getGithubUserToken,
+  hasAttemptedHandoffRefresh,
+  refreshGithubTokenViaHandoff,
+} from "@/zk/github";
 import { ZkGate } from "@/zk/ZkGate";
 import { ZkNotices } from "@/zk/ZkNotices";
 import { ZkSessionProvider } from "@/zk/ZkSessionProvider";
@@ -17,7 +22,7 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -51,6 +56,21 @@ function Dashboard() {
   // ZK is "active" once the feature flag is on and the user has enrolled a
   // passphrase (zk_key_backups row) — gates the encryption-info banner.
   const zkActive = me.user.zk_account_key_enabled && me.user.zk_enrolled;
+  const login = me.user.github_login;
+
+  // Self-heal stale sessions: an already-logged-in ZK user whose seal pass found
+  // unsealed titles (needsGithubLink) but has no GitHub token in sessionStorage
+  // gets a silent OAuth-handoff bounce to fetch one — so recent issue titles seal
+  // without a deco/reco. Guarded to fire at most once per session (inside the
+  // helper); no-ops once a token is present.
+  useEffect(() => {
+    if (zkActive && needsGithubLink) refreshGithubTokenViaHandoff(login);
+  }, [zkActive, needsGithubLink, login]);
+
+  // Fallback affordance: only surface the manual "Link GitHub" prompt to an
+  // active user once the silent bounce was exhausted (attempted + still no
+  // token) — e.g. the server couldn't mint a handoff — so they're never stuck.
+  const githubLinkExhausted = hasAttemptedHandoffRefresh(login) && !getGithubUserToken();
 
   return (
     <div className="space-y-3">
@@ -58,7 +78,8 @@ function Dashboard() {
         needsGithubLink={needsGithubLink}
         migrationIncomplete={zkMigrationIncomplete}
         zkActive={zkActive}
-        githubLogin={me.user.github_login}
+        allowGithubLink={githubLinkExhausted}
+        githubLogin={login}
       />
       <SyncProgressBanner status={syncStatus} />
       {isError ? (

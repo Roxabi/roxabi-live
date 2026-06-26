@@ -21,6 +21,8 @@ import {
   consumeZkReauthFromUrl,
   getGithubUserToken,
   getZkReauthProof,
+  hasAttemptedHandoffRefresh,
+  refreshGithubTokenViaHandoff,
   setGithubUserToken,
   zkLoginUrl,
   zkReauthLoginUrl,
@@ -94,6 +96,57 @@ describe("github token + reauth", () => {
     expect(await consumeZkHandoffFromUrl()).toBe(true);
     expect(getGithubUserToken()).toBe("ghu_handoff");
     expect(window.location.search).toBe("");
+  });
+});
+
+describe("silent handoff refresh (self-heal stale sessions)", () => {
+  // jsdom makes location.assign non-configurable, so vi.spyOn can't wrap it.
+  // Stub the whole window.location (the window property IS configurable) with a
+  // plain object carrying the path pieces the helper reads + a mock assign().
+  const realLocation = window.location;
+  let assignSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    assignSpy = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: { pathname: "/", search: "?foo=1", hash: "", assign: assignSpy },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: realLocation,
+    });
+  });
+
+  it("bounces through the OAuth handoff once when no token is present", () => {
+    expect(hasAttemptedHandoffRefresh("octocat")).toBe(false);
+
+    expect(refreshGithubTokenViaHandoff("octocat")).toBe(true);
+    expect(hasAttemptedHandoffRefresh("octocat")).toBe(true);
+    expect(assignSpy).toHaveBeenCalledTimes(1);
+    expect(assignSpy).toHaveBeenCalledWith(zkLoginUrl("/?foo=1"));
+
+    // Loop guard: a bounce that returned no token must not re-trigger.
+    expect(refreshGithubTokenViaHandoff("octocat")).toBe(false);
+    expect(assignSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("never bounces when a github token already exists", () => {
+    setGithubUserToken("ghu_present");
+    expect(refreshGithubTokenViaHandoff("octocat")).toBe(false);
+    expect(assignSpy).not.toHaveBeenCalled();
+    expect(hasAttemptedHandoffRefresh("octocat")).toBe(false);
+  });
+
+  it("scopes the attempt guard per github login", () => {
+    expect(refreshGithubTokenViaHandoff("alice")).toBe(true);
+    expect(hasAttemptedHandoffRefresh("alice")).toBe(true);
+    expect(hasAttemptedHandoffRefresh("bob")).toBe(false);
   });
 });
 
