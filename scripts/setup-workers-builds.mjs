@@ -79,9 +79,12 @@ async function getBuildTokenUuid() {
         "Scopes: Workers Scripts Edit, D1 Edit, Workers Routes Edit.",
     );
   }
+  const preferred = CONFIG.buildTokenName;
   const token =
+    (preferred ? tokens.find((t) => t.build_token_name === preferred) : null) ??
+    tokens.find((t) => t.build_token_name === "roxabi-live-build") ??
     tokens.find((t) => /roxabi-live/i.test(t.build_token_name ?? "")) ??
-    tokens.find((t) => /live|links/i.test(t.build_token_name ?? "")) ??
+    tokens.find((t) => /live/i.test(t.build_token_name ?? "")) ??
     tokens[0];
   console.log(`✓ Build token: ${token.build_token_name} (${token.build_token_uuid})`);
   return token.build_token_uuid;

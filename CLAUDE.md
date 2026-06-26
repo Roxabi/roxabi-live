@@ -172,6 +172,8 @@ bun run verify:cloudflare
 
 After `worker.ts` changes: `bun --filter @roxabi-live/app deploy:worker` (prod) / `deploy:worker:staging`.
 
+Workers Builds deploy token: `roxabi-live-build` (user API token `roxabi-live-workers-build`). Register: `bash scripts/run-live-build-token-setup.sh`.
+
 Break-glass API: `source scripts/bw-cloudflare-live-build-env.sh` → `bash scripts/deploy-{staging,production}.sh`
 
 Secrets (set once on the api worker; `CLOUDFLARE_ACCOUNT_ID` required — token sees 2 accounts):

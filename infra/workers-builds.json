@@ -1,6 +1,8 @@
 {
-  "_note": "SSOT — API only (enishu model). Frontends = CF Pages (infra/pages-*.json). Apply: source scripts/bw-cloudflare-live-build-env.sh && CLOUDFLARE_API_TOKEN=$CLOUDFLARE_BUILDS_ADMIN_TOKEN bun run setup:workers-builds",
+  "_note": "SSOT — API only (enishu model). Frontends = CF Pages (infra/pages-*.json). Build token: roxabi-live-build → user API token roxabi-live-workers-build. Apply: bun run setup:cloudflare-deploy",
   "accountId": "b5e90be971920ce406f7b679c4f1cd33",
+  "buildTokenName": "roxabi-live-build",
+  "buildCloudflareTokenId": "9dfd88902b221961e377ab2a0eb4b1d4",
   "github": {
     "owner": "Roxabi",
     "ownerId": 130185740,

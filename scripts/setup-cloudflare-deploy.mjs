@@ -5,6 +5,7 @@
  * Usage (loads Bitwarden creds in subprocesses):
  *   bun run setup:cloudflare-deploy
  */
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,6 +18,16 @@ const { global: GLOBAL_ENV, builds: BUILDS_ENV } = bwEnvScripts(ROOT);
 async function main() {
   console.log("=== Pages projects (create if missing) ===\n");
   runWithBwEnv(ROOT, GLOBAL_ENV, "scripts/setup-pages-projects.mjs");
+
+  console.log("\n=== Workers Builds token (roxabi-live-build) ===\n");
+  const tokenSetup = spawnSync("bash", [join(ROOT, "scripts/run-live-build-token-setup.sh")], {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (tokenSetup.status !== 0) {
+    throw new Error("run-live-build-token-setup.sh failed");
+  }
 
   console.log("\n=== Workers Builds (API) ===\n");
   runWithBwEnv(ROOT, BUILDS_ENV, "scripts/setup-workers-builds.mjs");
