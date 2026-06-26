@@ -93,6 +93,54 @@ export function zkLoginUrl(redirect = "/"): string {
   return `/login?zk=1&redirect=${dest}`;
 }
 
+// Per-login so a shared browser doesn't gate one account on another's attempt
+// (matches the githubLogin-scoping of the ZK device/remember keys). sessionStorage
+// because the token it guards also lives there — both die with the tab/session.
+const HANDOFF_ATTEMPT_PREFIX = "roxabi:zk-handoff-attempted:";
+
+function handoffAttemptKey(githubLogin: string): string {
+  return `${HANDOFF_ATTEMPT_PREFIX}${githubLogin}`;
+}
+
+/** True once a silent handoff refresh was attempted this session (loop guard). */
+export function hasAttemptedHandoffRefresh(githubLogin: string): boolean {
+  try {
+    return sessionStorage.getItem(handoffAttemptKey(githubLogin)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Silently refresh the GitHub user token for an active ZK session that has
+ * unsealed titles but no token in sessionStorage — e.g. the session predates the
+ * auto-handoff deploy, or its ephemeral sessionStorage token is gone. Bounces
+ * through the OAuth handoff (GitHub re-authorises instantly for an already-
+ * installed app), which returns with ?zk_handoff=; ZkSessionProvider consumes it
+ * on the next mount, so the seal pass catches the new titles with no deco/reco.
+ *
+ * Once per session per login (loop guard): if the bounce returns without a token
+ * (server couldn't mint one), the caller falls back to the manual "Link GitHub"
+ * affordance instead of redirect-looping. No-ops when a token already exists.
+ *
+ * Returns true when a redirect was initiated (the page is navigating away).
+ */
+export function refreshGithubTokenViaHandoff(githubLogin: string): boolean {
+  if (getGithubUserToken()) return false;
+  if (hasAttemptedHandoffRefresh(githubLogin)) return false;
+  try {
+    // Set the guard BEFORE navigating: without it a bounce that returns no token
+    // would re-trigger on the next mount and loop. If storage is unavailable we
+    // can't guard, so we must not redirect at all.
+    sessionStorage.setItem(handoffAttemptKey(githubLogin), "1");
+  } catch {
+    return false;
+  }
+  const here = window.location.pathname + window.location.search + window.location.hash;
+  window.location.assign(zkLoginUrl(here));
+  return true;
+}
+
 // biome-ignore lint/suspicious/noExplicitAny: GraphQL variables are caller-shaped
 type GraphqlVariables = Record<string, any> | undefined;
 

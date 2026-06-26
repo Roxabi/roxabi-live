@@ -1,11 +1,12 @@
 import { IssueRow, type RowEdgeRefs } from "@/components/IssueRow";
+import { useT } from "@/i18n";
+import { localizedDimLabel } from "@/i18n/dimLabel";
 import {
   type AnnotatedNode,
   type Dim,
   type GraphEdge,
   type StatusKey,
   compareDimValues,
-  dimDisplayLabel,
   dimValue,
   displayStatus,
   isEmptyDimValue,
@@ -29,16 +30,16 @@ const STATUS_RANK: Record<StatusKey, number> = { ready: 0, running: 1, blocked: 
 const PRIORITY_RANK: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
 
 const COLUMNS: { col: SortCol; label: string; center?: boolean }[] = [
-  { col: "status", label: "Status" },
-  { col: "issue", label: "Issue" },
-  { col: "title", label: "Title" },
-  { col: "milestone", label: "Milestone" },
-  { col: "priority", label: "Priority" },
-  { col: "lane", label: "Lane", center: true },
-  { col: "size", label: "Size", center: true },
-  { col: "blocks", label: "Blocks", center: true },
-  { col: "blockedby", label: "Blocked by", center: true },
-  { col: "parentof", label: "Parent of", center: true },
+  { col: "status", label: "table.col.status" },
+  { col: "issue", label: "table.col.issue" },
+  { col: "title", label: "table.col.title" },
+  { col: "milestone", label: "table.col.milestone" },
+  { col: "priority", label: "table.col.priority" },
+  { col: "lane", label: "table.col.lane", center: true },
+  { col: "size", label: "table.col.size", center: true },
+  { col: "blocks", label: "table.col.blocks", center: true },
+  { col: "blockedby", label: "table.col.blockedBy", center: true },
+  { col: "parentof", label: "table.col.parentOf", center: true },
 ];
 
 function issueCompare(a: AnnotatedNode, b: AnnotatedNode): number {
@@ -212,6 +213,7 @@ export function IssueTable({
   group?: Dim;
   group2?: Dim;
 }) {
+  const t = useT();
   const [sortCol, setSortCol] = useState<SortCol>("status");
   const [dir, setDir] = useState<1 | -1>(1);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -248,7 +250,7 @@ export function IssueTable({
   if (nodes.length === 0) {
     return (
       <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
-        No issues to show.
+        {t("table.empty")}
       </div>
     );
   }
@@ -268,7 +270,7 @@ export function IssueTable({
                   onClick={() => toggle(col)}
                   className="inline-flex items-center gap-1 uppercase tracking-wide transition-colors hover:text-foreground"
                 >
-                  {label}
+                  {t(label as any)}
                   {sortCol === col && <span aria-hidden>{dir === 1 ? "↑" : "↓"}</span>}
                 </button>
               </th>
@@ -293,7 +295,7 @@ export function IssueTable({
                     <span aria-hidden className="mr-1 text-muted-foreground">
                       {collapsed.has(it.collapseKey) ? "▸" : "▾"}
                     </span>
-                    {dimDisplayLabel(it.value, it.dim)}
+                    {localizedDimLabel(t, it.value, it.dim)}
                     {it.title && (
                       <span className="ml-2 font-sans font-normal text-muted-foreground">
                         {it.title}

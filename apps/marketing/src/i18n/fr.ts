@@ -9,7 +9,6 @@ export const fr = {
     navComment:   "Commentaires",
     navAdmin:     "Admin",
     loginLabel:   "Connexion",
-    ctaLabel:     "Accès anticipé",
   },
 
   // ── Hero ──────────────────────────────────────────────────────────────────
@@ -19,7 +18,7 @@ export const fr = {
     h1Part1:      "Lancez dix agents à la fois.",
     h1Accent:     "Sans qu'ils se marchent dessus.",
     lead:         "Le goulot d'étranglement d'une flotte d'agents, ce n'est plus l'écriture du code — c'est la concurrence. Roxabi Live lit vos issues GitHub et leurs liens blocked-by pour révéler, d'un coup d'œil, ce que vous pouvez lancer en parallèle.",
-    ctaPrimary:   "Demander l'accès anticipé",
+    ctaPrimary:   "Se connecter",
     ctaGhost:     "Voir la démo",
     note:         "GitHub Issues natif · aucun outil tiers · zéro friction d'adoption",
     boardTitle:   "roxabi-live · tableau de bord",
@@ -149,13 +148,13 @@ export const fr = {
 
   // ── CTA Band ──────────────────────────────────────────────────────────────
   cta: {
-    kicker:      "Accès anticipé",
+    kicker:      "Commencer",
     h2Part1:     "Prêt à piloter votre flotte",
     h2Accent:    "sans collision ?",
     body:        "Rejoignez les équipes qui orchestrent leurs agents Claude avec des graphes de dépendances GitHub, en temps réel.",
-    ctaPrimary:  "Demander l'accès anticipé",
+    ctaPrimary:  "Se connecter",
     ctaGhost:    "Voir la démo",
-    reassurance: "Accès sur invitation · GitHub Issues natif · aucune carte requise",
+    reassurance: "GitHub Issues natif · aucune carte requise · zéro friction d'adoption",
   },
 
   // ── Footer ────────────────────────────────────────────────────────────────

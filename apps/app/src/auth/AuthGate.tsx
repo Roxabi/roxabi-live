@@ -16,21 +16,24 @@ import { ConsentGate } from "@/auth/ConsentGate";
 import { InstallGate } from "@/auth/InstallGate";
 import { SignInScreen } from "@/auth/SignInScreen";
 import { useMe } from "@/auth/useMe";
+import { useT } from "@/i18n";
 import { CircleNotch } from "@phosphor-icons/react";
 
 function AuthLoading() {
+  const t = useT();
   return (
     <div
       className="flex min-h-[60vh] items-center justify-center text-muted-foreground"
       data-testid="auth-loading"
     >
       <CircleNotch className="size-6 animate-spin" aria-hidden />
-      <span className="sr-only">Loading your session…</span>
+      <span className="sr-only">{t("auth.loading.srOnly")}</span>
     </div>
   );
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const { data: me, isLoading, error } = useMe();
 
   if (isLoading) return <AuthLoading />;
@@ -43,7 +46,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         data-testid="auth-error"
         role="alert"
       >
-        Impossible de charger votre session : {error.message}
+        {t("auth.error.loadSession", { message: error.message })}
       </div>
     );
   }

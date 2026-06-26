@@ -12,27 +12,31 @@ import { OrgPicker } from "@/auth/OrgPicker";
 import { SettingsUiProvider } from "@/auth/SettingsUi";
 import { UserMenu } from "@/auth/UserMenu";
 import { BrandMark } from "@/components/BrandMark";
+import { LangToggle } from "@/components/LangToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useGraphData } from "@/hooks/useGraphData";
+import { useT } from "@/i18n";
 import { ZkLockButton } from "@/zk/ZkLockButton";
 
 /** Corpus counts subtitle — "N issues · N open · N closed" (legacy #subtitle). */
 function CorpusStats() {
+  const t = useT();
   const { nodes, isLoading } = useGraphData();
   if (isLoading && nodes.length === 0) {
-    return <div className="mt-1 font-mono text-xs text-muted-foreground">Loading…</div>;
+    return <div className="mt-1 font-mono text-xs text-muted-foreground">{t("header.loading")}</div>;
   }
   const open = nodes.reduce((n, x) => n + (x.state === "open" ? 1 : 0), 0);
   const closed = nodes.length - open;
   return (
     <div className="mt-1 font-mono text-xs text-muted-foreground">
-      {nodes.length} issues · {open} open · {closed} closed
+      {t("header.corpusStats", { total: nodes.length, open, closed })}
     </div>
   );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const me = useAuth();
 
   return (
@@ -44,7 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <BrandMark className="size-7 shrink-0" />
               <div>
                 <h1 className="text-[22px] font-black leading-none tracking-[-0.04em] text-foreground">
-                  Roxabi <span className="text-primary">Live</span>
+                  {t("header.brandName")}
                 </h1>
                 <CorpusStats />
               </div>
@@ -53,6 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <ViewToggle />
               <ZkLockButton />
               <OrgPicker me={me} />
+              <LangToggle />
               <ThemeToggle />
               <UserMenu />
             </div>

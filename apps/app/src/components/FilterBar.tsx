@@ -1,22 +1,23 @@
 import { FilterMultiSelect } from "@/components/FilterMultiSelect";
 import { useFilterOptions } from "@/hooks/useFilterOptions";
-import { cn } from "@/lib/utils";
+import { useT } from "@/i18n";
 import { type FacetKey, useDashboardStore } from "@/store/dashboardStore";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import type { AnnotatedNode } from "@roxabi-live/shared";
 
-const FACETS: { key: FacetKey; label: string }[] = [
-  { key: "status", label: "Status" },
-  { key: "repo", label: "Repo" },
-  { key: "milestone", label: "Milestone" },
-  { key: "priority", label: "Priority" },
-  { key: "label", label: "Label" },
-  { key: "assignee", label: "Assignee" },
-];
-
-/** The cockpit filter row: search + per-facet multi-selects + parent toggle. */
+/** The cockpit filter row: search + per-facet multi-selects + reset. */
 export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
+  const t = useT();
   const options = useFilterOptions(nodes);
+
+  const FACETS: { key: FacetKey; label: string }[] = [
+    { key: "status", label: t("filter.facet.status") },
+    { key: "repo", label: t("filter.facet.repo") },
+    { key: "milestone", label: t("filter.facet.milestone") },
+    { key: "priority", label: t("filter.facet.priority") },
+    { key: "label", label: t("filter.facet.label") },
+    { key: "assignee", label: t("filter.facet.assignee") },
+  ];
 
   const status = useDashboardStore((s) => s.status);
   const repo = useDashboardStore((s) => s.repo);
@@ -25,7 +26,6 @@ export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
   const label = useDashboardStore((s) => s.label);
   const assignee = useDashboardStore((s) => s.assignee);
   const search = useDashboardStore((s) => s.search);
-  const showParents = useDashboardStore((s) => s.showParents);
 
   const patch = useDashboardStore((s) => s.patch);
   const toggleFacet = useDashboardStore((s) => s.toggleFacet);
@@ -53,8 +53,8 @@ export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
           type="search"
           value={search}
           onChange={(e) => patch({ search: e.target.value })}
-          placeholder="Search issues…"
-          aria-label="Search issues"
+          placeholder={t("filter.search.placeholder")}
+          aria-label={t("filter.search.ariaLabel")}
           className="h-8 w-52 rounded-md border border-border bg-background pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/60 focus:outline-none"
         />
       </div>
@@ -72,24 +72,11 @@ export function FilterBar({ nodes }: { nodes: AnnotatedNode[] }) {
 
       <button
         type="button"
-        data-testid="facet-epics"
-        onClick={() => patch({ showParents: !showParents })}
-        aria-pressed={showParents}
-        className={cn(
-          "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors hover:border-primary/60",
-          showParents ? "border-primary/50 text-foreground" : "border-border text-muted-foreground",
-        )}
-      >
-        Epics
-      </button>
-
-      <button
-        type="button"
         data-testid="facet-reset"
         onClick={resetFilters}
         className="ml-auto inline-flex h-8 items-center rounded-md px-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
-        Reset
+        {t("filter.reset.label")}
       </button>
     </div>
   );

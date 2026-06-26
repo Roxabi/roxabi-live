@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import { StatusBadge } from "@/components/StatusBadge";
 import { type AnnotatedNode, displayStatus } from "@roxabi-live/shared";
 
@@ -31,6 +32,7 @@ function CountCell({ refs }: { refs: string[] }) {
 
 /** One issue row in the Launch Board table (10 columns, mirrors frontend/list.js). */
 export function IssueRow({ node, refs = EMPTY_REFS }: { node: AnnotatedNode; refs?: RowEdgeRefs }) {
+  const t = useT();
   const status = displayStatus(node);
   const ref = `${node.repo}#${node.number}`;
 
@@ -54,15 +56,15 @@ export function IssueRow({ node, refs = EMPTY_REFS }: { node: AnnotatedNode; ref
         )}
       </td>
       <td className="px-3 py-2 align-middle text-sm text-foreground">
-        {node.title ? node.title : <span className="italic text-muted-foreground">untitled</span>}
+        {node.title ? node.title : <span className="italic text-muted-foreground">{t("table.row.untitled")}</span>}
         {node.is_stub && (
           <span className="ml-2 rounded-sm border border-border px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-            stub
+            {t("table.row.stubBadge")}
           </span>
         )}
         {node.isParent && (
           <span className="ml-2 rounded-sm border border-border px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-            epic
+            {t("table.row.epicBadge")}
           </span>
         )}
       </td>

@@ -1,5 +1,7 @@
 import "@/components/graph-anim.css";
 import { useHighlightChain } from "@/hooks/useHighlightChain";
+import { useT } from "@/i18n";
+import { localizedDimLabel } from "@/i18n/dimLabel";
 import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboardStore";
 import {
@@ -44,8 +46,9 @@ function GraphNode({
   const blocked = status === "blocked";
   // Epics (parent issues) render as a slightly larger rounded square to stand
   // out from leaf issues — matches the legacy `.gg-node.parent` (14px, r:3px).
+  const t = useT();
   const isParent = node.isParent;
-  const title = `#${node.number} — ${node.title ?? ""}`;
+  const title = t("graph.node.title", { number: node.number, title: node.title ?? "" });
   const hover = {
     onMouseEnter: () => onHover(node.key),
     onMouseLeave: () => onHover(null),
@@ -139,11 +142,12 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
   );
   const byKey = useMemo(() => new Map(nodes.map((n) => [n.key, n])), [nodes]);
   const chain = useHighlightChain(hovered, edges);
+  const t = useT();
 
   if (!nodes.length) {
     return (
       <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
-        No issues match the current filter.
+        {t("graph.empty")}
       </div>
     );
   }
@@ -171,7 +175,9 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
               )}
               style={{ top: `${r.y}%`, height: `${r.height}%` }}
             >
-              <div className="font-mono text-xs font-bold tracking-wide text-primary">{r.label}</div>
+              <div className="font-mono text-xs font-bold tracking-wide text-primary">
+                {localizedDimLabel(t, r.code, graphRow, r.label)}
+              </div>
               {r.name && <div className="truncate text-[10px] text-muted-foreground">{r.name}</div>}
             </div>
           ))}
@@ -202,7 +208,7 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
             className="absolute top-0 -translate-x-1/2 whitespace-nowrap text-[10px] uppercase tracking-wide text-muted-foreground"
             style={{ left: `${c.x}%` }}
           >
-            {c.label}
+            {localizedDimLabel(t, c.code, graphCol, c.label)}
           </div>
         ))}
 
@@ -213,7 +219,7 @@ export function GraphPanel({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gr
           preserveAspectRatio="none"
           aria-hidden
         >
-          <title>Dependency edges</title>
+          <title>{t("graph.edgesTitle")}</title>
           {edges.map((e) => {
             const s = layout.positions.get(e.src);
             const d = layout.positions.get(e.dst);

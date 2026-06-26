@@ -4,11 +4,13 @@ import { GraphPanel } from "@/components/GraphPanel";
 import { IssueTable } from "@/components/IssueTable";
 import { PivotMatrix } from "@/components/PivotMatrix";
 import { useFilteredNodes } from "@/hooks/useFilteredNodes";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboardStore";
 import type { AnnotatedNode, GraphEdge } from "@roxabi-live/shared";
 
 function PivotControls() {
+  const t = useT();
   const pivotRow = useDashboardStore((s) => s.pivotRow);
   const pivotCol = useDashboardStore((s) => s.pivotCol);
   const tableGroup = useDashboardStore((s) => s.tableGroup);
@@ -17,18 +19,18 @@ function PivotControls() {
   return (
     <div className="flex flex-wrap items-center gap-3">
       <DimSelect
-        label="Rows"
+        label={t("dim.label.rows")}
         value={pivotRow}
         onChange={(v) => patch({ pivotRow: v })}
         allowNone={false}
       />
       <DimSelect
-        label="Cols"
+        label={t("dim.label.cols")}
         value={pivotCol}
         onChange={(v) => patch({ pivotCol: v })}
         allowNone={false}
       />
-      <DimSelect label="Group" value={tableGroup} onChange={(v) => patch({ tableGroup: v })} />
+      <DimSelect label={t("dim.label.group")} value={tableGroup} onChange={(v) => patch({ tableGroup: v })} />
     </div>
   );
 }
@@ -42,7 +44,7 @@ function ToggleSeg({
 }: {
   label: string;
   pressed: boolean;
-  title: string;
+  title?: string;
   testid: string;
   onClick: () => void;
 }) {
@@ -64,48 +66,80 @@ function ToggleSeg({
 }
 
 function GraphControls() {
+  const t = useT();
   const graphRow = useDashboardStore((s) => s.graphRow);
   const graphCol = useDashboardStore((s) => s.graphCol);
-  const showClosedUnderOpenEpic = useDashboardStore((s) => s.showClosedUnderOpenEpic);
-  const showAssignees = useDashboardStore((s) => s.showAssignees);
   const patch = useDashboardStore((s) => s.patch);
 
   return (
     <div className="flex flex-wrap items-center gap-3">
       <DimSelect
-        label="Rows"
+        label={t("dim.label.rows")}
         value={graphRow}
         onChange={(v) => patch({ graphRow: v })}
         allowNone={false}
       />
-      <DimSelect label="Order by" value={graphCol} onChange={(v) => patch({ graphCol: v })} />
+      <DimSelect label={t("dim.label.orderBy")} value={graphCol} onChange={(v) => patch({ graphCol: v })} />
+    </div>
+  );
+}
+
+/**
+ * DisplayToggles — the "Display" group of view toggles, set off by a separator.
+ * Epics (showParents) applies to every view; Closed + Assignees are graph-only
+ * render options, so they appear only in the graph view.
+ */
+function DisplayToggles() {
+  const t = useT();
+  const view = useDashboardStore((s) => s.view);
+  const showParents = useDashboardStore((s) => s.showParents);
+  const showClosedUnderOpenEpic = useDashboardStore((s) => s.showClosedUnderOpenEpic);
+  const showAssignees = useDashboardStore((s) => s.showAssignees);
+  const patch = useDashboardStore((s) => s.patch);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+      <span className="font-mono text-[11px] text-muted-foreground">{t("toolbar.display")}</span>
       <ToggleSeg
-        label="Closed"
-        testid="graph-closed-toggle"
-        title="Show closed issues whose parent epic is still open"
-        pressed={showClosedUnderOpenEpic}
-        onClick={() => patch({ showClosedUnderOpenEpic: !showClosedUnderOpenEpic })}
+        label={t("filter.epics.label")}
+        testid="facet-epics"
+        title={t("filter.epics.title")}
+        pressed={showParents}
+        onClick={() => patch({ showParents: !showParents })}
       />
-      <ToggleSeg
-        label="Assignees"
-        testid="graph-assignees-toggle"
-        title="Show assignee logins on issue nodes"
-        pressed={showAssignees}
-        onClick={() => patch({ showAssignees: !showAssignees })}
-      />
+      {view === "graph" && (
+        <>
+          <ToggleSeg
+            label={t("graph.toggle.closed.label")}
+            testid="graph-closed-toggle"
+            title={t("graph.toggle.closed.title")}
+            pressed={showClosedUnderOpenEpic}
+            onClick={() => patch({ showClosedUnderOpenEpic: !showClosedUnderOpenEpic })}
+          />
+          <ToggleSeg
+            label={t("graph.toggle.assignees.label")}
+            testid="graph-assignees-toggle"
+            title={t("graph.toggle.assignees.title")}
+            pressed={showAssignees}
+            onClick={() => patch({ showAssignees: !showAssignees })}
+          />
+        </>
+      )}
     </div>
   );
 }
 
 function ListControls() {
+  const t = useT();
   const listGroup = useDashboardStore((s) => s.listGroup);
   const listGroup2 = useDashboardStore((s) => s.listGroup2);
   const patch = useDashboardStore((s) => s.patch);
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <DimSelect label="Group" value={listGroup} onChange={(v) => patch({ listGroup: v })} />
-      <DimSelect label="Subgroup" value={listGroup2} onChange={(v) => patch({ listGroup2: v })} />
+      <DimSelect label={t("dim.label.group")} value={listGroup} onChange={(v) => patch({ listGroup: v })} />
+      <DimSelect label={t("dim.label.subgroup")} value={listGroup2} onChange={(v) => patch({ listGroup2: v })} />
     </div>
   );
 }
@@ -115,6 +149,7 @@ function ListControls() {
  * Owns the view toggle, pivot controls, filter bar, and the active view.
  */
 export function BoardView({ nodes, edges }: { nodes: AnnotatedNode[]; edges: GraphEdge[] }) {
+  const t = useT();
   const view = useDashboardStore((s) => s.view);
   const listGroup = useDashboardStore((s) => s.listGroup);
   const listGroup2 = useDashboardStore((s) => s.listGroup2);
@@ -129,8 +164,9 @@ export function BoardView({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gra
         {view === "list" && <ListControls />}
         {view === "pivot" && <PivotControls />}
         {view === "graph" && <GraphControls />}
+        <DisplayToggles />
         <span className="ml-auto font-mono text-xs text-muted-foreground">
-          {filtered.length} of {nodes.length}
+          {t("toolbar.filteredCount", { count: filtered.length, total: nodes.length })}
         </span>
       </div>
       {view === "list" && (

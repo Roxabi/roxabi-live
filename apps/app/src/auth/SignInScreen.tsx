@@ -5,6 +5,7 @@
  */
 
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n";
 import { GithubLogo } from "@phosphor-icons/react";
 import { useState } from "react";
 
@@ -31,6 +32,7 @@ export function SignInScreen({
   mode?: "signin" | "signup";
   reason?: "session-lost";
 }) {
+  const t = useT();
   const [remember, setRemember] = useState(
     () => localStorage.getItem(REMEMBER_SESSION_KEY) === "1",
   );
@@ -46,20 +48,20 @@ export function SignInScreen({
     <div className="flex min-h-[60vh] items-center justify-center" data-testid="signin-screen">
       <div className="w-full max-w-sm space-y-5 rounded-lg border border-border bg-card p-8">
         <h1 className="text-xl font-semibold text-foreground">
-          {isSignup ? "Create your account" : "Sign in"}
+          {isSignup ? t("auth.signup.title") : t("auth.signin.title")}
         </h1>
         {reason === "session-lost" && (
           <p className="rounded-md border border-blocked/30 bg-blocked/10 px-3 py-2 text-sm text-blocked">
-            Session expirée. Reconnectez-vous pour continuer.
+            {t("auth.sessionLost")}
           </p>
         )}
         <p className="text-sm text-muted-foreground">
-          Roxabi Live se connecte à votre compte GitHub pour piloter votre flotte d'agents.
+          {t("auth.signin.description")}
         </p>
         <Button asChild className="w-full">
           <a href={loginUrl(remember)} data-testid="github-login">
             <GithubLogo className="size-5" weight="fill" aria-hidden />
-            <span>{isSignup ? "Continuer avec GitHub" : "Se connecter avec GitHub"}</span>
+            <span>{isSignup ? t("auth.signup.githubButton") : t("auth.signin.githubButton")}</span>
           </a>
         </Button>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -69,7 +71,7 @@ export function SignInScreen({
             onChange={(e) => onRememberChange(e.target.checked)}
             className="size-4 rounded border-border"
           />
-          Rester connecté sur cet appareil
+          {t("auth.signin.rememberMe")}
         </label>
       </div>
     </div>

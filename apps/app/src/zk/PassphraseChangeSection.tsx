@@ -7,6 +7,7 @@
  */
 
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n";
 import { useState } from "react";
 import { ZkFormError } from "./ZkDialogShell";
 import { requestSettingsReauth } from "./settingsReauth";
@@ -21,6 +22,7 @@ export function PassphraseChangeSection({
   initialOpen?: boolean;
   onChanged?: () => void;
 }) {
+  const t = useT();
   const [formOpen, setFormOpen] = useState(initialOpen);
   const [current, setCurrent] = useState("");
   const [newPass, setNewPass] = useState("");
@@ -55,15 +57,15 @@ export function PassphraseChangeSection({
 
   return (
     <section className="space-y-2">
-      <h3 className="text-sm font-semibold text-foreground">Chiffrement</h3>
+      <h3 className="text-sm font-semibold text-foreground">{t("settings.encryption.heading")}</h3>
       {!formOpen ? (
         <Button variant="outline" size="sm" onClick={onChangeClick} data-testid="zk-change-pass">
-          Changer la passphrase
+          {t("zk.reset.changePassphraseButton")}
         </Button>
       ) : (
         <div className="space-y-2" data-testid="zk-pass-form">
           <label className="block space-y-1">
-            <span className="text-xs text-muted-foreground">Passphrase actuelle</span>
+            <span className="text-xs text-muted-foreground">{t("zk.reset.currentPassphrase.label")}</span>
             <input
               type="password"
               autoComplete="current-password"
@@ -74,7 +76,7 @@ export function PassphraseChangeSection({
             />
           </label>
           <label className="block space-y-1">
-            <span className="text-xs text-muted-foreground">Nouvelle passphrase</span>
+            <span className="text-xs text-muted-foreground">{t("zk.reset.newPassphrase.label")}</span>
             <input
               type="password"
               autoComplete="new-password"
@@ -86,7 +88,7 @@ export function PassphraseChangeSection({
             />
           </label>
           <label className="block space-y-1">
-            <span className="text-xs text-muted-foreground">Confirmer la nouvelle passphrase</span>
+            <span className="text-xs text-muted-foreground">{t("zk.reset.confirmPassphrase.label")}</span>
             <input
               type="password"
               autoComplete="new-password"
@@ -105,7 +107,7 @@ export function PassphraseChangeSection({
               onClick={() => setFormOpen(false)}
               data-testid="zk-pass-cancel"
             >
-              Annuler
+              {t("zk.reset.cancel")}
             </Button>
             <Button
               size="sm"
@@ -113,7 +115,7 @@ export function PassphraseChangeSection({
               onClick={onSave}
               data-testid="zk-pass-save"
             >
-              Enregistrer la passphrase
+              {t("zk.reset.saveButton")}
             </Button>
           </div>
         </div>

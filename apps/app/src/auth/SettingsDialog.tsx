@@ -10,6 +10,7 @@ import { clearDisplayName, getDisplayName, setDisplayName } from "@/auth/display
 import { useLogout } from "@/auth/useAuthMutations";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { useT } from "@/i18n";
 import { type ApiError, apiFetch } from "@/lib/api";
 import { PassphraseChangeSection } from "@/zk/PassphraseChangeSection";
 import { hasEnrolledThisSession } from "@/zk/enroll";
@@ -51,6 +52,7 @@ export function SettingsDialog({
 }) {
   const login = me.user.github_login;
   const logout = useLogout();
+  const t = useT();
   const [name, setName] = useState(() => getDisplayName(login));
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const installUrl = configureUrl(me);
@@ -76,14 +78,14 @@ export function SettingsDialog({
       clearZkReauthProof();
       await clearLocalZkState(login);
       clearDisplayName(login);
-      logout.mutate({ to: "/" });
+      logout.mutate(undefined);
     },
     onError: (err) => {
       if (err.status === 403) {
         requestSettingsReauth("delete", window.location.pathname);
         return;
       }
-      setDeleteError("Suppression impossible — réessayez.");
+      setDeleteError(t("settings.deleteAccount.error"));
     },
   });
 
@@ -96,9 +98,7 @@ export function SettingsDialog({
   function onDelete() {
     setDeleteError(null);
     if (
-      !window.confirm(
-        "Supprimer toutes vos données Roxabi Live et vous déconnecter ? Action irréversible.",
-      )
+      !window.confirm(t("settings.deleteAccount.confirmPrompt"))
     ) {
       return;
     }
@@ -119,12 +119,12 @@ export function SettingsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg" data-testid="settings-dialog">
-        <DialogTitle className="text-xl font-semibold text-foreground">Paramètres</DialogTitle>
+        <DialogTitle className="text-xl font-semibold text-foreground">{t("settings.title")}</DialogTitle>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">Profil</h3>
+          <h3 className="text-sm font-semibold text-foreground">{t("settings.profile.heading")}</h3>
           <label className="block space-y-1">
-            <span className="text-xs text-muted-foreground">Nom affiché</span>
+            <span className="text-xs text-muted-foreground">{t("settings.profile.displayName.label")}</span>
             <input
               type="text"
               value={name}
@@ -136,15 +136,14 @@ export function SettingsDialog({
             />
           </label>
           <p className="text-xs text-muted-foreground">
-            Affiché dans l'en-tête. Login GitHub :{" "}
-            <strong className="text-foreground">{login}</strong>.
+            {t("settings.profile.displayName.hint", { login })}
           </p>
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">Dépôts</h3>
+          <h3 className="text-sm font-semibold text-foreground">{t("settings.repos.heading")}</h3>
           <p className="text-xs text-muted-foreground">
-            Ajoutez ou retirez les dépôts auxquels l'App GitHub accède.
+            {t("settings.repos.hint")}
           </p>
           {installations.length ? (
             <ul className="space-y-1 text-sm">
@@ -157,7 +156,7 @@ export function SettingsDialog({
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Aucune installation liée pour l'instant.
+              {t("settings.repos.empty")}
             </p>
           )}
           {installUrl && (
@@ -167,7 +166,7 @@ export function SettingsDialog({
               rel="noopener noreferrer"
               className="inline-block text-sm text-primary underline-offset-4 hover:underline"
             >
-              Configurer les dépôts sur GitHub
+              {t("settings.repos.configure")}
             </a>
           )}
         </section>
@@ -184,9 +183,9 @@ export function SettingsDialog({
         )}
 
         <section className="space-y-2 rounded-md border border-blocked/30 bg-blocked/5 p-3">
-          <h3 className="text-sm font-semibold text-blocked">Supprimer le compte</h3>
+          <h3 className="text-sm font-semibold text-blocked">{t("settings.deleteAccount.heading")}</h3>
           <p className="text-xs text-muted-foreground">
-            Efface vos données Roxabi et vous déconnecte. Révoquez l'app sur GitHub séparément.
+            {t("settings.deleteAccount.hint")}
           </p>
           <Button
             variant="destructive"
@@ -195,7 +194,7 @@ export function SettingsDialog({
             loading={deleteAccount.isPending}
             data-testid="settings-delete"
           >
-            Supprimer mes données &amp; se déconnecter
+            {t("settings.deleteAccount.button")}
           </Button>
           {deleteError && (
             <p className="text-xs text-blocked" role="alert">

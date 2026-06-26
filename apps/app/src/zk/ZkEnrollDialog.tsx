@@ -7,6 +7,7 @@
 
 import { useLogout } from "@/auth/useAuthMutations";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n";
 import { useState } from "react";
 import { ZkFormError, ZkGateDialog } from "./ZkDialogShell";
 import {
@@ -18,6 +19,7 @@ import {
 import { zkLoginUrl } from "./github";
 
 export function ZkEnrollDialog({ login }: { login: string }) {
+  const t = useT();
   const logout = useLogout();
   const [pass, setPass] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -34,11 +36,11 @@ export function ZkEnrollDialog({ login }: { login: string }) {
     e.preventDefault();
     setError(null);
     if (pass.length < 8) {
-      setError("La passphrase doit comporter au moins 8 caractères.");
+      setError(t("zk.enroll.error.tooShort"));
       return;
     }
     if (pass !== confirm) {
-      setError("Les passphrases ne correspondent pas.");
+      setError(t("zk.enroll.error.mismatch"));
       return;
     }
     setBusy(true);
@@ -55,24 +57,21 @@ export function ZkEnrollDialog({ login }: { login: string }) {
       const msg = String((err as Error)?.message ?? "");
       setError(
         msg.includes("409")
-          ? "Déjà enrôlé — déverrouillez plutôt avec votre passphrase."
-          : (err as Error)?.message || "Échec de l'enrôlement. Réessayez.",
+          ? t("zk.enroll.error.alreadyEnrolled")
+          : (err as Error)?.message || t("zk.enroll.error.generic"),
       );
       setBusy(false);
     }
   }
 
   return (
-    <ZkGateDialog title="Définir la passphrase de chiffrement" testId="zk-enroll-gate">
+    <ZkGateDialog title={t("zk.enroll.title")} testId="zk-enroll-gate">
       <p className="text-sm text-muted-foreground">
-        Choisissez une passphrase pour protéger votre clé de chiffrement. Elle ne quitte jamais ce
-        navigateur ; seule une sauvegarde chiffrée est stockée sur le serveur. Cet appareil retient
-        votre clé après la configuration — la passphrase sera requise sur d'autres appareils ou
-        après un verrouillage.
+        {t("zk.enroll.description")}
       </p>
       <form className="space-y-3" onSubmit={onSubmit}>
         <label className="block space-y-1">
-          <span className="text-xs text-muted-foreground">Passphrase</span>
+          <span className="text-xs text-muted-foreground">{t("zk.enroll.passphrase.label")}</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -87,7 +86,7 @@ export function ZkEnrollDialog({ login }: { login: string }) {
           />
         </label>
         <label className="block space-y-1">
-          <span className="text-xs text-muted-foreground">Confirmer la passphrase</span>
+          <span className="text-xs text-muted-foreground">{t("zk.enroll.confirmPassphrase.label")}</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -107,15 +106,15 @@ export function ZkEnrollDialog({ login }: { login: string }) {
             data-testid="zk-remember"
             className="size-4"
           />
-          <span>Retenir la passphrase sur cet appareil pendant 30 jours</span>
+          <span>{t("zk.enroll.remember.label")}</span>
         </label>
         <ZkFormError message={error} />
         <div className="flex items-center justify-between gap-3 pt-1">
           <Button type="button" variant="ghost" onClick={() => logout.mutate(undefined)}>
-            Se déconnecter
+            {t("auth.signOut")}
           </Button>
           <Button type="submit" loading={busy} data-testid="zk-enroll-submit">
-            Créer la sauvegarde
+            {t("zk.enroll.submitButton")}
           </Button>
         </div>
       </form>

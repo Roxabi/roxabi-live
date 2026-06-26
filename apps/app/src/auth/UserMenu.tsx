@@ -10,10 +10,12 @@ import { useSettingsUi } from "@/auth/SettingsUi";
 import { getDisplayName } from "@/auth/displayName";
 import { useLogout } from "@/auth/useAuthMutations";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useT } from "@/i18n";
 import { Gear, SignOut } from "@phosphor-icons/react";
 import { useState } from "react";
 
 export function UserMenu() {
+  const t = useT();
   const me = useAuth();
   const logout = useLogout();
   const settings = useSettingsUi();
@@ -26,7 +28,7 @@ export function UserMenu() {
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           title={name}
-          aria-label="Account menu"
+          aria-label={t("auth.userMenu.trigger")}
           data-testid="user-menu-trigger"
           className="flex size-9 items-center justify-center overflow-hidden rounded-full border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -51,19 +53,19 @@ export function UserMenu() {
             className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm text-foreground hover:bg-card"
           >
             <Gear className="size-4" aria-hidden />
-            Settings
+            {t("auth.userMenu.settings")}
           </button>
           <button
             type="button"
             data-testid="user-menu-signout"
             onClick={() => {
               setOpen(false);
-              logout.mutate({ to: "/" });
+              logout.mutate(undefined);
             }}
             className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm text-foreground hover:bg-card"
           >
             <SignOut className="size-4" aria-hidden />
-            Sign out
+            {t("auth.userMenu.signOut")}
           </button>
         </PopoverContent>
       </Popover>

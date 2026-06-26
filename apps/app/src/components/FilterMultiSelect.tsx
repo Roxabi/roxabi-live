@@ -1,5 +1,6 @@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { FilterOption } from "@/hooks/useFilterOptions";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { CaretDown } from "@phosphor-icons/react";
 
@@ -20,6 +21,7 @@ export function FilterMultiSelect({
   onToggle,
   onClear,
 }: FilterMultiSelectProps) {
+  const t = useT();
   const count = selected.length;
 
   return (
@@ -45,7 +47,7 @@ export function FilterMultiSelect({
       <PopoverContent className="w-56 p-1">
         <div className="rl-scroll max-h-72 overflow-y-auto overflow-x-hidden">
           {options.length === 0 ? (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">No options</div>
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">{t("filter.multiselect.noOptions")}</div>
           ) : (
             options.map((o) => {
               const on = selected.includes(o.value);
@@ -84,7 +86,7 @@ export function FilterMultiSelect({
             onClick={onClear}
             className="mt-1 w-full rounded-sm px-2 py-1 text-left text-xs text-muted-foreground hover:bg-background hover:text-foreground"
           >
-            Clear {label.toLowerCase()}
+            {t("filter.multiselect.clear", { label: label.toLowerCase() })}
           </button>
         )}
       </PopoverContent>
