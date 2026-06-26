@@ -64,6 +64,17 @@
         "branchIncludes": ["staging"],
         "branchExcludes": []
       }
+    },
+    {
+      "workerName": "roxabi-live-marketing",
+      "trigger": {
+        "name": "Deploy production (marketing)",
+        "rootDirectory": "/",
+        "buildCommand": "bun install --frozen-lockfile && bun --filter @roxabi-live/marketing build",
+        "deployCommand": "cd apps/marketing && bunx wrangler deploy --config wrangler.deploy.jsonc",
+        "branchIncludes": ["main"],
+        "branchExcludes": []
+      }
     }
   ]
 }

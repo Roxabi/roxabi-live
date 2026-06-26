@@ -1,26 +1,22 @@
-name: Deploy staging
+name: Deploy production
 
-# Auto-deploy the three staging Workers on push to `staging`.
+# Auto-deploy production Workers on push to `main`.
+# Same model as deploy-staging.yml — GHA builds + wrangler deploy (CF Workers Builds
+# is not connected). Requires CLOUDFLARE_API_TOKEN repo secret.
 #
-# CF Workers Builds is NOT connected on this repo (infra/workers-builds.json is an
-# unapplied spec — no Cloudflare GitHub App, zero GitHub Deployments). GitHub
-# Actions + wrangler is the real automation. CI (ci.yml) stays quality-gates-only.
-#
-#   apps/api       → roxabi-live-staging          → api-staging.live.roxabi.dev
-#   apps/app       → roxabi-live-app-staging       → app-staging.live.roxabi.dev
-#   apps/marketing → roxabi-live-marketing-staging → marketing-staging.live.roxabi.dev
-#
-# Prod: see deploy-main.yml (push to `main`).
+#   apps/api       → roxabi-live       → api.live.roxabi.dev
+#   apps/app       → roxabi-live-app   → app.live.roxabi.dev
+#   apps/marketing → roxabi-live-marketing → live.roxabi.dev (when apex cutover is live)
 
 on:
   push:
-    branches: [staging]
+    branches: [main]
     paths:
       - "apps/api/**"
       - "apps/app/**"
       - "apps/marketing/**"
       - "packages/**"
-      - "scripts/deploy-staging.sh"
+      - "scripts/deploy-production.sh"
       - "bun.lock"
   workflow_dispatch: {}
 
@@ -28,12 +24,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-staging-${{ github.ref }}
-  cancel-in-progress: true
+  group: deploy-main-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  # Account IDs are not secret; mirror scripts/deploy-staging.sh.
   CLOUDFLARE_ACCOUNT_ID: b5e90be971920ce406f7b679c4f1cd33
 
 jobs:
@@ -44,12 +39,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-      - name: Deploy roxabi-live-staging (D1 migrate + wrangler)
-        run: bash scripts/deploy-staging.sh
+      - name: Deploy roxabi-live (D1 migrate + wrangler)
+        run: bash scripts/deploy-production.sh
 
   app:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: api
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Setup Bun
@@ -58,12 +54,13 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build (app)
         run: bun --filter @roxabi-live/app build
-      - name: Deploy roxabi-live-app-staging
-        run: cd apps/app && bunx wrangler deploy --config wrangler.staging.jsonc
+      - name: Deploy roxabi-live-app
+        run: cd apps/app && bunx wrangler deploy --config wrangler.deploy.jsonc
 
   marketing:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: api
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Setup Bun
@@ -72,5 +69,5 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build (marketing)
         run: bun --filter @roxabi-live/marketing build
-      - name: Deploy roxabi-live-marketing-staging
-        run: cd apps/marketing && bunx wrangler deploy --config wrangler.staging.jsonc
+      - name: Deploy roxabi-live-marketing
+        run: cd apps/marketing && bunx wrangler deploy --config wrangler.deploy.jsonc

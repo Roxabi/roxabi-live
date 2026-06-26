@@ -5,13 +5,7 @@
   "name": "roxabi-live-app",
   "main": "worker.ts",
   "compatibility_date": "2025-06-01",
-  "routes": [
-    {
-      "pattern": "app.live.roxabi.dev/*",
-      "zone_name": "live.roxabi.dev"
-      // "custom_domain": true  // uncomment at domain cutover
-    }
-  ],
+  "routes": [{ "pattern": "app.live.roxabi.dev", "custom_domain": true }],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

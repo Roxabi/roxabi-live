@@ -18,6 +18,6 @@ echo "→ D1 migrations (production)"
 bunx wrangler d1 migrations apply DB --remote
 
 echo "→ wrangler deploy (production)"
-bunx wrangler deploy --old-asset-ttl 0
+bunx wrangler deploy --env="" --old-asset-ttl 0
 
 echo "✓ roxabi-live (api) production deployed"

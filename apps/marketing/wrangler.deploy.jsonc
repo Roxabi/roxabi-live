@@ -1,0 +1,10 @@
+{
+  // Production marketing site — Astro SSG → static assets Worker.
+  // Apex live.roxabi.dev: wrangler attaches custom_domain on first deploy;
+  // if the apex is still on roxabi-live, delete that domain first (see scripts/cutover-marketing-apex.sh).
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "roxabi-live-marketing",
+  "compatibility_date": "2025-06-01",
+  "assets": { "directory": "./dist" },
+  "routes": [{ "pattern": "live.roxabi.dev", "custom_domain": true }]
+}
