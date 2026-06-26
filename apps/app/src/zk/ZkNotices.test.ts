@@ -1,14 +1,23 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { LocaleProvider } from "@/i18n";
 import { ZkNotices } from "./ZkNotices";
 
+// Render inside a forced-French provider so the assertions below match the FR
+// catalog copy (the components now resolve strings through useT()).
 const html = (props: {
   needsGithubLink: boolean;
   migrationIncomplete: boolean;
   zkActive?: boolean;
   githubLogin?: string;
-}) => renderToStaticMarkup(createElement(ZkNotices, props));
+}) =>
+  renderToStaticMarkup(
+    createElement(LocaleProvider, {
+      initialLocale: "fr",
+      children: createElement(ZkNotices, props),
+    }),
+  );
 
 describe("ZkNotices", () => {
   it("shows the dismissable encryption-info banner when ZK is active", () => {

@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
+import { LocaleProvider } from "./i18n";
 import { initTheme } from "./lib/theme";
 import { router } from "./router";
 
@@ -23,8 +24,10 @@ if (!rootEl) throw new Error("Root element #root not found");
 
 createRoot(rootEl).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} context={{ queryClient }} />
-    </QueryClientProvider>
+    <LocaleProvider>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} context={{ queryClient }} />
+      </QueryClientProvider>
+    </LocaleProvider>
   </StrictMode>,
 );

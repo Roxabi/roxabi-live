@@ -7,39 +7,38 @@
 
 import { useLogout } from "@/auth/useAuthMutations";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n";
 import { ZkGateDialog } from "./ZkDialogShell";
 import { zkLoginUrl } from "./github";
 
 export function ZkDevice2Block() {
+  const t = useT();
   const logout = useLogout();
   return (
     <ZkGateDialog
-      title="Terminez la configuration sur votre appareil d'origine"
+      title={t("zk.device2.title")}
       testId="zk-device2-block"
     >
       <p className="text-sm text-muted-foreground">
-        Des titres d'issues chiffrés sur ce compte ont été scellés dans un autre navigateur avant la
-        configuration de la sauvegarde par passphrase. Cet appareil ne peut pas les déchiffrer ni
-        terminer l'enrôlement tant que vous n'ouvrez pas Roxabi sur votre{" "}
-        <strong>appareil d'origine</strong> pour y finaliser le chiffrement.
+        {t("zk.device2.body1")}
       </p>
       <p className="text-sm text-muted-foreground">
-        Une fois la configuration faite sur l'appareil d'origine, vous pouvez aussi{" "}
+        {t("zk.device2.body2Prefix")}{" "}
         <a
           href={zkLoginUrl()}
           className="text-primary underline-offset-4 hover:underline"
           data-testid="zk-device2-link"
         >
-          lier GitHub
+          {t("zk.device2.linkGithub")}
         </a>{" "}
-        ici pour re-sceller le contenu depuis GitHub.
+        {t("zk.device2.body2Suffix")}
       </p>
       <div className="flex items-center justify-between gap-3 pt-1">
         <Button type="button" variant="ghost" onClick={() => logout.mutate(undefined)}>
-          Se déconnecter
+          {t("zk.common.logout")}
         </Button>
         <Button type="button" variant="secondary" onClick={() => window.location.reload()}>
-          Recharger
+          {t("zk.device2.reload")}
         </Button>
       </div>
     </ZkGateDialog>

@@ -12,6 +12,7 @@
 
 import { GithubLogo, Warning } from "@phosphor-icons/react";
 import { useState } from "react";
+import { useT } from "@/i18n";
 import { zkLoginUrl } from "./github";
 
 // Per-user so a shared browser doesn't suppress the notice for another account
@@ -39,6 +40,7 @@ export function ZkNotices({
   zkActive?: boolean;
   githubLogin?: string;
 }) {
+  const t = useT();
   const dismissKey = infoDismissKey(githubLogin);
   const [infoDismissed, setInfoDismissed] = useState(() => readInfoDismissed(dismissKey));
   const showInfo = zkActive && !infoDismissed;
@@ -60,17 +62,12 @@ export function ZkNotices({
             🔒
           </span>
           <span className="min-w-0">
-            Les titres et le contenu de vos issues sont{" "}
-            <strong className="font-medium text-foreground">chiffrés</strong> et ne sont{" "}
-            <strong className="font-medium text-foreground">jamais accessibles en clair sur le
-            serveur</strong>. Votre passphrase n'est{" "}
-            <strong className="font-medium text-foreground">pas récupérable</strong> : en cas de
-            perte, vous devrez en générer une nouvelle.
+            {t("zk.notice.info.body")}
           </span>
           <button
             type="button"
             data-testid="zk-info-dismiss"
-            aria-label="Fermer"
+            aria-label={t("zk.notice.info.dismiss")}
             onClick={() => {
               try {
                 localStorage.setItem(dismissKey, "1");
@@ -92,14 +89,13 @@ export function ZkNotices({
         >
           <GithubLogo className="size-4 shrink-0" aria-hidden />
           <span>
-            Certains titres restent chiffrés sur le serveur. Liez GitHub pour importer et re-sceller
-            leur contenu.
+            {t("zk.notice.githubLink.body")}
           </span>
           <a
             href={zkLoginUrl()}
             className="ml-auto font-medium text-primary underline-offset-4 hover:underline"
           >
-            Lier GitHub
+            {t("zk.notice.githubLink.cta")}
           </a>
         </div>
       )}
@@ -110,8 +106,7 @@ export function ZkNotices({
         >
           <Warning className="size-4 shrink-0" aria-hidden />
           <span>
-            Migration du chiffrement incomplète — certains anciens titres n'ont pas pu être
-            convertis. Ouvrez Roxabi sur l'appareil d'origine pour la terminer.
+            {t("zk.notice.migration.body")}
           </span>
         </div>
       )}

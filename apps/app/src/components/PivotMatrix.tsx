@@ -1,4 +1,5 @@
 import { IssueCard } from "@/components/IssueCard";
+import { useT } from "@/i18n";
 import { useDashboardStore } from "@/store/dashboardStore";
 import {
   type AnnotatedNode,
@@ -91,6 +92,7 @@ function CellBody({
 
 /** Pivot (matrix) view — rows × cols of issue cards. Ported from frontend/pivot.js. */
 export function PivotMatrix({ nodes, edges }: { nodes: AnnotatedNode[]; edges: GraphEdge[] }) {
+  const t = useT();
   const pivotRow = useDashboardStore((s) => s.pivotRow);
   const pivotCol = useDashboardStore((s) => s.pivotCol);
   const tableGroup = useDashboardStore((s) => s.tableGroup);
@@ -132,7 +134,7 @@ export function PivotMatrix({ nodes, edges }: { nodes: AnnotatedNode[]; edges: G
   if (!nodes.length) {
     return (
       <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
-        No issues match the current filter.
+        {t("pivot.empty")}
       </div>
     );
   }

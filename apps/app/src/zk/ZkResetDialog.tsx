@@ -10,6 +10,7 @@
  */
 
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n";
 import { useState } from "react";
 import { ZkFormError, ZkGateDialog } from "./ZkDialogShell";
 import { clearZkReauthProof, zkReauthLoginUrl } from "./github";
@@ -21,21 +22,19 @@ import {
 } from "./reset";
 
 export function ZkResetWarningDialog({ onCancel }: { onCancel: () => void }) {
+  const t = useT();
   function onVerify() {
     setZkResetPending();
     const redirect = `${window.location.pathname}${window.location.search}`;
     window.location.href = zkReauthLoginUrl(redirect);
   }
   return (
-    <ZkGateDialog title="Réinitialiser le chiffrement ?" testId="zk-reset-warning">
+    <ZkGateDialog title={t("zk.reset.warning.title")} testId="zk-reset-warning">
       <p className="rounded-md border border-blocked/30 bg-blocked/10 p-3 text-sm text-foreground">
-        <strong>Cette action est irréversible.</strong> Tous les titres d'issues chiffrés stockés
-        pour votre compte sur le serveur seront supprimés. Vos titres précédemment chiffrés ne
-        pourront plus être déchiffrés — ils sont définitivement perdus. Vous choisirez une nouvelle
-        passphrase et re-scellerez le contenu depuis GitHub.
+        <strong>{t("zk.reset.warning.irreversibleBold")}</strong> {t("zk.reset.warning.body")}
       </p>
       <p className="text-sm text-muted-foreground">
-        Une connexion GitHub est requise pour confirmer cette action.
+        {t("zk.reset.warning.githubRequired")}
       </p>
       <div className="flex items-center justify-between gap-3 pt-1">
         <Button
@@ -47,10 +46,10 @@ export function ZkResetWarningDialog({ onCancel }: { onCancel: () => void }) {
           }}
           data-testid="zk-reset-cancel"
         >
-          Annuler
+          {t("zk.common.cancel")}
         </Button>
         <Button type="button" onClick={onVerify} data-testid="zk-reset-verify">
-          Vérifier avec GitHub
+          {t("zk.reset.warning.verifyGithub")}
         </Button>
       </div>
     </ZkGateDialog>
@@ -64,6 +63,7 @@ export function ZkResetExecuteDialog({
   login: string;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -77,21 +77,21 @@ export function ZkResetExecuteDialog({
       const code = err instanceof ZkResetError ? err.code : undefined;
       const message = err instanceof Error ? err.message : "";
       if (code === "reauth_required" || message === "reauth_required") {
-        setError("Vérification expirée — réessayez.");
+        setError(t("zk.reset.execute.errorReauthExpired"));
         clearZkReauthProof();
       } else if (code === "rate_limited") {
-        setError("Trop de réinitialisations — réessayez plus tard.");
+        setError(t("zk.reset.execute.errorRateLimited"));
       } else {
-        setError("Échec de la réinitialisation. Réessayez.");
+        setError(t("zk.reset.execute.errorGeneric"));
       }
       setBusy(false);
     }
   }
 
   return (
-    <ZkGateDialog title="Confirmer la réinitialisation" testId="zk-reset-execute">
+    <ZkGateDialog title={t("zk.reset.execute.title")} testId="zk-reset-execute">
       <p className="text-sm text-muted-foreground">
-        GitHub vérifié. Supprimer toutes vos données chiffrées et définir une nouvelle passphrase ?
+        {t("zk.reset.execute.description")}
       </p>
       <ZkFormError message={error} />
       <div className="flex items-center justify-between gap-3 pt-1">
@@ -105,7 +105,7 @@ export function ZkResetExecuteDialog({
           }}
           data-testid="zk-reset-abort"
         >
-          Annuler
+          {t("zk.common.cancel")}
         </Button>
         <Button
           type="button"
@@ -114,7 +114,7 @@ export function ZkResetExecuteDialog({
           onClick={onConfirm}
           data-testid="zk-reset-confirm"
         >
-          Réinitialiser et recommencer
+          {t("zk.reset.execute.confirmButton")}
         </Button>
       </div>
     </ZkGateDialog>

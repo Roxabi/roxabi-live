@@ -7,6 +7,7 @@
 
 import { useLogout } from "@/auth/useAuthMutations";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n";
 import { useState } from "react";
 import { ZkFormError, ZkGateDialog } from "./ZkDialogShell";
 import { ZkResetWarningDialog } from "./ZkResetDialog";
@@ -19,6 +20,7 @@ import {
 import { isZkUnlocked } from "./session";
 
 export function ZkUnlockDialog({ login }: { login: string }) {
+  const t = useT();
   const logout = useLogout();
   const [pass, setPass] = useState("");
   const [remember, setRemember] = useState(() => isZkRememberPreferred());
@@ -50,20 +52,19 @@ export function ZkUnlockDialog({ login }: { login: string }) {
       // unlocked flips → ZkGate renders the dashboard.
     } catch {
       if (isZkUnlocked()) return; // a concurrent unlock won the race.
-      setError("Passphrase incorrecte. Réessayez.");
+      setError(t("zk.unlock.errorWrongPassphrase"));
       setBusy(false);
     }
   }
 
   return (
-    <ZkGateDialog title="Déverrouiller le chiffrement" testId="zk-unlock-gate">
+    <ZkGateDialog title={t("zk.unlock.title")} testId="zk-unlock-gate">
       <p className="text-sm text-muted-foreground">
-        Entrez votre passphrase de chiffrement pour déchiffrer les titres et corps d'issues sur cet
-        appareil.
+        {t("zk.unlock.description")}
       </p>
       <form className="space-y-3" onSubmit={onSubmit}>
         <label className="block space-y-1">
-          <span className="text-xs text-muted-foreground">Passphrase</span>
+          <span className="text-xs text-muted-foreground">{t("zk.unlock.passphraseLabel")}</span>
           <input
             type="password"
             autoComplete="current-password"
@@ -84,7 +85,7 @@ export function ZkUnlockDialog({ login }: { login: string }) {
             data-testid="zk-remember"
             className="size-4"
           />
-          <span>Retenir la passphrase sur cet appareil pendant 30 jours</span>
+          <span>{t("zk.unlock.rememberDevice")}</span>
         </label>
         <ZkFormError message={error} />
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
@@ -95,14 +96,14 @@ export function ZkUnlockDialog({ login }: { login: string }) {
             onClick={() => setShowResetWarning(true)}
             data-testid="zk-lost-pass"
           >
-            Mot de passe oublié ?
+            {t("zk.unlock.forgotPassword")}
           </Button>
           <div className="flex items-center gap-3">
             <Button type="button" variant="ghost" onClick={() => logout.mutate(undefined)}>
-              Se déconnecter
+              {t("zk.common.logout")}
             </Button>
             <Button type="submit" loading={busy} data-testid="zk-unlock-submit">
-              Déverrouiller
+              {t("zk.unlock.submit")}
             </Button>
           </div>
         </div>

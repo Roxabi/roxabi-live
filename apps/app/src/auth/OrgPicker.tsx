@@ -5,15 +5,17 @@
 
 import { useActiveTenant } from "@/auth/useAuthMutations";
 import { SingleSelect } from "@/components/SingleSelect";
+import { useT } from "@/i18n";
 import type { MePayload } from "@roxabi-live/shared";
 
 export function OrgPicker({ me }: { me: MePayload }) {
   const switchTenant = useActiveTenant();
+  const t = useT();
   if (me.installations.length <= 1) return null;
 
   return (
     <SingleSelect
-      ariaLabel="Active installation"
+      ariaLabel={t("auth.orgPicker.ariaLabel")}
       value={String(me.active_tenant_id ?? "")}
       options={me.installations.map((inst) => ({
         value: String(inst.tenant_id),

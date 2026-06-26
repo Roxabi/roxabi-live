@@ -4,6 +4,7 @@
  * the option lists and their counts stay stable as the user filters.
  */
 
+import { useT } from "@/i18n";
 import type { FacetKey } from "@/store/dashboardStore";
 import {
   type AnnotatedNode,
@@ -23,12 +24,6 @@ export interface FilterOption {
 export type FilterOptions = Record<FacetKey, FilterOption[]>;
 
 const STATUS_ORDER: StatusKey[] = ["ready", "running", "blocked", "done"];
-const STATUS_LABEL: Record<StatusKey, string> = {
-  ready: "Ready",
-  running: "Running",
-  blocked: "Blocked",
-  done: "Done",
-};
 const PRIORITY_ORDER = ["P0", "P1", "P2", "P3", EMPTY_DIM];
 
 // Structured/metadata labels conveyed by dedicated facets (size, priority, lane)
@@ -66,6 +61,7 @@ function bump(map: Map<string, number>, key: string): void {
 }
 
 export function useFilterOptions(nodes: AnnotatedNode[]): FilterOptions {
+  const t = useT();
   return useMemo(() => {
     const repo = new Map<string, number>();
     const milestone = new Map<string, number>();
@@ -103,27 +99,29 @@ export function useFilterOptions(nodes: AnnotatedNode[]): FilterOptions {
 
     return {
       status: STATUS_ORDER.filter((s) => status.has(s)).map((s) =>
-        opt(s, STATUS_LABEL[s], status.get(s) ?? 0),
+        opt(s, t(`status.${s}`), status.get(s) ?? 0),
       ),
       repo: [...repo]
         .map(([v, c]) => opt(v, v.replace(/^[^/]+\//, ""), c))
         .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
       milestone: [...milestone]
-        .map(([v, c]) => opt(v, v === EMPTY_DIM ? "No milestone" : (msMeta.get(v)?.name ?? v), c))
+        .map(([v, c]) =>
+          opt(v, v === EMPTY_DIM ? t("filter.empty.milestone") : (msMeta.get(v)?.name ?? v), c),
+        )
         .sort(
           (a, b) =>
             (msMeta.get(a.value)?.sortKey ?? 99999) - (msMeta.get(b.value)?.sortKey ?? 99999) ||
             a.label.localeCompare(b.label),
         ),
       priority: [...priority]
-        .map(([v, c]) => opt(v, v === EMPTY_DIM ? "No priority" : v, c))
+        .map(([v, c]) => opt(v, v === EMPTY_DIM ? t("filter.empty.priority") : v, c))
         .sort((a, b) => PRIORITY_ORDER.indexOf(a.value) - PRIORITY_ORDER.indexOf(b.value)),
       label: [...label]
         .map(([v, c]) => opt(v, v, c))
         .sort((a, b) => a.label.localeCompare(b.label)),
       assignee: [...assignee]
-        .map(([v, c]) => opt(v, v === EMPTY_ASSIGNEE ? "Unassigned" : v, c))
+        .map(([v, c]) => opt(v, v === EMPTY_ASSIGNEE ? t("filter.empty.assignee") : v, c))
         .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
     };
-  }, [nodes]);
+  }, [nodes, t]);
 }

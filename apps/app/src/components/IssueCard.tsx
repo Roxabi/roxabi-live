@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { type AnnotatedNode, type StatusKey, displayStatus } from "@roxabi-live/shared";
 
@@ -25,6 +26,7 @@ function Badge({ children }: { children: string }) {
 
 /** Compact issue card used inside pivot cells. */
 export function IssueCard({ node, showRepo = true }: { node: AnnotatedNode; showRepo?: boolean }) {
+  const t = useT();
   const status = displayStatus(node);
   return (
     <a
@@ -39,7 +41,7 @@ export function IssueCard({ node, showRepo = true }: { node: AnnotatedNode; show
       <div className="flex items-center gap-1.5">
         <span className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status])} aria-hidden />
         <span className="font-mono text-[10px] text-muted-foreground">#{node.number}</span>
-        <span className="truncate text-foreground">{node.title ?? `Issue #${node.number}`}</span>
+        <span className="truncate text-foreground">{node.title ?? t("table.card.issueTitle", { number: node.number })}</span>
       </div>
       {(showRepo || node.priority || node.size) && (
         <div className="mt-1 flex flex-wrap gap-1">

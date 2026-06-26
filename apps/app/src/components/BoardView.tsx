@@ -4,11 +4,13 @@ import { GraphPanel } from "@/components/GraphPanel";
 import { IssueTable } from "@/components/IssueTable";
 import { PivotMatrix } from "@/components/PivotMatrix";
 import { useFilteredNodes } from "@/hooks/useFilteredNodes";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboardStore";
 import type { AnnotatedNode, GraphEdge } from "@roxabi-live/shared";
 
 function PivotControls() {
+  const t = useT();
   const pivotRow = useDashboardStore((s) => s.pivotRow);
   const pivotCol = useDashboardStore((s) => s.pivotCol);
   const tableGroup = useDashboardStore((s) => s.tableGroup);
@@ -17,18 +19,18 @@ function PivotControls() {
   return (
     <div className="flex flex-wrap items-center gap-3">
       <DimSelect
-        label="Rows"
+        label={t("dim.label.rows")}
         value={pivotRow}
         onChange={(v) => patch({ pivotRow: v })}
         allowNone={false}
       />
       <DimSelect
-        label="Cols"
+        label={t("dim.label.cols")}
         value={pivotCol}
         onChange={(v) => patch({ pivotCol: v })}
         allowNone={false}
       />
-      <DimSelect label="Group" value={tableGroup} onChange={(v) => patch({ tableGroup: v })} />
+      <DimSelect label={t("dim.label.group")} value={tableGroup} onChange={(v) => patch({ tableGroup: v })} />
     </div>
   );
 }
@@ -64,6 +66,7 @@ function ToggleSeg({
 }
 
 function GraphControls() {
+  const t = useT();
   const graphRow = useDashboardStore((s) => s.graphRow);
   const graphCol = useDashboardStore((s) => s.graphCol);
   const showClosedUnderOpenEpic = useDashboardStore((s) => s.showClosedUnderOpenEpic);
@@ -73,23 +76,23 @@ function GraphControls() {
   return (
     <div className="flex flex-wrap items-center gap-3">
       <DimSelect
-        label="Rows"
+        label={t("dim.label.rows")}
         value={graphRow}
         onChange={(v) => patch({ graphRow: v })}
         allowNone={false}
       />
-      <DimSelect label="Order by" value={graphCol} onChange={(v) => patch({ graphCol: v })} />
+      <DimSelect label={t("dim.label.orderBy")} value={graphCol} onChange={(v) => patch({ graphCol: v })} />
       <ToggleSeg
-        label="Closed"
+        label={t("graph.toggle.closed.label")}
         testid="graph-closed-toggle"
-        title="Show closed issues whose parent epic is still open"
+        title={t("graph.toggle.closed.title")}
         pressed={showClosedUnderOpenEpic}
         onClick={() => patch({ showClosedUnderOpenEpic: !showClosedUnderOpenEpic })}
       />
       <ToggleSeg
-        label="Assignees"
+        label={t("graph.toggle.assignees.label")}
         testid="graph-assignees-toggle"
-        title="Show assignee logins on issue nodes"
+        title={t("graph.toggle.assignees.title")}
         pressed={showAssignees}
         onClick={() => patch({ showAssignees: !showAssignees })}
       />
@@ -98,14 +101,15 @@ function GraphControls() {
 }
 
 function ListControls() {
+  const t = useT();
   const listGroup = useDashboardStore((s) => s.listGroup);
   const listGroup2 = useDashboardStore((s) => s.listGroup2);
   const patch = useDashboardStore((s) => s.patch);
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <DimSelect label="Group" value={listGroup} onChange={(v) => patch({ listGroup: v })} />
-      <DimSelect label="Subgroup" value={listGroup2} onChange={(v) => patch({ listGroup2: v })} />
+      <DimSelect label={t("dim.label.group")} value={listGroup} onChange={(v) => patch({ listGroup: v })} />
+      <DimSelect label={t("dim.label.subgroup")} value={listGroup2} onChange={(v) => patch({ listGroup2: v })} />
     </div>
   );
 }
@@ -115,6 +119,7 @@ function ListControls() {
  * Owns the view toggle, pivot controls, filter bar, and the active view.
  */
 export function BoardView({ nodes, edges }: { nodes: AnnotatedNode[]; edges: GraphEdge[] }) {
+  const t = useT();
   const view = useDashboardStore((s) => s.view);
   const listGroup = useDashboardStore((s) => s.listGroup);
   const listGroup2 = useDashboardStore((s) => s.listGroup2);
@@ -130,7 +135,7 @@ export function BoardView({ nodes, edges }: { nodes: AnnotatedNode[]; edges: Gra
         {view === "pivot" && <PivotControls />}
         {view === "graph" && <GraphControls />}
         <span className="ml-auto font-mono text-xs text-muted-foreground">
-          {filtered.length} of {nodes.length}
+          {t("toolbar.filteredCount", { count: filtered.length, total: nodes.length })}
         </span>
       </div>
       {view === "list" && (

@@ -1,16 +1,17 @@
 import { SingleSelect } from "@/components/SingleSelect";
+import { useT } from "@/i18n";
 import type { Dim } from "@roxabi-live/shared";
 
-const DIMS: { value: Dim; label: string }[] = [
-  { value: "none", label: "None" },
-  { value: "milestone", label: "Milestone" },
-  { value: "priority", label: "Priority" },
-  { value: "repo", label: "Repo" },
-  { value: "lane", label: "Lane" },
-  { value: "size", label: "Size" },
-  { value: "status", label: "Status" },
-  { value: "parent", label: "Parent" },
-  { value: "assignee", label: "Assignee" },
+const DIM_VALUES: Dim[] = [
+  "none",
+  "milestone",
+  "priority",
+  "repo",
+  "lane",
+  "size",
+  "status",
+  "parent",
+  "assignee",
 ];
 
 interface DimSelectProps {
@@ -22,7 +23,11 @@ interface DimSelectProps {
 
 /** A small labelled dimension picker (pivot rows/cols/group) — themed dropdown. */
 export function DimSelect({ label, value, onChange, allowNone = true }: DimSelectProps) {
-  const options = DIMS.filter((d) => allowNone || d.value !== "none");
+  const t = useT();
+  const options = DIM_VALUES.filter((d) => allowNone || d !== "none").map((d) => ({
+    value: d,
+    label: t(`dim.option.${d}`),
+  }));
   return (
     <SingleSelect
       label={label}

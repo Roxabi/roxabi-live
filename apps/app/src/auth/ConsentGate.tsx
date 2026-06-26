@@ -9,28 +9,29 @@ import { OnboardingSteps } from "@/auth/OnboardingSteps";
 import { useConsent, useLogout } from "@/auth/useAuthMutations";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { useT } from "@/i18n";
 import type { MePayload } from "@roxabi-live/shared";
 
-const SCOPES = [
-  "Issues, labels, milestones et relations parent/enfant",
-  "Métadonnées des dépôts (nom, visibilité, archivage)",
-  "Données stockées dans Cloudflare D1, limitées à votre organisation",
-];
-
 export function ConsentGate({ me }: { me: MePayload }) {
+  const t = useT();
   const consent = useConsent();
   const logout = useLogout();
+
+  const SCOPES = [
+    t("auth.consent.scope.issues"),
+    t("auth.consent.scope.repoMeta"),
+    t("auth.consent.scope.d1"),
+  ];
 
   return (
     <Dialog open>
       <DialogContent showClose={false} className="max-w-xl">
         <OnboardingSteps active="consent" />
         <DialogTitle className="text-xl font-semibold text-foreground">
-          Accès aux données
+          {t("auth.consent.title")}
         </DialogTitle>
         <p className="text-sm text-muted-foreground">
-          L'application est installée. Avant la première synchronisation, confirmez que Roxabi Live
-          peut lire les métadonnées GitHub suivantes :
+          {t("auth.consent.description")}
         </p>
         <div className="space-y-1.5">
           {SCOPES.map((scope) => (
@@ -51,17 +52,16 @@ export function ConsentGate({ me }: { me: MePayload }) {
             rel="noopener noreferrer"
             className="text-primary underline-offset-4 hover:underline"
           >
-            paramètres GitHub
+            {t("auth.consent.githubSettingsLink")}
           </a>
           .
         </p>
         <p className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-foreground">
-          <strong>Les titres et corps d'issues sont chiffrés côté client avant stockage.</strong> La
-          structure du graphe (état, blockers, labels) reste lisible par l'opérateur.
+          {t("auth.consent.encryptionNotice")}
         </p>
         {consent.isError && (
           <p className="text-sm text-blocked" role="alert">
-            Enregistrement impossible — vérifiez votre connexion et réessayez.
+            {t("auth.consent.error")}
           </p>
         )}
         <div className="flex items-center justify-between gap-3">
@@ -70,10 +70,10 @@ export function ConsentGate({ me }: { me: MePayload }) {
             onClick={() => logout.mutate(undefined)}
             loading={logout.isPending}
           >
-            Se déconnecter
+            {t("auth.signout")}
           </Button>
           <Button onClick={() => consent.mutate()} loading={consent.isPending}>
-            J'ai compris — lancer la synchronisation
+            {t("auth.consent.confirmButton")}
           </Button>
         </div>
       </DialogContent>

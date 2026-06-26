@@ -8,6 +8,7 @@
  */
 
 import { useAuth } from "@/auth/AuthContext";
+import { useT } from "@/i18n";
 import { CircleNotch } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { ZkDevice2Block } from "./ZkDevice2Block";
@@ -27,13 +28,14 @@ import { clearZkResetPending, isZkResetPending } from "./reset";
 import { ensurePrivateMode } from "./sync";
 
 function ZkGateLoading() {
+  const t = useT();
   return (
     <div
       className="flex min-h-[60vh] items-center justify-center text-muted-foreground"
       data-testid="zk-loading"
     >
       <CircleNotch className="size-6 animate-spin" aria-hidden />
-      <span className="sr-only">Déverrouillage du chiffrement…</span>
+      <span className="sr-only">{t("zk.gate.loadingSrOnly")}</span>
     </div>
   );
 }

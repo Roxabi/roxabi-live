@@ -1,18 +1,21 @@
+import { useT } from "@/i18n";
 import { type Theme, applyTheme, readTheme } from "@/lib/theme";
 import { Moon, Sun } from "@phosphor-icons/react";
 import { useState } from "react";
 
 /** Dark/light theme toggle — legacy header `.theme-btn` (🌙). */
 export function ThemeToggle() {
+  const t = useT();
   const [theme, setTheme] = useState<Theme>(() => readTheme());
   const next: Theme = theme === "dark" ? "light" : "dark";
+  const nextLabel = next === "dark" ? t("settings.theme.dark") : t("settings.theme.light");
 
   return (
     <button
       type="button"
       data-testid="theme-toggle"
-      title={`Switch to ${next} theme`}
-      aria-label={`Switch to ${next} theme`}
+      title={t("settings.theme.switchTo", { next: nextLabel })}
+      aria-label={t("settings.theme.switchTo", { next: nextLabel })}
       onClick={() => {
         applyTheme(next);
         setTheme(next);
