@@ -1,0 +1,63 @@
+# Roxabi Live
+
+> Operations cockpit for GitHub issue dependency graphs. Reads native blocked-by and parent/child relations, computes ready/blocked/done, and helps orchestrate parallel coding-agent fleets. GitHub stays the source of truth.
+
+## Product URLs
+
+- Cockpit (sign in): https://app.live.roxabi.dev
+- Marketing: https://live.roxabi.dev
+- Agent guide (FR): https://live.roxabi.dev/for-agents
+- Agent guide (EN): https://live.roxabi.dev/en/for-agents
+- API (server-to-server; browser uses app proxy): https://api.live.roxabi.dev
+
+## Start here (agents & humans)
+
+Docs track the `main` branch (stable). Roxabi development happens on `staging` first.
+
+- Agent workflow (GitHub + /issue-triage + cockpit): https://github.com/Roxabi/roxabi-live/blob/main/docs/agent-workflow.md
+- Issue triage skill (full command reference): https://github.com/Roxabi/roxabi-live/blob/main/plugins/roxabi-issues/skills/issue-triage/SKILL.md
+- Architecture: https://github.com/Roxabi/roxabi-live/blob/main/docs/ARCHITECTURE.md
+- Local dev: https://github.com/Roxabi/roxabi-live/blob/main/docs/getting-started.md
+- Self-hosting: https://github.com/Roxabi/roxabi-live/blob/main/docs/DEPLOY.md
+
+## Label vocabulary (required for cockpit sync)
+
+- Lane: `graph:lane/<id>` (e.g. `graph:lane/b`)
+- Size: `size:<S>` or bare `XS|S|M|L|XL`; canonical tiers `S`, `F-lite`, `F-full`
+- Priority: `P0-critical`, `P1-high`, `P2-medium`, `P3-low` (issue-triage canonical); also `P0`…`P3`, `priority:high|medium|low`
+
+Set via `/issue-triage` or GitHub UI. Org issue type (`--type`: feat, fix, epic, …) is separate from labels. Roxabi Live does not use GitHub Projects V2.
+
+## Dependency relations
+
+- Blockers: GitHub `blocked-by` / `blocking` → cockpit status **blocked** while blocker is open
+- Parent/child: GitHub sub-issues → structural hierarchy in graph and list views
+- Computed status: closed → **done**; open blocker → **blocked**; else **ready** (`packages/shared` client; `GET /api/graph?status=` filters server-side)
+
+## Plugin install (Claude Code)
+
+```
+claude plugin marketplace add Roxabi/roxabi-live
+claude plugin install roxabi-issues
+```
+
+Invoke: `/issue-triage`
+
+## Monorepo layout
+
+- `apps/api` — Hono Worker, sync, webhooks, D1
+- `apps/app` — React SPA, proxies API via service binding
+- `apps/marketing` — Astro landing (apex domain)
+- `plugins/roxabi-issues` — issue-triage skill (bun)
+- `packages/shared` — shared TypeScript types
+
+## API (session auth via app)
+
+- `GET /api/graph` — dependency graph JSON
+- `GET /api/issues` — filtered issue list
+- `GET /api/issues/{owner}/{repo}%23{N}` — single issue (URL-encoded `#`)
+
+## Optional
+
+- ZK encryption (redacted titles): https://github.com/Roxabi/roxabi-live/blob/main/docs/ZK_ENCRYPTION.md
+- Maintainer instructions: https://github.com/Roxabi/roxabi-live/blob/main/CLAUDE.md

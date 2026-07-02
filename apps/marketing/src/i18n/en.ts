@@ -10,6 +10,7 @@ export const en: Translations = {
   header: {
     navComment:   "Feedback",
     navAdmin:     "Admin",
+    navCommentHref: "https://github.com/Roxabi/roxabi-live/issues/new/choose",
     loginLabel:   "Sign in",
   },
 
@@ -163,9 +164,11 @@ export const en: Translations = {
   footer: {
     logoWordmark: "Live",
     links: [
-      { label: "Feedback", href: "/feedback" },
-      { label: "Admin",    href: "/admin"    },
-      { label: "GitHub",   href: "https://github.com/Roxabi" },
+      { label: "Agent guide", href: "/en/for-agents" },
+      { label: "llms.txt",    href: "/llms.txt" },
+      { label: "Feedback",    href: "https://github.com/Roxabi/roxabi-live/issues/new/choose" },
+      { label: "Admin",       href: "https://app.live.roxabi.dev/admin", appPath: "/admin" },
+      { label: "GitHub",      href: "https://github.com/Roxabi/roxabi-live" },
     ],
     copy: "© 2026 Roxabi",
   },

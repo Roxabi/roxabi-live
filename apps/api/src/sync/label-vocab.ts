@@ -21,6 +21,7 @@ const _LEGACY_SIZE_MAP: Record<string, string> = { M: "F-lite" };
 const _LEGACY_SIZE_RAW = new Set(["XS", "S", "M", "L", "XL"]);
 const _PRIORITY_EXACT: Record<string, string> = {
   P0: "P0",
+  "P0-critical": "P0",
   "priority:P0": "P0",
   "P1-high": "P1",
   "priority:high": "P1",

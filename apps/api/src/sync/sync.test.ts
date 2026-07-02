@@ -98,6 +98,11 @@ describe("extractFromLabels", () => {
     expect(priority).toBe("P1");
   });
 
+  it("extracts priority from P0-critical", () => {
+    const { priority } = extractFromLabels(["P0-critical"]);
+    expect(priority).toBe("P0");
+  });
+
   it("extracts priority from priority:P2", () => {
     const { priority } = extractFromLabels(["priority:P2"]);
     expect(priority).toBe("P2");
@@ -558,6 +563,7 @@ describe("auth failure helpers", () => {
 describe("extractFromLabels priority aliases", () => {
   it.each([
     ["P0", "P0"],
+    ["P0-critical", "P0"],
     ["priority:P0", "P0"],
     ["P1-high", "P1"],
     ["priority:high", "P1"],

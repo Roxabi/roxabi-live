@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.22.3](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.22.2...roxabi-live/v0.22.3) (2026-07-02)
+
+
+### Added
+
+* **docs:** monorepo doc refresh for v0.22 three-host topology ([#293](https://github.com/Roxabi/roxabi-live/pull/293))
+* **docs:** agent workflow guide, `llms.txt`, and marketing `/for-agents` pages ([#293](https://github.com/Roxabi/roxabi-live/pull/293))
+
+
+### Fixed
+
+* **docs:** address code-review findings — DEPLOY paths, `P0-critical` label sync, marketing app links ([#293](https://github.com/Roxabi/roxabi-live/pull/293))
+* **sync:** map `P0-critical` priority label from issue-triage ([#293](https://github.com/Roxabi/roxabi-live/pull/293))
+
+
+### Changed
+
+* **chore:** add `context-lint` GitHub workflow for Grok + Claude harness paths
+* **plugins:** drop decision presentation protocol from issue-triage skill
+
+
 ## [0.22.2](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.22.1...roxabi-live/v0.22.2) (2026-07-02)
 
 
