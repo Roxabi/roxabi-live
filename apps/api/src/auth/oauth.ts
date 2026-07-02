@@ -11,6 +11,7 @@
 import type { Context } from "hono";
 import type { Env } from "../types";
 import { authRedirect, readSessionToken, sanitizeAuthRedirect, stripInstallParam } from "./cookies";
+import { githubRestGet } from "./github-rest";
 import { tryLinkInstallPendingSession } from "./link-install";
 import { serveLoginPrompt } from "./login-prompt";
 import { completeOAuthSession } from "./post-oauth";
@@ -221,40 +222,44 @@ export async function callbackRoute(c: Context<{ Bindings: Env }>): Promise<Resp
   }
   const access_token = tokenBody.access_token;
 
-  const ghHeaders = {
-    Authorization: `Bearer ${access_token}`,
-    "User-Agent": "roxabi-live",
-    Accept: "application/vnd.github+json",
-  };
-
   // Fetch authenticated user
-  const userRes = await fetch("https://api.github.com/user", {
-    headers: ghHeaders,
-  });
+  const userRes = await githubRestGet("https://api.github.com/user", access_token);
   if (!userRes.ok) {
-    return c.json({ error: "github_unavailable" }, 502);
+    console.warn("oauth: github /user failed", { status: userRes.status });
+    return c.json({ error: "github_unavailable", step: "user", status: userRes.status }, 502);
   }
   const ghUser = (await userRes.json()) as { id: number; login: string };
 
-  // Fetch user installations
-  const installRes = await fetch("https://api.github.com/user/installations", {
-    headers: ghHeaders,
-  });
-  if (!installRes.ok) {
-    return c.json({ error: "github_unavailable" }, 502);
+  // Fetch user installations — fall back to install-pending when GitHub is flaky here.
+  let installations: Array<{
+    id: number;
+    account: { login: string; type: string };
+  }> = [];
+  const installRes = await githubRestGet(
+    "https://api.github.com/user/installations",
+    access_token,
+  );
+  if (installRes.ok) {
+    const body = (await installRes.json()) as {
+      installations?: Array<{
+        id: number;
+        account: { login: string; type: string };
+      }>;
+    };
+    installations = body.installations ?? [];
+  } else {
+    console.warn("oauth: github /user/installations failed; continuing install-pending", {
+      status: installRes.status,
+      login: ghUser.login,
+    });
   }
-  const { installations } = (await installRes.json()) as {
-    installations: Array<{
-      id: number;
-      account: { login: string; type: string };
-    }>;
-  };
 
   // No installations — mint install-pending session and show our install guide
   if (installations.length === 0) {
-    const orgsRes = await fetch("https://api.github.com/user/orgs?per_page=100", {
-      headers: ghHeaders,
-    });
+    const orgsRes = await githubRestGet(
+      "https://api.github.com/user/orgs?per_page=100",
+      access_token,
+    );
     const orgs = orgsRes.ok ? ((await orgsRes.json()) as Array<{ id: number; login: string }>) : [];
 
     const installTargets = [
