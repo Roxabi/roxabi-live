@@ -187,7 +187,7 @@ Cloudflare Workers have a subrequest limit per invocation. To stay within it wit
 - Watermark tracked in `sync_state.slot` per repo; `sync_control.sync_started_at` seeded by migration 0006
 - Known: with 34+ repos, slot 2 window `[40, 60)` may be empty → that tick is a no-op (expected, tracked #166)
 
-> **Daily full reconcile (#80):** The Cron trigger (`0 0 * * *`) runs `since=null` — all repos, no watermark filter. This heals deps-only edge drift (e.g. `blockedBy`/`blocking` changes that arrive only via the sync path, not webhook events). The webhook still handles real-time intra-day updates.
+> **Daily full reconcile (#80):** When enabled, the Cron trigger (`0 0 * * *` in `apps/api/wrangler.toml`) runs `since=null` — all repos, no watermark filter. Stock config has `crons = []`; sync is driven by webhooks, login bootstrap, and `POST /admin/sync`. Re-enabling cron heals deps-only edge drift the webhook path may miss.
 
 ### R2 audit
 

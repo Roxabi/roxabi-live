@@ -117,7 +117,7 @@ API (session cookie required — sign in via the app):
 |----------|-----|
 | `GET /api/graph` | Full dependency graph for visible repos |
 | `GET /api/issues` | Filtered issue list |
-| `GET /api/issues/{owner/repo#N}` | Single issue |
+| `GET /api/issues/{owner}/{repo}%23{N}` | Single issue (URL-encoded `#`, e.g. `Roxabi/roxabi-live%2342`) |
 
 Browser traffic is same-origin on `app.live.roxabi.dev` (app worker proxies to API).
 

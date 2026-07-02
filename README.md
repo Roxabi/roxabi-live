@@ -6,7 +6,7 @@
 |:---:|:---:|:---:|
 | ![Table](docs/images/table-view.png) | ![List](docs/images/list-view.png) | ![Graph](docs/images/graph-view.png) |
 
-Roxabi Live syncs GitHub issues from your org into [Cloudflare D1](https://developers.cloudflare.com/d1/) and serves a multi-view dashboard at **[app.live.roxabi.dev](https://app.live.roxabi.dev)**. It tracks parent/child relationships and blockers, applies real-time updates via GitHub webhooks, and reconciles on a schedule — across three Cloudflare surfaces (marketing, app, API).
+Roxabi Live syncs GitHub issues from your org into [Cloudflare D1](https://developers.cloudflare.com/d1/) and serves a multi-view dashboard at **[app.live.roxabi.dev](https://app.live.roxabi.dev)**. It tracks parent/child relationships and blockers, applies real-time updates via GitHub webhooks, and reconciles via bootstrap, manual `/admin/sync`, and optional cron (disabled in stock config) — across three Cloudflare surfaces (marketing, app, API).
 
 **Multi-user:** any GitHub user with access to the installed GitHub App can sign in via OAuth. The app is session-gated — `/api/*` requires an active session cookie. `/admin/*` additionally sits behind Cloudflare Access (Email-OTP).
 
@@ -51,7 +51,7 @@ Deploys are Cloudflare git-connected: push to `staging` → staging; push to `ma
 
 ```mermaid
 flowchart LR
-    CRON[Cron / manual sync]
+    CRON[Webhooks / manual sync]
     GH[GitHub Org\nGraphQL + webhooks]
     API[API Worker\napps/api]
     APP[App Worker\napps/app]
@@ -69,7 +69,7 @@ flowchart LR
 ```
 
 **Sync flow:**
-1. Scheduled reconcile and `POST /admin/sync` fetch issues via GitHub GraphQL (`subIssues`, `parent`, `blockedBy`, `blocking`) and upsert into D1.
+1. Webhooks, login bootstrap, and `POST /admin/sync` fetch issues via GitHub GraphQL (`subIssues`, `parent`, `blockedBy`, `blocking`) and upsert into D1 (optional daily cron: `crons = ["0 0 * * *"]` in `apps/api/wrangler.toml`).
 2. GitHub webhooks (`POST /webhook/github`, HMAC-verified) apply incremental updates.
 3. The React app at `app.live.roxabi.dev` proxies `/api/*` to the API worker and renders pivot, list, and graph views.
 
@@ -98,7 +98,7 @@ Browser traffic is same-origin on `app.live.roxabi.dev` (proxied to the API work
 | `/api/me` | GET | session | Current authenticated user info |
 | `/api/active-tenant` | POST | session | Set active org when user has >1 installation |
 | `/api/issues` | GET | session | List issues (`repo`, `state`, `label`, `limit`, `offset`) |
-| `/api/issues/{key}` | GET | session | Single issue by key, e.g. `Roxabi/lyra#123` |
+| `/api/issues/{owner}/{repo}%23{N}` | GET | session | Single issue, e.g. `Roxabi/lyra%23123` |
 | `/api/graph` | GET | session | Full dependency graph JSON, scoped to tenant |
 | `/admin/sync` | POST | CF Access + ADMIN_TOKEN Bearer | Out-of-band sync trigger |
 | `/webhook/github` | POST | HMAC-SHA256 | GitHub webhook receiver (on `api.*`) |

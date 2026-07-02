@@ -6,7 +6,8 @@
 
 - Cockpit (sign in): https://app.live.roxabi.dev
 - Marketing: https://live.roxabi.dev
-- Agent guide: https://live.roxabi.dev/for-agents
+- Agent guide (FR): https://live.roxabi.dev/for-agents
+- Agent guide (EN): https://live.roxabi.dev/en/for-agents
 - API (server-to-server; browser uses app proxy): https://api.live.roxabi.dev
 
 ## Start here (agents & humans)
@@ -54,7 +55,7 @@ Invoke: `/issue-triage`
 
 - `GET /api/graph` — dependency graph JSON
 - `GET /api/issues` — filtered issue list
-- `GET /api/issues/{owner/repo#N}` — single issue
+- `GET /api/issues/{owner}/{repo}%23{N}` — single issue (URL-encoded `#`)
 
 ## Optional
 
