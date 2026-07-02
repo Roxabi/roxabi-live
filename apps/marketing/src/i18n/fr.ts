@@ -8,6 +8,7 @@ export const fr = {
   header: {
     navComment:   "Commentaires",
     navAdmin:     "Admin",
+    navCommentHref: "https://github.com/Roxabi/roxabi-live/issues/new/choose",
     loginLabel:   "Connexion",
   },
 
@@ -161,9 +162,11 @@ export const fr = {
   footer: {
     logoWordmark: "Live",
     links: [
-      { label: "Commentaires", href: "/feedback" },
-      { label: "Admin",        href: "/admin"    },
-      { label: "GitHub",       href: "https://github.com/Roxabi" },
+      { label: "Guide agents", href: "/for-agents" },
+      { label: "llms.txt",     href: "/llms.txt" },
+      { label: "Commentaires", href: "https://github.com/Roxabi/roxabi-live/issues/new/choose" },
+      { label: "Admin",        href: "https://app.live.roxabi.dev/admin", appPath: "/admin" },
+      { label: "GitHub",       href: "https://github.com/Roxabi/roxabi-live" },
     ],
     copy: "© 2026 Roxabi",
   },

@@ -23,37 +23,16 @@ const { t } = Astro.props;
 
     <nav aria-label="Navigation principale">
       <ul class="header-nav">
-        <li><a href="/feedback">{t.header.navComment}</a></li>
-        <li><a href="/admin">{t.header.navAdmin}</a></li>
+        <li><a href={t.header.navCommentHref}>{t.header.navComment}</a></li>
+        <li><a href="https://app.live.roxabi.dev/admin" data-app-link data-app-path="/admin">{t.header.navAdmin}</a></li>
       </ul>
     </nav>
 
     <div class="header-actions">
       <a href={t.langSwitchHref} class="btn-header-login">{t.langSwitchLabel}</a>
-      <a href="https://app.live.roxabi.dev/" data-app-link class="btn-header-cta">{t.header.loginLabel}</a>
+      <a href="https://app.live.roxabi.dev/" data-app-link data-app-path="/" class="btn-header-cta">{t.header.loginLabel}</a>
     </div>
   </div>
 </header>
 
-<script is:inline>
-  // The marketing site and the app live on sibling subdomains; point every
-  // [data-app-link] (header + hero + CTA band) at the app env matching the
-  // current marketing env (staging ↔ staging, prod ↔ prod) so a staging visitor
-  // isn't bounced to the prod app. The markup default is the prod app URL, so
-  // the links work without JS too. Wait for DOMContentLoaded so links rendered
-  // below this header (hero, CTA band) are already in the DOM.
-  (function () {
-    function wire() {
-      var app = location.hostname.indexOf("staging") !== -1
-        ? "https://app-staging.live.roxabi.dev"
-        : "https://app.live.roxabi.dev";
-      var links = document.querySelectorAll("[data-app-link]");
-      for (var i = 0; i < links.length; i++) links[i].setAttribute("href", app + "/");
-    }
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", wire);
-    } else {
-      wire();
-    }
-  })();
-</script>
+

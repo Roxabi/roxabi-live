@@ -9,7 +9,7 @@
     "destination_dir": "apps/marketing/dist"
   },
   "source": {
-    "path_includes": ["apps/marketing/*", "packages/*", "package.json", "bun.lock"]
+    "path_includes": ["apps/marketing/*", "packages/*", "package.json", "bun.lock", "llms.txt"]
   },
   "productionEnv": {
     "PUBLIC_APP_URL": "https://app.live.roxabi.dev"

@@ -1,34 +1,37 @@
 # Architecture — Roxabi Live
 
-Roxabi Live is a serverless operations cockpit that syncs GitHub issues and their dependency graph from a GitHub App installation into a Cloudflare D1 database, then serves the graph as a filterable web UI. The entire stack runs on Cloudflare: a single Worker handles HTTP via Hono, a Cron Trigger drives a daily full reconcile, static frontend assets are served through the Worker's ASSETS binding, and R2 stores per-run audit logs. There is no persistent server, no Python runtime, and no local database in production.
+Roxabi Live is a serverless operations cockpit that syncs GitHub issues and their dependency graph from a GitHub App installation into Cloudflare D1, then serves the graph as a filterable React UI. The stack runs on Cloudflare across three hosts: marketing (Pages), app (SPA + API proxy Worker), and API (Hono + sync + webhooks). R2 stores per-run audit logs. No persistent server, no Python runtime, no local database in production.
 
 ---
 
 ## Serverless topology
 
 ```
-                       Cloudflare edge
- ┌─────────────────────────────────────────────────────────────┐
- │                                                             │
- │  CF Access (Email-OTP)          ┌─────────────────────┐    │
- │  gates /admin/*                 │   Cloudflare Worker  │    │
- │  Bypass on /webhook/*           │   (roxabi-live)      │    │
- │                                 │                      │    │
- │  Browser ──────────────────────►│  fetch handler       │    │
- │  GitHub webhook ───────────────►│    Hono router       │    │
- │  Cron (0 0 * * *) ────────────►│  scheduled handler   │    │
- │                                 └──────┬───────────────┘    │
- │                                        │                    │
- │              ┌─────────────────────────┼─────────────┐      │
- │              │                         │             │      │
- │              ▼                         ▼             ▼      │
- │         D1 (DB)              R2 (LOGS)        ASSETS        │
- │   roxabi-live-production    per-run audit    frontend/       │
- │   [YOUR_D1_ID_PROD]         JSON files       HTML/JS/CSS     │
- └─────────────────────────────────────────────────────────────┘
+                         Cloudflare edge
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  live.roxabi.dev (Pages)     Marketing — apps/marketing          │
+ │                                                                  │
+ │  app.live.roxabi.dev         ┌────────────────────────────┐      │
+ │  Browser ───────────────────►│ Worker roxabi-live-app     │      │
+ │                              │  SPA ASSETS (apps/app)     │      │
+ │                              │  proxy /api,/login,… ──────┼──┐   │
+ │                              └────────────────────────────┘  │   │
+ │                                                              ▼   │
+ │  api.live.roxabi.dev         ┌────────────────────────────┐      │
+ │  GitHub webhook ────────────►│ Worker roxabi-live (api)   │      │
+ │  Cron / admin sync ─────────►│  Hono router               │      │
+ │                              └──────┬─────────────────────┘      │
+ │                                     │                            │
+ │                    ┌────────────────┼──────────────┐               │
+ │                    ▼                ▼              ▼               │
+ │               D1 (DB)         R2 (LOGS)    ASSETS (legacy)       │
+ │         roxabi-live-production  audit JSON   frontend/           │
+ └──────────────────────────────────────────────────────────────────┘
 ```
 
-Worker entry: `worker/src/index.ts` — exports `fetch` (HTTP) and `scheduled` (Cron) handlers. Routing via Hono in `worker/src/router.ts`.
+API worker entry: `apps/api/src/index.ts` — `fetch` (HTTP) and `scheduled` (Cron). Routing via Hono in `apps/api/src/router.ts`.
+
+The browser never calls `api.live.roxabi.dev` for app traffic — the app worker proxies via a service binding. `api.*` is reached directly only for GitHub webhooks and admin/cron (CF Access on `/admin/*`, Bypass on `/webhook/*`).
 
 ---
 
@@ -78,7 +81,7 @@ GET /webhook/github (POST)
   │
   ├─ Verify X-Hub-Signature-256 (Web Crypto, GITHUB_WEBHOOK_SECRET)
   ├─ Dispatch: issues / deps / sub_issues event handlers
-  └─ D1 upsert via worker/src/webhook/mutations.ts
+  └─ D1 upsert via apps/api/src/webhook/mutations.ts
 ```
 
 ---
@@ -129,7 +132,7 @@ All `/api/*` reads are scoped through `resolveVisibleRepos`:
 `POST /admin/sync` is protected by two independent layers:
 
 1. CF Access Email-OTP at the Cloudflare edge
-2. `Authorization: Bearer <ADMIN_TOKEN>` check in `worker/src/api/admin.ts`
+2. `Authorization: Bearer <ADMIN_TOKEN>` check in `apps/api/src/api/admin.ts`
 
 `ADMIN_TOKEN` unset = Worker-level gate disabled; CF Access alone guards.
 
@@ -167,7 +170,7 @@ Edge semantics:
 
 Per-issue upsert deletes only edges of the same `kind` before re-inserting — preserves the other kind.
 
-Frontend status computation (`frontend/state.js`):
+Frontend status computation (`apps/app` graph layer; legacy `frontend/state.js` uses the same rules):
 
 ```js
 if (node.state === 'closed') return 'done';
@@ -184,7 +187,7 @@ Cloudflare Workers have a subrequest limit per invocation. To stay within it wit
 - Watermark tracked in `sync_state.slot` per repo; `sync_control.sync_started_at` seeded by migration 0006
 - Known: with 34+ repos, slot 2 window `[40, 60)` may be empty → that tick is a no-op (expected, tracked #166)
 
-> **Daily full reconcile (#80):** The Cron trigger (`0 0 * * *`) runs `since=null` — all repos, no watermark filter. This heals deps-only edge drift (e.g. `blockedBy`/`blocking` changes that arrive only via the sync path, not webhook events). The webhook still handles real-time intra-day updates.
+> **Daily full reconcile (#80):** When enabled, the Cron trigger (`0 0 * * *` in `apps/api/wrangler.toml`) runs `since=null` — all repos, no watermark filter. Stock config has `crons = []`; sync is driven by webhooks, login bootstrap, and `POST /admin/sync`. Re-enabling cron heals deps-only edge drift the webhook path may miss.
 
 ### R2 audit
 
@@ -246,48 +249,50 @@ Applied in order at deploy time (`wrangler d1 migrations apply DB --remote`):
 
 ## Frontend
 
-Static assets in `frontend/` (landing, auth, legal, dashboard) are served via the Worker ASSETS binding. The dashboard reads `GET /api/graph` and related JSON endpoints.
+**Primary UI:** React SPA in `apps/app/` — deployed at `app.live.roxabi.dev`, proxies API routes via `worker.ts` service binding.
+
+**Legacy shell:** `frontend/` (vanilla HTML/JS) still bound as ASSETS on the API worker for direct hits; cleanup pending.
+
+The dashboard reads `GET /api/graph` and related JSON endpoints (same-origin through the app proxy).
 
 ---
 
 ## Key files
 
-### Worker (active)
+### API worker (`apps/api`)
 
 | File | Role |
 |------|------|
-| `worker/src/index.ts` | Worker entry point (`fetch` + `scheduled` handlers) |
-| `worker/src/router.ts` | Request routing (Hono) |
-| `worker/src/types.ts` | `Env` interface + shared types |
-| `worker/src/api/issues.ts` | `GET /api/issues`, `GET /api/issues/:key` |
-| `worker/src/api/graph.ts` | `GET /api/graph` |
-| `worker/src/api/admin.ts` | `POST /admin/sync` (ADMIN_TOKEN-gated) |
-| `worker/src/api/version.ts` | `GET /api/version` |
-| `worker/src/sync/sync.ts` | Daily reconcile orchestrator + R2 audit write |
-| `worker/src/sync/graphql.ts` | GitHub GraphQL client (`fetch()`) |
-| `worker/src/sync/queries.ts` | GraphQL query strings |
-| `worker/src/sync/parse.ts` | Issue/edge parsing |
-| `worker/src/webhook/handlers.ts` | Webhook dispatch (issues/deps/sub_issues) |
-| `worker/src/webhook/hmac.ts` | HMAC verification |
-| `worker/src/webhook/mutations.ts` | D1 write helpers |
-| `worker/migrations/` | D1 schema migrations |
-| `wrangler.toml` | Worker config (bindings, Cron, routes, environments) |
-| `frontend/` | Static HTML/JS/CSS served via ASSETS binding |
+| `apps/api/src/index.ts` | Worker entry (`fetch` + `scheduled`) |
+| `apps/api/src/router.ts` | Hono routing |
+| `apps/api/src/types.ts` | `Env` + shared types |
+| `apps/api/src/api/issues.ts` | `GET /api/issues`, `GET /api/issues/:key` |
+| `apps/api/src/api/graph.ts` | `GET /api/graph` |
+| `apps/api/src/api/admin.ts` | `POST /admin/sync` |
+| `apps/api/src/sync/sync.ts` | Reconcile orchestrator + R2 audit |
+| `apps/api/src/webhook/handlers.ts` | Webhook dispatch |
+| `apps/api/migrations/` | D1 schema migrations |
+| `apps/api/wrangler.toml` | API worker config (`api.live.roxabi.dev`) |
+
+### App worker (`apps/app`)
+
+| File | Role |
+|------|------|
+| `apps/app/worker.ts` | Edge worker: SPA ASSETS + API proxy |
+| `apps/app/src/` | React dashboard (graph, list, pivot, auth, ZK) |
+| `apps/app/wrangler.deploy.jsonc` | Deploy config |
 
 ### Package layout
 
 ```
-worker/
-  src/
-    index.ts          # fetch + scheduled entry
-    router.ts
-    types.ts
-    api/              # issues, graph, admin, version
-    sync/             # sync, graphql, queries, parse
-    webhook/          # handlers, hmac, mutations
-  migrations/
-wrangler.toml         # repo root — binds both envs
-frontend/             # served via ASSETS binding
+apps/
+  api/                # Hono API worker
+  app/                # React SPA + proxy worker
+  marketing/          # Astro landing
+packages/
+  shared/             # @roxabi-live/shared
+frontend/             # legacy ASSETS (API worker)
+plugins/roxabi-issues/  # issue-triage skill
 ```
 
 ---
