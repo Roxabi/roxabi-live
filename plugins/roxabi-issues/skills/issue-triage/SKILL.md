@@ -18,7 +18,7 @@ Create GitHub issues, assign Size/Priority labels, manage blockedBy dependencies
 2. ∀ issue: determine Size, Priority, κ (see [Complexity Scoring](#complexity-scoring))
 3. Set values: `τ set <number> --size <S> --priority <P>`
 4. Create issues: `τ create --title "Title" [--body "Body"] [--label "bug,frontend"] [--size M] [--priority High] [--type feat] [--lane b] [--parent 163]`
-5. → DP(B)if unsure about Size ∨ Priority.
+5. → ask userif unsure about Size ∨ Priority.
 
 ## Size Guidelines
 
@@ -183,7 +183,7 @@ gh issue edit <number> --body "$BODY
 | 4-6 | **F-lite** | Worktree + subagents + /code-review | Task subagents (1-2 domain + tester) |
 | 7-10 | **F-full** | Bootstrap + worktree + agent team + /code-review | TeamCreate (3+ agents, test-first) |
 
-κ is advisory. Human judgment overrides. → DP(B)if score ≠ intuition.
+κ is advisory. Human judgment overrides. → ask userif score ≠ intuition.
 
 See [Tier Classification Reference](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/tier-classification.md) for full rules.
 Reference: `artifacts/analyses/280-token-consumption.mdx` for scoring examples.
