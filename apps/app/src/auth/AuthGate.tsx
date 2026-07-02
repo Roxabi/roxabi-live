@@ -2,7 +2,7 @@
  * AuthGate — the server-owned onboarding gate, ported from frontend/auth.js
  * requireAuthGate(). Resolves GET /api/me, then routes:
  *
- *   401 / no session   → <SignInScreen/>  (marketing landing owns this post-cutover)
+ *   401 / no session   → <SignInScreen/> (neutral — not "session expired")
  *   onboarding "install" → <InstallGate/>
  *   onboarding "consent" → <ConsentGate/>
  *   onboarding "ready"   → <AuthProvider> children
@@ -39,7 +39,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   if (isLoading) return <AuthLoading />;
 
   if (error) {
-    if (error.status === 401) return <SignInScreen reason="session-lost" />;
+    if (error.status === 401) return <SignInScreen />;
     return (
       <div
         className="mx-auto max-w-md py-16 text-center text-sm text-blocked"

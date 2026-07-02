@@ -25,6 +25,10 @@ function loginUrl(remember: boolean): string {
   return `/login?${params}`;
 }
 
+function sessionLostFromUrl(): boolean {
+  return new URLSearchParams(location.search).get("reason") === "session-lost";
+}
+
 export function SignInScreen({
   mode = "signin",
   reason,
@@ -33,6 +37,7 @@ export function SignInScreen({
   reason?: "session-lost";
 }) {
   const t = useT();
+  const showSessionLost = reason === "session-lost" || sessionLostFromUrl();
   const [remember, setRemember] = useState(
     () => localStorage.getItem(REMEMBER_SESSION_KEY) === "1",
   );
@@ -50,7 +55,7 @@ export function SignInScreen({
         <h1 className="text-xl font-semibold text-foreground">
           {isSignup ? t("auth.signup.title") : t("auth.signin.title")}
         </h1>
-        {reason === "session-lost" && (
+        {showSessionLost && (
           <p className="rounded-md border border-blocked/30 bg-blocked/10 px-3 py-2 text-sm text-blocked">
             {t("auth.sessionLost")}
           </p>

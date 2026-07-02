@@ -73,9 +73,8 @@ export function useLogout() {
     },
     onSuccess: (_data, vars) => {
       qc.clear();
-      // Default to /sign-in (a neutral SignInScreen). Landing on "/" would let
-      // AuthGate read the now-revoked session as a 401 and flash the alarming
-      // "Session expired" banner — wrong after a deliberate logout.
+      // Default to /sign-in — explicit guest entry. AuthGate also shows a neutral
+      // sign-in on "/" when unauthenticated (no "session expired" banner).
       window.location.href = vars?.to ?? "/sign-in";
     },
   });
