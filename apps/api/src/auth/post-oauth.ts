@@ -52,7 +52,7 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;background:ra
 .auth-nav-shell{position:relative;z-index:1;width:100%;max-width:380px}
 .auth-nav-card{background:var(--bg-elevated);border:1px solid var(--border-hi);border-radius:var(--radius-lg);box-shadow:var(--panel-shadow);padding:32px 28px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:18px}
 .auth-nav-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:-.02em}
-.auth-nav-brand img{width:28px;height:28px}
+.auth-nav-brand svg{width:28px;height:28px;flex-shrink:0}
 .auth-nav-brand .accent{color:var(--accent)}
 .auth-nav-spinner{width:40px;height:40px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:auth-nav-spin .9s linear infinite}
 @keyframes auth-nav-spin{to{transform:rotate(360deg)}}
@@ -67,7 +67,7 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;background:ra
 <main class="auth-nav-shell" role="main">
   <div class="auth-nav-card" role="status" aria-live="polite" aria-busy="true">
     <div class="auth-nav-brand">
-      <img src="/assets/logo/foundation-block-16.svg" alt="" width="28" height="28" />
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="28" height="28" aria-hidden="true"><polygon points="3,5.5 8,8 8,13 3,10.5" fill="#11161d"/><polygon points="13,5.5 13,10.5 8,13 8,8" fill="#171e27"/><polygon points="8,3 13,5.5 8,8 3,5.5" fill="#1c2431"/><polygon points="8,4 11,5.5 8,7 5,5.5" fill="#f0b429"/><path d="M8,3 13,5.5 13,10.5 8,13 3,10.5 3,5.5Z" fill="none" stroke="#f0b429" stroke-width="0.8" stroke-linejoin="round"/><path d="M3,5.5 8,8 8,13 M13,5.5 8,8" fill="none" stroke="#f0b429" stroke-width="0.6" stroke-linejoin="round" opacity="0.7"/></svg>
       <span>Roxabi <span class="accent">Live</span></span>
     </div>
     <div class="auth-nav-spinner" aria-hidden="true"></div>

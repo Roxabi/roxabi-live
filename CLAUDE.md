@@ -1,5 +1,4 @@
 @.claude/stack.yml
-@~/.claude/shared/global-patterns.md
 
 # CLAUDE.md — Instructions for Claude Code
 
@@ -21,12 +20,6 @@ Let:
 ## Plugins
 
 `plugins/roxabi-issues/` — Claude Code plugin (own `.claude-plugin/marketplace.json`), relocated from dev-core 2026-06-09. Skill `issue-triage` (invoked `roxabi-issues:issue-triage`): set labels (size/priority/lane/type) + manage blocked-by deps + parent/child sub-issues on GitHub issues. **Labels + native relations only — no ProjectV2 board** (board read is the cockpit's job). Self-contained bun project (`bun run typecheck|test`). Registered in `roxabi-plugins/.claude-plugin/external-registry.json`.
-
-## TL;DR
-
-- Entry: `/dev #N` → tier (S/F-lite/F-full) → lifecycle
-- Decisions → global-patterns.md
-- ¬`--force` | ¬`--hard` | ¬`--amend`
 
 ## Key files
 
@@ -89,7 +82,7 @@ apps/
   marketing/          # Astro SSG — apex live.roxabi.dev (CF Pages)
 packages/
   shared/             # @roxabi-live/shared — API types + graph/dims/layout helpers
-frontend/             # LEGACY vanilla shell — ASSETS fallback only (deleted post-cutover)
+frontend/             # LEGACY vanilla shell (sign-in/dashboard HTML) — LIVE, git-tracked; wired as the ASSETS binding of the apps/api worker (apps/api/wrangler.toml [assets] directory=../../frontend). Permanent until an explicit cleanup PR drops [assets] + the /dashboard,/sign-in routes — do not delete on the strength of this comment alone
 ```
 
 **Plugin (issue mgmt — relocated from dev-core)**

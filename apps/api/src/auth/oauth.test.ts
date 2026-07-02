@@ -1082,10 +1082,32 @@ describe("callbackRoute", () => {
       expect(res.status).toBe(502);
     });
 
-    it("returns 502 when /user/installations fetch returns non-ok status", async () => {
-      // Arrange — token exchange + /user succeed but /user/installations returns 500
-      const { db } = makeStateOnlyDb();
+    it("continues install-pending when /user/installations fetch returns non-ok status", async () => {
+      const captured: FakeStmt[] = [];
       const stateValue = "a".repeat(32);
+      let oauthDeleteCallCount = 0;
+      const db = makeFakeDb((sql, args) => {
+        const isOauthDelete =
+          sql.toLowerCase().includes("oauth_state") && sql.toLowerCase().includes("delete");
+        oauthDeleteCallCount += isOauthDelete ? 1 : 0;
+        const row =
+          isOauthDelete && oauthDeleteCallCount === 1
+            ? ({ redirect_after: "/" } as FakeResult)
+            : null;
+        const isUsersInsert =
+          sql.toLowerCase().includes("users") && sql.toLowerCase().includes("returning");
+        const usersRow = isUsersInsert ? ({ id: 1 } as FakeResult) : null;
+        const stmt = makeFakeStmt(sql, args, [], 0);
+        if (isOauthDelete) {
+          (stmt as { first: <T>() => Promise<T | null> }).first = vi.fn().mockResolvedValue(row);
+        } else if (isUsersInsert) {
+          (stmt as { first: <T>() => Promise<T | null> }).first = vi
+            .fn()
+            .mockResolvedValue(usersRow);
+        }
+        captured.push(stmt);
+        return stmt;
+      });
 
       let fetchCallCount = 0;
       vi.stubGlobal(
@@ -1093,35 +1115,33 @@ describe("callbackRoute", () => {
         vi.fn(async () => {
           fetchCallCount++;
           if (fetchCallCount === 1) {
-            // Token exchange succeeds
             return new Response(JSON.stringify({ access_token: "tok-abc" }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             });
           }
           if (fetchCallCount === 2) {
-            // /user succeeds
             return new Response(JSON.stringify({ id: 1, login: "alice" }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             });
           }
-          // /user/installations returns 500
-          return new Response("Internal Server Error", { status: 500 });
+          if (fetchCallCount === 3) {
+            return new Response("Internal Server Error", { status: 500 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
         }),
       );
 
       const { app, env } = makeApp(db);
-
-      // Act
       const res = await app.request(
         `http://localhost/oauth/callback?code=goodcode&state=${stateValue}`,
         { method: "GET" },
         env,
       );
 
-      // Assert — deleting the if (!installRes.ok) guard would let the route parse a 500 body
-      expect(res.status).toBe(502);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Set-Cookie") ?? "").toContain("roxabi_session=");
     });
   });
 
