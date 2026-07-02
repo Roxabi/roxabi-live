@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.22.2](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.22.1...roxabi-live/v0.22.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* **auth:** restore logo on post-OAuth loading screen ([#289](https://github.com/Roxabi/roxabi-live/pull/289))
+* **auth:** stop showing "session expired" for unauthenticated visits ([#290](https://github.com/Roxabi/roxabi-live/pull/290))
+* **auth:** harden OAuth callback GitHub REST calls (versioned headers, retry, install fallback) ([#291](https://github.com/Roxabi/roxabi-live/pull/291))
+
+
+### Changed
+
+* **deps:** add 72h Dependabot cooldown for version updates
+* **docs:** dedup dev-workflow rules to ssot operator shard
+
+
 ## [0.22.1](https://github.com/Roxabi/roxabi-live/compare/roxabi-live/v0.22.0...roxabi-live/v0.22.1) (2026-06-26)
 
 
