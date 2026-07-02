@@ -1,29 +1,28 @@
 # Getting Started — Local Development
 
-This guide covers running **roxabi-live** locally as a Cloudflare Worker. For production and self-hosted deployment, see [docs/DEPLOY.md](DEPLOY.md).
+This guide covers running **roxabi-live** locally. For production and self-hosted deployment, see [docs/DEPLOY.md](DEPLOY.md).
 
 ## Prerequisites
 
-- **Node.js 20** — verify with `node --version` (should print `v20.x`)
-- **npm** — bundled with Node; no global wrangler install required
+- **Bun 1.3+** — `bun --version`
+- **Node 22+** — required by the root `package.json` engines field
 
-No Python, no `uv`, no system-level dependencies beyond Node 20.
+No Python runtime is needed for the app itself. `uv sync --group dev` installs license-check and pre-commit tooling only.
 
 ## Clone and Install
 
 ```bash
-git clone https://github.com/<YOUR_ORG>/<YOUR_FORK>.git
-# <!-- TODO: replace with your fork URL -->
+git clone https://github.com/Roxabi/roxabi-live.git
 cd roxabi-live
-cd worker && npm ci
+bun install
 ```
 
 ## Local Secrets
 
-Wrangler reads secrets from `worker/.dev.vars` automatically during `wrangler dev`. Create the file — it is gitignored and must never be committed:
+Wrangler reads secrets from `apps/api/.dev.vars` during `wrangler dev`. Create the file — it is gitignored:
 
 ```ini
-# worker/.dev.vars
+# apps/api/.dev.vars
 GITHUB_WEBHOOK_SECRET=<your-org-level-webhook-secret>
 GITHUB_APP_ID=<your-app-numeric-id>
 GITHUB_APP_CLIENT_ID=<your-app-oauth-client-id>
@@ -40,38 +39,51 @@ NOTIFY_URL=<optional-alert-webhook-url>
 
 | Goal | Required secrets |
 |---|---|
-| Browse `/health`, `/api/version`, static frontend — no auth | None — wrangler dev works with an empty `.dev.vars` |
-| Exercise the OAuth login flow end-to-end | `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_ORG` |
-| Receive and verify org webhooks locally | `GITHUB_WEBHOOK_SECRET` (plus a tunnel to expose `localhost:8787`) |
+| Browse `/health`, `/api/version` — no auth | None — wrangler dev works with an empty `.dev.vars` |
+| Exercise OAuth end-to-end | `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_ORG` |
+| Receive org webhooks locally | `GITHUB_WEBHOOK_SECRET` + tunnel to expose `localhost:8787` |
 | Encrypt/decrypt install tokens | `INSTALL_TOKEN_KEY` |
-| Trigger manual sync via `POST /admin/sync` | `ADMIN_TOKEN` (omitting it disables the Worker-level Bearer check; CF Access guards prod) |
+| Trigger `POST /admin/sync` | `ADMIN_TOKEN` |
 
-> For most contributors, read-only local dev without any secrets is sufficient. The production deployment is the reference deployment for auth flows.
+> For most contributors, read-only local dev without secrets is sufficient.
 
 ### Where to obtain each value
 
 | Secret | How to obtain |
 |---|---|
-| `GITHUB_APP_ID` | GitHub App settings page → **App ID** (numeric) |
-| `GITHUB_APP_CLIENT_ID` | GitHub App settings page → **Client ID** |
-| `GITHUB_APP_CLIENT_SECRET` | GitHub App settings page → **Generate a new client secret** |
-| `GITHUB_APP_PRIVATE_KEY` | GitHub App settings → **Generate a private key** → convert to PKCS#8 DER → `base64 -w0` |
-| `GITHUB_APP_WEBHOOK_SECRET` | GitHub App settings → **Webhook secret** (App-level, distinct from org webhook) |
-| `GITHUB_WEBHOOK_SECRET` | GitHub org → Settings → Webhooks → your webhook entry → **Secret** |
-| `INSTALL_TOKEN_KEY` | Generate locally: `openssl rand -base64 32` |
-| `GITHUB_ORG` | Your GitHub org slug (e.g. `acme`) |
-| `ADMIN_TOKEN` | Any opaque string; generate with `openssl rand -hex 32` |
-| `NOTIFY_URL` | Optional — any webhook URL for circuit-breaker alerts (e.g. Discord incoming webhook) |
+| `GITHUB_APP_ID` | GitHub App settings → **App ID** (numeric) |
+| `GITHUB_APP_CLIENT_ID` | GitHub App settings → **Client ID** |
+| `GITHUB_APP_CLIENT_SECRET` | GitHub App settings → **Generate a new client secret** |
+| `GITHUB_APP_PRIVATE_KEY` | Generate private key → PKCS#8 DER → `base64 -w0` |
+| `GITHUB_APP_WEBHOOK_SECRET` | GitHub App settings → **Webhook secret** |
+| `GITHUB_WEBHOOK_SECRET` | GitHub org webhook entry → **Secret** |
+| `INSTALL_TOKEN_KEY` | `openssl rand -base64 32` |
+| `GITHUB_ORG` | Your GitHub org slug |
+| `ADMIN_TOKEN` | `openssl rand -hex 32` (optional) |
 
-## Run the Dev Server
+Full self-hosting steps: [docs/DEPLOY.md](DEPLOY.md).
+
+## Run the Dev Servers
+
+**API worker** (Hono, D1 preview, port 8787):
 
 ```bash
-cd worker && npx wrangler dev
+cd apps/api && bunx wrangler dev
 ```
 
-The Worker starts at **http://localhost:8787**. Wrangler provisions a local D1 preview automatically — no external database setup is needed.
+**React SPA** (proxies API in dev):
 
-Verify the setup:
+```bash
+cd apps/app && bun run dev
+```
+
+**Marketing** (optional):
+
+```bash
+bun run dev:marketing
+```
+
+Verify the API:
 
 | Endpoint | Auth | What to expect |
 |---|---|---|
@@ -81,24 +93,27 @@ Verify the setup:
 
 ## Apply Migrations Locally
 
-On first run the local D1 preview is empty. Apply all migrations once:
+On first run the local D1 preview is empty:
 
 ```bash
-cd worker && npx wrangler d1 migrations apply DB --local --config ../wrangler.toml
+cd apps/api && bunx wrangler d1 migrations apply DB --local
 ```
 
-Subsequent `wrangler dev` runs reuse the persisted local DB state.
+## Monorepo Layout
+
+| Path | Role |
+|------|------|
+| `apps/api` | API worker — sync, webhooks, auth, D1 |
+| `apps/app` | React SPA + edge proxy worker |
+| `apps/marketing` | Astro landing site |
+| `packages/shared` | Shared TypeScript types |
+| `plugins/roxabi-issues` | `issue-triage` Claude Code skill |
+| `frontend/` | Legacy vanilla shell (still ASSETS-bound on API worker) |
+
+## Agent workflow
+
+To use Roxabi Live with coding agents, see [docs/agent-workflow.md](agent-workflow.md) and install the `roxabi-issues` plugin.
 
 ## Production / Self-Hosting
 
-See [docs/DEPLOY.md](DEPLOY.md) for:
-
-- Cloudflare account and Worker setup
-- D1 database and R2 bucket provisioning
-- GitHub App creation, wrangler secret injection, and Workers Builds setup
-- Auto-deploy on push to `staging` / `main` (break-glass `npm run deploy:*`)
-- Cloudflare Access configuration for `/admin/*`
-
-## Legacy Note
-
-The pre-2026-06 Python/FastAPI app is decommissioned and removed from the repo (2026-06-20). Runtime is Worker + `frontend/` only. `uv sync --group dev` installs license-check tooling, not an application server.
+See [docs/DEPLOY.md](DEPLOY.md) for Cloudflare setup, GitHub App configuration, and deploy automation.

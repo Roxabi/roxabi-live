@@ -24,7 +24,14 @@ const { t } = Astro.props;
 
       <ul class="footer-links" role="list">
         {t.footer.links.map((link) => (
-          <li><a href={link.href}>{link.label}</a></li>
+          <li>
+            <a
+              href={link.href}
+              {...("appPath" in link && link.appPath ? { "data-app-link": true, "data-app-path": link.appPath } : {})}
+            >
+              {link.label}
+            </a>
+          </li>
         ))}
       </ul>
 

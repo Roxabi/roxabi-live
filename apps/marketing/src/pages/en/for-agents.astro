@@ -1,0 +1,140 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { en } from "../../i18n/index";
+import SiteHeader from "../../components/SiteHeader.astro";
+import SiteFooter from "../../components/SiteFooter.astro";
+
+const t = en;
+const appUrl = import.meta.env.PUBLIC_APP_URL ?? "https://app.live.roxabi.dev";
+---
+
+<Layout
+  lang="en"
+  title="Roxabi Live — Agent & LLM guide"
+  description="How to structure GitHub issues with /issue-triage and orchestrate coding-agent fleets via the Roxabi Live cockpit."
+>
+  <SiteHeader t={t} />
+  <main class="agents-doc">
+    <div class="container">
+      <p class="agents-kicker">For agents & LLMs</p>
+      <h1>GitHub + <code>/issue-triage</code> + cockpit</h1>
+      <p class="agents-lead">
+        GitHub stays the source of truth. Roxabi Live reads native relations
+        (<code>blocked-by</code>, parent/child) and computes <strong>ready</strong>,
+        <strong>blocked</strong>, <strong>done</strong> so you can run agents in parallel safely.
+      </p>
+
+      <section>
+        <h2>The loop</h2>
+        <ol>
+          <li><strong>Triage</strong> — <code>/issue-triage</code>: size, priority, lane, type labels + dependencies.</li>
+          <li><strong>Sync</strong> — webhooks + reconcile → up-to-date graph in the cockpit.</li>
+          <li><strong>Launch</strong> — start only <em>ready</em> issues (no open blockers).</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Install the skill</h2>
+        <pre><code>claude plugin marketplace add Roxabi/roxabi-live
+claude plugin install roxabi-issues</code></pre>
+        <p>Invoke <code>/issue-triage</code> — full reference on <a href="https://github.com/Roxabi/roxabi-live/blob/main/plugins/roxabi-issues/skills/issue-triage/SKILL.md">GitHub</a>.</p>
+      </section>
+
+      <section>
+        <h2>Label vocabulary (cockpit sync)</h2>
+        <ul>
+          <li><strong>Lane</strong> — <code>graph:lane/b</code>, <code>graph:lane/a1</code>, …</li>
+          <li><strong>Size</strong> — <code>size:M</code> or <code>XS|S|M|L|XL</code>; canonical tiers <code>S</code>, <code>F-lite</code>, <code>F-full</code></li>
+          <li><strong>Priority</strong> — <code>P0-critical</code>, <code>P1-high</code>, <code>P2-medium</code>, <code>P3-low</code> (issue-triage canonical)</li>
+        </ul>
+        <p>No GitHub Projects V2 required — labels + native relations are enough.</p>
+      </section>
+
+      <section>
+        <h2>Useful commands</h2>
+        <pre><code>/issue-triage list --untriaged
+/issue-triage set 42 --size M --priority High --lane b --type feat
+/issue-triage set 91 --blocked-by 117
+/issue-triage set 164 --parent 163
+/issue-triage create --title "..." --size S --parent 163</code></pre>
+        <p>Cross-repo: <code>Roxabi/lyra#728</code> in <code>--blocked-by</code>.</p>
+      </section>
+
+      <section>
+        <h2>Machine-readable resources</h2>
+        <ul class="agents-links">
+          <li><a href="/llms.txt"><code>llms.txt</code></a> — compact index for LLM crawlers</li>
+          <li><a href="https://github.com/Roxabi/roxabi-live/blob/main/docs/agent-workflow.md">agent-workflow.md</a> — detailed guide</li>
+          <li><a href="https://github.com/Roxabi/roxabi-live/blob/main/docs/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+        </ul>
+      </section>
+
+      <p class="agents-cta">
+        <a class="btn btn-primary" href={appUrl}>Open cockpit</a>
+        <a class="btn btn-ghost" href="/for-agents">Version française</a>
+      </p>
+    </div>
+  </main>
+  <SiteFooter t={t} />
+</Layout>
+
+<style>
+  .agents-doc {
+    padding: 48px 0 96px;
+  }
+  .agents-kicker {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+  .agents-doc h1 {
+    font-size: clamp(28px, 4vw, 40px);
+    margin-bottom: 16px;
+    max-width: 22ch;
+  }
+  .agents-lead {
+    font-size: 18px;
+    color: var(--text-muted);
+    max-width: 62ch;
+    margin-bottom: 40px;
+    line-height: 1.6;
+  }
+  .agents-doc section {
+    margin-bottom: 36px;
+    max-width: 72ch;
+  }
+  .agents-doc h2 {
+    font-size: 20px;
+    margin-bottom: 12px;
+  }
+  .agents-doc pre {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 16px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .agents-doc code {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.92em;
+  }
+  .agents-doc li {
+    margin-bottom: 8px;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+  .agents-links a {
+    color: var(--accent);
+  }
+  .agents-cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 48px;
+  }
+</style>

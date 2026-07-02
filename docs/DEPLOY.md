@@ -1,6 +1,8 @@
 # Self-Hosting Guide
 
-End-to-end instructions to go from a fresh fork to a running deployment on Cloudflare Workers.
+End-to-end instructions to go from a fresh fork to a running deployment on Cloudflare.
+
+> **Monorepo topology (v0.22+):** production uses three hosts — `live.roxabi.dev` (marketing/Pages), `app.live.roxabi.dev` (SPA + API proxy Worker), `api.live.roxabi.dev` (API Worker). See [MONOREPO.md](../MONOREPO.md) and [cutover-monorepo.md](cutover-monorepo.md). Wrangler config for the API lives in **`apps/api/wrangler.toml`** (not repo root). Automated setup: `bun run setup:cloudflare-deploy`.
 
 ---
 
@@ -16,15 +18,15 @@ End-to-end instructions to go from a fresh fork to a running deployment on Cloud
 - [ ] A custom domain configured in Cloudflare DNS **OR** use the free `*.workers.dev` subdomain
 - [ ] A GitHub organization you administer (the App will be installed on it)
 - [ ] A GitHub App registered in that org or your personal account (step 4)
-- [ ] Node 20 and `npm` installed locally
-- [ ] Wrangler CLI available via `npx` (no global install required; `wrangler ^3.99.0` is in `worker/devDependencies`)
+- [ ] Bun 1.3+ and Node 22+ installed locally
+- [ ] Wrangler via `bunx wrangler` (`apps/api` devDependency)
 
 **Prerequisites — local tools:**
 
 ```bash
-node --version   # must be 20.x
-npm --version    # comes with Node
-npx wrangler --version   # pulls from worker/node_modules after npm ci
+bun --version
+node --version   # must be 22.x+
+cd apps/api && bunx wrangler --version
 ```
 
 ---
@@ -35,11 +37,10 @@ npx wrangler --version   # pulls from worker/node_modules after npm ci
 # Fork the repo on GitHub, then:
 git clone https://github.com/<YOUR_ORG>/<YOUR_FORK>.git
 cd <YOUR_FORK>
-cd worker && npm ci && cd ..
+bun install
 ```
 
-The wrangler config file (`wrangler.toml`) lives at the **repo root**, not inside `worker/`.
-All `wrangler` commands below pass `--config ../wrangler.toml` when run from `worker/`.
+The API wrangler config lives in **`apps/api/wrangler.toml`**. Run wrangler from `apps/api/` unless noted otherwise.
 
 ---
 
@@ -75,42 +76,42 @@ Save the token — used for manual `wrangler` ops and Workers Builds setup (step
 ### 2c. Create D1 databases
 
 ```bash
-cd worker
+cd apps/api
 
 # Production database
-npx wrangler d1 create <YOUR_APP>-production --config ../wrangler.toml
+bunx wrangler d1 create <YOUR_APP>-production
 # Note the output: database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 # Staging database
-npx wrangler d1 create <YOUR_APP>-staging --config ../wrangler.toml
+bunx wrangler d1 create <YOUR_APP>-staging
 # Note the output: database_id = "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
 ```
 
 ### 2d. Create R2 buckets
 
 ```bash
-cd worker
+cd apps/api
 
 # Production audit log bucket
-npx wrangler r2 bucket create <YOUR_APP>-logs --config ../wrangler.toml
+bunx wrangler r2 bucket create <YOUR_APP>-logs
 
 # Staging audit log bucket
-npx wrangler r2 bucket create <YOUR_APP>-logs-staging --config ../wrangler.toml
+bunx wrangler r2 bucket create <YOUR_APP>-logs-staging
 ```
 
 ---
 
-## 3. Edit wrangler.toml
+## 3. Edit apps/api/wrangler.toml
 
 Replace the Roxabi-specific values with your own. Fields to change:
 
 ```toml
-# Top-level Worker name (prod)
+# Top-level API Worker name (prod)
 name = "<YOUR_APP>"                        # was: "roxabi-live"
 
-# Custom domain — remove this block if using workers.dev instead:
+# API custom domain — browser traffic uses app.* proxy; api.* is webhooks/admin
 routes = [
-  { pattern = "<YOUR_DOMAIN>", custom_domain = true },
+  { pattern = "api.<YOUR_DOMAIN>", custom_domain = true },
 ]
 # If using workers.dev (no custom domain), replace with:
 # workers_dev = true
@@ -121,7 +122,7 @@ routes = [
 binding        = "DB"
 database_name  = "<YOUR_APP>-production"  # was: "roxabi-live-production"
 database_id    = "<PROD_DB_ID>"           # captured in step 2c
-migrations_dir = "worker/migrations"
+migrations_dir = "migrations"
 
 # Prod R2 bucket
 [[r2_buckets]]
@@ -139,7 +140,7 @@ routes = []    # KEEP THIS — see note below
 binding        = "DB"
 database_name  = "<YOUR_APP>-staging"     # was: "roxabi-live-staging"
 database_id    = "<STAGING_DB_ID>"        # captured in step 2c
-migrations_dir = "worker/migrations"
+migrations_dir = "migrations"
 
 # Staging R2 bucket
 [[env.staging.r2_buckets]]
@@ -166,9 +167,11 @@ GitHub → Settings → Developer settings → GitHub Apps → New GitHub App (o
 | Field | Value |
 |---|---|
 | GitHub App name | `<YOUR_APP>` (must be unique on GitHub) |
-| Homepage URL | `https://<YOUR_DOMAIN>` |
-| Webhook URL | `https://<YOUR_DOMAIN>/webhook/github` |
+| Homepage URL | `https://<YOUR_APEX>` (marketing site, e.g. `live.example.com`) |
+| Webhook URL | `https://api.<YOUR_DOMAIN>/webhook/github` (API worker — server→server) |
 | Webhook secret | A strong random string — **save it** as `GITHUB_WEBHOOK_SECRET` |
+
+> **Three-host topology:** browser traffic (OAuth, cockpit, proxied `/api/*`) uses **`app.<YOUR_DOMAIN>`**. Webhooks and optional cron hit **`api.<YOUR_DOMAIN>`**. Marketing lives on the **apex** (`<YOUR_APEX>`).
 
 **Permissions (Repository):**
 
@@ -195,7 +198,8 @@ GitHub → Settings → Developer settings → GitHub Apps → New GitHub App (o
 
 | Field | Value |
 |---|---|
-| Callback URL | `https://<YOUR_DOMAIN>/oauth/callback` |
+| Callback URL | `https://app.<YOUR_DOMAIN>/oauth/callback` |
+| Setup URL (post-install) | `https://app.<YOUR_DOMAIN>/install/complete` |
 | Expire user authorization tokens | Yes (recommended) |
 | Request user authorization (OAuth) during installation | Yes |
 
@@ -252,13 +256,12 @@ seeds the tenant). No manual seeding is required.
 
 ---
 
-## 5. Set Worker secrets
+## 5. Set API Worker secrets
 
-Run these from the `worker/` directory. All commands pass `--config ../wrangler.toml`.
-Export `CLOUDFLARE_ACCOUNT_ID` before running.
+Run these from `apps/api/`. Export `CLOUDFLARE_ACCOUNT_ID` before running.
 
 ```bash
-cd worker
+cd apps/api
 export CLOUDFLARE_ACCOUNT_ID=<YOUR_ACCOUNT_ID>
 ```
 
@@ -270,54 +273,54 @@ For each secret, run the command once without `--env staging` (prod) and once wi
 ```bash
 # Org-level webhook HMAC secret (must match the Webhook secret set in step 4a)
 printf %s '<GITHUB_WEBHOOK_SECRET>' \
-  | npx wrangler secret put GITHUB_WEBHOOK_SECRET --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_WEBHOOK_SECRET
 printf %s '<GITHUB_WEBHOOK_SECRET>' \
-  | npx wrangler secret put GITHUB_WEBHOOK_SECRET --env staging --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_WEBHOOK_SECRET --env staging
 
 # GitHub App numeric ID
 printf %s '<GITHUB_APP_ID>' \
-  | npx wrangler secret put GITHUB_APP_ID --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_APP_ID
 printf %s '<GITHUB_APP_ID>' \
-  | npx wrangler secret put GITHUB_APP_ID --env staging --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_APP_ID --env staging
 
 # GitHub App OAuth client ID
 printf %s '<GITHUB_APP_CLIENT_ID>' \
-  | npx wrangler secret put GITHUB_APP_CLIENT_ID --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_APP_CLIENT_ID
 printf %s '<GITHUB_APP_CLIENT_ID>' \
-  | npx wrangler secret put GITHUB_APP_CLIENT_ID --env staging --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_APP_CLIENT_ID --env staging
 
 # GitHub App OAuth client secret
 printf %s '<GITHUB_APP_CLIENT_SECRET>' \
-  | npx wrangler secret put GITHUB_APP_CLIENT_SECRET --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_APP_CLIENT_SECRET
 printf %s '<GITHUB_APP_CLIENT_SECRET>' \
-  | npx wrangler secret put GITHUB_APP_CLIENT_SECRET --env staging --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_APP_CLIENT_SECRET --env staging
 
 # GitHub App RSA private key (base64 PKCS#8 DER from step 4a)
 printf %s '<GITHUB_APP_PRIVATE_KEY>' \
-  | npx wrangler secret put GITHUB_APP_PRIVATE_KEY --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_APP_PRIVATE_KEY
 printf %s '<GITHUB_APP_PRIVATE_KEY>' \
-  | npx wrangler secret put GITHUB_APP_PRIVATE_KEY --env staging --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_APP_PRIVATE_KEY --env staging
 
 # App-level webhook secret (from step 4a — distinct from org webhook secret).
 # Note: the live POST /webhook/github handler verifies HMAC against GITHUB_WEBHOOK_SECRET
 # (org-level, above), NOT this GITHUB_APP_WEBHOOK_SECRET. This one is present in the Env
 # interface for completeness but is not read on the request path; set it anyway for parity.
 printf %s '<GITHUB_APP_WEBHOOK_SECRET>' \
-  | npx wrangler secret put GITHUB_APP_WEBHOOK_SECRET --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_APP_WEBHOOK_SECRET
 printf %s '<GITHUB_APP_WEBHOOK_SECRET>' \
-  | npx wrangler secret put GITHUB_APP_WEBHOOK_SECRET --env staging --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_APP_WEBHOOK_SECRET --env staging
 
 # AES-GCM DEK for encrypting install tokens at rest (base64, 32 bytes, from step 4a)
 printf %s '<INSTALL_TOKEN_KEY>' \
-  | npx wrangler secret put INSTALL_TOKEN_KEY --config ../wrangler.toml
+  | bunx wrangler secret put INSTALL_TOKEN_KEY
 printf %s '<INSTALL_TOKEN_KEY>' \
-  | npx wrangler secret put INSTALL_TOKEN_KEY --env staging --config ../wrangler.toml
+  | bunx wrangler secret put INSTALL_TOKEN_KEY --env staging
 
 # GitHub org slug to sync (e.g. "MyOrg") — treated as a secret in practice
 printf %s '<YOUR_GITHUB_ORG>' \
-  | npx wrangler secret put GITHUB_ORG --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_ORG
 printf %s '<YOUR_GITHUB_ORG>' \
-  | npx wrangler secret put GITHUB_ORG --env staging --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_ORG --env staging
 ```
 
 ### Optional secrets
@@ -326,23 +329,23 @@ printf %s '<YOUR_GITHUB_ORG>' \
 # Bearer token for POST /admin/sync defense-in-depth gate.
 # If unset, the Worker-level gate is disabled (CF Access alone guards /admin/*).
 printf %s '<YOUR_ADMIN_TOKEN>' \
-  | npx wrangler secret put ADMIN_TOKEN --config ../wrangler.toml
+  | bunx wrangler secret put ADMIN_TOKEN
 printf %s '<YOUR_ADMIN_TOKEN>' \
-  | npx wrangler secret put ADMIN_TOKEN --env staging --config ../wrangler.toml
+  | bunx wrangler secret put ADMIN_TOKEN --env staging
 
 # Webhook URL for sync circuit-breaker halt/auth-failure alerts.
 # If unset, no external notification is sent.
 printf %s '<YOUR_NOTIFY_URL>' \
-  | npx wrangler secret put NOTIFY_URL --config ../wrangler.toml
+  | bunx wrangler secret put NOTIFY_URL
 printf %s '<YOUR_NOTIFY_URL>' \
-  | npx wrangler secret put NOTIFY_URL --env staging --config ../wrangler.toml
+  | bunx wrangler secret put NOTIFY_URL --env staging
 ```
 
 **Verify secrets are set:**
 
 ```bash
-npx wrangler secret list --config ../wrangler.toml
-npx wrangler secret list --env staging --config ../wrangler.toml
+bunx wrangler secret list
+bunx wrangler secret list --env staging
 ```
 
 ---
@@ -399,7 +402,7 @@ Set Worker secrets in the Cloudflare dashboard (or `wrangler secret put`) — **
 ```bash
 export CLOUDFLARE_ACCOUNT_ID=<YOUR_ACCOUNT_ID>
 export CLOUDFLARE_API_TOKEN=<YOUR_CF_API_TOKEN>
-npm run deploy:staging      # or deploy:production
+bun run deploy:staging      # or deploy:production
 ```
 
 ---
@@ -413,30 +416,17 @@ Every deploy runs `wrangler d1 migrations apply` before `wrangler deploy` (see `
 ### Manually
 
 ```bash
-cd worker
+cd apps/api
 export CLOUDFLARE_ACCOUNT_ID=<YOUR_ACCOUNT_ID>
 
 # Staging
-npx wrangler d1 migrations apply DB --env staging --remote --config ../wrangler.toml
+bunx wrangler d1 migrations apply DB --env staging --remote
 
 # Production
-npx wrangler d1 migrations apply DB --remote --config ../wrangler.toml
+bunx wrangler d1 migrations apply DB --remote
 ```
 
-Migrations are applied in order:
-
-```
-0001_initial.sql
-0002_repos.sql
-0003_data_version.sql
-0004_tenancy_auth.sql
-0005_sync_slot_seed.sql
-0006_sync_started_at_seed.sql
-0007_repo_access_is_private.sql
-0008_tenant_not_null.sql
-```
-
-Wrangler tracks applied migrations and skips already-applied ones — safe to re-run.
+Wrangler applies every file in `apps/api/migrations/` in order (currently through `0022_assignees.sql`). It tracks applied migrations and skips already-applied ones — safe to re-run.
 
 ---
 
@@ -445,8 +435,8 @@ Wrangler tracks applied migrations and skips already-applied ones — safe to re
 ### Auto-deploy on merge
 
 ```bash
-git push origin staging   # Workers Builds → roxabi-live-staging
-git push origin main      # Workers Builds → roxabi-live (live.roxabi.dev)
+git push origin staging   # → api-staging, app-staging, marketing-staging
+git push origin main      # → api.live.roxabi.dev, app.live.roxabi.dev, live.roxabi.dev (apex)
 ```
 
 Monitor builds: Cloudflare dashboard → Workers → **roxabi-live** → Builds.
@@ -457,8 +447,8 @@ Monitor builds: Cloudflare dashboard → Workers → **roxabi-live** → Builds.
 export CLOUDFLARE_ACCOUNT_ID=<YOUR_ACCOUNT_ID>
 export CLOUDFLARE_API_TOKEN=<YOUR_CF_API_TOKEN>
 
-npm run deploy:staging
-npm run deploy:production
+bun run deploy:staging
+bun run deploy:production
 ```
 
 ---
@@ -468,30 +458,30 @@ npm run deploy:production
 ### Health check
 
 ```bash
-# Replace with your Worker URL (workers.dev or custom domain):
-curl https://<YOUR_DOMAIN>/health
+# Browser-facing app worker (proxies /api/* to the API worker):
+curl https://app.<YOUR_DOMAIN>/health
 # Expected: 200 JSON with issue count (0 before first sync)
 
-curl https://<YOUR_DOMAIN>/api/version
+curl https://app.<YOUR_DOMAIN>/api/version
 # Expected: 200 JSON with data_version timestamp
 ```
 
 ### Sign in
 
-1. Open `https://<YOUR_DOMAIN>` in a browser.
-2. The frontend auth gate redirects to `/login`.
-3. Authorize the GitHub App → OAuth callback sets the `__Host-session` cookie.
+1. Open `https://app.<YOUR_DOMAIN>` in a browser.
+2. The SPA redirects unauthenticated users to `/login`.
+3. Authorize the GitHub App → OAuth callback at `https://app.<YOUR_DOMAIN>/oauth/callback` sets the `__Host-session` cookie.
 4. If your App is not yet installed on any org, GitHub redirects you to the install page
    (`https://github.com/apps/<YOUR_APP_SLUG>/installations/new`). Install it, then return.
 5. The dashboard loads — issues and graph are empty until after the first sync.
 
 ### Trigger a sync
 
-The cron runs daily at 00:00 UTC (`0 0 * * *`). To trigger immediately:
+Sync is driven by GitHub webhooks, bootstrap on first login, and manual triggers. Cron is **disabled** in the stock `apps/api/wrangler.toml` (`crons = []`). To trigger immediately:
 
 ```bash
-# Requires ADMIN_TOKEN to be set (step 5):
-curl -X POST https://<YOUR_DOMAIN>/admin/sync \
+# Requires ADMIN_TOKEN to be set (step 5). Use app.* (proxied) or api.* directly:
+curl -X POST https://app.<YOUR_DOMAIN>/admin/sync \
   -H "Authorization: Bearer <YOUR_ADMIN_TOKEN>"
 # Expected: 200 (or 202) — sync queued/started
 ```
@@ -537,12 +527,11 @@ export CLOUDFLARE_ACCOUNT_ID=<YOUR_ACCOUNT_ID>
 
 ### Graph is empty after first login
 
-The graph is built from synced data. Either wait for the daily cron (fires at 00:00 UTC) or
-trigger a manual sync via `POST /admin/sync`. After sync, reload the dashboard.
+The graph is built from synced data. Trigger a manual sync via `POST /admin/sync` (or wait for webhook-driven updates after issue changes). After sync, reload the dashboard.
 
-`is_private` values for repos default to `1` (fail-closed, migration 0007). The daily
-sync corrects these from the GitHub API. After the first successful sync, private/public
-status will be accurate.
+`is_private` values for repos default to `1` (fail-closed, migration 0007). A full sync corrects these from the GitHub API. After the first successful sync, private/public status will be accurate.
+
+> **Optional cron:** re-enable daily reconcile by setting `crons = ["0 0 * * *"]` in `apps/api/wrangler.toml` and redeploying.
 
 ### Webhook returns 401 or signature failure
 
@@ -552,14 +541,15 @@ break HMAC verification — use `printf %s '<secret>'` (not `echo`) when setting
 secret:
 
 ```bash
+cd apps/api
 printf %s '<GITHUB_WEBHOOK_SECRET>' \
-  | npx wrangler secret put GITHUB_WEBHOOK_SECRET --config ../wrangler.toml
+  | bunx wrangler secret put GITHUB_WEBHOOK_SECRET
 ```
 
 Verify the secret is set:
 
 ```bash
-npx wrangler secret list --config ../wrangler.toml
+bunx wrangler secret list
 # Should show GITHUB_WEBHOOK_SECRET in the list
 ```
 
@@ -581,22 +571,13 @@ has TLS configured, or use the `*.workers.dev` URL (always HTTPS).
 
 ### Local dev
 
+See [docs/getting-started.md](getting-started.md). Quick version:
+
 ```bash
-cd worker
-npm ci
-
-# Create worker/.dev.vars with your secrets (do not commit this file):
-# GITHUB_WEBHOOK_SECRET=...
-# GITHUB_APP_ID=...
-# GITHUB_APP_CLIENT_ID=...
-# GITHUB_APP_CLIENT_SECRET=...
-# GITHUB_APP_PRIVATE_KEY=...
-# GITHUB_APP_WEBHOOK_SECRET=...
-# INSTALL_TOKEN_KEY=...
-# GITHUB_ORG=...
-
-npx wrangler dev   # uses --config ../wrangler.toml (set in package.json dev script)
-# → http://localhost:8787
+bun install
+cd apps/api && bunx wrangler dev    # API → http://localhost:8787
+# SPA (separate terminal):
+cd apps/app && bun run dev
 ```
 
-Wrangler dev automatically creates a local D1 preview database — no remote D1 is used.
+Create `apps/api/.dev.vars` with your secrets (never commit). Wrangler dev provisions a local D1 preview automatically.

@@ -41,4 +41,24 @@ const altUrl      = lang === "fr" ? `${canonicalBase}/en/` : canonicalBase + "/"
   <body class="bloom-canvas">
     <slot />
   </body>
+  <script is:inline>
+    (function () {
+      function wire() {
+        var app = location.hostname.indexOf("staging") !== -1
+          ? "https://app-staging.live.roxabi.dev"
+          : "https://app.live.roxabi.dev";
+        var links = document.querySelectorAll("[data-app-link]");
+        for (var i = 0; i < links.length; i++) {
+          var el = links[i];
+          var path = el.getAttribute("data-app-path") || "/";
+          el.setAttribute("href", app + path);
+        }
+      }
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", wire);
+      } else {
+        wire();
+      }
+    })();
+  </script>
 </html>
